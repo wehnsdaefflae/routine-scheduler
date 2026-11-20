@@ -2,11 +2,11 @@
 it up".
 
 The two things worth pinning are the PRECEDENCE (an explicit config value is an operator sizing
-down on purpose and must still win) and the asymmetry between the two knobs: the input window is
-adopted verbatim, the OUTPUT cap is clamped to what this harness needs. Maxing the output cap is
-the obvious misreading of the request and it is actively harmful — providers validate
-`input + requested_output <= window`, so a model whose real output limit is 943,718 tokens would
-have ~10% of its 1M window left for the prompt.
+on purpose and must still win) and that BOTH knobs are the route's published maximum (operator,
+2026-11-20: "not below") — with one guard, for a published output figure that is the window
+restated rather than a maximum (`routecatalogs.is_placeholder`): providers validate
+`input + requested_output <= window`, so asking for it would leave the prompt nothing.
+Gateway routes are pinned in test_route_limits.py.
 """
 
 from __future__ import annotations
@@ -80,88 +80,92 @@ def test_resolution_never_touches_the_network(tmp_path, monkeypatch):
     EndpointRegistry(_server(tmp_path)).resolve("kimi")
 
 
-# ---- the output cap is CLAMPED, not maxed --------------------------------------------------------
+# ---- the output cap is the route's published MAXIMUM ---------------------------------------------
 
-def test_the_output_cap_is_clamped_to_what_the_harness_needs(tmp_path, monkeypatch):
-    server = _server(tmp_path)
-    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: {"data": [
-        {"id": "moonshot/kimi-k3", "context_length": 1_310_720,
-         "top_provider": {"max_completion_tokens": 943_718}}]})
-    limits.refresh(server, force=True)
-    row = limits.lookup(server.routines_home, "or", "moonshot/kimi-k3")
-    assert row["context_tokens"] == 1_310_720                  # the window: verbatim
-    assert row["max_output_tokens"] == limits.ENGINE_OUTPUT_CEILING   # the output: clamped
-    assert row["provider_max_output_tokens"] == 943_718        # …and what it really was, kept
-
-
-def test_a_small_provider_output_limit_is_taken_as_is(tmp_path, monkeypatch):
-    server = _server(tmp_path)
-    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: {"data": [
-        {"id": "moonshot/kimi-k3", "context_length": 65_536,
-         "top_provider": {"max_completion_tokens": 8_192}}]})
-    limits.refresh(server, force=True)
-    assert limits.lookup(server.routines_home, "or",
-                         "moonshot/kimi-k3")["max_output_tokens"] == 8_192
-
-
-@pytest.mark.parametrize(("window", "published", "cap"), [
-    (32_768, None, 8_192),        # a window and nothing else (Ollama, vLLM, a bare gateway row)
-    (32_768, 32_768, 8_192),      # a published maximum as large as the window itself
-    (8_192, None, 2_048),         # smaller than the engine ceiling: the old cap was impossible
-    (131_072, None, 32_000),      # from 128k up the engine ceiling binds, as before
-])
-def test_the_output_cap_never_starves_a_small_window(tmp_path, monkeypatch, window, published,
-                                                     cap):
-    """A flat 32,000-token reservation on a 32k window leaves 768 tokens of prompt, and on an
-    8k one less than nothing — the model is refused as `impossible` and every turn overflows.
-    The cap a row resolves to is therefore bounded by the window too: never more than a
-    quarter of it, which leaves every window of 128k and up exactly where it was."""
-    from rsched.engine.compaction import window_ceiling_tokens
-
-    server = _server(tmp_path)
-    top = {"max_completion_tokens": published} if published else {}
-    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: {"data": [
+def _published(monkeypatch, window, top):
+    monkeypatch.setattr(catalogs, "get_json", lambda *a, **k: {"data": [
         {"id": "moonshot/kimi-k3", "context_length": window, "top_provider": top}]})
+
+
+@pytest.mark.parametrize(("window", "published"), [
+    (1_310_720, 943_718),     # a real maximum far above any harness ceiling: taken as is
+    (65_536, 8_192),          # a small one: taken as is
+])
+def test_the_output_cap_is_the_published_maximum(tmp_path, monkeypatch, window, published):
+    server = _server(tmp_path)
+    _published(monkeypatch, window, {"max_completion_tokens": published})
     limits.refresh(server, force=True)
     row = limits.lookup(server.routines_home, "or", "moonshot/kimi-k3")
-    assert row["max_output_tokens"] == cap
-    assert row["provider_max_output_tokens"] == published     # what was published, as it was
-    assert window_ceiling_tokens(window, cap) >= window * 3 // 4
+    assert row["context_tokens"] == window
+    assert row["max_output_tokens"] == published == row["provider_max_output_tokens"]
+    _ep, ref = EndpointRegistry(server).resolve("kimi")
+    assert ref.max_tokens == published
+
+
+@pytest.mark.parametrize("published", [943_718, 1_048_576])
+def test_a_placeholder_output_figure_is_not_a_maximum(tmp_path, monkeypatch, published):
+    """OpenRouter's ⌊0.9 × window⌋ placeholder, or the window itself, leaves the prompt nothing:
+    with no other catalog to say the real figure, the output stays UNKNOWN — the model takes the
+    endpoint's default — and what was published is kept beside it."""
+    server = _server(tmp_path)
+    _published(monkeypatch, 1_048_576, {"max_completion_tokens": published})
+    limits.refresh(server, force=True)
+    row = limits.lookup(server.routines_home, "or", "moonshot/kimi-k3")
+    assert row["max_output_tokens"] is None
+    assert row["provider_max_output_tokens"] == published
+    assert EndpointRegistry(server).resolve("kimi")[1].max_tokens == 16_384
+
+
+def test_a_window_without_a_maximum_claims_no_output_figure(tmp_path, monkeypatch):
+    server = _server(tmp_path)
+    _published(monkeypatch, 131_072, {})
+    limits.refresh(server, force=True)
+    row = limits.lookup(server.routines_home, "or", "moonshot/kimi-k3")
+    assert row["context_tokens"] == 131_072 and row["max_output_tokens"] is None
+
+
+def test_openrouter_is_sized_by_its_top_provider(tmp_path, monkeypatch):
+    """The provider OpenRouter routes to can serve less than the row's headline window."""
+    server = _server(tmp_path)
+    _published(monkeypatch, 1_050_000,
+               {"context_length": 1_048_576, "max_completion_tokens": 131_072})
+    limits.refresh(server, force=True)
+    row = limits.lookup(server.routines_home, "or", "moonshot/kimi-k3")
+    assert (row["context_tokens"], row["max_output_tokens"]) == (1_048_576, 131_072)
 
 
 # ---- discovery per provider ----------------------------------------------------------------------
 
-def test_nanogpt_is_read_from_its_own_route(tmp_path, monkeypatch):
-    """The OpenAI-compatible /api/v1/models carries no limits; only nano-gpt's own route does."""
+def test_nanogpt_is_read_from_its_detailed_listing(tmp_path, monkeypatch):
+    """The plain OpenAI-compatible /api/v1/models carries no limits; `?detailed=true` does."""
     server = _server(tmp_path, endpoints={
         "ng": EndpointConfig(name="ng", kind="openai", base_url="https://nano-gpt.com/api/v1")},
         models={"glm": ModelConfig(name="glm", endpoint="ng", model="z-ai/glm-5.2")})
     seen = {}
 
     def fake(url, headers=None):
-        seen["url"] = url
-        return {"models": {"text": {"z-ai/glm-5.2": {"maxInputTokens": 1_048_576,
-                                                     "maxOutputTokens": 96_000}}}}
-    monkeypatch.setattr(catalogs, "_get", fake)
+        seen.setdefault("url", url)
+        return {"data": [{"id": "z-ai/glm-5.2", "context_length": 1_048_576,
+                          "max_output_tokens": 96_000}]}
+    monkeypatch.setattr(catalogs, "get_json", fake)
     limits.refresh(server, force=True)
-    assert seen["url"] == "https://nano-gpt.com/api/models"
+    assert seen["url"] == "https://nano-gpt.com/api/v1/models?detailed=true"
     row = limits.lookup(server.routines_home, "ng", "z-ai/glm-5.2")
     assert row["context_tokens"] == 1_048_576 and row["source"] == "nanogpt"
+    assert row["max_output_tokens"] == 96_000
 
 
-def test_a_listing_that_answers_nothing_falls_back_to_the_static_table(tmp_path, monkeypatch):
-    """The table is the fallback for an id listed WITHOUT figures — a subscription proxy's
-    ids-only catalog, or a listing that could not be read at all — never the first answer."""
+def test_anthropics_own_api_is_sized_by_the_static_table(tmp_path, monkeypatch):
+    """Anthropic's listing needs a key; the table answers for its own API, and only there."""
     server = _server(tmp_path, endpoints={
         "claude": EndpointConfig(name="claude", kind="anthropic", context_tokens=2_000_000)},
         models={"opus": ModelConfig(name="opus", endpoint="claude", model="claude-opus-4-8")})
-    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: None)
+    monkeypatch.setattr(catalogs, "get_json", lambda *a, **k: None)
     limits.refresh(server, force=True)
     row = limits.lookup(server.routines_home, "claude", "claude-opus-4-8")
     assert row["context_tokens"] == 1_000_000 and row["source"] == "table"
-    # The table carries WINDOWS: the output cap is the engine's, and no provider maximum is
-    # claimed for a figure nobody published.
-    assert row["max_output_tokens"] == limits.ENGINE_OUTPUT_CEILING
+    # The table carries WINDOWS: no output maximum is claimed for a figure nobody published.
+    assert row["max_output_tokens"] is None
     assert row["provider_max_output_tokens"] is None
     # The discovered model window takes precedence over the larger endpoint fallback.
     _ep, ref = EndpointRegistry(server).resolve("opus")
@@ -174,7 +178,7 @@ def test_a_failed_probe_keeps_what_was_already_known(tmp_path, monkeypatch):
     server = _server(tmp_path)
     _cache(server, **{"or|moonshot/kimi-k3": {"context_tokens": 262_144,
                                               "max_output_tokens": 32_000, "source": "openrouter"}})
-    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: None)
+    monkeypatch.setattr(catalogs, "get_json", lambda *a, **k: None)
     out = limits.refresh(server, force=True)
     assert out["misses"] == ["or/moonshot/kimi-k3"]
     assert limits.lookup(server.routines_home, "or", "moonshot/kimi-k3")["context_tokens"] \
@@ -197,7 +201,7 @@ def test_the_ttl_stops_a_refresh_per_tick(tmp_path, monkeypatch):
         "rows": {}, "checked": [f"{m.endpoint}|{m.model}" for m in server.models.values()]})
     assert limits.stale(server) is False
     calls = []
-    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: calls.append(1) or None)
+    monkeypatch.setattr(catalogs, "get_json", lambda *a, **k: calls.append(1) or None)
     limits.refresh(server)                       # inside the TTL → no fetch at all
     assert calls == []
 
@@ -222,7 +226,7 @@ def test_new_model_refreshes_inside_global_ttl(tmp_path, monkeypatch):
     server = _server(tmp_path)
     _cache(server, **{"old|id": {"context_tokens": 200000}})
     assert limits.stale(server)
-    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: None)
+    monkeypatch.setattr(catalogs, "get_json", lambda *a, **k: None)
     limits.refresh(server)
     # Missing metadata is retried after the TTL, not on every scheduler tick.
     assert not limits.stale(server)
@@ -232,6 +236,7 @@ def test_new_model_refreshes_inside_global_ttl(tmp_path, monkeypatch):
     # the current lineup (platform.claude.com models overview, 2026-10-01)
     ("claude-fable-5-1", 1_000_000), ("claude-opus-5-5", 1_000_000),
     ("claude-sonnet-5-5", 1_000_000), ("claude-haiku-4-5-20251001", 200_000),
+    ("claude-haiku-5-5", 1_000_000),
     # still served
     ("claude-mythos-5-1", 1_000_000), ("claude-sonnet-5", 1_000_000),
     ("claude-sonnet-4-6", 1_000_000), ("claude-opus-4-8", 1_000_000),
@@ -277,7 +282,7 @@ def test_a_listed_id_with_no_published_limits_is_served_but_undiscovered(tmp_pat
         seen.setdefault("url", url)     # the proxy listing is asked first; the reference after
         return {"data": [{"id": "gpt-6-astra", "object": "model", "owned_by": "openai"},
                          {"id": "gpt-5.6-terra", "object": "model", "owned_by": "openai"}]}
-    monkeypatch.setattr(catalogs, "_get", fake)
+    monkeypatch.setattr(catalogs, "get_json", fake)
     out = limits.refresh(server, force=True)
 
     assert seen["url"] == "http://cliproxy:8317/v1/models"
@@ -287,17 +292,17 @@ def test_a_listed_id_with_no_published_limits_is_served_but_undiscovered(tmp_pat
     assert limits.serves(server.routines_home, "codex-proxy", "gpt-6-nope") is False
 
 
-def test_a_claude_id_on_a_proxy_still_gets_the_static_table(tmp_path, monkeypatch):
-    """Sniffing the proxy must not cost the Claude ids their window: the static table is a
-    fallback on a miss, not a property of the provider.
+def test_a_claude_id_on_a_proxy_is_not_given_the_apis_window(tmp_path, monkeypatch):
+    """The table is Anthropic's OWN API. A proxy serving a Claude id may serve it on a smaller
+    window (a Claude subscription: claude-sonnet-4-6 at 200,000, not 1,000,000), so an id it
+    lists without figures stays unknown — a gateway with routes is how it gets the route's.
     """
     server = _proxy_server(tmp_path, {
         "sonnet": ModelConfig(name="sonnet", endpoint="codex-proxy", model="claude-sonnet-5")})
-    monkeypatch.setattr(catalogs, "_get",
+    monkeypatch.setattr(catalogs, "get_json",
                         lambda *a, **k: {"data": [{"id": "claude-sonnet-5"}]})
-    limits.refresh(server, force=True)
-    row = limits.lookup(server.routines_home, "codex-proxy", "claude-sonnet-5")
-    assert row["context_tokens"] == 1_000_000 and row["source"] == "table"
+    assert limits.refresh(server, force=True)["misses"] == ["codex-proxy/claude-sonnet-5"]
+    assert limits.lookup(server.routines_home, "codex-proxy", "claude-sonnet-5") is None
 
 
 def test_an_unanswered_catalog_keeps_the_previous_served_set(tmp_path, monkeypatch):
@@ -306,9 +311,9 @@ def test_an_unanswered_catalog_keeps_the_previous_served_set(tmp_path, monkeypat
     """
     server = _proxy_server(tmp_path, {
         "astra": ModelConfig(name="astra", endpoint="codex-proxy", model="gpt-6-astra")})
-    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: {"data": [{"id": "gpt-6-astra"}]})
+    monkeypatch.setattr(catalogs, "get_json", lambda *a, **k: {"data": [{"id": "gpt-6-astra"}]})
     limits.refresh(server, force=True)
-    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: None)
+    monkeypatch.setattr(catalogs, "get_json", lambda *a, **k: None)
     limits.refresh(server, force=True)
     assert limits.serves(server.routines_home, "codex-proxy", "gpt-6-astra") is True
 
@@ -321,7 +326,7 @@ def test_no_catalog_at_all_leaves_the_question_unanswered(tmp_path, monkeypatch)
         "claude": EndpointConfig(name="claude", kind="anthropic",
                                  base_url="https://api.anthropic.com")},
         models={"opus": ModelConfig(name="opus", endpoint="claude", model="claude-opus-4-8")})
-    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: None)
+    monkeypatch.setattr(catalogs, "get_json", lambda *a, **k: None)
     limits.refresh(server, force=True)
     assert limits.serves(server.routines_home, "claude", "claude-opus-4-8") is None
 
@@ -330,5 +335,5 @@ def test_the_served_key_is_not_counted_as_a_model_row(tmp_path, monkeypatch):
     """`written`/`skipped` mean model rows; the cache also carries fetched/checked_models/served."""
     server = _proxy_server(tmp_path, {
         "astra": ModelConfig(name="astra", endpoint="codex-proxy", model="gpt-6-astra")})
-    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: {"data": [{"id": "gpt-6-astra"}]})
+    monkeypatch.setattr(catalogs, "get_json", lambda *a, **k: {"data": [{"id": "gpt-6-astra"}]})
     assert limits.refresh(server, force=True)["written"] == 0     # served, but no figures

@@ -20,6 +20,26 @@ from .base import (
 )
 
 
+class GatewayConfig(_Config):
+    """A ROUTING gateway in front of one or more endpoints (an Otari stack): which provider each
+    model name it serves is routed to, so discovery sizes a model by its ROUTE and never by the
+    model's public figure (endpoints/routes.py). Two facts no listing tells the scheduler:
+
+    - `routes_file` — the gateway's own routing config (Otari's `config.yml`, `aliases:` and
+      `providers:`), read at each limits refresh. Otari's alias API needs its MASTER key, which
+      no routine-side credential should hold; the file is the routing as the operator wrote it.
+    - `plans` — for a provider that is a CLIProxyAPI subscription login, the plan GROUPS of
+      CLIProxyAPI's model catalog it signs in with (`cliproxy: [claude, antigravity]`,
+      `chatgpt: [codex-plus]`). A route's window depends on the plan (Codex Plus serves
+      gpt-5.6-luna at 372,000 tokens where the API serves 1,050,000), and nothing on the wire says
+      which plan a login holds — so it is said here, never guessed.
+    """
+
+    name: str = ""  # filled from the `gateways:` mapping key
+    routes_file: BlankableStr = ""
+    plans: dict[str, list[str]] = Field(default_factory=dict)
+
+
 class EndpointConfig(_Config):
     """One configured model transport (see docs/endpoints.md for the setup guide)."""
 
@@ -52,6 +72,10 @@ class EndpointConfig(_Config):
     # providers whose constrained decoding measurably corrupts output (drops declared
     # fields, leaks foreign keys through "strict" mode).
     extra_body: dict = Field(default_factory=dict)
+    # The `gateways:` entry this endpoint reaches models through, or blank. Set, the model ids
+    # here are the gateway's NAMES and are sized by the route each one resolves to
+    # (endpoints/routes.py); blank, by this endpoint's own listing.
+    gateway: BlankableStr = ""
 
     @model_validator(mode="after")
     def _kind_default_key_var(self):
@@ -91,8 +115,8 @@ class ModelConfig(_Config):
     # REJECTED and dropped on a degraded retry, so setting one there costs a wasted round
     # trip per turn rather than failing — leave it blank and steer with the role's effort.
     temperature: float | None = None
-    # Requested OUTPUT token cap per completion, reserved separately from input. None uses
-    # discovered output limits capped for this harness, then the endpoint/default fallback.
+    # Requested OUTPUT token cap per completion, reserved separately from input. None uses the
+    # route's published output maximum (endpoints/limits.py), then the endpoint/default fallback.
     max_tokens: int | None = None
     # Ordered failover chain: catalog model NAMES tried in order when this model fails hard
     # (transport retries exhausted / non-retryable error). TRANSITIVE and breadth-first —

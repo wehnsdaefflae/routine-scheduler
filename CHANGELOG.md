@@ -15,6 +15,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.564.0] — 2026-11-20
+
+### Changed
+- **A model's window and output maximum are its ROUTE's, read from that route's own catalog —
+  never the model's public figure.** Behind the Otari gateway every name is routed by Otari's
+  `aliases:`, and the limits refresh read the OpenRouter REFERENCE catalog for any name whose
+  route published nothing: the model's public window, not the route's. `gpt-5.6-luna` was sized at
+  1,050,000 tokens on the Codex Plus login that serves it at 372,000. Config now names a gateway
+  (`gateways: {otari: {routes_file, plans}}`, and `gateway: otari` on each endpoint behind it);
+  the refresh resolves each name through the gateway's routing file (`endpoints/routes.py`) and
+  reads the route's catalog (`endpoints/routecatalogs.py`): CLIProxyAPI's model catalog
+  (`router-for-me/models`) for the subscription PLAN the config names — the plan is config,
+  never guessed, and two plans disagreeing leave the route unknown — OpenRouter by exact id via
+  `top_provider`, Nano-GPT's detailed listing, the static Claude table for Anthropic's own API.
+  A route that publishes nothing stays UNKNOWN; the reference fallback for limits is gone (the
+  catalog is still the price source), and the static table no longer answers for a proxy's
+  Claude ids, which a subscription may serve on a smaller window. Editing the routing file makes
+  the cache stale at once. Each cache row records its `route`.
+- **The output cap is the route's published maximum** (operator, 2026-11-20: *"not below"*).
+  `ENGINE_OUTPUT_CEILING` (32,000) and the quarter-of-the-window clamp are retired. ONE guard
+  remains: a published figure that is the window restated — OpenRouter's ⌊0.9 × window⌋
+  placeholder (`z-ai/glm-5.3`, `google/gemini-4-argon`: 943,718 on 1,048,576), or the window
+  itself — is not a maximum, since providers validate `input + requested_output <= window`; it is
+  replaced by the figure Nano-GPT's listing and CLIProxyAPI's plans agree on under the shared
+  name, or left unknown (`routecatalogs.is_placeholder`). A row with a window and no published
+  maximum (Ollama, vLLM, the Claude table) claims no output figure, so the model takes the
+  endpoint's `max_tokens`, then the engine default — flagged on its Settings card.
+- Nano-GPT endpoints are read from the documented detailed listing
+  (`/api/v1/models?detailed=true`); OpenRouter's window is its `top_provider`'s
+  (`xiaomi/mimo-v2.6-pro`: 1,048,576 served under a 1,050,000 headline).
+
+### Added
+- `claude-haiku-5` in the static Claude window table (1,000,000) — `claude-haiku-5-5` on
+  Anthropic's own API had no row.
+
 ## [0.563.0] — 2026-11-20
 
 ### Fixed

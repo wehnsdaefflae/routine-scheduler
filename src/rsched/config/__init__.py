@@ -39,7 +39,7 @@ from .decisionconf import (
     DecisionEndpointConfig,
     DecisionModelConfig,
 )
-from .modelconf import EndpointConfig, MachineConfig, ModelConfig, ModelRef
+from .modelconf import EndpointConfig, GatewayConfig, MachineConfig, ModelConfig, ModelRef
 from .routine import RoutineConfig, load_routine
 from .server import ServerConfig, load_server_config
 from .trialconf import TrialConfig
@@ -68,6 +68,7 @@ __all__ = [
     "DecisionModelConfig",
     "EndpointConfig",
     "EndpointKind",
+    "GatewayConfig",
     "HomePath",
     "MachineConfig",
     "ModelConfig",

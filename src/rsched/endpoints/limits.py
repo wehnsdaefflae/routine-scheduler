@@ -1,34 +1,40 @@
-"""What the PROVIDER says this model's limits are — discovered, not hand-entered.
+"""What the ROUTE says a model's limits are — discovered, not hand-entered.
 
-Context capacity and output reservation are token counts end to end. Missing metadata
-falls back to configured defaults; input occupancy is explicitly estimated by compaction.
-How each provider is ASKED is `catalogs`; this module decides what the answers mean and keeps
-them.
+Context capacity and output reservation are token counts end to end. How each catalog is ASKED
+is `catalogs` (an endpoint's own listing) and `routecatalogs` (the catalog of the route a gateway
+sends a name to, `routes`); this module decides what the answers mean and keeps them.
 
-## The two knobs need OPPOSITE treatment
+## The route, never the model
 
-This is the trap in "max out the tokens", and it is worth stating plainly:
+A figure belongs to the ROUTE a call takes, not to the model's name: the Codex Plus login serves
+`gpt-5.6-luna` at 372,000 tokens where the API serves 1,050,000, and the Claude subscription
+serves `claude-sonnet-4-6` at 200,000 where the API serves 1,000,000. So an endpoint behind a
+gateway (`EndpointConfig.gateway`) is sized by the route each name resolves to; any other
+endpoint by its own listing; and the static Claude table answers for Anthropic's own API alone.
+Nothing falls back to the model's PUBLIC figure (the OpenRouter reference catalog did until
+0.564.0): a route that publishes nothing stays UNKNOWN, the model drops to the next tier of
+`resolve`, and the Settings card names the miss.
 
-- **The input window is adopted verbatim.** Pure win — a bigger window is more context.
-- **The output cap is NOT maxed out.** Providers validate `input + requested_output <= window`
-  up front (a provider's oversize 400 says exactly that), and
-  `compaction.window_ceiling_tokens` subtracts `max_tokens` from the input budget for the same
-  reason. Kimi K3's real 943,718-token output limit would collapse the usable prompt to ~10% of
-  its 1M window. So the output cap resolves to the provider's maximum, never above
-  ENGINE_OUTPUT_CEILING — a ceiling on what THIS HARNESS needs for one JSON action plus
-  reasoning, not a stand-in for what the model can do — and never above a quarter of the
-  window (`_output_cap`), because the same arithmetic starves a SMALL window: a flat 32,000 on
-  a 32k model left 768 tokens of prompt. A provider that publishes a window and no maximum gets
-  the cap derived from the window the same way.
+## Both knobs at the route's maximum (operator, 2026-11-20)
+
+The window is adopted verbatim, and so is the output maximum the route PUBLISHES — "not below".
+`compaction.window_ceiling_tokens` subtracts the output reservation from the input budget, so a
+large reservation compacts earlier rather than overflowing. One guard remains, because one kind
+of published figure is not a maximum at all: OpenRouter fills `max_completion_tokens` with
+⌊0.9 × window⌋ where it lacks the real one (and a few rows restate the window itself). Asking for
+that leaves the prompt a tenth of the window — providers validate
+`input + requested_output <= window` — so such a figure (`routecatalogs.is_placeholder`) is
+replaced by the real maximum the other catalogs agree on, or left unknown. A row that publishes a
+window and no maximum carries no output figure either: the model takes the endpoint's or the
+engine's default, and the Settings card says so.
 
 ## Precedence, and why config still wins
 
 `per-MODEL config` → `discovered` → `endpoint default` → `engine floor` (the chain
-`EndpointRegistry.resolve` walks). An operator who types a number on a model is sizing DOWN
-deliberately (a cost budget, a slow provider), and `engine/window.py` already promises to honour
-that; discovery must not overrule it. What discovery replaces is the endpoint's value, which was
-only ever a default a model inherits when it says nothing — "a guess on the endpoint" that now
-means "ask the provider".
+`EndpointRegistry.resolve` walks). An operator who types a number on a model is sizing it
+deliberately, and `engine/window.py` already promises to honour that; discovery must not overrule
+it. What discovery replaces is the endpoint's value, which was only ever a default a model
+inherits when it says nothing.
 
 ## Derived state, never config
 
@@ -45,33 +51,24 @@ import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from ..paths import atomic_write_json, read_json
-from . import catalogs, prices
+from ..paths import atomic_write_json, expand, read_json
+from . import catalogs, prices, routecatalogs, routes
 
 log = logging.getLogger("rsched.limits")
 
 LIMITS_FILE = Path(".control") / "model-limits.json"
 #: How long a discovered figure is trusted before the daemon re-asks. Provider windows change on
-#: the order of model releases, not hours.
+#: the order of model releases, not hours. A gateway's routing file edited since the last refresh
+#: makes the cache stale at once (`_routes_changed`).
 TTL = timedelta(hours=24)
-#: The most output tokens this harness ever needs in one completion: one JSON action, plus room
-#: for a reasoning model to think and for an `llm` tool-call's answer. Deliberately NOT the
-#: provider maximum — see the module docstring. 16k truncated `effort: max` turns; 32k has not.
-ENGINE_OUTPUT_CEILING = 32_000
-#: The output reservation never takes more than 1/OUTPUT_WINDOW_DIVISOR of the window, so the
-#: prompt always keeps three quarters of it — above the uncached compaction gate (0.6) and just
-#: under the cached one (0.8), so a small model compacts a little earlier instead of never
-#: fitting. From a 128,000-token window up, ENGINE_OUTPUT_CEILING is the smaller of the two.
-OUTPUT_WINDOW_DIVISOR = 4
 
-#: Claude WINDOWS for the ids no configured provider publishes figures FOR — a subscription
-#: proxy whose `/v1/models` carries `{id, object, created, owned_by}` and nothing else, which is
-#: every anthropic-kind endpoint here. (Anthropic's OWN listing has published
-#: `max_input_tokens`/`max_tokens` since 2026-03; read it the day a direct endpoint is
-#: configured.) A static table is a guess with a longer half-life than the guess it replaces, so
-#: it is kept HERE beside the refresh that reads it and its staleness is visible in Settings as
-#: `source: table` rather than passing for a measurement. It carries no output maxima: a row
-#: from it gets the cap derived from its window, like any provider that publishes none.
+#: Claude WINDOWS on ANTHROPIC'S OWN API — a direct `kind: anthropic` endpoint, or a gateway's
+#: `anthropic` route — whose listing (`max_input_tokens`/`max_tokens` since 2026-03) needs a key
+#: only the gateway holds. Never a proxy's figure: a subscription route may serve the same id on a
+#: smaller window (CLIProxyAPI's `claude` plan: `claude-sonnet-4-6` at 200,000). A static table is
+#: a guess with a longer half-life than the guess it replaces, so it is kept HERE beside the
+#: refresh that reads it and its staleness is visible in Settings as `source: table`. It carries
+#: no output maxima, so a row from it has none.
 STATIC_WINDOWS: dict[str, int] = {
     # https://platform.claude.com/docs/en/about-claude/models/overview and the model
     # deprecations page (2026-10-01). A key matches every id that STARTS with it — a dated
@@ -83,6 +80,7 @@ STATIC_WINDOWS: dict[str, int] = {
     "claude-opus-4-8": 1_000_000, "claude-opus-5": 1_000_000,
     "claude-sonnet-4-6": 1_000_000, "claude-sonnet-5": 1_000_000,
     "claude-fable-5": 1_000_000, "claude-mythos-5": 1_000_000,
+    "claude-haiku-5": 1_000_000,
     "claude-opus-4-5": 200_000, "claude-sonnet-4-5": 200_000, "claude-haiku-4-5": 200_000,
 }
 
@@ -143,57 +141,87 @@ def _static_window(model_id: str) -> int | None:
     return None
 
 
-def _output_cap(window: int, published: int | None) -> int:
-    """The output cap a discovered row resolves to: the provider's published maximum (or, when
-    it publishes none, the engine's ceiling), never above ENGINE_OUTPUT_CEILING and never above
-    a quarter of the window — see the module docstring and OUTPUT_WINDOW_DIVISOR.
+def _figures(table: dict, mid: str, provider: str, route: routes.Route | None,
+             sources: routecatalogs.Sources) -> tuple[routecatalogs.Figures | None, str]:
+    """`(figures, source)` for one model: the route's catalog behind a gateway, else what the
+    endpoint's own provider published, else — on Anthropic's own API alone — the static table.
     """
-    return min(published or ENGINE_OUTPUT_CEILING, ENGINE_OUTPUT_CEILING,
-               window // OUTPUT_WINDOW_DIVISOR)
-
-
-#: The providers whose silence is worth answering from the reference catalog: a gateway or
-#: subscription proxy that lists ids and no figures, and the Anthropic wire (`table`). OpenRouter,
-#: Nano-GPT and Ollama publish their own figures, which are the authority wherever they exist.
-REFERENCE_FOR = frozenset({"openai", "table"})
-
-
-class _Reference:
-    """The reference catalog, read at most ONCE per refresh: the limits of any model whose own
-    provider publishes none, and every model's PRICE (`prices.refresh`), come from one listing.
-    """
-
-    def __init__(self) -> None:
-        self._body: dict | None = None
-        self._table: dict | None = None
-
-    def body(self) -> dict | None:
-        if self._body is None:
-            self._body = catalogs.fetch_reference() or {}
-        return self._body
-
-    def get(self, model_id: str) -> tuple[int, int | None] | None:
-        if self._table is None:
-            self._table = catalogs.reference_table(self.body())
-        return self._table.get(catalogs.reference_name(model_id))
-
-
-def _figures(table: dict, mid: str, provider: str,
-             reference: _Reference) -> tuple[tuple[int, int | None] | None, str | None]:
-    """`(figures, source)` for one model, most authoritative first: what its own provider
-    published; the static Claude table; then the reference catalog under the name vendors share
-    (`source: reference` — a figure for the MODEL, read for a route that publishes none).
-    """
+    if route is not None:
+        return sources.route(route), ("table" if route.catalog == "anthropic" else route.catalog)
     if hit := table.get(mid):
         return hit, provider
-    if (static := _static_window(mid)) is not None:
+    if provider == "table" and (static := _static_window(mid)) is not None:
         return (static, None), "table"
-    if provider in REFERENCE_FOR and (hit := reference.get(mid)):
-        return hit, "reference"
-    return None, None
+    return None, provider
+
+
+def _row(figures: routecatalogs.Figures, name: str, source: str, route: routes.Route | None,
+         sources: routecatalogs.Sources, now: datetime) -> dict:
+    """One cache row. The output figure is the route's published maximum, except a placeholder
+    (`routecatalogs.is_placeholder`), which is replaced by a real one or left unknown.
+    """
+    ctx, published = figures
+    out = sources.output_for(name) if routecatalogs.is_placeholder(figures) else published
+    return {"context_tokens": ctx, "max_output_tokens": out,
+            "provider_max_output_tokens": published, "source": source,
+            "route": route.label() if route is not None else None, "fetched": now.isoformat()}
 
 
 # ------------------------------------------------------------------------------- the refresh ----
+
+class _Refresh:
+    """One refresh's working state: the catalogs read so far, each gateway's routing document,
+    and the cache being written.
+    """
+
+    def __init__(self, server, cache: dict, now: datetime) -> None:
+        self.server, self.cache, self.now = server, cache, now
+        self.sources = routecatalogs.Sources(anthropic=_static_window)
+        self.docs: dict[str, dict | None] = {}
+        self.out: dict = {"fetched": now.isoformat(), "checked_models": [
+            _key(mc.endpoint, mc.model) for mc in server.models.values()]}
+        self.misses: list[str] = []
+        cached_served = cache.get(SERVED_KEY)
+        self.prev_served: dict = cached_served if isinstance(cached_served, dict) else {}
+        self.served_out: dict[str, list[str]] = {}
+
+    def _gateway(self, ep):
+        """The endpoint's gateway and its routing document, or `(None, None)` without one."""
+        gateway = (self.server.gateways or {}).get(ep.gateway) if ep.gateway else None
+        if gateway is None:
+            return None, None
+        if gateway.name not in self.docs:
+            self.docs[gateway.name] = routes.load(gateway)
+        return gateway, self.docs[gateway.name]
+
+    def endpoint(self, ep_name: str, ep, model_ids: list[str]) -> None:
+        provider = catalogs.provider_of(ep)
+        try:
+            table, served = catalogs.read(provider, ep, model_ids)
+        except Exception as exc:
+            log.warning("limits: %s discovery failed: %s", ep_name, exc)
+            table, served = {}, None
+        # An UNANSWERED listing keeps the previous set: a provider that was down for one
+        # refresh must never turn into "this endpoint does not serve your models".
+        if served:
+            self.served_out[ep_name] = sorted(served)
+        elif kept := self.prev_served.get(ep_name):
+            self.served_out[ep_name] = kept
+        gateway, doc = self._gateway(ep)
+        for mid in model_ids:
+            route = routes.resolve(gateway, doc, mid) if doc is not None else None
+            hit, source = None, provider
+            if gateway is None or route is not None:
+                hit, source = _figures(table, mid, provider, route, self.sources)
+            if hit is None:
+                self.misses.append(f"{ep_name}/{mid}")
+                # keep whatever we knew before rather than forgetting it on one bad fetch
+                if prev := self.cache.get(_key(ep_name, mid)):
+                    self.out[_key(ep_name, mid)] = prev
+                continue
+            name = route.catalog_id() if route is not None else mid
+            self.out[_key(ep_name, mid)] = _row(hit, name, source, route, self.sources, self.now)
+
 
 def refresh(server, *, force: bool = False) -> dict:
     """Re-ask every configured provider and rewrite the cache. Returns `{written, skipped,
@@ -205,69 +233,35 @@ def refresh(server, *, force: bool = False) -> dict:
     """
     home = server.routines_home
     cache = load(home)
-    now = datetime.now(UTC)
     if not force and not stale(server):
         return {"written": 0, "skipped": len(_rows(cache)), "misses": []}
 
     by_endpoint: dict[str, list[str]] = {}
     for mc in server.models.values():
         by_endpoint.setdefault(mc.endpoint, []).append(mc.model)
-
-    out: dict = {"fetched": now.isoformat(),
-                 "checked_models": [_key(mc.endpoint, mc.model) for mc in server.models.values()]}
-    misses: list[str] = []
-    reference = _Reference()
-    cached_served = cache.get(SERVED_KEY)
-    prev_served: dict = cached_served if isinstance(cached_served, dict) else {}
-    served_out: dict[str, list[str]] = {}
+    run = _Refresh(server, cache, datetime.now(UTC))
     for ep_name, model_ids in sorted(by_endpoint.items()):
-        ep = server.endpoints.get(ep_name)
-        if ep is None:
-            continue
-        provider = catalogs.provider_of(ep)
-        try:
-            table, served = catalogs.read(provider, ep, model_ids)
-        except Exception as exc:
-            log.warning("limits: %s discovery failed: %s", ep_name, exc)
-            table, served = {}, None
-        # An UNANSWERED listing keeps the previous set: a provider that was down for one
-        # refresh must never turn into "this endpoint does not serve your models".
-        if served:
-            served_out[ep_name] = sorted(served)
-        elif kept := prev_served.get(ep_name):
-            served_out[ep_name] = kept
-        for mid in model_ids:
-            hit, provider_used = _figures(table, mid, provider, reference)
-            if hit is None:
-                misses.append(f"{ep_name}/{mid}")
-                # keep whatever we knew before rather than forgetting it on one bad fetch
-                if prev := cache.get(_key(ep_name, mid)):
-                    out[_key(ep_name, mid)] = prev
-                continue
-            ctx, max_out = hit
-            out[_key(ep_name, mid)] = {
-                "context_tokens": ctx,
-                "max_output_tokens": _output_cap(ctx, max_out),
-                "provider_max_output_tokens": max_out,
-                "source": provider_used, "fetched": now.isoformat()}
-    if served_out:
-        out[SERVED_KEY] = served_out
+        if (ep := server.endpoints.get(ep_name)) is not None:
+            run.endpoint(ep_name, ep, model_ids)
+    out = run.out
+    if run.served_out:
+        out[SERVED_KEY] = run.served_out
     try:   # the prices ride the same daily read of the same catalog (endpoints/prices.py)
-        prices.refresh(server, reference.body())
+        prices.refresh(server, run.sources.openrouter_body())
     except Exception as exc:
         log.warning("limits: price refresh failed: %s", exc)
     cache_path(home).parent.mkdir(parents=True, exist_ok=True)
     atomic_write_json(cache_path(home), out)
-    written = len(_rows(out))
-    if misses:
-        log.info("limits: %d model(s) not listed by their provider: %s",
-                 len(misses), ", ".join(misses))
-    return {"written": written, "skipped": 0, "misses": misses}
+    if run.misses:
+        log.info("limits: %d model(s) without route figures: %s",
+                 len(run.misses), ", ".join(run.misses))
+    return {"written": len(_rows(out)), "skipped": 0, "misses": run.misses}
 
 
 def stale(server) -> bool:
-    """Is the cache older than the TTL (or absent), or has a configured model never been
-    priced (`prices.missing`)? The daemon's tick check, and `refresh`'s own.
+    """Is the cache older than the TTL (or absent), has a configured model never been priced
+    (`prices.missing`), or has a gateway's routing changed since? The daemon's tick check, and
+    `refresh`'s own.
     """
     cache = load(server.routines_home)
     if _missing_models(server, cache) or prices.missing(server):
@@ -276,9 +270,24 @@ def stale(server) -> bool:
     if not fetched:
         return True
     try:
-        return datetime.fromisoformat(str(fetched)) + TTL <= datetime.now(UTC)
+        at = datetime.fromisoformat(str(fetched))
     except ValueError:
         return True
+    return at + TTL <= datetime.now(UTC) or _routes_changed(server, at)
+
+
+def _routes_changed(server, since: datetime) -> bool:
+    """A gateway routing file modified after `since`: an alias moved to another route, whose
+    window is another one — so the next tick re-reads rather than serving the old route for a day.
+    """
+    for gateway in (server.gateways or {}).values():
+        try:
+            mtime = expand(gateway.routes_file).stat().st_mtime if gateway.routes_file else 0.0
+        except OSError:
+            continue
+        if mtime and datetime.fromtimestamp(mtime, UTC) > since:
+            return True
+    return False
 
 
 def _missing_models(server, cache: dict) -> bool:

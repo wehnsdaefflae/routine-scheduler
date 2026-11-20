@@ -20,20 +20,29 @@ All four live in `config.yaml` (Settings → Endpoints) and reach the gateway on
 bridge address, `172.17.0.1`, which every container of this project can route to:
 
 ```yaml
+gateways:
+  otari:                       # where each name is routed — sizes every model by its ROUTE
+    routes_file: /srv/llm-interfaces/config.yml
+    plans:                     # the CLIProxyAPI logins, by their catalog plan groups
+      cliproxy: [claude, antigravity]
+      chatgpt: [codex-plus]
 endpoints:
   otari:                       # the Messages wire: Claude ids, and any model Otari routes there
     kind: anthropic
     base_url: http://172.17.0.1:4000/api
     key_var: OTARI_API_KEY
+    gateway: otari
   otari-openai:                # the chat-completions wire, for the models validated on it
     kind: openai
     base_url: http://172.17.0.1:4000/api/v1
     key_var: OTARI_API_KEY
+    gateway: otari
   otari-openai-plain:          # the same, for a model that refuses response_format outright
     kind: openai
     base_url: http://172.17.0.1:4000/api/v1
     key_var: OTARI_API_KEY
     schema_mode: none
+    gateway: otari
   cliproxy-mgmt:               # NO models: the subscription logins' management surface
     kind: anthropic
     base_url: http://172.17.0.1:8318
@@ -43,6 +52,15 @@ endpoints:
 
 Put `OTARI_API_KEY` and `CLIPROXY_MANAGEMENT_KEY` in Settings → Secrets. The management key
 never reaches a routine: it is resolved on the server for the management routes alone.
+
+`gateways:` is how the limits refresh sizes each model by the ROUTE its name takes rather than by
+the model's public figure ([endpoints](endpoints.md#windows-and-output-caps-are-discovered--leave-them-blank)).
+`routes_file` is Otari's own `config.yml` — the rsched container reaches it through its `/srv`
+bind — read for its `aliases:` and `providers:`; Otari's alias API would need its master key.
+`plans` names the CLIProxyAPI catalog plan groups each subscription login holds, which no
+listing says: the Claude and Antigravity logins behind `cliproxy`, the ChatGPT Plus (Codex)
+login behind `chatgpt`. A plan change on the proxy side is an edit here. These two blocks are
+edited in `config.yaml` by hand; the Settings endpoint form keeps an endpoint's `gateway:`.
 
 **Model ids are the gateway's NORMALISED names** — `claude-opus-5`, `claude-sonnet-5`,
 `claude-haiku-4-5`, `gemini-4-argon`, `gpt-5.6-luna`, `claude-opus-5-metered`,
@@ -90,9 +108,11 @@ subscription route's cost budget read ([run analytics](run-analytics.md#what-a-r
 subscription and pay-per-use, the gateway names the paid route `<name>-metered`
 (`claude-opus-5-metered`, served by OpenRouter's `anthropic/claude-opus-5`). The scheduler reads a
 trailing `-metered` as that suffix and nothing else (`catalogs.reference_name`), so the id looks
-up `<name>`'s list price and context window in the reference catalog — the fallback for a call
-whose bill was not reported, and the window the run is sized by. Only the suffix counts: an id
-with `metered` elsewhere in it is its own name.
+up `<name>`'s list price in the reference catalog — the fallback for a call whose bill was not
+reported. Only the suffix counts: an id with `metered` elsewhere in it is its own name. Its
+WINDOW is its route's like any other name's: `claude-opus-5-metered` is read from OpenRouter's
+`anthropic/claude-opus-5` row, `claude-opus-5-5-metered` (Anthropic's own API) from the built-in
+Claude table.
 
 ## Signing in, signing back in, and removing a login
 

@@ -1,10 +1,13 @@
 """What each provider's CATALOG says about its models — the per-provider readers behind
 `limits.refresh`.
 
-Four dialects, one answer shape (`Listing`): OpenRouter's public `/models`, Nano-GPT's own
-`/api/models`, Ollama's per-model `/api/show`, and the OpenAI-shaped `/models` every other
-gateway serves (vLLM adds `max_model_len`; a subscription proxy lists ids and nothing else). A
-direct Anthropic endpoint is read from nothing: `limits.STATIC_WINDOWS` answers for it. Every
+Four dialects, one answer shape (`Listing`): OpenRouter's public `/models` (sized by its
+`top_provider`), Nano-GPT's detailed listing (`/api/v1/models?detailed=true`), Ollama's per-model
+`/api/show`, and the OpenAI-shaped `/models` every other gateway serves (vLLM adds
+`max_model_len`; a subscription proxy lists ids and nothing else). A direct Anthropic endpoint is
+read from nothing: `limits.STATIC_WINDOWS` answers for it. A GATEWAY endpoint's figures come from
+the route each name takes instead (`routes`, `routecatalogs`); its own listing still says which
+ids it serves. Every
 reader is opportunistic — a provider that is down, refuses, or answers in a shape it does not
 know reads as UNANSWERED, never as an error and never as "does not serve this model". What the
 answers MEAN (the output-cap policy, the precedence chain, the cache) is `limits`' business.
@@ -40,8 +43,8 @@ def provider_of(ep) -> str:
     The KIND is not that signal. An `anthropic` endpoint is Anthropic's own API only when it
     points at Anthropic's host; a subscription proxy speaks the same wire and serves whatever
     its upstreams do — OpenAI ids included — so it is sniffed like any other gateway and its
-    `/models` route is read for whatever it carries. Claude ids are unaffected either way:
-    the static table is a fallback on a miss, not a property of the provider.
+    `/models` route is read for whatever it carries. The static Claude table answers for
+    Anthropic's own API alone: a proxy serving a Claude id may serve it on a smaller window.
     """
     base = (ep.base_url or "").lower()
     if ep.kind == "anthropic" and ("api.anthropic.com" in base or not base):
@@ -99,7 +102,7 @@ def listed_ids(body: dict) -> set[str] | None:
     return {str(r["id"]) for r in data if isinstance(r, dict) and r.get("id")}
 
 
-def _get(url: str, headers: dict | None = None) -> dict | None:
+def get_json(url: str, headers: dict | None = None) -> dict | None:
     try:
         resp = httpx.get(url, headers=headers or {},
                          timeout=httpx.Timeout(_TIMEOUT, connect=CONNECT_TIMEOUT))
@@ -116,30 +119,39 @@ def _get(url: str, headers: dict | None = None) -> dict | None:
     return body if isinstance(body, dict) else None
 
 
-def _openrouter(ep) -> Listing:
-    """`GET {base_url}/models` → `context_length` + `top_provider.max_completion_tokens`.
-    Public, needs no key. Ids are exact: `:free`, `:thinking` and `~`-prefixed variants are
-    distinct entries, so a catalog id that is absent is a STALE CATALOG ENTRY, not a miss.
+def _positive(value: object) -> int | None:
+    return int(value) if isinstance(value, int | float) and value > 0 else None
+
+
+def openrouter_figures(row: dict) -> tuple[int, int | None] | None:
+    """One OpenRouter row's ROUTE figures: `top_provider`'s window and output maximum — the
+    provider OpenRouter actually routes to, whose window can sit below the row's headline
+    (`xiaomi/mimo-v2.6-pro`: 1,050,000 headline, 1,048,576 served) — and the row's own window
+    only where the top provider states none.
     """
-    body = _get(models_url(ep))
+    top = row.get("top_provider")
+    top = top if isinstance(top, dict) else {}
+    ctx = _positive(top.get("context_length")) or _positive(row.get("context_length"))
+    return (ctx, _positive(top.get("max_completion_tokens"))) if ctx else None
+
+
+def _openrouter(ep) -> Listing:
+    """`GET {base_url}/models` → `openrouter_figures` per row. Public, needs no key. Ids are
+    exact: `:free`, `:thinking` and `~`-prefixed variants are distinct entries, so a catalog id
+    that is absent is a STALE CATALOG ENTRY, not a miss.
+    """
+    body = get_json(models_url(ep))
     if body is None:
         return {}, None
     out: dict[str, tuple[int, int | None]] = {}
     for row in body.get("data") or []:
-        if not isinstance(row, dict) or not row.get("id"):
-            continue
-        ctx = row.get("context_length")
-        if not (isinstance(ctx, int | float) and ctx > 0):
-            continue
-        top = row.get("top_provider")
-        mx = top.get("max_completion_tokens") if isinstance(top, dict) else None
-        out[str(row["id"])] = (int(ctx),
-                               int(mx) if isinstance(mx, int | float) and mx else None)
+        if isinstance(row, dict) and row.get("id") and (fig := openrouter_figures(row)):
+            out[str(row["id"])] = fig
     return out, listed_ids(body)
 
 
-#: The public catalog a model is read against when its OWN provider publishes no figures — see
-#: `reference_table`. OpenRouter's listing needs no key and carries every major vendor's model.
+#: OpenRouter's public listing: the PRICE source for every model (`prices.refresh`) and the
+#: catalog of an OpenRouter ROUTE behind a gateway (`routecatalogs`). Needs no key.
 REFERENCE_URL = "https://openrouter.ai/api/v1/models"
 #: A trailing thinking-level on an id (`gemini-4-argon-high`, `gpt-oss-120b-medium`): a subscription
 #: route serves one model as several ids that differ only in the level baked into them, and the
@@ -164,53 +176,40 @@ def reference_name(model_id: str) -> str:
 
 def fetch_reference() -> dict | None:
     """The public reference catalog's whole listing, or None when it is unreachable. Two readers
-    take different columns from it: `reference_table` the limits, `prices.refresh` the prices.
+    take different columns from it: `routecatalogs` an OpenRouter route's limits, `prices.refresh`
+    the prices.
     """
-    return _get(REFERENCE_URL)
+    return get_json(REFERENCE_URL)
 
 
-def reference_table(body: dict | None = None) -> dict[str, tuple[int, int | None]]:
-    """`{reference_name: (context, max output)}` from the public reference catalog, or `{}` when
-    it is unreachable. PRIMARY rows only (a `:variant` row is another offer of the model, often
-    with another output limit), and where two vendors share a name the SMALLER window wins — a
-    wrong guess upward overfills the model, one downward only compacts earlier.
+NANOGPT_ORIGIN = "https://nano-gpt.com"
+
+
+def nanogpt_detailed(origin: str = NANOGPT_ORIGIN) -> Listing:
+    """Nano-GPT's detailed listing (`/api/v1/models?detailed=true` — public, no key): the
+    OpenAI-shaped route plus `context_length`/`max_output_tokens` per row. The plain route
+    carries no figures, which is why the detailed one is asked.
     """
-    body = fetch_reference() if body is None else body
+    body = get_json(f"{origin}/api/v1/models?detailed=true")
+    if body is None or not isinstance(body.get("data"), list):
+        return {}, None
     out: dict[str, tuple[int, int | None]] = {}
-    for row in (body or {}).get("data") or []:
-        if not isinstance(row, dict) or ":" in str(row.get("id", ":")):
-            continue
-        ctx = row.get("context_length")
-        if not (isinstance(ctx, int | float) and ctx > 0):
-            continue
-        top = row.get("top_provider")
-        mx = top.get("max_completion_tokens") if isinstance(top, dict) else None
-        figures = (int(ctx), int(mx) if isinstance(mx, int | float) and mx else None)
-        key = reference_name(str(row["id"]))
-        if key not in out or figures[0] < out[key][0]:
-            out[key] = figures
-    return out
+    for row in body["data"]:
+        ctx = _positive(row.get("context_length")) if isinstance(row, dict) else None
+        if ctx and row.get("id"):
+            out[str(row["id"])] = (ctx, _positive(row.get("max_output_tokens")))
+    return out, listed_ids(body)
 
 
 def _nanogpt(ep) -> Listing:
-    """Nano-GPT publishes limits only on its OWN route — the OpenAI-compatible `/api/v1/models`
-    carries none. Not a documented stable contract, so a shape change degrades to the floor.
-    """
-    text = nanogpt_models(ep)
-    out: dict[str, tuple[int, int | None]] = {}
-    for mid, row in text.items():
-        ctx = row.get("maxInputTokens")
-        if isinstance(ctx, int | float) and ctx > 0:
-            mx = row.get("maxOutputTokens")
-            out[mid] = (int(ctx), int(mx) if isinstance(mx, int | float) and mx else None)
-    return out, (set(text) if text else None)
+    return nanogpt_detailed(_origin(ep.base_url or NANOGPT_ORIGIN))
 
 
 def nanogpt_models(ep) -> dict[str, dict]:
-    """Nano-GPT's own `/api/models` text-model rows by id (limits AND prices), or {} when it did
-    not answer in the shape it publishes.
+    """Nano-GPT's own `/api/models` text-model rows by id — its PRICES (`prices.refresh`), or {}
+    when it did not answer in the shape it publishes.
     """
-    body = _get(f"{_origin(ep.base_url or 'https://nano-gpt.com')}/api/models")
+    body = get_json(f"{_origin(ep.base_url or NANOGPT_ORIGIN)}/api/models")
     models = body.get("models") if isinstance(body, dict) else None
     text = models.get("text") if isinstance(models, dict) else None
     return {str(k): v for k, v in text.items() if isinstance(v, dict)} \
@@ -227,7 +226,7 @@ def _openai_generic(ep) -> Listing:
                               key_env_file=ep.key_env_file, required=False)
     except Exception:
         key = ""
-    body = _get(models_url(ep), {"Authorization": f"Bearer {key}"} if key else None)
+    body = get_json(models_url(ep), {"Authorization": f"Bearer {key}"} if key else None)
     if body is None:
         return {}, None
     out: dict[str, tuple[int, int | None]] = {}

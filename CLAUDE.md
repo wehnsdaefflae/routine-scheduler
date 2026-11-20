@@ -1339,25 +1339,26 @@ by a test, by the engine, or by a past incident.
   endpoint with no proxy binding is skipped: its light probe is the credits read, still inline in
   `web/settings/endpoint_probe.py`. Before this, one expiring claude-proxy token (2026-09-14
   06:18) failed eight routines at turn 0 within two minutes and nothing detected it.
-- **A model's limits are DISCOVERED, not configured.** `endpoints/limits.py` asks each provider
-  what its models' real context window and output maximum are (OpenRouter/Nano-GPT/Ollama have
-  metadata APIs; a listing that carries NO figures — a gateway or subscription proxy whose
-  `/v1/models` is ids only — falls back to a built-in Claude table,
-  then to OpenRouter's public catalog under the name vendors share: `source: reference`),
-  caches it under
-  `<routines>/.control/model-limits.json` — derived state, never config — and refreshes on a 24h
-  TTL from the scheduler tick (new model keys refresh immediately). Context windows use
-  `context_tokens` throughout; compaction occupancy is explicitly estimated in tokens, with
-  output and action-schema space reserved separately. ONE precedence chain: per-MODEL config → provider → endpoint
-  default → floor. The endpoint value sits BELOW the provider because it has always been
-  documented as a default a model inherits, and putting it there means nothing has to be deleted
-  from an unversioned config.yaml. `resolve()` is on the per-turn path and NEVER fetches — a miss
-  is the next tier down. The two knobs are OPPOSITE: the input window is adopted verbatim, the
-  output cap is `min(provider max, ENGINE_OUTPUT_CEILING, window // 4)` (`limits._output_cap`; a
-  provider that publishes no maximum gets the ceiling), because providers validate
-  `input + requested_output <= window` and a 943k-token output limit — or a flat 32k on a 32k
-  window — would starve the prompt. The per-provider catalog readers live in
-  `endpoints/catalogs.py`; `limits.py` keeps the policy and the cache.
+- **A model's limits are DISCOVERED, not configured — and they are the ROUTE's.**
+  `endpoints/limits.py` asks what each model's real context window and output maximum are and
+  caches it under `<routines>/.control/model-limits.json` — derived state, never config —
+  refreshing on a 24h TTL from the scheduler tick (new model keys, or an edited gateway routing
+  file, refresh immediately). A figure belongs to the ROUTE a call takes, never to the model's
+  name: an endpoint behind a gateway (`gateway:` → `gateways:` in config.yaml) resolves each name
+  through Otari's own `config.yml` aliases (`endpoints/routes.py`) and reads that route's catalog
+  (`endpoints/routecatalogs.py`) — CLIProxyAPI's catalog for the subscription PLAN the config
+  names (`plans:`, never guessed: Codex Plus serves gpt-5.6-luna at 372,000, the API 1,050,000),
+  OpenRouter by exact id via `top_provider`, Nano-GPT's detailed listing, the static Claude table
+  for Anthropic's own API alone. Any other endpoint is read from its own listing. Nothing falls
+  back to the model's PUBLIC figure (the reference catalog did until 0.564.0): unknown stays
+  unknown, and the Settings card names the miss. ONE precedence chain: per-MODEL config →
+  discovered → endpoint default → floor; `resolve()` is on the per-turn path and NEVER fetches.
+  BOTH knobs are the route's published maximum (operator, 2026-11-20: "not below" — this reversed
+  the old 32,000 / quarter-window output clamp), with ONE guard: a published output figure that is
+  the window restated (OpenRouter's ⌊0.9 × window⌋ placeholder, or the window itself;
+  `routecatalogs.is_placeholder`) is not a maximum — providers validate
+  `input + requested_output <= window` — and is replaced by the figure the other catalogs agree on,
+  or left unknown. A row with a window and no published maximum claims no output figure.
   **And a window the RUN was told must stay true.** The `CAPABILITIES` line states
   `context window ≈ N tokens` once, at boot, from the BOUND model's figure, and the run plans
   every read against it — while the fallback chain's fit test is a preference, not a veto

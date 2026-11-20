@@ -11,7 +11,7 @@ from pydantic import Field
 from ..paths import config_file, expand, read_yaml
 from .base import EFFORT_LEVELS, BlankableStr, HomePath, _Config, _validate_lenient
 from .decisionconf import DecisionEndpointConfig, DecisionModelConfig, decision_problems
-from .modelconf import EndpointConfig, MachineConfig, ModelConfig
+from .modelconf import EndpointConfig, GatewayConfig, MachineConfig, ModelConfig
 
 
 class ServerConfig(_Config):
@@ -84,6 +84,9 @@ class ServerConfig(_Config):
     # (declared-only env injection) applies in EVERY mode — it needs no kernel support.
     sandbox: Literal["strict", "permissive", "off"] = "permissive"
     endpoints: dict[str, EndpointConfig] = Field(default_factory=dict)
+    # Routing gateways an endpoint names in its `gateway:` (config/modelconf.GatewayConfig):
+    # where a gateway model name is ROUTED, so its limits are the route's (endpoints/routes.py).
+    gateways: dict[str, GatewayConfig] = Field(default_factory=dict)
     # The model CATALOG: name → a provider model bound to an endpoint, carrying its own
     # multimodality / context window / effort / temperature. Routines, conversations, and
     # the system model all reference an entry by NAME.
@@ -184,7 +187,8 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
     # Surface unknown top-level keys AND unknown per-entry keys as problem lines.
     problems.extend(f"{key}: unknown config.yaml key — check the spelling (ignored)"
                     for key in sorted(set(raw) - set(ServerConfig.model_fields)))
-    for section, cls in (("endpoints", EndpointConfig), ("models", ModelConfig),
+    for section, cls in (("endpoints", EndpointConfig), ("gateways", GatewayConfig),
+                         ("models", ModelConfig),
                          ("machines", MachineConfig),
                          ("decision_endpoints", DecisionEndpointConfig),
                          ("decision_models", DecisionModelConfig)):
@@ -197,8 +201,12 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
 
     cfg = _validate_lenient(ServerConfig, {**raw, "source": path}, problems) \
         or ServerConfig(source=path)
+    for name, gw in cfg.gateways.items():
+        gw.name = name
     for name, ep in cfg.endpoints.items():
         ep.name = name
+        if ep.gateway and ep.gateway not in cfg.gateways:
+            problems.append(f"endpoints.{name}: gateway {ep.gateway!r} is not configured")
     for name, mc in cfg.models.items():
         mc.name = name
         if mc.endpoint not in cfg.endpoints:

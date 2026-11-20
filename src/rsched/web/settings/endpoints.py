@@ -52,7 +52,7 @@ def _endpoint_view(name: str, ep: EndpointConfig, server) -> dict:
             "schema_mode": ep.schema_mode, "tool_choice": ep.tool_choice,
             "context_tokens": ep.context_tokens,
             "temperature": ep.temperature, "max_tokens": ep.max_tokens,
-            "extra_body": ep.extra_body,
+            "extra_body": ep.extra_body, "gateway": ep.gateway,
             "has_inline_key": bool(ep.api_key), "key_source": key_source(ep)}
 
 
@@ -233,7 +233,7 @@ def upsert_endpoint(request: Request, body: EndpointBody, name: str | None = Non
         # every config-only / omitted field so saving a key (or editing base_url) never silently
         # drops one, including a custom key_env_file.
         for field in ("temperature", "extra_body", "max_tokens",
-                      "key_env_file", "tool_choice"):
+                      "key_env_file", "tool_choice", "gateway"):
             if field not in spec and field in prev:
                 spec[field] = prev[field]
         for field in ("base_url", "key_var"):
