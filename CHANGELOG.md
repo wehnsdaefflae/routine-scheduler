@@ -15,6 +15,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.563.0] — 2026-11-20
+
+### Fixed
+- **`rsched postdeploy` no longer FAILs a healthy deploy that is still busy, and says what kind
+  of "no answer" it got.** The 0.562.0 deploy's session ran the command ten seconds after the
+  restart, while reconnecting console tabs held every `/api/*` request for 17-20 s; its one 10 s
+  status read gave up and `served-identity` said "no answer … check you are on the right host"
+  about a daemon that was up, on the right host and serving the right build. The read
+  (`cli_postdeploy._status`) now names why it got nothing — `refused`, `timeout`, `auth`,
+  `server-error`, `bad-url`, `not-status` — and `await_status` asks again every 5 s for up to a
+  minute while the why is one time can change (`timeout`, `refused`, `server-error`), telling a
+  waiting person so on stderr; a refused token or a mistyped url returns at once.
+  `postdeploy.served_identity` words each why as its own next move (`NO_ANSWER`) and names how
+  many attempts it made. The daemon's own post-boot run passes `wait_s=0`, since
+  `daemon/postdeploy_watch` already polls its port. The real HTTP read is now exercised in
+  `tests/test_postdeploy_status.py` against sockets the test opens on 127.0.0.1, which closes the
+  `docs/limits.md` entry that said it was exercised nowhere.
+
 ## [0.562.0] — 2026-11-20
 
 ### Fixed

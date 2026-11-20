@@ -105,18 +105,36 @@ class PathStat:
     uid: int = -1
 
 
-def served_identity(url: str, status: dict | None, source: str) -> Check:
+#: Each way of getting NO status (named by `cli_postdeploy._status`) as the operator's next move —
+#: one sentence for all of them sent a busy daemon's operator to check his host (2026-11-20).
+NO_ANSWER = {
+    "refused": "nothing is listening there — check you are on the right host and that the "
+               "container is up (`docker compose ps`)",
+    "timeout": "it took the connection and sent no status — the daemon is up but busy (`docker "
+               "logs rsched | grep 'slow request'` names what holds it); rerun in a minute",
+    "server-error": "it answered with a server error — `docker logs rsched` has the traceback",
+    "auth": "it refused this config's token — that instance is not this config's",
+    "bad-url": "that is not an http(s) url — pass --url http://host:port",
+    "not-status": "what answered is not an rsched /api/status — a different service is there",
+}
+
+
+def served_identity(url: str, status: dict | None, source: str, why: str = "",
+                    attempts: int = 1) -> Check:
     """WHICH instance answered, and from where the address came.
 
     0.374.0: a deploy script drove the wrong host's Docker daemon and built ~5.2 GB locally. The
     cure is not cleverness, it is printing the address and its provenance before any verdict —
     and refusing to pretend the rest of the checklist means anything when nothing answered.
+    `why` (`NO_ANSWER`'s key) says what kind of nothing, and `attempts` how often it was asked.
     """
     if status is None:
+        tried = f" in {attempts} attempts" if attempts > 1 else ""
+        cause = NO_ANSWER.get(why, "check you are on the right host and that the container is "
+                                   "up (`docker compose ps`)")
         return Check(CHECK_NAMES[0], FAIL,
-                     f"no answer from {url} ({source}) — nothing below is a verdict about the "
-                     "instance you deployed; check you are on the right host and that the "
-                     "container is up (`docker compose ps`)")
+                     f"no answer from {url} ({source}){tried}: {cause} — nothing below is a "
+                     "verdict about the instance you deployed")
     version = str(status.get("version") or "")
     build = str(status.get("build") or "")
     where = f"{url} ({source})"

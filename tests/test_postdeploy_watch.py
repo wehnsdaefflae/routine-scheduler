@@ -41,7 +41,7 @@ def test_a_boot_leaves_a_record_row_with_nobody_typing_anything(tmp_path, monkey
     """The whole item: before this, the only writer of that file was a human at a terminal."""
     server = tmp_server(tmp_path)
     monkeypatch.setattr(cli_postdeploy, "run_checks",
-                        lambda srv, url, source: (_checks(), dict(STATUS)))
+                        lambda srv, url, source, **_: (_checks(), dict(STATUS)))
 
     checks = postdeploy_watch.run_now(server)
 
@@ -58,7 +58,7 @@ def test_the_row_is_the_shape_the_typed_command_writes(tmp_path, monkeypatch):
     """
     server = tmp_server(tmp_path)
     monkeypatch.setattr(cli_postdeploy, "run_checks",
-                        lambda srv, url, source: (_checks(), dict(STATUS)))
+                        lambda srv, url, source, **_: (_checks(), dict(STATUS)))
 
     postdeploy_watch.run_now(server)
 
@@ -74,8 +74,8 @@ def test_the_checks_are_the_commands_own_and_not_reimplemented(tmp_path, monkeyp
     server = tmp_server(tmp_path)
     seen = {}
 
-    def spy(srv, url, source):
-        seen.update(url=url, source=source)
+    def spy(srv, url, source, **kw):
+        seen.update(url=url, source=source, **kw)
         return _checks(), dict(STATUS)
 
     monkeypatch.setattr(cli_postdeploy, "run_checks", spy)
@@ -84,6 +84,7 @@ def test_the_checks_are_the_commands_own_and_not_reimplemented(tmp_path, monkeyp
 
     assert seen["url"] == f"http://127.0.0.1:{server.port}"
     assert seen["source"] == "daemon boot", "the row says which question it answers"
+    assert seen["wait_s"] == 0, "the watcher polls on its own schedule; no second retry inside"
 
 
 def test_it_waits_for_its_own_port_instead_of_recording_its_own_boot(tmp_path, monkeypatch):
@@ -96,7 +97,7 @@ def test_it_waits_for_its_own_port_instead_of_recording_its_own_boot(tmp_path, m
     answers = [(_checks(FAIL), None), (_checks(FAIL), None), (_checks(), dict(STATUS))]
     calls = []
 
-    def answering(srv, url, source):
+    def answering(srv, url, source, **_):
         calls.append(url)
         return answers[len(calls) - 1]
 
@@ -120,7 +121,8 @@ def test_a_port_that_never_answers_is_recorded_rather_than_retried_forever(tmp_p
     server = tmp_server(tmp_path)
     monkeypatch.setattr(postdeploy_watch, "RETRY_S", 0.0)
     monkeypatch.setattr(cli_postdeploy, "run_checks",
-                        lambda srv, url, source: ([postdeploy.served_identity(url, None, source),
+                        lambda srv, url, source, **_: ([postdeploy.served_identity(url, None,
+                                                                                   source),
                                                    *_checks()[1:]], None))
 
     postdeploy_watch.run_now(server)
@@ -139,7 +141,7 @@ def test_a_failed_check_reaches_a_surface_the_console_reads(tmp_path, monkeypatc
                Check(postdeploy.CHECK_NAMES[1], FAIL, "the daemon serves 0.1.0, checkout 0.2.0"),
                *_checks()[2:]]
     monkeypatch.setattr(cli_postdeploy, "run_checks",
-                        lambda srv, url, source: (failing, dict(STATUS)))
+                        lambda srv, url, source, **_: (failing, dict(STATUS)))
 
     postdeploy_watch.run_now(server)
 
@@ -155,7 +157,7 @@ def test_a_clean_checklist_files_no_event(tmp_path, monkeypatch):
     """
     server = tmp_server(tmp_path)
     monkeypatch.setattr(cli_postdeploy, "run_checks",
-                        lambda srv, url, source: (_checks(), dict(STATUS)))
+                        lambda srv, url, source, **_: (_checks(), dict(STATUS)))
 
     postdeploy_watch.run_now(server)
 
@@ -180,7 +182,7 @@ def test_a_record_that_cannot_be_written_does_not_take_the_instance_down(tmp_pat
     """
     server = tmp_server(tmp_path)
     monkeypatch.setattr(cli_postdeploy, "run_checks",
-                        lambda srv, url, source: (_checks(), dict(STATUS)))
+                        lambda srv, url, source, **_: (_checks(), dict(STATUS)))
     monkeypatch.setattr(postdeploy_watch, "append_jsonl",
                         lambda path, row: (_ for _ in ()).throw(OSError("read-only fs")))
 

@@ -2487,7 +2487,13 @@ install gets the revision from the seed sync itself.)
   state-path ownership against the uid that owns `routines_home`, and which instance answered —
   one line per check, exit 1 only on a FAIL, one row per session in `.control/postdeploy.jsonl`.
   Every judgement is a pure function over passed-in inputs, so the checklist is provable without a
-  live instance; the I/O (one GET, the stats, the append) is the CLI module's alone.
+  live instance; the I/O (one GET, the stats, the append) is the CLI module's alone. That GET
+  says WHY it got nothing (`refused`, `timeout`, `auth`, `server-error`, `bad-url`,
+  `not-status`), the command asks again for up to `STATUS_WAIT_S` (60 s) while the why is one
+  time can change, and `served-identity` words each as its own next move — one 10 s read during a
+  restart's request burst once FAILed a healthy deploy as "check you are on the right host"
+  (0.563.0). The daemon's own post-boot run passes `wait_s=0`: it polls its port on its own
+  schedule.
 - **Aborting a run** (`runner.abort` → `runner_state.abort_process`, behind the run page's abort,
   a conversation's stop, a background task's cancel and `rsched abort`): SIGTERM to the engine's
   process group, SIGKILL `KILL_GRACE_S` (10 s) later if it is still there. It names the RUN —

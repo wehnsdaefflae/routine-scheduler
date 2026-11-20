@@ -122,7 +122,7 @@ the entry must be re-pointed, graduated or removed rather than left to rot.
 - **Declared:** 0.445.0 (2026-10-23)
 - **Clause:** "the real HTTP call to `/api/status` is exercised nowhere"
 - **Would matter when:** it already does. This is the one artefact whose whole purpose is to be run against a live instance, so a command that looks tested and has never run is the worst case in this file.
-- **Disposition:** undecided, and the strongest candidate here for being raised as a decision: it needs either a deploy-time invocation somebody reads, or a grant that lets a run reach the live status route.
+- **Disposition:** closed in two steps. The deploy-time invocation exists: `daemon/postdeploy_watch` runs the checklist against this instance at every boot (`trigger: "daemon boot"` rows in `.control/postdeploy.jsonl`), and an operator session ran it by hand on 2026-11-20 — which is how its first live defect was found: one 10 s status read during the post-restart request burst FAILed a healthy deploy with "check you are on the right host". 0.563.0 fixed that (the read names WHY it got nothing and the command asks again for up to a minute) and exercises the real HTTP read in `tests/test_postdeploy_status.py`, against sockets the test opens on 127.0.0.1 — refused, silent, 401/403, 500, a non-status body, a payload. This entry stays only until the next release; it is then deleted.
 
 ## The questions client cannot see future schedules
 

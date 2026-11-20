@@ -98,7 +98,7 @@ def run_now(server: ServerConfig) -> list | None:
     url = f"http://127.0.0.1:{server.port}"
     checks, status = None, None
     for attempt in range(ATTEMPTS):
-        checks, status = run_checks(server, url, "daemon boot")
+        checks, status = run_checks(server, url, "daemon boot", wait_s=0)
         if status is not None:
             break
         if attempt + 1 < ATTEMPTS:

@@ -268,5 +268,8 @@ ignore_decorators = ["@*.get", "@*.post", "@*.put", "@*.delete", "@*.patch", "@*
 # TUNING_FIELDS loop (taken from config.base.TUNING_KEYS) rather than by attribute. An
 # import-time assert in that module pins the two halves together, and deleting either field would
 # make the ladder's settings controls save nothing while the page reported success.
+# `do_GET`/`log_message` are `http.server.BaseHTTPRequestHandler` hooks, called by name
+# (`do_<METHOD>`) by the stdlib — tests/test_postdeploy_status.py serves real sockets with them.
 ignore_names = ["model_config", "pytestmark", "should_exit", "pytest_*", "capture_output",
-                "stage", "child_main", "ladder_turn_interval", "oversight_turns"]
+                "stage", "child_main", "ladder_turn_interval", "oversight_turns", "do_GET",
+                "log_message"]

@@ -17,7 +17,8 @@ WHERE IT SITS IN A SESSION (deploy/DOCKER.md, "Rebuilding"):
     rsched drain && docker compose up -d && rsched drain --resume
     rsched postdeploy            # ← here, against the box that is now serving
 
-It is READ-ONLY against the instance: one GET, some stats, and one line appended to this
+It is READ-ONLY against the instance: one GET (asked again for up to a minute while the
+instance is busy or not yet listening — `await_status`), some stats, and one line appended to this
 instance's own record. It never restarts anything and never fixes anything — the operator decides
 what to do with a FAIL, because every one of the four specimens behind these checks needed a
 different fix.
@@ -29,8 +30,10 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 
 from .config import load_server_config
@@ -55,6 +58,14 @@ from .postdeploy import (
 #: enough that a wedged box answers the checklist in seconds rather than hanging the session.
 STATUS_TIMEOUT_S = 10.0
 
+#: How long the command keeps asking while the answer is one that time can change, and how
+#: often. A minute covers the post-restart burst measured on 2026-11-20 (every `/api/*` request
+#: held 17-20 s for about 30 s) with room to spare, and is still a wait a person at a terminal
+#: accepts — told, on stderr, what it is waiting for. See `await_status`.
+STATUS_WAIT_S = 60.0
+RETRY_S = 5.0
+RETRYABLE = frozenset({"timeout", "refused", "server-error"})
+
 #: The record every session appends one row to, beside the health and usage streams this instance
 #: already keeps (`health_events`, `usage_log`): `<routines_home>/.control/postdeploy.jsonl`.
 #: Instance-local state, under the convention that is already there — a deploy record in a new
@@ -67,12 +78,15 @@ RECORD_FILE = ".control/postdeploy.jsonl"
 WALK_FILE_CAP = 20000
 
 
-def _status(url: str, token: str) -> dict | None:
-    """`GET <url>/api/status` as a dict, or None when nothing usable came back.
+def _status(url: str, token: str) -> tuple[dict | None, str]:
+    """ONE `GET <url>/api/status`: the payload, or None and WHY nothing usable came back.
 
-    None covers every way a deploy session gets no answer — wrong host, container down, wedged
-    event loop, a token that is not this instance's — because the operator's next move is the same
-    for all of them (look at the box), and `served-identity` says so in those words.
+    The why is `postdeploy.NO_ANSWER`'s vocabulary, because the operator's next move differs:
+    `refused` (nothing listening — wrong host, container down), `timeout` (it took the
+    connection and said nothing — up but busy), `auth` (this config's token is not that
+    instance's), `bad-url`, `server-error`, `not-status`, or `unreachable` for anything else.
+    Every one of them used to read "no answer … check you are on the right host", including the
+    2026-11-20 session whose daemon was up and merely swamped by reconnecting console tabs.
     """
     headers = {"User-Agent": "rsched-postdeploy/1",
                **({"Authorization": f"Bearer {token}"} if token else {})}
@@ -82,12 +96,60 @@ def _status(url: str, token: str) -> dict | None:
         # one moment the operator is watching a box he just deployed.
         req = urllib.request.Request(f"{url.rstrip('/')}/api/status", headers=headers)  # noqa: S310
         if req.type not in ("http", "https"):
-            return None
+            return None, "bad-url"
         with urllib.request.urlopen(req, timeout=STATUS_TIMEOUT_S) as resp:  # noqa: S310
-            body = json.loads(resp.read().decode("utf-8", errors="replace"))
-    except (urllib.error.URLError, OSError, ValueError, TimeoutError):
-        return None
-    return body if isinstance(body, dict) else None
+            raw = resp.read()
+    except urllib.error.HTTPError as exc:
+        return None, "auth" if exc.code in (401, 403) else "server-error"
+    except urllib.error.URLError as exc:
+        return None, _why(exc.reason)
+    except ValueError:
+        return None, "bad-url"
+    except OSError as exc:              # TimeoutError and a reset mid-read are OSErrors too
+        return None, _why(exc)
+    try:
+        body = json.loads(raw.decode("utf-8", errors="replace"))
+    except ValueError:
+        return None, "not-status"
+    return (body, "") if isinstance(body, dict) else (None, "not-status")
+
+
+def _why(reason: object) -> str:
+    """A transport failure in `NO_ANSWER`'s words."""
+    if isinstance(reason, TimeoutError):            # socket.timeout is TimeoutError since 3.10
+        return "timeout"
+    if isinstance(reason, (ConnectionRefusedError, ConnectionResetError, ConnectionAbortedError)):
+        return "refused"
+    return "unreachable"
+
+
+def await_status(url: str, token: str, wait_s: float = STATUS_WAIT_S,
+                 say: Callable[[str], None] | None = None) -> tuple[dict | None, str, int]:
+    """`_status`, asked again every `RETRY_S` while the answer is one a minute can change —
+    `RETRYABLE` — until `wait_s` is spent. Returns (payload, why, attempts).
+
+    A daemon that has just restarted is the box this command exists for, and it is the box
+    least able to answer at once: on 2026-11-20 the status read went out ten seconds after boot,
+    while reconnecting console tabs held every `/api/*` request for 17-20 s, and one 10 s try
+    turned a healthy deploy into a FAIL. An answer that will not change — a refused token, a
+    mistyped url — returns at once. `say` (one string) tells a waiting person why it is waiting.
+    """
+    deadline = time.monotonic() + wait_s
+    attempts = 0
+    while True:
+        status, why = _status(url, token)
+        attempts += 1
+        if status is not None or why not in RETRYABLE or time.monotonic() + RETRY_S > deadline:
+            return status, why, attempts
+        if say is not None:
+            say(f"{url}: {why} on attempt {attempts} — retrying for up to "
+                f"{max(0, round(deadline - time.monotonic()))} s more")
+        _sleep(RETRY_S)
+
+
+def _sleep(seconds: float) -> None:
+    """A blocking sleep, named so a test can make the wait free."""
+    time.sleep(seconds)
 
 
 def checkout_version(repo: Path | None) -> str:
@@ -210,16 +272,19 @@ def _chain_problems(server) -> tuple[list[str], int, bool]:
     return (out, seen, True)
 
 
-def run_checks(server, url: str, source: str) -> tuple[list[Check], dict | None]:
+def run_checks(server, url: str, source: str, *, wait_s: float = STATUS_WAIT_S,
+               say: Callable[[str], None] | None = None) -> tuple[list[Check], dict | None]:
     """The whole checklist against a live instance, in `CHECK_NAMES` order — and the status it read.
 
     The payload comes back with the checks so the RECORD describes the same reading the operator
     saw on screen. A second read for the record would be a second instant: a restart between the
-    two, and the row describes neither.
+    two, and the row describes neither. `wait_s` is how long a busy or not-yet-listening
+    instance is asked again (`await_status`); the daemon's own post-boot run passes 0, because
+    `daemon/postdeploy_watch` already polls its own port on a schedule of its own.
     """
     from .daemon.backup_watch import staleness
 
-    status = _status(url, server.token)
+    status, why, attempts = await_status(url, server.token, wait_s, say)
     reference = _reference_uid(server)
     stats, truncated = _owner_stats(_homes(server), reference) if reference >= 0 else ([], False)
     try:
@@ -227,7 +292,7 @@ def run_checks(server, url: str, source: str) -> tuple[list[Check], dict | None]
     except OSError as exc:              # a share that vanished mid-read is a finding, not a crash
         state, detail = "unknown", f"reading the backup record raised {exc!r}"
     chains, routines, catalog_read = _chain_problems(server)
-    return ([served_identity(url, status, source),
+    return ([served_identity(url, status, source, why, attempts),
              build_skew(status, checkout_version(server.source_repo),
                         str(server.source_repo or "")),
              backup_freshness(state, detail),
@@ -242,7 +307,8 @@ def cmd_postdeploy(args) -> int:
         print(f"server config: {pr}", file=sys.stderr)
     url = args.url or f"http://127.0.0.1:{server.port}"
     source = "--url" if args.url else "config bind/port"
-    checks, status = run_checks(server, url, source)
+    checks, status = run_checks(server, url, source,
+                                say=lambda line: print(line, file=sys.stderr, flush=True))
     for check in checks:
         print(check.line())
     print(summary_line(checks))

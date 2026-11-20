@@ -30,10 +30,10 @@ def healthy(monkeypatch, cli_server):
     """A live instance that answers with the build the checkout is at, and a fresh backup."""
     version = cli_postdeploy.checkout_version(cli_server.source_repo)
     monkeypatch.setattr(cli_postdeploy, "_status",
-                        lambda url, token: {"version": version, "build": "ca142b06 2026-10-23",
-                                            "disk_build": "ca142b06 2026-10-23",
-                                            "build_skew": False, "server_tz": "Europe/Berlin",
-                                            "active_runs": 0})
+                        lambda url, token: ({"version": version, "build": "ca142b06 2026-10-23",
+                                             "disk_build": "ca142b06 2026-10-23",
+                                             "build_skew": False, "server_tz": "Europe/Berlin",
+                                             "active_runs": 0}, ""))
     # `run_checks` imports `staleness` lazily, so the module attribute IS the seam.
     monkeypatch.setattr("rsched.daemon.backup_watch.staleness",
                         lambda: ("ok", "last complete snapshot 2026-10-23T01:12:00+00:00"))
@@ -93,7 +93,7 @@ def test_an_instance_that_never_answered_exits_one_and_still_records_the_session
     """The wrong-machine specimen end to end: nothing answered, so the command goes red, names
     the address it tried, and the session still leaves a trace.
     """
-    monkeypatch.setattr(cli_postdeploy, "_status", lambda url, token: None)
+    monkeypatch.setattr(cli_postdeploy, "_status", lambda url, token: (None, "unreachable"))
     monkeypatch.setattr("rsched.daemon.backup_watch.staleness", lambda: ("ok", "fresh"))
 
     code = cli_postdeploy.cmd_postdeploy(_args(url="http://192.168.0.128:8321"))
@@ -217,8 +217,8 @@ def test_an_unreadable_backup_record_turns_the_whole_command_red(monkeypatch, cl
     anywhere read this, so the absence of the record has to be what makes the session red.
     """
     monkeypatch.setattr(cli_postdeploy, "_status",
-                        lambda url, token: {"version": "0.444.0", "build": "", "disk_build": "",
-                                            "build_skew": False, "server_tz": "UTC"})
+                        lambda url, token: ({"version": "0.444.0", "build": "", "disk_build": "",
+                                             "build_skew": False, "server_tz": "UTC"}, ""))
     monkeypatch.setenv("RSCHED_MIRROR", str(tmp_path / "not-mounted"))
     monkeypatch.setattr("rsched.daemon.backup_watch.DEFAULT_ROOT", str(tmp_path / "nor-this"))
 
