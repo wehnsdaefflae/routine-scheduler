@@ -15,6 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.561.0] — 2026-11-20
+
+### Fixed
+- **A routine denied the reminder route is now told its own one** (F914, reported by
+  `rules-review` in R3539). It held `capabilities.reminders: global`, met the 403 on
+  `DELETE /api/routines/{slug}/reminders/{rid}`, concluded from its action catalog that no
+  curator-mutation lever existed, and left an operator-approved cleanup
+  (`q-20261117-173432-55`) unapplied — proposing a duplicate route instead. Both halves were
+  working as designed: the console's delete is the user's only lever over a reminder a run
+  wrote without approval, and a run disposes of one through the `remind` SIDE FIELD riding any
+  action, which is a field and so appears in no action catalog. The tier refusal already routes
+  two other classes home (a config change to `ask_user` with `config_patch`, a file to
+  `read_file`); it now routes the reminder class the same way, naming `op=delete`/`revise` for
+  this routine's own rows and `op=dead` for a row in another store. The tier itself is
+  unmoved — `ROUTINE_TOKEN_MUTATIONS` stays empty and the route stays the operator's.
+
 ## [0.560.0] — 2026-11-20
 
 ### Fixed

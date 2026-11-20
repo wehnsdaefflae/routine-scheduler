@@ -89,6 +89,36 @@ def test_the_reads_a_run_actually_uses_still_answer(client):
         assert _as_routine(client, path).status_code == 200, path
 
 
+def test_a_curator_denied_the_reminder_route_is_told_its_own_one(client):
+    """F914: `rules-review` held `capabilities.reminders: global`, met this 403 on
+    `DELETE /api/routines/{slug}/reminders/{rid}`, concluded no curator lever existed, and
+    left an operator-approved cleanup unapplied — proposing a duplicate route instead.
+
+    The refusal is CORRECT (the console's delete is the user's lever, and it must stay so),
+    but a refusal that names no alternative reads as "this cannot be done". The detail already
+    routes two other classes home — a config change to `ask_user` with `config_patch`, a file
+    to `read_file` — and the reminder case is the same shape: a run disposes of a reminder
+    through the `remind` SIDE FIELD on any action, not through an endpoint.
+    """
+    r = client.delete("/api/routines/tiered/reminders/rem-20260101-000000-1",
+                      headers={"Authorization": f"Bearer {ROUTINE_TOKEN}"})
+    assert r.status_code == 403
+    detail = r.json()["detail"]
+    assert "remind" in detail
+    # it must name the FIELD as the route, not merely mention the word
+    assert "side field" in detail
+    assert "insufficient_scope" in r.headers.get("www-authenticate", "")
+
+
+def test_the_operator_still_owns_the_console_delete(client):
+    """The fix is prose in a refusal, so the tier itself must not have moved: the reminder
+    route stays shut to the routine tier and open to the operator's token."""
+    assert ROUTINE_TOKEN_MUTATIONS == ()
+    r = client.delete("/api/routines/tiered/reminders/rem-20260101-000000-1",
+                      headers={"Authorization": f"Bearer {TEST_TOKEN}"})
+    assert r.status_code != 403        # 404 (no such reminder) — reached the handler
+
+
 def test_the_deny_list_matches_subtrees_not_prefixes():
     """`/api/fs` must not swallow a future `/api/fsomething`, and must catch `/api/fs/list`
     — a bare startswith would silently deny (or open) any sibling route sharing the prefix."""

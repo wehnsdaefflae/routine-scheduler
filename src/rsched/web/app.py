@@ -137,7 +137,9 @@ def require_auth(request: Request) -> None:
                    "operator's primary token. A run that needs a "
                    "config change proposes it via ask_user with config_patch; a file it may "
                    "read is reached with read_file, and one outside its jail is an fs-read "
-                   "access request.",
+                   "access request; a reminder is disposed of through the `remind` side "
+                   "field on any action (op=delete or revise for this routine's own rows, "
+                   "op=dead for a row in another store), never through a route here.",
             headers={"WWW-Authenticate": 'Bearer error="insufficient_scope"'})
     # No HTTP route accepts a stream ticket: the live streams are WebSockets, admitted by
     # `streams.admits` on their own handshake (F606), so a ticket that leaks into a URL can
