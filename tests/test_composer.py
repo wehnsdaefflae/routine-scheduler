@@ -495,10 +495,10 @@ def test_format_observation_variants():
     assert "llm reply" in format_observation({"kind": "llm", "reply": "r"})
     assert "filed as deferred" in format_observation({"kind": "ask_user", "qid": "q", "mode": "deferred"})
     assert "user answered" in format_observation({"kind": "ask_user", "answered": True, "answer": "A"})
-    assert "parallel" in format_observation({"kind": "spawn", "n": 1, "label": "l",
+    assert "parallel" in format_observation({"kind": "child", "n": 1, "label": "l",
                                              "workflow": "general-task", "running": 1})
-    assert "REJECTED" in format_observation({"kind": "spawn", "rejected": True, "reason": "cap"})
-    assert "#2" in format_observation({"kind": "subruns", "rows": [
+    assert "REJECTED" in format_observation({"kind": "child", "rejected": True, "reason": "cap"})
+    assert "#2" in format_observation({"kind": "children", "rows": [
         {"n": 2, "label": "x", "workflow": "w", "state": "running", "turns": 1,
          "elapsed_s": 2.0, "summary_head": ""}]})
     assert "terminated" in format_observation({"kind": "kill", "n": 2, "killed": True, "status": "aborted"})
@@ -853,8 +853,8 @@ def test_replay_reconstitutes_child_announcements():
 
     events = [
         {"type": "assistant_action", "turn": 1,
-         "payload": {"kind": "subtask", "prompt": "p", "label": "t1", "say": "s"}},
-        {"type": "observation", "turn": 1, "payload": {"kind": "subtask", "n": 1,
+         "payload": {"kind": "child", "mode": "sequential", "prompt": "p", "label": "t1", "say": "s"}},
+        {"type": "observation", "turn": 1, "payload": {"kind": "child", "mode": "sequential", "n": 1,
                                                        "label": "t1", "started": True}},
         # the child finishes between turns; announcement precedes the next action live
         {"type": "subrun_end", "payload": {"n": 1, "label": "t1", "workflow": "general-task",

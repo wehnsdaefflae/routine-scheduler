@@ -291,7 +291,9 @@ def test_the_detector_catches_the_f766_shape() -> None:
 
 def test_the_real_loop_surface_pins_f644_both_ways() -> None:
     real = surface("loop")
-    assert "subruns" in real, "the real sub-run manager attribute"
+    # D241 renames the model-facing VOCABULARY; `loop.subruns` is an internal attribute and is
+    # the second increment's business (with the budget keys and the event names).
+    assert "subruns" in real, "the real child-run manager attribute"
     assert "subs" not in real, "F644's misreading must never become real"
     assert "_recipe_unlocked" in real, (
         "set only at engine/loopsetup.py:155 — if this drops out, the surface is being read "

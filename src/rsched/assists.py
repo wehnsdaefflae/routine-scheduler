@@ -130,7 +130,7 @@ MOMENT_PAYLOADS = {"pre-action": ("hold",), "observation": ("remind",),
 #: and therefore scripts"* stands for the seam, and a mechanism whose author IS the run (a
 #: routine's own reminder) is not bound by the reason above. A kind leaving this set is a
 #: decision, which is why the set is named here rather than spelled into a condition.
-STEERING_KINDS = ("finish", "spawn", "subtask", "detach", "wait", "kill", "ask_user",
+STEERING_KINDS = ("finish", "child", "detach", "wait", "kill", "ask_user",
                   "goal", "do_nothing", "create_routine", "manage_lane")
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")

@@ -113,7 +113,7 @@ def test_the_pattern_list_carries_slugs_and_not_descriptions(tmp_path, monkeypat
                  "description": "Advance a model by verified increments on a remote machine."}]
     monkeypatch.setattr("rsched.workflows.library.list_workflows",
                         lambda _home: list(patterns))
-    text = capabilities.capabilities_digest(_ctx(tmp_path), allowed_kinds={"spawn", "util"})
+    text = capabilities.capabilities_digest(_ctx(tmp_path), allowed_kinds={"child", "util"})
     assert "answer-a-mailbox" in text and "train-a-model" in text, text
     assert "Serve one mailbox" not in text, (
         "a pattern's description is still in the always-on prompt:\n" + text)

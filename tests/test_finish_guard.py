@@ -23,7 +23,7 @@ def test_real_radar_summary_flagged():
 
 def test_meta_routine_exempt_even_on_radar_summary():
     # a meta routine (self-audit) quoting the same text must NOT self-reject
-    assert unbacked_action_claims(RADAR_SUMMARY, {"util", "spawn", "finish"}, is_meta=True) == []
+    assert unbacked_action_claims(RADAR_SUMMARY, {"util", "child", "finish"}, is_meta=True) == []
 
 
 def test_no_flag_when_action_actually_taken():

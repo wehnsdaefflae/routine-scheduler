@@ -147,6 +147,12 @@ def cmd_daemon(_args) -> int:
     # to go and the fires already counted stay the denominator they are read against
     from .migrate_assist_stats import run_migration as grow_assist_tallies
     grow_assist_tallies(server)
+    # MIGRATION(expires=2026-12-31): D241 removes the `spawn`, `subtask` and `subruns` kinds
+    # rather than aliasing them, so every INSTRUCTION on this instance that names one — a
+    # recipe, a stage, a library rule or workflow — would otherwise tell a run to emit a kind
+    # the schema refuses. The engine's own text ships with the release; the instance's does not
+    from .migrate_child_kind import run_migration as carry_child_kind
+    carry_child_kind(server)
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)

@@ -88,7 +88,7 @@ def test_the_refusal_is_said_once(kind):
 
 
 def test_the_control_kinds_are_not_backgroundable():
-    for kind in ("finish", "ask_user", "report", "spawn", "subtask", "wait", "kill"):
+    for kind in ("finish", "ask_user", "report", "child", "wait", "kill"):
         assert kind not in BACKGROUNDABLE_KINDS
 
 

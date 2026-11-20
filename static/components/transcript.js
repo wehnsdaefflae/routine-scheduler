@@ -9,7 +9,7 @@
 //   loadSub(n, offset) — enables expanding a subrun's own conversation in place under its
 //                        start/end lines; n may be a nested path like "2/1". Returns
 //                        {events, offset}.
-//   isLive()           — true while the run is live; expanded subruns keep polling.
+//   isLive()           — true while the run is live; expanded child runs keep polling.
 //   onRefer({label, snippet}) — enables a hover "refer to" button on every message (the
 //                        messenger reply analog); the view primes its composer with it.
 //   fileUrl(rel)       — maps a message attachment's rel path (e.g. "attachments/x.png") to
@@ -66,7 +66,7 @@ const BRIEF_FIELD = { util: "name", websearch: "args", code_search: "args", writ
   remove_util: "name", read_file: "path", view_image: "path", script: "name", shell: "command",
   write_file: "path", delete: "path", move: "src", mkdir: "path", edit_file: "path",
   memory_read: "name", memory_write: "name", read_rule: "name", write_rule: "name", llm: "prompt",
-  decide: "question", spawn: "label", subtask: "label", detach: "label", schedule_run: "target",
+  decide: "question", child: "label", detach: "label", schedule_run: "target",
   create_routine: "target", manage_lane: "verb", job: "id", goal: "id", kill: "n", wait: "n",
   ask_user: "question", report: "title", finish: "status" };
 
@@ -377,9 +377,9 @@ export function createTranscript(container, opts = {}) {
     compaction: (ev) => el("div", { class: "ev compaction" },
       compactionText(ev.payload)),
     subrun_start: (ev) => el("div", { class: "ev subrun" }, subrunNode(ev,
-      `${ev.payload.mode === "sequential" ? "→ subtask" : "↳ subrun"} ${ev.payload.n} "${ev.payload.label}" started (${ev.payload.workflow}, depth ${ev.payload.depth})`)),
+      `${ev.payload.mode === "sequential" ? "→" : "↳"} child ${ev.payload.n} "${ev.payload.label}" started (${ev.payload.workflow}, depth ${ev.payload.depth})`)),
     subrun_end: (ev) => el("div", { class: "ev subrun" }, subrunNode(ev,
-      `${ev.payload.mode === "sequential" ? "→ subtask" : "↰ subrun"} ${ev.payload.n} "${ev.payload.label}" ${ev.payload.status} — ${ev.payload.turns} turns, ${fmtTokens(ev.payload.usage)}`,
+      `${ev.payload.mode === "sequential" ? "→" : "↰"} child ${ev.payload.n} "${ev.payload.label}" ${ev.payload.status} — ${ev.payload.turns} turns, ${fmtTokens(ev.payload.usage)}`,
       md(ev.payload.summary || "(no summary)", "obs md"))),
     // The run's accounting, stamped where every reader finds it at the finish — or the finish
     // line reached. A neutral line, like compaction: it records a state change the reader

@@ -73,7 +73,7 @@ def test_do_nothing_requires_a_non_empty_reasoning():
         assert any("say" in p for p in problems), f"{blank!r} was accepted"
     # …and a different kind with a blank `say` is NOT newly rejected: this check is this
     # kind's, not a change to the shared field.
-    assert validate_action({"say": "", "kind": "subruns"}) == []
+    assert validate_action({"say": "", "kind": "children"}) == []
 
 
 def test_do_nothing_takes_no_other_fields():

@@ -82,9 +82,7 @@ def test_transcript_js_brief_field_mirrors_python():
         {"say": "s", "kind": "llm", "prompt": "p", "system": "sys", "response_schema": {"type": "object"}},
         {"say": "s", "kind": "decide", "question": "Which queue?",
          "options": ["access: account access", "billing: payments"], "evidence": "locked out"},
-        {"say": "s", "kind": "spawn", "prompt": "do x", "label": "research", "workflow": "general-task"},
-        {"say": "s", "kind": "subtask", "prompt": "do step x", "label": "step-1",
-         "workflow": "general-task", "turns": 8},
+        {"say": "s", "kind": "child", "prompt": "do x", "label": "research", "workflow": "general-task"},
         {"say": "s", "kind": "detach", "prompt": "scrape it", "label": "scrape", "workflow": "general-task"},
         {"say": "s", "kind": "schedule_run", "target": "r", "fire_at": "+3d", "reason": "x"},
         {"say": "s", "kind": "create_routine", "target": "arxiv-reading-list",
@@ -95,7 +93,7 @@ def test_transcript_js_brief_field_mirrors_python():
          "outcome": "advanced", "summary": "AP 3.4 revised", "accounting": ["d1 met: x"]},
         {"say": "s", "kind": "goal", "verb": "add",
          "goals": [{"text": "the Q3 table matches the ledger", "quote": "fix the Q3"}]},
-        {"say": "s", "kind": "subruns"},
+        {"say": "s", "kind": "children"},
         {"say": "s", "kind": "kill", "n": 2},
         {"say": "s", "kind": "wait", "all": True, "timeout_s": 120},
         {"say": "s", "kind": "ask_user", "question": "q?", "mode": "blocking", "options": ["a", "b"]},
@@ -111,8 +109,6 @@ def test_transcript_js_brief_field_mirrors_python():
 )
 def test_valid_actions_pass_both_layers(action):
     assert _parse_both_layers(json.dumps(action)) == action
-
-
 @pytest.mark.parametrize(
     ("action", "fragment"),
     [
@@ -200,11 +196,11 @@ def test_extract_json_failure_and_retry_message():
 def test_normalize_action_strips_grammar_padding():
     from rsched.engine.actions import normalize_action
 
-    padded = {"say": "s", "kind": "spawn", "prompt": "do x", "label": "",
+    padded = {"say": "s", "kind": "child", "prompt": "do x", "label": "",
               "n": None, "all": False, "question": "", "options": [],
               "response_schema": {}, "append": False}
     cleaned = normalize_action(padded)
-    assert cleaned == {"say": "s", "kind": "spawn", "prompt": "do x"}
+    assert cleaned == {"say": "s", "kind": "child", "prompt": "do x"}
     assert validate_action(cleaned) == []
     # required fields are never dropped, even when empty — the validator must see them
     missing = normalize_action({"say": "s", "kind": "write_file", "path": "f", "content": ""})

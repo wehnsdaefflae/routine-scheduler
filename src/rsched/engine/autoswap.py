@@ -60,7 +60,7 @@ from .wrongturn import WARN_STREAK
 #: Kinds whose entire content is "has it finished?", so a repeat is the same question again
 #: however the fields read: `subruns` takes no arguments at all, and `wait` names only which
 #: child or handle is being waited on.
-POLL_KINDS = ("subruns", "wait")
+POLL_KINDS = ("children", "wait")
 
 #: Kinds that are poll-class ONLY when the action repeats byte for byte. A `script` or `util`
 #: call is work, not a poll — unless the identical call is made again, which is exactly how a

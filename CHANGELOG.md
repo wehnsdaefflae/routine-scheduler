@@ -15,6 +15,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.566.0] — 2026-11-20
+
+### Changed
+- **One name for a child run: the `child` kind with a `mode`, and `spawn`, `subtask` and
+  `subruns` are gone** (D241, operator in conversation 2026-10-17: *"sub-runs / subtasks (why
+  two terms for the same thing? fix that)"*). `engine/child.py` has always defined ONE concept
+  with several scheduling modes; the vocabulary never followed. The same thing was a child run
+  in the engine and the docs, a `subrun` in the console, a `subtask` when scheduled
+  sequentially and a `spawn` when scheduled in parallel — and `static/`'s transcript used
+  "subtask" for sequential children and "subrun" for parallel ones, so one word meant both "any
+  child" and "a parallel child" depending on which surface you read. Reading `max_subruns`
+  beside a recipe's `subtask`, two mechanisms is the reasonable inference. There is one.
+  - `child` takes a flat `mode` (`parallel` — the default — or `sequential`), the vocabulary
+    `engine/child.py` already owned; `subruns` becomes `children`. The three old kinds are
+    REMOVED, not aliased: an alias is how two names for one thing survive indefinitely.
+  - `mode` is now shared with `ask_user`, as `question` and `options` already are — one
+    JSON-schema property cannot carry two enums, so the union and the reasoning live in
+    `engine/childfields.py` and each kind's own validator refuses the other's values. `turns`
+    on a PARALLEL child is corrected rather than ignored, because a budget the engine discards
+    reads to the caller as a budget it set.
+  - The console's transcript marks the mode with its ARROW rather than with a second noun
+    (`→` sequential, `↳`/`↰` parallel), and the CLI renderer follows.
+  - **The always-on prompt contract SHRANK by 558 chars** (59,615 → 59,057, locked in
+    `tests/prompt_budget.json`): two kind bullets became one, and the mode's meaning travels in
+    the FIELD description the wire already carries on every turn rather than being recited.
+- `src/rsched/migrate_child_kind.py` (MIGRATION, expires 2026-12-31) rewrites every INSTRUCTION
+  on this instance that names a retired kind — the library's workflows, rules, permissions and
+  patterns, every routine's `main.md` and `stages/*.md`, every conversation's `instruction.md`.
+  Not optional: the engine's text ships with the release, the instance's does not, so a recipe
+  still saying `subtask` after the kind is gone tells a run to emit something the schema
+  refuses. It does NOT touch a routine's `state/`, its LEDGER or any transcript: those are the
+  RECORD of what happened, and a run really did call `subtask` in October.
+  A BARE `spawn` is deliberately never rewritten — it is also the name of a hook POINT
+  (`moment: spawn`, which rules match on) and ordinary English besides.
+
 ## [0.565.0] — 2026-11-20
 
 ### Added

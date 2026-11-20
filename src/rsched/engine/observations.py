@@ -99,7 +99,7 @@ def is_failure(obs: dict) -> bool:
 #: produced: the reserved finish turn's refusal of a non-finish action (`loop.py`) raised
 #: KeyError in fifteen of them, and since a resume re-renders every stored observation, that
 #: left the run unresumable — a conversation could not take its next message.
-_OWN_REFUSALS = frozenset({"spawn", "subtask", "detach", "create_routine", "manage_lane"})
+_OWN_REFUSALS = frozenset({"child", "detach", "create_routine", "manage_lane"})
 
 
 def _not_executed(obs: dict, kind: str) -> str | None:

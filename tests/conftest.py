@@ -447,7 +447,7 @@ def write_file(path, content="x", say="Writing a file."):
 
 
 def spawn(prompt, label=None, workflow=None, say="Delegating."):
-    action = {"say": say, "kind": "spawn", "prompt": prompt}
+    action = {"say": say, "kind": "child", "prompt": prompt}
     if label:
         action["label"] = label
     if workflow:
@@ -456,7 +456,7 @@ def spawn(prompt, label=None, workflow=None, say="Delegating."):
 
 
 def subtask(prompt, label=None, workflow=None, turns=None, say="Running a subtask."):
-    action = {"say": say, "kind": "subtask", "prompt": prompt}
+    action = {"say": say, "kind": "child", "mode": "sequential", "prompt": prompt}
     if label:
         action["label"] = label
     if workflow:

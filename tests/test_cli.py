@@ -29,7 +29,7 @@ def test_render_assistant_action_carries_turn_say_and_kind_brief():
     assert "websearch" in util_line and "climate --json" in util_line
 
     spawn_line = _render_event({"type": "assistant_action", "turn": 2,
-                                "payload": {"kind": "spawn", "say": "s", "label": "research",
+                                "payload": {"kind": "child", "say": "s", "label": "research",
                                             "workflow": "general-task", "prompt": "P"}})
     assert "research" in spawn_line and "general-task" in spawn_line
 
@@ -77,13 +77,13 @@ def test_render_observation_variants():
                                        "payload": {"kind": "llm", "error": "boom"}})
 
     assert "REJECTED" in _render_event({"type": "observation", "payload": {
-        "kind": "spawn", "rejected": True, "reason": "parallel cap"}})
-    assert "#3" in _render_event({"type": "observation", "payload": {"kind": "spawn", "n": 3}})
+        "kind": "child", "rejected": True, "reason": "parallel cap"}})
+    assert "#3" in _render_event({"type": "observation", "payload": {"kind": "child", "n": 3}})
     sub = _render_event({"type": "observation",
-                         "payload": {"kind": "subtask", "n": 2, "started": True}})
+                         "payload": {"kind": "child", "mode": "sequential", "n": 2, "started": True}})
     assert "#2" in sub and "sequential" in sub
     assert "cap" in _render_event({"type": "observation", "payload": {
-        "kind": "subtask", "rejected": True, "reason": "cap"}})
+        "kind": "child", "mode": "sequential", "rejected": True, "reason": "cap"}})
 
     waited = _render_event({"type": "observation", "payload": {
         "kind": "wait", "finished": [{"n": 1, "status": "ok"}]}})
@@ -122,13 +122,18 @@ def test_render_dialog_and_lifecycle_events():
     assert "ok" in fin and "all done" in fin
 
 
-def test_render_subrun_events_name_mode_and_outcome():
+def test_render_child_events_name_mode_and_outcome():
+    """D241: ONE noun — a child run — and the MODE is what varies. A renderer that said
+    "subtask" for a sequential child and "subrun" for a parallel one made the scheduling look
+    like two kinds of thing, which is the confusion the decision ends."""
     seq = _render_event({"type": "subrun_start", "payload": {
         "n": 1, "label": "step1", "mode": "sequential", "workflow": "general-task"}})
-    assert "subtask" in seq and "step1" in seq and "general-task" in seq
+    assert "child" in seq and "step1" in seq and "general-task" in seq
+    assert "subtask" not in seq and "subrun" not in seq
     par = _render_event({"type": "subrun_start", "payload": {
         "n": 2, "label": "research", "mode": "parallel", "workflow": "general-task"}})
-    assert "subrun" in par and "subtask" not in par     # mode decides the noun
+    assert "child" in par and "subtask" not in par and "subrun" not in par
+    assert seq != par       # the mode still shows, in the marker rather than in a second noun
     end = _render_event({"type": "subrun_end", "payload": {
         "n": 2, "label": "research", "mode": "parallel", "status": "ok", "turns": 5}})
     assert "#2" in end and "ok" in end and "5 turns" in end

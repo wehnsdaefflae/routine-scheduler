@@ -275,7 +275,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
     parts.extend(_secret_notes(ctx))
     if machines := _machine_notes(ctx):
         parts.append(machines)
-    if {"spawn", "subtask", "detach"} & set(kinds):
+    if {"child", "detach"} & set(kinds):
         try:
             from ..workflows.library import list_workflows
 
@@ -290,7 +290,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
             # away rather than disappearing. A slug states its own purpose well enough to pick
             # from (`answer-a-mailbox`, `train-a-model`), and the child's own prompt carries the
             # pattern whole, so the cost of picking wrong falls where it can still be corrected.
-            parts.append("Sub-workflow patterns for spawn/subtask/detach — pick the one matching "
+            parts.append("Workflow patterns for child/detach — pick the one matching "
                          "the CHILD's purpose, never reflexively the default; what each covers "
                          "is in the library (workflows/<slug>), read it when the choice is not "
                          "obvious from the name:\n"

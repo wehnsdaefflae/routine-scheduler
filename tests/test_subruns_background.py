@@ -72,17 +72,17 @@ def test_no_background_work_means_no_rows():
 def test_the_observation_does_not_claim_nothing_was_started():
     """The exact sentence the operator met. With a background call in flight it is false, and
     the branch that printed it ran whenever there was no spawn/subtask child."""
-    obs = {"kind": "subruns", "count": 0, "rows": [],
+    obs = {"kind": "children", "count": 0, "rows": [],
            "background": [{"handle": "bg1", "kind": "script", "brief": "script: seedbox-drain",
                            "started_turn": 4, "state": "running", "stoppable": True}]}
-    text = obs_children.format_children(obs, "subruns")
+    text = obs_children.format_children(obs, "children")
     assert "none was started" not in text, text
     assert "bg1" in text and "seedbox-drain" in text, text
 
 
 def test_the_observation_still_says_nothing_was_started_when_nothing_was():
-    obs = {"kind": "subruns", "count": 0, "rows": [], "background": []}
-    text = obs_children.format_children(obs, "subruns")
+    obs = {"kind": "children", "count": 0, "rows": [], "background": []}
+    text = obs_children.format_children(obs, "children")
     assert "none was started" in text, text
 
 
@@ -112,7 +112,7 @@ def test_subruns_surfaces_a_live_background_call_in_a_real_run(make_routine, scr
 
     scripted([
         {**util("websearch", args=["q"], say="Backgrounding a slow fetch."), "background": True},
-        {"say": "What is running?", "kind": "subruns"},
+        {"say": "What is running?", "kind": "children"},
         release_then_finish,
     ])
     try:
@@ -123,7 +123,7 @@ def test_subruns_surfaces_a_live_background_call_in_a_real_run(make_routine, scr
 
     events, _ = read_events(run_dir / "transcript.jsonl")
     table = next(e for e in events
-                 if e["type"] == "observation" and e["payload"].get("kind") == "subruns")
+                 if e["type"] == "observation" and e["payload"].get("kind") == "children")
     handles = [r["handle"] for r in table["payload"].get("background") or []]
     assert handles == ["bg1"], (
         "subruns ran while a backgrounded util was in flight and did not name it: "

@@ -45,8 +45,8 @@ log = logging.getLogger("rsched.engine.child")
 
 # The scheduling modes. A mode answers "when does this child run, relative to its parent, and
 # who drives it" — nothing else. Adding a mode is adding a schedule, never a new kind of child.
-PARALLEL = "parallel"        # `spawn` — runs concurrently; the parent keeps working
-SEQUENTIAL = "sequential"    # `subtask` — the parent waits for this one before moving on
+PARALLEL = "parallel"        # the default: runs concurrently; the parent keeps working
+SEQUENTIAL = "sequential"    # an ordered step: the parent waits for it before moving on
 BRANCH = "branch"            # F325 — a conversation forked at a message; the USER drives it
 # The escalation ladder. The one mode whose AUTHORITY IS INVERTED: the three above are a parent
 # delegating downward, while an oversight child is started by the ENGINE on the worker's behalf
@@ -71,8 +71,11 @@ MODE_NOUN = {
 HANDBACK_SUBDIR = "artifacts"
 
 
-#: The lower-case form the CLI transcript renders in its one-line rows.
-MODE_SHORT = {PARALLEL: "subrun", SEQUENTIAL: "subtask", BRANCH: "branch",
+#: The lower-case form the CLI transcript renders in its one-line rows. D241: the two
+#: scheduling modes read as what they are — a child, and when it runs — because "subrun" and
+#: "subtask" were two names for this one concept, and "subrun" meant both "any child" and "a
+#: parallel child" depending on which surface you read.
+MODE_SHORT = {PARALLEL: "child", SEQUENTIAL: "child (seq)", BRANCH: "branch",
               OVERSIGHT: "oversight"}
 
 

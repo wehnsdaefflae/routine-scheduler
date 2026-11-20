@@ -390,7 +390,7 @@ def test_resume_marks_orphaned_children_dead(make_routine, scripted):
                             "payload": {"n": 1, "label": "tail", "mode": "sequential", "depth": 1,
                                         "transcript": "sub/1/transcript.jsonl"}}))
     keep.append(json.dumps({"ts": "2026-07-08T07:01:02+00:00", "type": "observation", "turn": 2,
-                            "payload": {"kind": "subtask", "n": 1, "label": "tail", "started": True}}))
+                            "payload": {"kind": "child", "mode": "sequential", "n": 1, "label": "tail", "started": True}}))
     (run_dir / "transcript.jsonl").write_text("\n".join(keep) + "\n", encoding="utf-8")
 
     ep2 = scripted([finish(summary="picked up, re-issued nothing")])
@@ -1358,11 +1358,11 @@ def test_spawn_caps(make_routine, scripted):
     ], slug="capped")
     assert status == "ok"
     parent_rejects = [e for e in events if e["type"] == "observation"
-                      and e["payload"]["kind"] == "spawn" and e["payload"].get("rejected")]
+                      and e["payload"]["kind"] == "child" and e["payload"].get("rejected")]
     assert len(parent_rejects) == 1 and "budget" in parent_rejects[0]["payload"]["reason"]
     sub_events, _ = read_events(run_dir / "sub" / "1" / "transcript.jsonl")
     child_reject = [e for e in sub_events if e["type"] == "observation"
-                    and e["payload"].get("kind") == "spawn" and e["payload"].get("rejected")]
+                    and e["payload"].get("kind") == "child" and e["payload"].get("rejected")]
     assert child_reject and "depth" in child_reject[0]["payload"]["reason"]
 
 
@@ -1414,7 +1414,7 @@ def test_subtask_starts_nonblocking_and_is_awaited(make_routine, scripted):
     assert start["payload"]["mode"] == "sequential" and end["payload"]["mode"] == "sequential"
     # the subtask observation is a non-blocking 'started' note — NOT the summary
     sub_obs = next(e for e in events if e["type"] == "observation"
-                   and e["payload"].get("kind") == "subtask")
+                   and e["payload"].get("kind") == "child")
     assert sub_obs["payload"].get("started") and not sub_obs["payload"].get("summary")
     # the child's summary reached the parent (via the wait or the CHILD RUN FINISHED hook)
     assert "step one result: 7" in json.dumps(ep.calls[-1]["messages"])
@@ -1524,7 +1524,7 @@ def test_a_subtask_on_an_unavailable_pattern_says_it_fell_back(make_routine, scr
     ], slug="fallbacknote")
     assert status == "ok"
     obs = next(e["payload"] for e in events if e["type"] == "observation"
-               and e["payload"].get("kind") == "subtask")
+               and e["payload"].get("kind") == "child")
     assert "no-such-pattern" in obs["note"] and "builtin fallback" in obs["note"]
     assert "builtin fallback" in json.dumps(ep.calls[-1]["messages"])
 
@@ -2821,7 +2821,7 @@ def test_fifth_concurrent_spawn_rejected_at_the_parallel_cap(make_routine, scrip
                                           budgets={"max_subruns": 8, "max_turns": 20})
     assert status == "ok"
     rejected = [e["payload"] for e in events if e["type"] == "observation"
-                and e["payload"].get("kind") == "spawn" and e["payload"].get("rejected")]
+                and e["payload"].get("kind") == "child" and e["payload"].get("rejected")]
     assert len(rejected) == 1 and rejected[0]["label"] == "c5"
     assert f"parallel cap {MAX_PARALLEL}" in rejected[0]["reason"]
     assert f"{MAX_PARALLEL} child-tasks already running" in rejected[0]["reason"]
@@ -3092,12 +3092,12 @@ def test_subruns_action_reports_children(make_routine, scripted):
         (PARENT, spawn("CHILD-S: quick job.", label="s")),
         ("CHILD-S: quick job.", finish(summary="child summary here")),
         (PARENT, probe()),                       # boundary announces the exit
-        (PARENT, {"say": "Checking children.", "kind": "subruns"}),
+        (PARENT, {"say": "Checking children.", "kind": "children"}),
         (PARENT, finish(summary="done")),
     ], slug="subst")
     assert status == "ok"
     obs = [e for e in events if e["type"] == "observation"
-           and e["payload"].get("kind") == "subruns"]
+           and e["payload"].get("kind") == "children"]
     assert obs, "no subruns observation recorded"
     rows = obs[-1]["payload"]["rows"]
     assert len(rows) == 1 and rows[0]["label"] == "s"

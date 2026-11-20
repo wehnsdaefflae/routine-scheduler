@@ -106,16 +106,16 @@ def test_no_directory_and_no_live_child_is_the_genuine_empty_case(tmp_path):
 def test_the_empty_sentence_no_longer_claims_none_were_spawned(tmp_path):
     """'no sub-workflows spawned this run' is a CLAIM about history that a fresh leg cannot
     make. The replacement scopes itself to this leg and names the reason."""
-    text = obs_children.format_children({"kind": "subruns", "count": 0, "rows": []}, "subruns")
+    text = obs_children.format_children({"kind": "children", "count": 0, "rows": []}, "children")
     assert "no sub-workflows spawned this run" not in text
     assert "this leg" in text.lower()
 
 
 def test_an_orphaned_row_renders_its_directory(tmp_path):
-    text = obs_children.format_children({"kind": "subruns", "count": 1, "rows": [
+    text = obs_children.format_children({"kind": "children", "count": 1, "rows": [
         {"n": 2, "label": "worker", "workflow": "general-task", "mode": "parallel",
          "state": "orphaned-by-resume", "turns": 0, "elapsed_s": 0.0, "summary_head": "",
-         "dir": "/runs/x/sub/2", "artifacts": ["report.md"]}]}, "subruns")
+         "dir": "/runs/x/sub/2", "artifacts": ["report.md"]}]}, "children")
     assert "orphaned-by-resume" in text
     assert "/runs/x/sub/2" in text
     assert "report.md" in text

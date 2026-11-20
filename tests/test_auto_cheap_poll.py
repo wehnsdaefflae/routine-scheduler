@@ -38,7 +38,7 @@ def _loop(models: dict[str, str]):
     return SimpleNamespace(ctx=ctx, messages=[]), events
 
 
-POLL = {"say": "waiting", "kind": "subruns"}
+POLL = {"say": "waiting", "kind": "children"}
 GATE = {"say": "status?", "kind": "script", "name": "gate", "args": ["status"]}
 
 

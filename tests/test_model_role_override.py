@@ -74,9 +74,9 @@ def test_schema_accepts_roles_and_catalog_names():
     # membership is checked at dispatch, where the teaching error can name the catalog
     for action in (
         {"say": "s", "kind": "llm", "prompt": "p", "model": "main"},
-        {"say": "s", "kind": "subtask", "prompt": "p", "model": "uncensored"},
+        {"say": "s", "kind": "child", "mode": "sequential", "prompt": "p", "model": "uncensored"},
         {"say": "s", "kind": "llm", "prompt": "p", "model": "glm-5"},
-        {"say": "s", "kind": "spawn", "prompt": "p", "model": "main"},
+        {"say": "s", "kind": "child", "prompt": "p", "model": "main"},
     ):
         assert validate_action(action) == []
 
@@ -135,7 +135,7 @@ def _child_ctx(registry):
 
 def test_subtask_uncensored_unconfigured_rejected_before_build():
     mgr = SubrunManager(SimpleNamespace(ctx=_child_ctx(_Registry(unc=False))))
-    obs = mgr.subtask({"kind": "subtask", "prompt": "p", "model": "uncensored"})
+    obs = mgr.subtask({"kind": "child", "mode": "sequential", "prompt": "p", "model": "uncensored"})
     assert obs["rejected"] and "uncensored" in obs["reason"]
 
 

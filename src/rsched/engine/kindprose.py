@@ -143,31 +143,19 @@ your prompt/system — include everything it needs."""),
 back, never prose. Use it where a \
 step is a classification — route, gate, screen, rate — and act on the probability with a \
 threshold you can name; it gives no reasons, so ask `llm` when you need one."""),
-    (("spawn",), """- spawn: start a CHILD RUN scheduled in PARALLEL with you. Every child \
-run — however \
-scheduled — works the same way: its OWN directory (runs/<ts>/sub/<n>/, NOT your working tree — \
-R405/R406), its OWN budget sliced from your remainder, its own fresh context and pattern, and it \
-sees NOTHING of your conversation beyond the "prompt" you give it. So relative paths resolve \
-THERE: name absolute paths (within the allowed roots) for anything it must read. It hands back \
-its finish summary always, and hands back FILES by writing them into its own artifacts/ — the \
-engine copies those into YOUR artifacts/from-sub-<n>/ when it exits and names the landed paths, \
-so you never go looking in its dir. Parallel is the mode where you KEEP WORKING while it runs \
-and are notified when it exits."""),
-    (("subtask",), """- subtask: start a CHILD RUN scheduled SEQUENTIALLY — the same child run \
-`spawn` starts, differing ONLY in how you schedule it. Use it to \
-decompose a large task into ordered steps. It does NOT block you: to keep the order, `wait` for \
-it before starting the next one and fold its result into that brief — the wait YIELDS if \
-the user writes (so the conversation stays live) and you are notified when it finishes; or do \
-other work meanwhile."""),
+    (("child",), """- child: start a CHILD RUN — its own run, with its own fresh context, \
+working for you. It sees NOTHING of your conversation beyond the "prompt" you give it, and \
+relative paths resolve in ITS directory, so name absolute paths for anything it must read. \
+Brief it as you would a competent stranger: everything it needs, nothing it must infer."""),
     (("detach",), """- detach: start a LONG background task that OUTLIVES this reply — for a \
 big, self-contained job (a \
 large scrape, a bulk conversion, a slow build) you want to kick off and keep chatting around. \
-Unlike spawn/subtask (children that die when this reply's process ends), a detached task runs as \
+Unlike a `child` (which dies when this reply's process ends), a detached task runs as \
 its OWN process; when it finishes the engine delivers its result back into this conversation and \
 you relay it to the user. It CANNOT ask you blocking questions; \
 then `finish` the reply ("started it — I'll report back") and \
 do NOT wait. Its status is in state/background.json. Only from a conversation, only for jobs too \
-long to finish in this reply — otherwise do the work directly or use subtask."""),
+long to finish in this reply — otherwise do the work directly or use a sequential child."""),
     (("schedule_run",), """- schedule_run: arm a ONE-SHOT future run of a routine. \
 The daemon fires the one-shot ONCE at fire_at, then \
 CONSUMES it (it never \
@@ -231,8 +219,8 @@ answer. Every open goal is answered at your finish; one a routine run leaves ope
 its next run until a run meets it."""),
     (("list_models",), """- list_models: the model catalog + this run's resolved role \
 bindings (main / tool_call / uncensored / supervisor), read-only — consult it BEFORE a `model` \
-override on llm/spawn/subtask so the name you pass is one the catalog actually carries."""),
-    (("subruns",), """- subruns: a status table of your child runs, whatever mode each was \
+override on llm/child so the name you pass is one the catalog actually carries."""),
+    (("children",), """- children: a status table of your child runs, whatever mode each was \
 started in (state, turns, elapsed)."""),
     (("kill", "wait"), """- kill: terminate child run "n". wait: block until a child exits or a \
 backgrounded call lands — \

@@ -72,7 +72,7 @@ def test_one_character_over_the_cap_is_counted_in_the_singular():
     ("^script name=store", "renders as 'script:<name> <args…>'"),
     ("^shell rm -rf", "renders as 'shell: <command>'"),
     ("^edit_file anchor=x", "renders as 'edit_file path=<value>'"),
-    ("^subruns all", "renders as just 'subruns'"),
+    ("^children all", "renders as just 'children'"),
     ("^utl:fs-ops", "no action renders that way"),
 ])
 def test_a_form_no_action_renders_as_is_refused(pattern, fragment):

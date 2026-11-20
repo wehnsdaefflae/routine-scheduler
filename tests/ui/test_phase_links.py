@@ -98,7 +98,7 @@ def test_a_sub_run_row_links_to_the_turn_that_started_it(ui, ui_page):
         {"ts": "2026-07-15T10:00:00+00:00", "type": "header", "payload": {},
          "run_id": f"{SLUG}:{ts}"},
         _action(1, "act", "orienting"),
-        _action(2, "act", "starting the child", kind="spawn"),
+        _action(2, "act", "starting the child", kind="child"),
         {"ts": "2026-07-15T10:02:30+00:00", "type": "subrun_start",
          "payload": {"n": 1, "label": "crawl", "workflow": "general-task",
                      "mode": "parallel", "depth": 1,

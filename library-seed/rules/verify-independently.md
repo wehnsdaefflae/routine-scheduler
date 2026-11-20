@@ -3,7 +3,7 @@ effect:
   with: checks irreversible or outward-facing deliverables from outside its own reasoning — a mechanical check first, else a fresh-context child given the criteria, not the reasoning
   without: re-reads its own work, which confirms a mistake about as often as it catches one
   when: its deliverables are sent, published, submitted or expensive to redo
-tags: [verification, subruns, quality]
+tags: [verification, children, quality]
 ---
 # rule: verify-independently — check the deliverable from outside the reasoning that made it
 

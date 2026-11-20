@@ -19,7 +19,7 @@ from routine.params import (
 
 # The engine actions the orchestrator may take — exactly one per turn, each answered by an
 # OBSERVATION the next turn reasons about. Shown as ordinary calls for readability.
-from routine.actions import (read_file, write_file, util, write_util, llm, spawn, subruns,
+from routine.actions import (read_file, write_file, util, write_util, llm, child, children,
                              wait, ask_user, finish)
 from routine.state import phase    # the cross-run lifecycle phase (state/phase.json)
 
@@ -80,7 +80,7 @@ def main():
         # Separable bulk work → parallel children, each with a self-contained prompt + disjoint
         # outputs. Keep working, then fold in their results.
         for chunk in batches(work):
-            spawn(chunk)
+            child(chunk)
         collect_children()
     else:
         for item in work:
@@ -214,7 +214,7 @@ def batches(work):
 def collect_children():
     """Watch the children through to their exits and fold in what they hand back.
 
-    `subruns` gives their status table; `wait` blocks until the next one finishes. Every child
+    `children` gives their status table; `wait` blocks until the next one finishes. Every child
     hands back a summary, plus any files it wrote into its own artifacts/ — the engine copies
     those to artifacts/from-sub-<n>/ and NAMES them in the one CHILD RUN FINISHED notification.
     Read what you need from there before finishing; a child's context is gone once it exits."""

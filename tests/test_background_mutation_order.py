@@ -82,7 +82,7 @@ def test_a_mutation_this_model_cannot_order_is_still_refused():
 
 
 def test_the_control_kinds_are_still_not_backgroundable():
-    for kind in ("finish", "ask_user", "report", "spawn", "subtask", "wait", "kill"):
+    for kind in ("finish", "ask_user", "report", "child", "wait", "kill"):
         assert kind not in BACKGROUNDABLE_KINDS
 
 

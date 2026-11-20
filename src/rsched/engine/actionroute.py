@@ -10,6 +10,7 @@ from . import (
     authoring,
     background,
     background_order,
+    childfields,
     create_routine,
     detach,
     donothing,
@@ -183,10 +184,13 @@ def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911, C901 — a flat k
         return admin_handlers.handle_schedule_run(loop, action)
     if action["kind"] == "report":
         return admin_handlers.handle_report(loop, action)
-    if action["kind"] == "spawn":
+    if action["kind"] == "child":
+        # D241: ONE kind, its scheduling in `mode` — the two handlers stay two handlers
+        # because parallel and sequential really do schedule differently; what changed is
+        # that the CALLER no longer has to know them as two different things.
+        if childfields.mode_of(action) == "sequential":
+            return loop.subruns.subtask(action)
         return loop.subruns.spawn(action)
-    if action["kind"] == "subtask":
-        return loop.subruns.subtask(action)
     if action["kind"] == "detach":
         return detach.handle_detach(ctx, action)
     if action["kind"] == "create_routine":
@@ -201,7 +205,7 @@ def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911, C901 — a flat k
         # D186: the run states that nothing was due. It dispatches like any kind — and
         # grounds no finish (engine/donothing.py says why).
         return donothing.handle(action)
-    if action["kind"] == "subruns":
+    if action["kind"] == "children":
         return loop.subruns.status_table()
     if action["kind"] == "kill":
         # Two namespaces (D176 option (a)): `handle` addresses a background call, `n` a

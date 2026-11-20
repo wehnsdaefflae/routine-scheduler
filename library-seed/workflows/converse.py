@@ -22,7 +22,7 @@ from routine.params import (
 )
 
 from routine.actions import (read_file, write_file, edit_file, util, write_util, llm,
-                             spawn, subtask, detach, wait, ask_user, goal, finish)
+                             child, detach, wait, ask_user, goal, finish)
 
 META = {
     "name": "Converse",
@@ -36,7 +36,7 @@ META = {
                    "each new conversation. Not for scheduled routines: there is no schedule, "
                    "and the reply cycle assumes a user who reads the answer and writes back.",
     "version": 5,
-    # "meta" keeps it out of spawn-pattern lists and wizard suggestions — a conversation
+    # "meta" keeps it out of child-pattern lists and wizard suggestions — a conversation
     # harness assumes a present user; it is materialized ONLY by the Conversations tab.
     "tags": ["conversation", "interactive", "assistant", "meta"],
     "includes": ["ask-policy", "web-research", "decision-record", "git-checkpoint"],
@@ -161,13 +161,13 @@ def work(plan, message):
       unverified outcome is the worst failure this system knows.
     - A plan step that is big and self-contained is the signal to DECOMPOSE rather than spend
       this context on it: an ORDERED, multi-stage step (e.g. research -> draft -> review) runs
-      as sequential `subtask` children (each a fresh-context child run with its own pattern and
+      as sequential `child` (mode sequential) children (each a fresh-context child run with its own pattern and
       budget, blocking, each result folded into the next brief); several INDEPENDENT parts fan
-      out as parallel `spawn` children. Do small steps directly — decompose when a step's own
+      out as parallel `child` children. Do small steps directly — decompose when a step's own
       context or budget would crowd out the rest of the plan.
     - A LONG, self-contained job you want to kick off and then keep chatting around — a
       20-minute scrape, a bulk conversion, a slow build — is different: `detach` it. Unlike
-      subtask/spawn (children that die when this reply's process ends), a detached task runs
+      sequential child run/child (children that die when this reply's process ends), a detached task runs
       as its OWN background process, survives your reply-finishes, and delivers its result
       back HERE when it completes (you relay it then). Give it a COMPLETE self-contained
       brief — it can't ask you blocking questions — then finish the reply ("started it — I'll

@@ -12,6 +12,7 @@ and cost the small-model support the whole design is built around.
 from __future__ import annotations
 
 from . import notemeta, roleswap, schema_background, schema_questions, schema_remind, schema_routine
+from .childfields import MODE_FIELD_SHARED
 
 READ_PATHS_MAX = 8
 
@@ -38,10 +39,10 @@ KINDS = ("util", "websearch", "code_search", "write_util", "remove_util",
          "read_file", "view_image", "write_file", "delete", "move", "mkdir", "edit_file",
          "memory_read", "memory_write", "read_rule", "write_rule",
          "script", "shell",
-         "llm", "decide", "spawn", "subtask", "detach",
+         "llm", "decide", "child", "detach",
          "schedule_run", "create_routine", "manage_lane",
          "job", "goal",
-         "list_models", "subruns", "kill", "wait", "ask_user", "report", "do_nothing", "finish")
+         "list_models", "children", "kill", "wait", "ask_user", "report", "do_nothing", "finish")
 
 ACTION_SCHEMA: dict = {
     "type": "object",
@@ -328,12 +329,12 @@ ACTION_SCHEMA: dict = {
         "delete": notemeta.DELETE_FIELD,
         "stale_after": notemeta.STALE_AFTER_FIELD,   # D268: a note's expiry, as data
         "verified": notemeta.VERIFIED_FIELD,         # D268: who last checked it, and when
-        # llm / spawn / subtask / detach / view_image
+        # llm / child / detach / view_image
         "prompt": {"type": "string",
-                   "description": "llm: the prompt · spawn/subtask/detach: the child's full "
-                                  "self-contained instruction (subtask: fold in the previous "
-                                  "subtask's result) · view_image: what to look for (used only if "
-                                  "the file falls back to the vision util) · create_routine: the "
+                   "description": "llm: the prompt · child/detach: the child's full "
+                                  "self-contained instruction (sequential: fold in the previous "
+                                  "one's result) · view_image: what to look for (if the file "
+                                  "falls back to the vision util) · create_routine: the "
                                   "clarified task instruction, decomposed into the new routine's "
                                   "stages (say WHAT it should do, not when it runs)"},
         "system": {"type": "string", "description": "llm: optional system prompt"},
@@ -358,7 +359,7 @@ ACTION_SCHEMA: dict = {
         "response_schema": {"type": "object",
                             "description": "llm: optional JSON schema constraining the reply"},
         "model": {"type": "string",
-                  "description": "llm/spawn/subtask: OPTIONAL model override — a ROLE (main, "
+                  "description": "llm/child: OPTIONAL model override — a ROLE (main, "
                                  "tool_call; uncensored for a step the default refuses, rejected "
                                  "if unset), a catalog model NAME from `list_models`, or (llm "
                                  "only) `<endpoint>/<model id>` for an off-catalog model. "
@@ -367,7 +368,7 @@ ACTION_SCHEMA: dict = {
                                  "(list_models shows them; default: the instance's decision "
                                  "model, its image default when the call carries images)"},
         "workflow": {"type": "string",
-                     "description": "spawn/subtask/detach: library workflow slug for the child "
+                     "description": "child/detach: library workflow slug for the child "
                                     "(default general-task) — pick the pattern matching its "
                                     "purpose · create_routine: the library workflow pattern the "
                                     "new routine is materialized from (default general-task)"},
@@ -375,12 +376,12 @@ ACTION_SCHEMA: dict = {
         # size ceiling (shrink-only), so the revise path's `revises` flag needed room first.
         **schema_routine.ROUTINE_FIELDS,
         "label": {"type": "string",
-                  "description": "spawn/subtask/detach: short name shown in the run tree"},
+                  "description": "child/detach: short name shown in the run tree"},
         "turns": {"type": "integer", "minimum": 1,
-                  "description": "subtask: turn budget for this sequential child (default: half "
-                                 "your remaining turns)"},
-        # subruns / kill / wait
-        "n": {"type": "integer", "minimum": 1, "description": "kill/wait: the sub-workflow number"},
+                  "description": "child (mode sequential): turn budget for this child "
+                                 "(default: half your remaining turns)"},
+        # children / kill / wait
+        "n": {"type": "integer", "minimum": 1, "description": "kill/wait: the child's number"},
         "handle": {"type": "string",
                    "description": "kill: a BACKGROUND call's handle (bg1, bg2 … — the one its "
                                   "started observation named) instead of `n`. What it stops "
@@ -403,11 +404,9 @@ ACTION_SCHEMA: dict = {
                      "description": "ask_user: the question, self-contained (simple Markdown "
                                     "renders in the UI) · decide: what to decide, phrased as "
                                     "the question the options answer"},
-        "mode": {
-            "type": "string", "enum": ["blocking", "deferred"],
-            "description": "ask_user: wait for the answer vs file it and continue "
-                           "(default deferred)",
-        },
+        # Shared by two kinds, as `question` and `options` are: one property cannot carry two
+        # enums, so the union and the reasoning live in childfields.MODE_FIELD_SHARED.
+        "mode": MODE_FIELD_SHARED,
         "options": {
             "type": "array", "items": {"type": "string"}, "maxItems": 26,
             "description": "ask_user: optional pick-one choices (at most 5) · decide: the "
@@ -543,7 +542,7 @@ BRIEF_FIELD = {"util": "name", "websearch": "args", "code_search": "args",
                "write_file": "path", "delete": "path", "move": "src",
                "mkdir": "path", "edit_file": "path", "memory_read": "name",
                "memory_write": "name", "read_rule": "name", "write_rule": "name",
-               "llm": "prompt", "decide": "question", "spawn": "label", "subtask": "label",
+               "llm": "prompt", "decide": "question", "child": "label",
                "detach": "label", "schedule_run": "target", "create_routine": "target",
                "manage_lane": "verb", "job": "id", "goal": "id", "kill": "n", "wait": "n",
                "ask_user": "question", "report": "title", "finish": "status"}

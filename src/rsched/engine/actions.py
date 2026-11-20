@@ -94,11 +94,11 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "llm": (("prompt",), ("system", "response_schema", "model", "background")),
     "decide": ((), ("question", "answer_type", "options", "questions", "evidence", "files",
                     "model", "background")),
-    "spawn": (("prompt",), ("workflow", "label", "model")),
-    "subtask": (("prompt",), ("workflow", "label", "turns", "model")),
+    # D241: ONE kind for a child run, its scheduling in a flat `mode` (childfields.py)
+    "child": (("prompt",), ("mode", "workflow", "label", "turns", "model")),
     "detach": (("prompt",), ("workflow", "label")),
     "list_models": ((), ()),
-    "subruns": ((), ()),
+    "children": ((), ()),
     # `n` is no longer REQUIRED because a kill now addresses either namespace: `n` a
     # sub-workflow, `handle` a background call (D176 option (a) — two namespaces stay two
     # namespaces). Exactly one of them is demanded by `validate_action`, which can say which

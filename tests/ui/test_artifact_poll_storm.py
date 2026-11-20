@@ -70,7 +70,7 @@ def test_replayed_subrun_events_cost_at_most_two_tree_fetches(ui, ui_page):
             # the spawning action first: subrun_start carries no turn of its own, and a node
             # whose start_turn is None renders as a plain row rather than a link (D193)
             fh.write(json.dumps({"ts": "2026-07-15T10:02:29+00:00", "type": "assistant_action",
-                                 "turn": i, "payload": {"kind": "spawn",
+                                 "turn": i, "payload": {"kind": "child",
                                                         "say": f"starting child-{i}"}}) + "\n")
             fh.write(json.dumps({"ts": "2026-07-15T10:02:30+00:00", "type": "subrun_start",
                                  "payload": {"n": i, "label": f"child-{i}",

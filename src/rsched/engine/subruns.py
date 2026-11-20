@@ -178,10 +178,10 @@ class SubrunManager:
         running = self._running()
         sub = self._start_child(action, mode=child.PARALLEL, prefix="sub")
         if isinstance(sub, str):
-            return {"kind": "spawn", "rejected": True, "label": action.get("label") or "",
-                    "reason": sub}
-        return {"kind": "spawn", "n": sub.n, "label": sub.label, "workflow": sub.workflow,
-                "note": sub.note, "running": running + 1}
+            return {"kind": "child", "mode": child.PARALLEL, "rejected": True,
+                    "label": action.get("label") or "", "reason": sub}
+        return {"kind": "child", "mode": child.PARALLEL, "n": sub.n, "label": sub.label,
+                "workflow": sub.workflow, "note": sub.note, "running": running + 1}
 
     # -- subtask (sequential) -------------------------------------------------------
 
@@ -199,12 +199,12 @@ class SubrunManager:
         sub = self._start_child(action, mode=child.SEQUENTIAL, prefix="task",
                                 overrides=overrides)
         if isinstance(sub, str):
-            return {"kind": "subtask", "rejected": True, "label": action.get("label") or "",
-                    "reason": sub}
+            return {"kind": "child", "mode": child.SEQUENTIAL, "rejected": True,
+                    "label": action.get("label") or "", "reason": sub}
         # `note` says when the requested pattern was unavailable and the child runs on the
         # builtin fallback — the parent has to know its child is not running what it asked for.
-        return {"kind": "subtask", "n": sub.n, "label": sub.label, "workflow": sub.workflow,
-                "note": sub.note, "started": True}
+        return {"kind": "child", "mode": child.SEQUENTIAL, "n": sub.n, "label": sub.label,
+                "workflow": sub.workflow, "note": sub.note, "started": True}
 
     # -- lifecycle (shared) ---------------------------------------------------------
 
@@ -269,7 +269,7 @@ class SubrunManager:
         from . import background_status
 
         rows = subsalvage.rows(self.subruns, self.parent.ctx.run_dir)
-        return {"kind": "subruns", "count": len(rows), "rows": rows,
+        return {"kind": "children", "count": len(rows), "rows": rows,
                 "background": background_status.status_rows(self.parent)}
 
     def kill(self, n: int) -> dict:

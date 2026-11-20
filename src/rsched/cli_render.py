@@ -29,8 +29,8 @@ def _render_event(obj: dict) -> str:  # noqa: PLR0911 — one return per event t
                  "memory_read": p.get("name"),
                  "memory_write": f"{p.get('name')}{' (delete)' if p.get('delete') else ''}",
                  "llm": (p.get("prompt") or "")[:60],
-                 "spawn": f"{p.get('label') or ''} [{p.get('workflow') or 'general-task'}]",
-                 "subtask": f"{p.get('label') or ''} [{p.get('workflow') or 'general-task'}]",
+                 "child": (f"{p.get('label') or ''} [{p.get('workflow') or 'general-task'}]"
+                           f"{' seq' if p.get('mode') == 'sequential' else ''}"),
                  # one kill, two namespaces (D176 option (a)): a sub-workflow NUMBER or a
                  # background call's string HANDLE. Reading `n` for both printed "#None" for
                  # every handle-addressed kill — the terminal half of F723.
@@ -114,13 +114,12 @@ def _render_observation(p: dict) -> str:  # noqa: PLR0911 — one return per act
         return f"    ← write_util {p.get('name')}: {state}"
     if kind == "llm":
         return "    ← llm reply" + (" (error)" if p.get("error") else "")
-    if kind == "spawn":
-        return (f"    ← spawn REJECTED: {p.get('reason')}" if p.get("rejected")
-                else f"    ← sub-workflow #{p.get('n')} started")
-    if kind == "subtask":
+    if kind == "child":
         if p.get("rejected"):
-            return f"    ← subtask REJECTED: {p.get('reason')}"
-        return f"    ← subtask #{p.get('n')} started (sequential, background)"
+            return f"    ← child REJECTED: {p.get('reason')}"
+        seq = p.get("mode") == "sequential"
+        return (f"    ← child run #{p.get('n')} started"
+                + (" (sequential, background)" if seq else ""))
     if kind == "wait":
         done = ", ".join(f"#{f['n']}:{f['status']}" for f in p.get("finished", []))
         return f"    ← wait → {done or ('timeout' if p.get('timed_out') else 'nothing new')}"

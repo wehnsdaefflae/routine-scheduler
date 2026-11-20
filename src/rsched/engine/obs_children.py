@@ -28,22 +28,25 @@ def _salvaged(row: dict) -> str:
 
 def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — one flat renderer per module, by design: observation wording is PROMPT SURFACE (docs/prompt-anatomy.md) and every branch is a distinct string for a distinct kind. Collapsing them would scatter a kind's wording, which is exactly what this shape exists to prevent.
     """Wording for this module's kinds; None when `kind` is not one of them."""
-    if kind == "spawn":
+    if kind == "child":
+        # D241: ONE kind, so ONE branch — the MODE chooses the wording, because what differs
+        # between a parallel and a sequential child is what the caller does next, not what the
+        # child is. The old two branches said "sub-workflow" and "sequential child" for the
+        # same thing, which is the vocabulary this decision exists to end.
         if obs.get("rejected"):
-            return f"OBSERVATION (spawn REJECTED): {obs['reason']}"
+            return f"OBSERVATION (child REJECTED): {obs['reason']}"
         note = f" [{obs['note']}]" if obs.get("note") else ""
-        return (f"OBSERVATION (spawn): sub-workflow {obs['n']} {obs.get('label')!r} started "
-                f"(workflow {obs.get('workflow')}, now {obs.get('running')} running).{note} "
-                "It works in parallel — you will be notified when it finishes; keep going.")
-    if kind == "subtask":
-        if obs.get("rejected"):
-            return f"OBSERVATION (subtask REJECTED): {obs['reason']}"
-        note = f" [{obs['note']}]" if obs.get("note") else ""
-        return (f"OBSERVATION (subtask): sequential child {obs['n']} {obs.get('label')!r} started "
-                f"(workflow {obs.get('workflow')}){note} — it runs in the BACKGROUND. To keep "
-                f"sequential order, `wait` for it (n={obs['n']}) before starting the next subtask "
-                "and fold its result into that brief; the wait yields if the user writes; you "
-                "are notified when it finishes. Or do other work meanwhile.")
+        if str(obs.get("mode") or "") == "sequential":
+            return (f"OBSERVATION (child, sequential): child run {obs['n']} "
+                    f"{obs.get('label')!r} started (workflow {obs.get('workflow')}){note} — it "
+                    "runs in the BACKGROUND. To keep the order, `wait` for it "
+                    f"(n={obs['n']}) before starting the next one and fold its result into that "
+                    "brief; the wait yields if the user writes; you are notified when it "
+                    "finishes. Or do other work meanwhile.")
+        return (f"OBSERVATION (child, parallel): child run {obs['n']} {obs.get('label')!r} "
+                f"started (workflow {obs.get('workflow')}, now {obs.get('running')} "
+                f"running).{note} It works in parallel — you will be notified when it "
+                "finishes; keep going.")
     if kind == "detach":
         if obs.get("rejected"):
             return f"OBSERVATION (detach REJECTED): {obs['reason']}"
@@ -52,7 +55,7 @@ def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — on
                 "process, independent of this reply — you will be notified HERE when it finishes "
                 "and can then relay its result. Do NOT wait: finish this reply now (tell the user "
                 "you started it and will report back).")
-    if kind == "subruns":
+    if kind == "children":
         bg_rows = background_status.lines(obs.get("background") or [])
         if not obs.get("rows"):
             # Never "none spawned" (F732): the registry is in-memory, so a RESUMED leg knows
@@ -61,16 +64,16 @@ def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — on
             # about BACKGROUND work it has no standing to make (R3600): the operator met it
             # with a `bg1` script in flight, so it only speaks when nothing is running either.
             if not bg_rows:
-                return ("OBSERVATION (subruns): no record of a child in THIS leg — and none on "
+                return ("OBSERVATION (children): no record of a child in THIS leg — and none on "
                         "disk either, so none was started.")
-            return ("OBSERVATION (subruns): no child run in THIS leg, and background work is "
+            return ("OBSERVATION (children): no child run in THIS leg, and background work is "
                     "in flight:\n" + "\n".join(bg_rows))
         lines = [f"- #{r['n']} {r['label']!r} [{r['workflow']}] {r['state']} · "
                  f"{r['turns']} turns · {r['elapsed_s']}s"
                  + (f" · {r['summary_head']}" if r["summary_head"] else "")
                  + _salvaged(r)
                  for r in obs["rows"]]
-        return "OBSERVATION (subruns):\n" + "\n".join(lines + bg_rows)
+        return "OBSERVATION (children):\n" + "\n".join(lines + bg_rows)
     if kind == "kill":
         if obs.get("error"):
             return f"OBSERVATION (kill FAILED): {obs['error']}"

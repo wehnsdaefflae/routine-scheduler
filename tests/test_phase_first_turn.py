@@ -77,10 +77,10 @@ def test_build_tree_records_the_parent_turn_that_started_each_child(tmp_path):
     followed — which is exactly the turn whose box the reader wants."""
     _write(tmp_path / "transcript.jsonl", [
         {"type": "assistant_action", "turn": 1, "payload": {"kind": "util"}},
-        {"type": "assistant_action", "turn": 2, "payload": {"kind": "spawn"}},
+        {"type": "assistant_action", "turn": 2, "payload": {"kind": "child"}},
         {"type": "subrun_start", "payload": {"n": 1, "label": "first", "workflow": "general-task",
                                              "mode": "parallel", "depth": 1}},
-        {"type": "assistant_action", "turn": 5, "payload": {"kind": "subtask"}},
+        {"type": "assistant_action", "turn": 5, "payload": {"kind": "child", "mode": "sequential"}},
         {"type": "subrun_start", "payload": {"n": 2, "label": "second", "workflow": "general-task",
                                              "mode": "sequential", "depth": 1}},
         {"type": "subrun_end", "payload": {"n": 2, "status": "ok", "turns": 3, "summary": "did it"}},
