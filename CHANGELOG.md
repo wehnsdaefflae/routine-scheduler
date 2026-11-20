@@ -15,6 +15,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.565.0] — 2026-11-20
+
+### Added
+- **`GET /api/credential-screen`: the daemon compares a file's content against the credentials
+  this instance stores, and answers with names, coverage and a digest — never a value** (D296,
+  operator decision 2026-11-19, option a). D171 gave `rsched export` the NAMES of every stored
+  credential because the util's Landlock jail hides the stores themselves — but a name cannot be
+  matched against file content, so the export has been exiting 0 with `withheld_coverage:
+  partial`, having compared NOTHING by value for the central store and the OAuth connections,
+  while 11 named files sat absent from the mirror and an empty `withheld` list read like a clean
+  one. The comparison now happens where the values already are.
+  - The caller names absolute paths; the daemon opens each one ITSELF, so no caller-supplied
+    bytes are ever screened and this is not a chosen-input search oracle. `O_NOFOLLOW` plus a
+    regular-file check on the OPEN DESCRIPTOR (never a prior stat), inside the instance's own
+    homes (`routines_home`, `conversations_home`, `background_home`, `libraries_home`), with
+    containment judged on the RESOLVED path so neither `..` nor a link smuggles a target in.
+  - Bounded streaming: 64 MiB per file — deliberately ABOVE the export's own 10 MiB exclusion,
+    since those files are precisely the ones nothing has ever compared — with a
+    `longest needle − 1` overlap, so a credential split across a read boundary is still found.
+  - Each result carries the **sha256 of the exact bytes screened**, which binds the verdict to
+    them: a caller can prove it publishes the file that was screened. `clean` is said ONLY on
+    full coverage, a whole file read, nothing matched and nothing changed underneath
+    (`st_dev`/`st_ino`/`st_size`/`st_mtime_ns` re-checked after the read). A truncated read, a
+    changed file, an unreadable source or an unopenable path is `unknown` — and NEVER "absent",
+    because a discovery failure read as confirmed absence is how a mirror prunes a file nobody
+    screened.
+  - A GET, because a screen reads: acting on the verdict stays the export's, so
+    `ROUTINE_TOKEN_MUTATIONS` stays empty and the routine token the export runs under reaches it.
+  - The adversarial regressions the decision named are all present and each is proven red-first
+    by neutering its guard alone: synthetic-secret, escaped-secret (a multi-line key is stored
+    JSON-escaped and a verbatim match would never see it), boundary-size, symlink/race,
+    partial-source and the pruning refusals. 24 new tests.
+  - D171's isolation is NOT loosened: no response field carries a value, asserted over the whole
+    serialized body. The residual channel is stated rather than papered over — needles are whole
+    stored values of at least 8 characters, so a caller who already knows a value in full can
+    have its presence confirmed; no prefix and no shorter fragment ever matches.
+
+### Changed
+- `tests/memcharges.py`'s sibling for credentials: `src/rsched/credneedles.py` builds the needle
+  set from each store's OWNING module (`secrets`, `oauth.store`, the new `triggers.webhook_tokens`),
+  so a store renamed by its owner cannot leave a stale literal that quietly stops being matched.
+  It lists a store directory with `iterdir`, never `glob`: on a directory access is denied for,
+  glob swallows the `PermissionError` and yields nothing, so a store nobody could look at reads as
+  an EMPTY one and coverage says `full` — the reproducible defect the export was found to have.
+- `docs/architecture.md` and `docs/sandboxing.md` carry the screen beside D171's names route, and
+  sandboxing.md's claim that the export "withholds every file carrying a credential the instance
+  holds" is corrected: that is what the guard aims at, not what it could promise from inside the
+  jail that hides the stores.
+
 ## [0.564.1] — 2026-11-20
 
 ### Fixed

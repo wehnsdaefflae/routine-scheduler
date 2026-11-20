@@ -90,6 +90,24 @@ def hook_path(slug: str, trigger: dict) -> str:
     return f"/api/webhooks/{slug}/{trigger.get('token', '')}"
 
 
+def webhook_tokens(routine_data: object) -> list[str]:
+    """Every webhook token a routine.yaml's `triggers:` carries — the one credential the
+    SCHEDULER itself writes into a routine's own config, and therefore one a mirror of that
+    tree would publish verbatim.
+
+    Here rather than in the reader, because the trigger entry's shape is this module's: a
+    screen or a redactor spelling `entry["token"]` for itself goes stale the day a second
+    token-bearing trigger type exists (D296).
+    """
+    out: list[str] = []
+    entries = routine_data.get("triggers") if isinstance(routine_data, dict) else None
+    for entry in entries if isinstance(entries, list) else []:
+        token = entry.get("token") if isinstance(entry, dict) else None
+        if isinstance(token, str) and token.strip():
+            out.append(token)
+    return out
+
+
 def default_cooldown(ttype: str) -> int:
     """A trigger type's own cooldown when its entry names none: report 900s, others 60s."""
     return DEFAULT_REPORT_COOLDOWN_S if ttype == "report" else DEFAULT_COOLDOWN_S

@@ -29,6 +29,7 @@ def include_api_routers(app: FastAPI, deps: list) -> None:
         api_conversation_secrets,
         api_conversations,
         api_credential_names,
+        api_credential_screen,
         api_debug,
         api_desktops,
         api_finishline,
@@ -85,6 +86,8 @@ def include_api_routers(app: FastAPI, deps: list) -> None:
                    api_refusal_flag,
                    api_schedule, api_stats, api_changes, api_health, api_finishline,
                    api_credential_names,
+                   api_credential_screen,   # D296: the VALUE-level counterpart of the names
+                   # route — the comparison the export's sandbox cannot make for itself
                    api_questions,
                    api_question_deliver,   # /questions/{qid}/deliver|settle — an UNDELIVERED answer
                    api_patch_applied,   # /questions/{qid}/patch-applied — R2778's record fix

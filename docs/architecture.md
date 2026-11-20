@@ -1592,7 +1592,30 @@ is identical on an instance holding real credentials and one holding placeholder
 the export runs under is refused wholesale). A by-NAME scrub list cannot do everything a
 by-VALUE one did — it cannot recognise a central-store credential someone pasted into an
 unrelated file — so a redactor using it must say which sources it could still scan by value,
-never let a shrinking `withheld` list read as a clean one. `bootstrap.py` seeds on
+never let a shrinking `withheld` list read as a clean one. **That gap is what
+`GET /api/credential-screen` closes** (D296, operator decision 2026-11-19, option a): names
+cannot be matched against content, so the export has been exiting 0 having compared nothing by
+value for the central store and the OAuth connections. The MATCHING moves to where the values
+already are. A caller names absolute paths; the daemon opens each one itself — `O_NOFOLLOW` plus
+a regular-file check on the open descriptor, inside the instance's own homes (`routines_home`,
+`conversations_home`, `background_home`, `libraries_home`), containment judged on the RESOLVED
+path — streams it under a 64 MiB bound (deliberately ABOVE the export's own 10 MiB exclusion,
+since those files are precisely the ones nothing ever compared) with a `longest needle − 1`
+overlap so a credential straddling a read boundary is still found, and answers with the NAMES
+the match is stored under, the coverage of the comparison, and the **sha256 of the exact bytes
+screened** — which binds the verdict to those bytes, so a caller can prove it publishes the file
+that was screened. `clean` is said ONLY on full coverage, a whole file read, nothing matched and
+nothing changed under the read (`st_dev`/`st_ino`/`st_size`/`st_mtime_ns` re-checked after); a
+truncated read, a changed file, an unreadable source or an unopenable path is `unknown` and
+never "absent" — a discovery failure read as confirmed absence is how a mirror prunes a file
+nobody screened. It is a GET, because a screen reads: acting on the verdict (withholding,
+pruning, refusing to push) stays the export's, so `ROUTINE_TOKEN_MUTATIONS` stays empty. D171's
+isolation is NOT loosened — no value appears in any response field. The residual channel is
+stated rather than papered over: since needles are whole stored values of at least 8 characters,
+a caller who already knows a value in full can have its presence in a file confirmed; no prefix
+and no shorter fragment ever matches, and no caller-supplied bytes are screened at all
+(`credneedles.py` builds the needle set from each store's OWNING module, `credscreen.py` does
+the rooted bounded scan, `web/api_credential_screen.py` serves it). `bootstrap.py` seeds on
 first boot; `deploy/install.sh` for host installs. Everything in the library is user-EDITABLE from
 the Library tab, and DELETABLE except permission docs (the capability layer's conduct surface) and
 the `converse` workflow (every conversation is materialized from it BY SLUG, so losing it

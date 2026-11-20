@@ -447,9 +447,17 @@ store secret, so it has nothing to redact.
 A credential a routine WRITES into its own tree — a copy of the server config, a key quoted in a
 note — is readable to every routine that holds `~/routines`; the library mirror would carry
 it off the machine. The jail cannot see what a `shell` command or a script writes, so that guard
-sits where the tree leaves the box: library-sync's export withholds every file carrying a
-credential the instance holds and reports it to the routine that keeps it (docs/architecture.md,
-Libraries & seeds).
+sits where the tree leaves the box: library-sync's export withholds files carrying a credential
+the instance holds and reports each to the routine that keeps it (docs/architecture.md,
+Libraries & seeds). "Every" is what that guard AIMS at, not what it could promise on its own:
+the export runs inside the jail, which hides the very stores it must match against, so its own
+`withheld_coverage` reads `partial` and an empty `withheld` list can mean "nothing was compared"
+rather than "nothing is there". Since D296 the comparison is available where the values are —
+`GET /api/credential-screen` screens a named path inside the instance's homes and answers with
+names, coverage and the digest of the bytes it read, so a caller can tell a screened file from
+an unscreened one. It remains a defined-policy screen, not a universal detector: a credential
+the instance does not store, one under 8 characters, or one transformed before it was written
+is outside what any by-value match can see.
 
 Three NON-secret vars ride along for every util and script: `PATH` (the library root, so
 `gu <sibling>` resolves), `GLOBAL_UTILS_HOME`, and `RSCHED_UTIL_TIMEOUT_S` — the deadline
