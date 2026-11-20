@@ -119,17 +119,24 @@ refusal arrived on the click — whole-draft, taking every other kept change wit
 `budgets: {max_minutes: …}` and `connections: {"fau-mail": …}` are the measured cases).
 
 Each field is checked for SHAPE against the accept's own patch model; a field named in
-`validate.semantic_checks()` (`connections`, `efforts`, `machines`, `models`) is then checked
-for MEANING with the exact validator the accept route runs. A field in
+`validate.semantic_checks()` (`connections`, `efforts`, `machines`, `models`, `fs_read_roots`,
+`fs_write_roots`) is then checked for MEANING with the exact validator the accept route runs —
+for the two folder grants that is `rootgrants.normalize_roots`, the pure function
+`config_fields.validate_roots` wraps (absolute once `~`/`$VARS` expand, never a credential
+store), so the writer refuses with the very sentence the accept's 400 would carry. It is called
+with no current list: a proposal is a NEW grant and never re-asserts a store the loader is
+asking the operator to narrow. Before 0.562.0 both fields were `GAP` entries, and
+feeld-webui-maintainer's creation draft proposed `fs_write_roots: ["work"]` — stored, then
+refused on the accept, taking every other kept change with it. A field in
 `validate.whole_field_checks()` answers for itself instead of that pair: `finish_line` and
 `triggers` are not patch fields at all — the accept routes them to `engine/finishline.py` and
 `api_hooks.reconciled_triggers` — so their own owners are the only judges that apply, and
 judging them by the patch model would refuse every value, including the empty ones all 14
-shipped patterns carry. The remaining 17 governable fields are offered on their shape alone,
+shipped patterns carry. The remaining 15 governable fields are offered on their shape alone,
 and `validate.NO_SEMANTIC_CHECK` names each one with the reason: four have no meaning to judge,
-while **13 carry a validator on the accept route the judge does not consult** — so a value the
-system generated can still be refused on a page nobody typed into (R2884, measured on 0.447.3;
-`deliberation` and `capabilities` are the two the operator hit).
+while **11 carry a validator on the accept route the judge does not consult** — so a value the
+system generated can still be refused on a page nobody typed into (R2884, measured on 0.447.3
+at 13; `deliberation` and `capabilities` are the two the operator hit).
 `tests/test_recommend_coverage.py` holds that split to a ratchet: a new governable field must
 be checked, and an entry leaves the allowlist only when its check is implemented.
 `tests/test_proposal_validation.py` pins the refusal per seam, and that every shipped pattern
@@ -158,6 +165,22 @@ secrets a routine receives would be a pattern granting them.
 that fits the routine as it now is — the one built on its workflow when there is exactly one —
 and proposes what this routine needs beyond it; switching patterns proposes the new pattern's
 values as well. A proposal, never a write.
+
+What the recommender is told decides what it proposes, so two parts of its prompt
+(`patterns/recommend._prompt`) exist because a creation draft got them wrong (2026-11-20):
+
+- **Folder grants are absolute paths OUTSIDE the routine's own directory.** The prompt names
+  that directory and says every run already reads and writes inside it, so a root there — or a
+  relative one, which can only mean one — grants nothing. `patterns/recommend_roots` also drops
+  such entries from a proposed list before the judge sees it (a root the routine already holds
+  is kept), so a model that writes one anyway loses that entry rather than the whole field.
+- **A permission is read by its `effect:` lines, not its summary.** Each is listed with its WITH,
+  WITHOUT and WHEN lines, and proposed only for something the WITH line adds that the WITHOUT
+  line does not already allow — the draft proposed `android-actuation` "for observe/navigate",
+  which that doc's WITHOUT line says needs no permission. A permission whose `requires.utils`
+  names a util VERB (`android:act`, `signal:send`, `mail:send`, …) is marked `RESERVES`: holding
+  it pre-approves every such call for good, where without it each call is asked for and approved
+  once, so it is proposed only when the task says those calls are pre-approved.
 
 **Follow another pattern** (`POST …/settings/follow`, `{pattern}`). Its governed values that
 differ from the routine's become pending changes; accepting them with `pattern` set makes the

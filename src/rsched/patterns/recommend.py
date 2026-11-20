@@ -22,7 +22,7 @@ the recommender what it checks.
 How far that reaches is `NO_SEMANTIC_CHECK`, and it is NOT yet the whole accept route. Every
 proposed field is checked for SHAPE by the patch model; the fields in `semantic_checks()` /
 `whole_field_checks()` are then checked for MEANING with the accept's own validators. The rest
-are offered on their shape alone — and for 13 of them a validator exists on the accept route
+are offered on their shape alone — and for 11 of them a validator exists on the accept route
 that the judge does not consult, so a value the SYSTEM generated can still be refused on a
 page the person never typed into (R2884). Each one is named there with its reason; the accept
 is whole-draft, so one refused field 400s every other change the person kept.
@@ -35,6 +35,7 @@ import logging
 from pathlib import Path
 
 from . import fields, store, validate
+from . import recommend_roots as roots
 
 log = logging.getLogger("rsched.patterns.recommend")
 
@@ -132,6 +133,8 @@ def recommend(server, *, slug: str, saved: dict, pattern: dict | None,
             value = json.loads(str(row.get("value_json") or "null"))
         except ValueError:
             continue
+        if key in roots.ROOT_KEYS:
+            value = roots.without_own_dir(value, roots.own_dir(server, slug), saved.get(key))
         if fields.equal(key, saved.get(key), value) or not valid(key, value, server):
             continue
         out[key] = {"value": fields.canonical(key, value),
@@ -145,8 +148,7 @@ def _prompt(server, slug: str, saved: dict, pattern: dict | None, context: str,
     from ..oauth.providers import PROVIDERS
 
     providers = ", ".join(sorted(PROVIDERS)) or "none configured"
-    perms = "\n".join(f"- {d['slug']}: {d['summary']}"
-                      for d in library_docs.list_docs(server.permissions_home))
+    perms = "\n".join(_permission(d) for d in library_docs.list_docs(server.permissions_home))
     rules = "\n".join(f"- {d['slug']}: {d['summary']}"
                       for d in library_docs.list_docs(server.rules_home))
     # Each parameter with its type and meaning, as the console's gate form shows them: a name
@@ -168,6 +170,8 @@ def _prompt(server, slug: str, saved: dict, pattern: dict | None, context: str,
         "its job ends, extra permissions or rules its work needs. Propose nothing the task does "
         "not call for, never widen access 'just in case', and leave a value alone when you are "
         "unsure. Each change carries the field's COMPLETE new value as JSON.\n\n"
+        f"{roots.prompt_line(roots.own_dir(server, slug))}\n\n"
+        f"{PERMISSION_RULE}\n\n"
         f"ROUTINE {slug}. {base}\n\nWHAT IT IS FOR:\n{context[:12000]}\n\n"
         f"ITS CURRENT SETTINGS (JSON):\n{json.dumps(saved, ensure_ascii=False)[:12000]}\n\n"
         f"FIELDS YOU MAY CHANGE: {', '.join(allowed)}.\n"
@@ -180,6 +184,37 @@ def _prompt(server, slug: str, saved: dict, pattern: dict | None, context: str,
         f'one of {providers}. A mailbox or an API the routine reaches through a UTIL is not a '
         'connection: that access is a permission or a secret, never a connections entry.\n\n'
         f"GATE CHECK KINDS:\n{kinds}\n\nPERMISSIONS:\n{perms}\n\nGENERAL RULES:\n{rules}")
+
+
+#: How the recommender reads a PERMISSION before proposing it. Each one is listed with its
+#: `effect:` lines because a summary alone names a topic: feeld-webui-maintainer's creation
+#: draft (2026-11-20) proposed `android-actuation` "for observe/navigate", which that doc's own
+#: WITHOUT line says needs no permission at all. A permission reserving a util VERB is the
+#: second half of that defect: holding it pre-approves every such call for good, where without
+#: it each call is asked for and approved one at a time — the safer default for an act that
+#: speaks as the operator.
+PERMISSION_RULE = (
+    "PERMISSIONS are listed with what a routine does WITH and WITHOUT each, and WHEN to hold "
+    "it. Read both lines before proposing one: propose a permission only when the task needs "
+    "something its WITH line adds that its WITHOUT line does not already allow — never for "
+    "what the routine can already do without it. A permission marked RESERVES <util:verb> is "
+    "a STANDING pre-approval of every such call; without it the run asks for each call and the "
+    "person approves that one call. Propose it only when the task says those calls are "
+    "pre-approved — the routine's job is to make them unattended — never because the task "
+    "might need one now and then.")
+
+
+def _permission(doc: dict) -> str:
+    """One permission as the recommender reads it: its summary, its `effect:` lines, and the
+    util verbs it reserves (`requires.utils` entries naming `<util>:<verb>`).
+    """
+    lines = [f"- {doc['slug']}: {doc['summary']}"]
+    effect = doc.get("effect") or {}
+    lines += [f"    {k.upper()}: {effect[k]}" for k in ("with", "without", "when")
+              if effect.get(k)]
+    if verbs := [u for u in (doc.get("requires") or {}).get("utils") or [] if ":" in u]:
+        lines.append(f"    RESERVES {', '.join(verbs)}")
+    return "\n".join(lines)
 
 
 def at_creation(server, *, slug: str, pattern_slug: str, context: str,

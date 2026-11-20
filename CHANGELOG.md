@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.562.0] — 2026-11-20
+
+### Fixed
+- **A pending change proposing a folder grant the accept would refuse is refused at its writer.**
+  Creating `feeld-webui-maintainer` on the `code-maintainer` pattern wrote a creation draft
+  proposing `fs_write_roots: ["work"]`; accepting it on the routine page 400d with
+  `'work' is not an absolute path`, and because the accept is whole-draft every other kept
+  change failed with it. The settings judge (`patterns/validate.problem`, called by
+  `drafts.write`, `store.problems` and the recommender) judged both folder-grant fields by the
+  patch model's `list[str]` alone — two documented `GAP —` entries in `NO_SEMANTIC_CHECK`. The
+  grant edges' rule now lives in ONE pure function, `rootgrants.normalize_roots` (absolute after
+  `~`/`$VARS` expand, never a credential store unless already held), which
+  `config_fields.validate_roots` wraps for its 400 and the judge calls directly — so a draft is
+  refused with the accept's own sentence. Both entries leave the ratchet (`GAP` 13 → 11), and
+  `store.problems` drops its own second credential-store line: the judge now says it.
+- **The recommender no longer proposes the routine's own directory, or a permission whose
+  WITHOUT line already covers the task.** Its prompt now names the routine's directory and says
+  roots are absolute paths outside it (`patterns/recommend_roots`, which also drops own-directory
+  and relative entries from a proposed list before judging it, keeping any the routine already
+  holds), and lists every permission with its `effect:` WITH / WITHOUT / WHEN lines, marking a
+  permission that reserves a util verb (`requires.utils: [x:verb]`) as a STANDING pre-approval to
+  be proposed only when the task says those calls are pre-approved. The same draft had proposed
+  `android-actuation` "for observe/navigate", which that doc's WITHOUT line says needs none.
+
 ## [0.561.0] — 2026-11-20
 
 ### Fixed

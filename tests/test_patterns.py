@@ -2,6 +2,7 @@
 import pytest
 
 from rsched.config import load_routine
+from rsched.entities import GUARDED_ROOT_REASON
 from rsched.paths import read_yaml
 from rsched.patterns import drafts, fields, store
 
@@ -128,10 +129,8 @@ def test_a_pattern_never_grants_a_credential_store(tmp_path):
         "  fs_write_roots: [~/.credentials/x]\n", encoding="utf-8")
     found = lint_patterns(lib, [], [])["patterns/auditor.yaml"]
     assert [f for f in found if "credential store" in f] == [
-        ("patterns/auditor.yaml: settings.fs_read_roots: ~/.ssh is a credential store — a "
-         "pattern never grants one"),
-        ("patterns/auditor.yaml: settings.fs_write_roots: ~/.credentials/x is a credential "
-         "store — a pattern never grants one")]
+        f"patterns/auditor.yaml: settings.fs_read_roots: ~/.ssh {GUARDED_ROOT_REASON}",
+        f"patterns/auditor.yaml: settings.fs_write_roots: ~/.credentials/x {GUARDED_ROOT_REASON}"]
     out = apply.routine_yaml(store.read(lib, "auditor")["settings"], tz="UTC")
     assert out["fs_read_roots"] == ["~/notes"] and out["fs_write_roots"] == []
 
@@ -425,7 +424,8 @@ def test_the_recommender_is_told_what_each_gate_parameter_means(tmp_path):
 
     from rsched.patterns.recommend import _prompt
 
-    server = SimpleNamespace(permissions_home=tmp_path / "p", rules_home=tmp_path / "r")
+    server = SimpleNamespace(permissions_home=tmp_path / "p", rules_home=tmp_path / "r",
+                             routines_home=tmp_path / "routines")
     text = _prompt(server, "r", {}, None, "a weekly duty", ["run_gate", "schedule"])
     assert "0 = Monday" in text and "0=Sunday" in text
     assert "json:<dotted.path>" in text                        # a select's syntax, not its name

@@ -906,15 +906,18 @@ narrow its grant to exactly that (D169, 2026-10-08 — naming the directory made
 refuse the narrower path it asked for). They are
 refused at the runtime ask, refused at every edge where an operator MAKES a grant (the routine
 PATCH, the conversation PATCH and create form — one enforcer, `config_fields.validate_roots`,
-which also refuses a non-absolute root), never carried by a settings PATTERN (creation copies a
+which also refuses a non-absolute root), never PROPOSED (the settings judge every writer of a
+pending change calls, `patterns/validate.problem`, asks the same rule — `rootgrants.normalize_roots`,
+the pure function that enforcer wraps — so a draft carrying a store or a relative root is refused
+at its writer, 0.562.0), never carried by a settings PATTERN (creation copies a
 pattern's roots past that edge, so the library lint names such a pattern, "Save as new pattern"
-refuses one, and creation leaves the root out — `patterns/store.problems`,
+refuses one, and creation leaves the root out — `patterns/store.problems` through that judge,
 `patterns/apply.routine_yaml`), and REPORTED by the loader for a
 file that already lists one — that last one deliberately does not drop the root, because a
 routine that has legitimately been reading it would otherwise fail its next run with nothing
 naming the cause. That report asks the operator to NARROW the grant, so the two PATCH edges take
 exactly that step: a guarded value already in the file, or strictly INSIDE a root already there,
-does not widen what the routine reaches and is accepted (`config_fields._already_held_or_narrower`,
+does not widen what the routine reaches and is accepted (`rootgrants.already_held_or_narrower`,
 which those edges feed with the current list). Nothing else moves — a routine holding no store
 still cannot acquire one, the read list and the write list are separate grants, a widening back to
 the store is refused, and the create edges pass no current list at all, so every value they see is

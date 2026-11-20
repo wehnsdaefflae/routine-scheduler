@@ -28,7 +28,10 @@ How a field is judged, in the order tried:
   (`semantic_checks`). `NO_SEMANTIC_CHECK` names every governable field with no semantic check
   and the decision taken for it; a `GAP —` reason there means the accept DOES judge that
   field's meaning and this module does not consult it yet (R2884), which is a measured defect
-  awaiting its own increment rather than a field that needs no check.
+  awaiting its own increment rather than a field that needs no check. A semantic check is the
+  accept's own validator raising `HTTPException` — or, where that validator wraps a pure
+  function (`rootgrants.normalize_roots` for the folder grants), that function itself, raising
+  its own `ValueError` subclass: the SAME rule either way, never a second copy.
 
 A value needing instance state — a catalog model name, a machine — is judged only when a
 `server` is passed (`NEEDS_CATALOGS`); without one its semantic half is SKIPPED rather than
@@ -77,10 +80,6 @@ NO_SEMANTIC_CHECK: dict[str, str] = {
                     "operator actually hit (R2884)",
     "deliberation": "GAP — `_validate_tuning` 400s a level outside `DELIBERATION_LEVELS`; the "
                     "patch model types it `str`. The other value the operator actually hit",
-    "fs_read_roots": "GAP — `config_fields.validate_roots` 400s a non-absolute path and a "
-                     "credential store (SEC-1); the patch model checks `list[str]` only",
-    "fs_write_roots": "GAP — the same enforcer, the same unconsulted 400 (R2314: the roots could "
-                      "not be set through the UI at all)",
     "grants": "GAP — `entities.normalize_grants` 400s an unknown entity id. `ask_first`, so it "
               "needs the person's click anyway, but a refused row still 400s the whole accept",
     "keep_runs": "GAP — `_apply_resource_fields` 400s anything but a positive integer, a floor "
@@ -178,6 +177,7 @@ def semantic_checks(server: object | None = None) -> dict[str, Callable[[object]
     itself while the coverage drifted — which is the defect this table exists to stop (R2884).
     Called with no server it still names its keys.
     """
+    from .. import rootgrants
     from ..web import config_fields
 
     return {
@@ -189,6 +189,13 @@ def semantic_checks(server: object | None = None) -> dict[str, Callable[[object]
             server, value if isinstance(value, list) else []),
         "models": lambda value: config_fields.validate_models(
             server, value if isinstance(value, dict) else {}),
+        # The grant edges' own judgement, called pure (`rootgrants`): absolute after `~`/$VAR
+        # expansion, never a credential store. No `current` — a proposal is a NEW grant, so it
+        # never re-asserts a store the loader is asking the operator to narrow. Before 0.562.0
+        # a creation draft proposing `fs_write_roots: ["work"]` passed here and 400d on the
+        # accept, taking every other kept change with it.
+        "fs_read_roots": lambda value: rootgrants.normalize_roots("fs_read_roots", value),
+        "fs_write_roots": lambda value: rootgrants.normalize_roots("fs_write_roots", value),
     }
 
 
@@ -259,6 +266,8 @@ def _semantic_problem(key: str, value: object, server: object | None) -> str:
     """
     from fastapi import HTTPException
 
+    from ..rootgrants import RootGrantError
+
     try:
         check = semantic_checks(server).get(key)
         if check is None or (server is None and key in NEEDS_CATALOGS):
@@ -266,6 +275,8 @@ def _semantic_problem(key: str, value: object, server: object | None) -> str:
         check(value)
     except HTTPException as exc:
         return str(exc.detail)
+    except RootGrantError as exc:
+        return str(exc)
     except Exception:
         log.warning("validate: could not semantically check %s", key, exc_info=True)
     return ""

@@ -21,7 +21,7 @@ from typing import Annotated
 from fastapi import HTTPException
 from pydantic import AfterValidator
 
-from .. import entities
+from .. import rootgrants
 from ..config import (
     DECISION_ROLES,
     DEFAULT_BUDGETS,
@@ -29,7 +29,6 @@ from ..config import (
     MODEL_KINDS,
     ROUTINE_MODEL_ROLES,
 )
-from ..paths import expand
 from .model_fit import model_window_problem
 
 
@@ -203,87 +202,18 @@ def validate_machines(server, names: list | None) -> list[str]:
 
 def validate_roots(key: str, values: list | None, *, current: list | None = None) -> list[str]:
     """One folder-grant list (`fs_read_roots` / `fs_write_roots`, or a conversation's
-    `workdir` — write root #1), REPLACED wholesale — the ONE enforcer every edge where a grant
-    is MADE calls: the routine PATCH, the conversation PATCH and the conversation create form.
+    `workdir`), REPLACED wholesale — the ONE enforcer every edge where a grant is MADE calls:
+    the routine PATCH, the conversation PATCH and the conversation create form.
 
-    Each entry is stripped of whitespace and a trailing `/`, deduplicated, and returned as the
-    raw string the file holds (`~` kept, never expanded here). Refused with a 400 naming it:
-
-    - a path that is not ABSOLUTE once `~`/`$VARS` expand — a relative root would resolve
-      against the daemon's working directory, which no operator means;
-    - a credential store (SEC-1, `entities.guarded_roots`): the credential FILES in the config
-      dir, `~/.credentials` and `~/.ssh` are never grantable, and the never-grantable promise
-      lived only on the runtime ask path until a typed root mounted the instance's credential
-      dir on a routine. Since D169 the guard names those files rather than the directory, so
-      `config.yaml` — ordinary settings, no credential — is clean on its own and needs no
-      allowance; the directory is still refused for CONTAINING them.
-      A store ALREADY in a file is the loader's to report, never dropped (config/routine.py).
-      `current` is what the routine holds for this key RIGHT NOW (the two PATCH edges have the
-      file in hand): a guarded value already there, or strictly inside one that is, does not widen
-      what the routine reaches — and narrowing is exactly what that advisory asks for — so it is
-      accepted; see `_already_held_or_narrower`. An edge that is MAKING the grant passes no
-      `current`, so nothing new is ever grantable.
-
-    The three edges used to hold three subsets of this (the routine PATCH no absolute check,
-    the conversation create form its own), and a check that exists on one edge is a check a
-    grant can route around.
-    """
-    vals = values or []
-    if not isinstance(vals, list) or any(not isinstance(p, str) or not p.strip() for p in vals):
-        raise HTTPException(400, f"{key}: must be a list of non-empty path strings")
-    roots: list[str] = []
-    for raw in vals:
-        root = raw.strip().rstrip("/") or "/"
-        try:
-            absolute = expand(root).is_absolute()
-        except RuntimeError:          # `~name` for an account that does not exist
-            absolute = False
-        if not absolute:
-            raise HTTPException(
-                400, f"{key}: {raw!r} is not an absolute path (use /abs/path or ~/path)")
-        if root not in roots:
-            roots.append(root)
-    if guarded := [g for g in entities.guarded_roots(roots) if not _already_held_or_narrower(
-            g, current)]:
-        raise HTTPException(400, f"{key}: {', '.join(guarded)} {entities.GUARDED_ROOT_REASON}")
-    return roots
-
-
-def _already_held_or_narrower(value: str, current: list | None) -> bool:
-    """Is `value` a root the routine ALREADY holds, or one strictly inside it (F582)?
-
-    The guard's own advisory asks an operator to narrow a credential store a routine already
-    reads — and this edge refused the narrower path, so the only fix it offered could not be
-    applied (D159 sat at its resolution for exactly this reason). A value already granted, or
-    under one already granted, does not increase what the run reaches; every other direction is
-    unchanged, so this allows nothing a routine does not already have:
-
-    - **equal to a held root** → allowed, because nothing changes. Without this an unrelated edit
-      to the same list (adding `~/routines` beside it) is refused for a grant that is already in
-      the file — the file the loader itself reports and keeps.
-    - **strictly inside a held root** → allowed: this is the NARROWING the advisory asks for.
-    - no `current` at all (the conversation CREATE form, the composer, a settings pattern) → every
-      guarded value is a NEW grant and stays refused.
-    - a value CONTAINING a held root (a widening back to the store, or up to `~/.config`) → the
-      held root is not among the value's ancestors and is not equal to it, so it is refused.
-
-    Paths are compared RESOLVED (`~` and `$VARS` expanded), because a file may spell the same
-    store either way — the loader's own comparison does the same.
+    The judgement is `rootgrants.normalize_roots` — absolute after `~`/`$VARS` expand, never a
+    credential store unless already held (`current`) — shared with the proposal judge
+    (`patterns/validate.problem`), so a pending change is refused at its writer by the very rule
+    its accept would apply. This edge only turns that refusal into the 400 the page shows.
     """
     try:
-        target = expand(value)
-    except RuntimeError:
-        return False
-    for raw in current or []:
-        if not isinstance(raw, str) or not raw.strip():
-            continue
-        try:
-            held = expand(raw.strip().rstrip("/") or "/")
-        except RuntimeError:
-            continue
-        if target == held or held in target.parents:
-            return True
-    return False
+        return rootgrants.normalize_roots(key, values, current=current)
+    except rootgrants.RootGrantError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 def clean_tags(values: list | None) -> list[str]:

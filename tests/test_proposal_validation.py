@@ -42,6 +42,10 @@ REFUSED = [
     ({"efforts": {"main": "turbo"}}, "efforts"),
     ({"keep_runs": "lots"}, "keep_runs"),
     ({"no_such_setting": True}, "no_such_setting"),
+    # feeld-webui-maintainer's creation draft (2026-11-20): a RELATIVE root the accept's
+    # `validate_roots` 400s — and with it every other change the person kept.
+    ({"fs_write_roots": ["work"]}, "not an absolute path"),
+    ({"fs_read_roots": ["~/notes", "~/.credentials"]}, "credential store"),
 ]
 
 
@@ -150,3 +154,22 @@ def test_a_draft_written_before_the_check_does_not_break_the_page(tmp_path):
         encoding="utf-8")
     left = drafts.prune(home, "alpha", {"keep_runs": 30, "efforts": {}}, assigned="")
     assert left is not None and set(left["changes"]) == {"keep_runs"}
+
+
+def test_a_draft_proposing_a_relative_root_is_refused_with_the_accept_s_own_sentence(tmp_path):
+    """The writer refuses with the SAME sentence the accept route's 400 carries — one rule
+    (`rootgrants.normalize_roots`), not a second copy that could drift from it."""
+    from fastapi import HTTPException
+
+    from rsched.web.config_fields import validate_roots
+
+    home = tmp_path / "routines"
+    with pytest.raises(ValueError) as refused:
+        drafts.write(home, "feeld-webui-maintainer", pattern=None, message="check",
+                     source="creation",
+                     changes={"fs_write_roots": {"value": ["work"], "reason": "x"},
+                              "keep_runs": {"value": 20, "reason": "y"}})
+    with pytest.raises(HTTPException) as accept:
+        validate_roots("fs_write_roots", ["work"])
+    assert str(refused.value) == accept.value.detail
+    assert drafts.read(home, "feeld-webui-maintainer") is None

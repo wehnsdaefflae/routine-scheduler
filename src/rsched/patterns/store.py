@@ -13,7 +13,9 @@ reference to nothing is a routine claiming to follow something that does not exi
 A pattern never names an instance credential store among its folder grants
 (`entities.guarded_roots`): creation copies a pattern's roots into the new routine past the
 guard that refuses one on the routine page, so one such pattern would mount the store on every
-routine made from it. `problems` names it (the lint, a refused save) and creation leaves it out
+routine made from it. `problems` names it through the one settings judge (`validate.problem`,
+whose folder-grant check is the routine page's own — `rootgrants.normalize_roots`: absolute,
+never a store), so the lint and a refused save say what the accept would; creation leaves it out
 (`apply.routine_yaml`).
 
 File shape:
@@ -36,7 +38,6 @@ from pathlib import Path
 
 import yaml
 
-from ..entities import guarded_roots
 from ..ids import now_iso
 from ..paths import atomic_write_yaml, read_yaml
 from . import fields, validate
@@ -91,9 +92,6 @@ def problems(doc: object) -> list[str]:
             out.append(f"settings.{key}: a pattern never carries a routine's own {key}")
         elif why := validate.problem(key, settings[key]):
             out.append(f"settings.{why}")
-    out.extend(f"settings.{key}: {root} is a credential store — a pattern never grants one"
-               for key in ("fs_read_roots", "fs_write_roots")
-               for root in guarded_roots(settings.get(key)))
     out.extend(f"asks: {ask!r} needs a known field and a question"
                for ask in doc.get("asks") or []
                if not (isinstance(ask, dict) and ask.get("field") in fields.BY_KEY
