@@ -19,7 +19,7 @@ import rsched.endpoints.anthropic_api as anth_mod
 import rsched.endpoints.openai_compat as oai_mod
 from helpers import tmp_server
 from rsched.config import EndpointConfig, ModelConfig
-from rsched.endpoints import catalogs, decisions_systemone, limits, prices
+from rsched.endpoints import catalogs, decisions_systemone, prices
 from rsched.endpoints.anthropic_api import AnthropicEndpoint
 from rsched.endpoints.decisions import DecisionQuestion
 from rsched.endpoints.openai_compat import OpenAICompatEndpoint
@@ -202,13 +202,6 @@ def test_a_metered_gateway_model_gets_its_models_list_price(tmp_path):
     assert prices.price_for(home, "otari", "claude-opus-5-metered") == (5.0, 25.0, 0.5, 6.25)
     assert prices.price_for(home, "otari-openai", "glm-5.3-metered") == (1.0, 2.0, None, None)
     assert out["unpriced"] == []
-
-
-def test_a_metered_gateway_model_gets_its_models_window():
-    reference = limits._Reference()
-    reference._body = REFERENCE
-    assert reference.get("glm-5.3-metered") == (200_000, None)
-    assert reference.get("claude-opus-5-metered") == (1_000_000, 128_000)
 
 
 def test_the_reported_bill_is_what_a_call_costs_and_a_zero_is_no_price(tmp_path):

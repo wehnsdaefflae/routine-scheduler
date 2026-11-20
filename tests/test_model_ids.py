@@ -60,7 +60,7 @@ def test_an_openai_endpoint_is_asked_on_models_beneath_its_own_v1(served):
 def test_openrouter_and_nanogpt_use_their_own_catalog_readers(served):
     served(lambda url: httpx.Response(200, json=(
         {"data": [{"id": "z-ai/glm-5.2", "context_length": 100}]} if "openrouter" in url
-        else {"models": {"text": {"nano/one": {}, "nano/two": {"maxInputTokens": 5}}}})))
+        else {"data": [{"id": "nano/one"}, {"id": "nano/two", "context_length": 5}]})))
     ep = EndpointConfig(name="or", kind="openai", base_url="https://openrouter.ai/api/v1")
     assert model_ids.list_ids(ep) == {"ok": True, "ids": ["z-ai/glm-5.2"]}
     nano = EndpointConfig(name="nano", kind="openai", base_url="https://nano-gpt.com/api/v1")

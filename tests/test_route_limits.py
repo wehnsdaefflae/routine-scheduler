@@ -34,6 +34,7 @@ ROUTES = {
         "gpt-5.6-luna": "chatgpt:gpt-5.6-luna",
         "gpt-6.2-sol-max": "chatgpt:gpt-6.2-sol(max)",
         "claude-opus-5-5-metered": "anthropic:claude-opus-5-5",
+        "claude-opus-5-metered": "openrouter:anthropic/claude-opus-5",
         "glm-5.3": "openrouter:z-ai/glm-5.3",
         "glm-5.3-uncensored": "nanogpt:z-ai/glm-5.3-uncensored",
         "mimo-v2.6-pro": "openrouter:xiaomi/mimo-v2.6-pro",
@@ -55,6 +56,8 @@ CLIPROXY = {
                    "max_completion_tokens": 128_000}],
 }
 OPENROUTER = {"data": [
+    {"id": "anthropic/claude-opus-5", "context_length": 1_000_000,
+     "top_provider": {"context_length": 1_000_000, "max_completion_tokens": 128_000}},
     {"id": "openai/gpt-5.6-luna", "context_length": 1_050_000,
      "top_provider": {"context_length": 1_050_000, "max_completion_tokens": 128_000}},
     {"id": "z-ai/glm-5.3", "context_length": 1_048_576,
@@ -157,6 +160,8 @@ def test_every_route_is_sized_from_its_own_catalog(tmp_path, monkeypatch):
         "glm-5.3": (1_048_576, 131_072, "openrouter"),
         "glm-5.3-uncensored": (1_048_576, 131_072, "nanogpt"),
         "mimo-v2.6-pro": (1_048_576, 131_072, "openrouter"),     # top_provider, not the headline
+        # a `-metered` name is its paid ROUTE's, like any other name
+        "claude-opus-5-metered": (1_000_000, 128_000, "openrouter"),
         # Anthropic's own API: the table's window, and no output figure nobody published
         "claude-opus-5-5-metered": (1_000_000, None, "table"),
     }
