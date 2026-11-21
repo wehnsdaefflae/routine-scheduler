@@ -151,7 +151,13 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
     }
   }
 
+  // A rebuild keeps the reader's place. The list is redrawn whole — on every refresh, and by
+  // open() to move the highlight — and a removed node takes keyboard focus with it to <body>,
+  // so the next Tab started from the top of the page. The focused control is found again by
+  // its row's path and its own class.
   function renderList() {
+    const had = listBox.contains(document.activeElement) ? document.activeElement : null;
+    const place = had && { path: had.closest(".art-row")?.dataset.path, cls: had.classList[0] };
     listBox.replaceChildren();
     if (!items.length) {
       listBox.append(emptyState("⬡", "No artifacts yet",
@@ -186,7 +192,8 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
             toast(`could not delete: ${err.message}`, 4000, { error: true });
           }
         } }, "🗑");
-      listBox.append(el("div", { class: `art-row${openPath === it.path ? " on" : ""}` },
+      listBox.append(el("div", { class: `art-row${openPath === it.path ? " on" : ""}`,
+                                 "data-path": it.path },
         el("button", { type: "button", class: "art-item", onclick: () => open(it),
                        title: `${it.name} · ${size}` },
           el("span", { class: "art-ico" }, ICON(ext)),
@@ -194,6 +201,10 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
           el("span", { class: "art-time faint small" }, relTime(new Date(it.mtime * 1000))),
           el("span", { class: "faint small", style: "flex:none" }, size)),
         del));
+    }
+    if (place) {
+      [...listBox.children].find((row) => row.dataset.path === place.path)
+        ?.querySelector(`.${place.cls}`)?.focus({ preventScroll: true });
     }
   }
 

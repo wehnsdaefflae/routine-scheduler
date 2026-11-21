@@ -85,3 +85,17 @@ def test_a_report_written_mid_reply_appears_in_the_conversation_panel(ui, ui_pag
             "kind": "write_file", "path": "reports/findings.md", "bytes": 10}}) + "\n")
 
     expect(panel.locator(".art-item", has_text="findings.md")).to_be_visible()
+
+
+def test_a_rebuilt_list_keeps_the_keyboard_on_its_row(ui, ui_page):
+    """The list is redrawn whole — by every refresh, and by opening a row to move the highlight —
+    and a removed button took focus with it to the page body. Enter on a row opens it and
+    leaves focus on that row, so the next Tab reaches its delete."""
+    _artifacts(ui, {"notes.md": "# n"})
+    ui_page.goto(f"{ui.url}/#/run/uir:{RUN}")
+    ui_page.locator(".art-item").focus()
+    ui_page.keyboard.press("Enter")
+    expect(ui_page.locator(".art-row.on")).to_contain_text("notes.md")   # rebuilt by the open
+    expect(ui_page.locator(".art-item")).to_be_focused()
+    ui_page.keyboard.press("Tab")
+    expect(ui_page.get_by_role("button", name="delete notes.md")).to_be_focused()

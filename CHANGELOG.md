@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.582.0] — 2026-11-21
+
+### Fixed
+- **The artifacts panel keeps keyboard focus when its list is redrawn.** The list is rebuilt
+  whole — by every refresh (a finished run's view refreshes it twice on open: the panel's own
+  first read, then the stream's terminal state; a live run once per deliverable written) and by
+  opening a row to move the highlight. Each rebuild removed the button that held focus, which
+  sent focus to the page body, so the next Tab started from the top of the page and Enter on a
+  row lost the reader's place. `renderList` now finds the focused control again by its row's
+  path and its own class and focuses its replacement. This was the cause of the intermittent
+  `test_an_artifacts_delete_is_its_own_keyboard_stop` failure: it lost whenever the second
+  refresh landed between its focus, its Tab and its check. A new browser test pins it through
+  the open path, which redraws on every press:
+  `test_a_rebuilt_list_keeps_the_keyboard_on_its_row`.
+
 ## [0.581.0] — 2026-11-21
 
 ### Fixed
