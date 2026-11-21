@@ -139,7 +139,7 @@ def test_a_rows_address_names_the_run_the_mount_gave_it(ui, ui_page):
       return {full: rowAddress(ev, a, {runId: 'uir:20261112-090000', slug: 'uir', sub: 2}),
               bare: rowAddress(ev, a, {slug: 'uir'})};
     }""")
-    assert got["full"] == "run uir:20261112-090000, sub-run 2, turn 7 (util fs-ops)", got
+    assert got["full"] == "run uir:20261112-090000, child run 2, turn 7 (util fs-ops)", got
     assert got["bare"] == "routine uir, turn 7 (util fs-ops)", got
     # and the run view really hands those over — the mount, not just the helper
     mounted = ui_page.evaluate("""() => {

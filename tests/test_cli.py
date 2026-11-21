@@ -126,15 +126,15 @@ def test_render_child_events_name_mode_and_outcome():
     """D241: ONE noun — a child run — and the MODE is what varies. A renderer that said
     "subtask" for a sequential child and "subrun" for a parallel one made the scheduling look
     like two kinds of thing, which is the confusion the decision ends."""
-    seq = _render_event({"type": "subrun_start", "payload": {
+    seq = _render_event({"type": "child_start", "payload": {
         "n": 1, "label": "step1", "mode": "sequential", "workflow": "general-task"}})
     assert "child" in seq and "step1" in seq and "general-task" in seq
     assert "subtask" not in seq and "subrun" not in seq
-    par = _render_event({"type": "subrun_start", "payload": {
+    par = _render_event({"type": "child_start", "payload": {
         "n": 2, "label": "research", "mode": "parallel", "workflow": "general-task"}})
     assert "child" in par and "subtask" not in par and "subrun" not in par
     assert seq != par       # the mode still shows, in the marker rather than in a second noun
-    end = _render_event({"type": "subrun_end", "payload": {
+    end = _render_event({"type": "child_end", "payload": {
         "n": 2, "label": "research", "mode": "parallel", "status": "ok", "turns": 5}})
     assert "#2" in end and "ok" in end and "5 turns" in end
 

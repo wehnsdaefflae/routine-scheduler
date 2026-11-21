@@ -554,7 +554,7 @@ entry for what you are about to touch.
   size per section (`quality.prompt_chars`).
 - **Transcript events** (`engine/transcript.py` `EVENT_TYPES` — append-only JSONL, the engine is
   the only writer): `header, assistant_action, observation, question, answer, user_injection,
-  subrun_start, subrun_end, compaction, error, refusal, stopping_update, stages_skipped, finish,
+  child_start, child_end, compaction, error, refusal, stopping_update, stages_skipped, finish,
   oversight_dispatch, oversight_directive, oversight_skipped, oversight_no_directive,
   oversight_failed, action_cancelled`
   (20 — `oversight_*` are the escalation ladder's, `engine/ladder.py`; `action_cancelled` is a

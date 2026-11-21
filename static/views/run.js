@@ -246,7 +246,7 @@ export async function render(view, runId, query = {}) {
     if (!p || !p.kind) return "waiting for the model…";
     if (p.kind === "util") return p.name ? `running util ${p.name}…` : "running a util…";
     if (p.kind === "llm") return "running an LLM subcall…";
-    if (["child", "detach", "wait"].includes(p.kind)) return "waiting on sub-runs…";
+    if (["child", "detach", "wait"].includes(p.kind)) return "waiting on child runs…";
     if (p.kind === "ask_user") return "waiting for your answer…";
     return `executing ${p.kind}…`;
   };
@@ -530,8 +530,8 @@ export async function render(view, runId, query = {}) {
       } else if (ev.type === "observation" || ev.type === "finish") {
         pendingAction = null; setWaiting(WORKING.has(curState));
       }
-      if (ev.type === "subrun_start") { addSubTab(ev.payload.n, ev.payload.label); subRunTree.poke(); }
-      if (ev.type === "subrun_end") subRunTree.poke();
+      if (ev.type === "child_start") { addSubTab(ev.payload.n, ev.payload.label); subRunTree.poke(); }
+      if (ev.type === "child_end") subRunTree.poke();
       // a deliverable landed — the rail refreshes without waiting for run end
       if (ev.type === "observation" && !ev.payload?.error
           && (ev.payload?.kind === "write_file" || ev.payload?.kind === "edit_file")

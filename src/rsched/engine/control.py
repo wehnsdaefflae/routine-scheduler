@@ -244,7 +244,7 @@ def child_finished_message(*, mode: str, n: int, label: str, workflow: str, stat
                            turns: int, summary: str, collected: tuple = ()) -> str:
     """The one wording for a child-exit notification — used live by
     announce_finished_subruns AND by history.replay_messages when it reconstitutes an
-    announcement from a `subrun_end` event, so a resumed prompt reads like the live one.
+    announcement from a `child_end` event, so a resumed prompt reads like the live one.
 
     ONE headline for every mode; only the follow-on differs (a sequential child's result feeds
     the next one). `collected` names the deliverables the engine copied up, rendered by

@@ -202,7 +202,7 @@ class SubrunManager:
             self.parent.ctx.add_usage(usage)
             self.parent.ctx.referrals += sub.ctx.referrals
             # `collected` rides the event so a resumed leg's replay names the same hand-back
-            self.parent.ctx.transcript.event("subrun_end", {
+            self.parent.ctx.transcript.event("child_end", {
                 "n": sub.n, "label": sub.label, "workflow": sub.workflow, "mode": sub.mode,
                 "status": sub.status, "summary": sub.summary,
                 "turns": sub.ctx.turn, "usage": usage,

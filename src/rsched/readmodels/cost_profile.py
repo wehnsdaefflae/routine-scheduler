@@ -26,7 +26,7 @@ deleted once they have aged out of every window this reads.
 
 A per-run cost figure is only honest if every run was counted the same way. Until 0.494.0 two
 defects understated a run that spawned children: `history.prior_usage` rebuilt a resumed leg's
-cumulative base without summing `subrun_end`, so every child collected in an earlier leg
+cumulative base without summing `child_end`, so every child collected in an earlier leg
 vanished at the resume boundary, and an orphaned child's spend was written as `usage: {}` with
 the real figure left in `sub/<n>/transcript.jsonl`. One measured run of this instance's own
 audit routine under-reported its tree by 40%. Both causes are closed, so runs from 0.494.0 on

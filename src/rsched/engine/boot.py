@@ -37,7 +37,7 @@ from .transcript import read_events
 def _mark_orphans_dead(ctx, orphans: list[dict]) -> None:
     """Record every child that did not survive the interruption, with WHAT IT SPENT.
 
-    The payload shape is `subruns._collect`'s, so every `subrun_end` consumer reads one shape.
+    The payload shape is `subruns._collect`'s, so every `child_end` consumer reads one shape.
     Spend and turns come from the child's OWN transcript (`subsalvage`): an uncollected child
     was never folded into the parent's counter (R3112). What the disk records, never an
     estimate — `{}` means "nothing recorded there".
@@ -47,7 +47,7 @@ def _mark_orphans_dead(ctx, orphans: list[dict]) -> None:
         spent = subsalvage.spend_reached(child_dir)
         if spent:
             ctx.add_usage(spent)
-        ctx.transcript.event("subrun_end", {
+        ctx.transcript.event("child_end", {
             "n": o["n"], "label": o["label"], "workflow": o.get("workflow", ""),
             "mode": o["mode"], "status": "aborted",
             "summary": "did not survive the run's interruption",

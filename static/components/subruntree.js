@@ -80,7 +80,7 @@ export function createSubRunTree(container, { treeUrl, isLive, turnHref }) {
       // transient refresh errors keep the last render; a FIRST load failing must
       // not read as "no subtasks yet"
       if (!loadedOnce) box.replaceChildren(
-        el("div", { class: "faint small" }, `sub-run tree unavailable — ${err.message}`));
+        el("div", { class: "faint small" }, `child run tree unavailable — ${err.message}`));
     }
   }
 

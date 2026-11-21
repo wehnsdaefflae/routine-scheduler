@@ -21,9 +21,9 @@ def test_a_child_collected_in_an_earlier_leg_is_in_the_resumed_legs_base():
     """
     events = [
         {"type": "assistant_action", "usage": {"in": 100, "out": 50}},
-        {"type": "subrun_end", "payload": {"n": 1, "status": "ok",
+        {"type": "child_end", "payload": {"n": 1, "status": "ok",
                                            "usage": {"in": 10, "out": 198793}}},
-        {"type": "subrun_end", "payload": {"n": 2, "status": "ok",
+        {"type": "child_end", "payload": {"n": 2, "status": "ok",
                                            "usage": {"in": 20, "out": 221418}}},
         {"type": "finish", "payload": {"status": "ok"}},
     ]
@@ -40,20 +40,20 @@ def test_the_other_sources_still_count_exactly_as_they_did():
         {"type": "observation", "payload": {"kind": "decide", "usage": {"in": 16, "out": 32}}},
         {"type": "compaction", "payload": {"usage": {"in": 64, "out": 128}}},
         {"type": "observation", "payload": {"kind": "util"}},          # no usage at all
-        {"type": "subrun_start", "payload": {"n": 1}},                 # no usage at all
+        {"type": "child_start", "payload": {"n": 1}},                 # no usage at all
     ]
     assert prior_usage(events) == {"in": 85, "out": 170}
 
 
-def test_a_subrun_end_with_no_usage_adds_nothing_rather_than_raising():
+def test_a_child_end_with_no_usage_adds_nothing_rather_than_raising():
     """An orphan marker written by a build BEFORE this change carries `usage: {}`, and a
     transcript is read by every later build: an absent or malformed reading must be inert.
     """
     events = [
         {"type": "assistant_action", "usage": {"in": 5, "out": 7}},
-        {"type": "subrun_end", "payload": {"n": 1, "status": "aborted", "usage": {}}},
-        {"type": "subrun_end", "payload": {"n": 2, "status": "aborted"}},
-        {"type": "subrun_end", "payload": {"n": 3, "usage": "not a dict"}},
+        {"type": "child_end", "payload": {"n": 1, "status": "aborted", "usage": {}}},
+        {"type": "child_end", "payload": {"n": 2, "status": "aborted"}},
+        {"type": "child_end", "payload": {"n": 3, "usage": "not a dict"}},
     ]
     assert prior_usage(events) == {"in": 5, "out": 7}
 
@@ -102,14 +102,14 @@ def test_an_unparseable_line_in_a_childs_transcript_is_skipped(tmp_path):
 
 
 def test_a_grandchilds_spend_is_counted_once_through_its_own_parent(tmp_path):
-    """A child's transcript carries its OWN children's `subrun_end` rows, folded into it at
+    """A child's transcript carries its OWN children's `child_end` rows, folded into it at
     their collection — so summing them here is what makes a recovered total cover the whole
     subtree, and the parent counts the child once rather than the tree twice.
     """
     child = tmp_path / "sub" / "4"
     _write(child / "transcript.jsonl", [
         {"type": "assistant_action", "turn": 1, "usage": {"in": 1, "out": 2}},
-        {"type": "subrun_end", "payload": {"n": 1, "status": "ok",
+        {"type": "child_end", "payload": {"n": 1, "status": "ok",
                                            "usage": {"in": 100, "out": 200}}},
     ])
     assert spend_reached(child) == {"in": 101, "out": 202}

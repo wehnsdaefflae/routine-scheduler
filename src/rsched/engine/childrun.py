@@ -149,7 +149,7 @@ def build_child(parent_ctx: RunContext, action: dict, *, n: int, label: str, mod
     """Materialize + wire ONE child task (not started) into the directory `claim_child` made
     for number `n`. `mode` selects the scheduler and how the budget is sliced
     (`alloc_overrides` pins e.g. a subtask's explicit `turns` cap; otherwise the child gets
-    half the parent's remainder). `emit` records the `subrun_start` event on the PARENT
+    half the parent's remainder). `emit` records the `child_start` event on the PARENT
     transcript (single writer). The caller starts + tracks the returned Subrun.
     """
     recipe_slug = action.get("workflow") or "general-task"
@@ -208,9 +208,9 @@ def build_child(parent_ctx: RunContext, action: dict, *, n: int, label: str, mod
     sub = Subrun(n=n, label=label, workflow=recipe_slug, mode=mode, note=note,
                  ctx=child_ctx, loop=child_loop, abort_event=abort_event,
                  started_mono=time.monotonic(), parent_dir=parent_ctx.routine.dir)
-    # `mode` and the allocated budget are payload EXTENSIONS of subrun_start, never a new
+    # `mode` and the allocated budget are payload EXTENSIONS of child_start, never a new
     # event type, so every existing consumer keeps working.
-    emit("subrun_start", {"n": n, "label": label, "workflow": recipe_slug, "mode": mode,
+    emit("child_start", {"n": n, "label": label, "workflow": recipe_slug, "mode": mode,
                           "depth": parent_ctx.depth + 1,
                           "budget": {"turns": child_budgets.max_turns,
                                      "tokens": child_budgets.max_total_tokens},

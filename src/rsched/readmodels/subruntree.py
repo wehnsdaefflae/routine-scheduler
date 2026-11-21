@@ -3,7 +3,7 @@
 A run's children (sequential and parallel `child` runs alike) live on disk under
 `runs/<ts>/sub/<n>/`, each its own routine with its own transcript. This module reconstructs the
 tree by READING those transcripts — it never writes anything, so the single-writer status.json
-contract is untouched. The parent transcript's `subrun_start` / `subrun_end` events give each
+contract is untouched. The parent transcript's `child_start` / `child_end` events give each
 direct child's identity, `mode`, and allotted budget; a still-running child's live turns/tokens
 are summed from its own transcript, and its children come from ITS `sub/` events (recursion).
 """
@@ -38,7 +38,7 @@ def build_tree(run_dir: Path, depth_left: int = MAX_DEPTH) -> list[dict]:
     children:[…]}. `start_turn` is the PARENT turn whose action started the child — where the
     rail's row links to in the parent transcript (D193); None when no numbered action preceded
     it.
-    `mode` is the child's kind, verbatim from its `subrun_start` (engine/child.py): "sequential",
+    `mode` is the child's kind, verbatim from its `child_start` (engine/child.py): "sequential",
     "parallel" or "oversight" (an escalation ladder's rung, which
     supervises the run that started it); `state` is running|ok|partial|failed|aborted.
 
@@ -61,16 +61,16 @@ def _build_tree(run_dir: Path, depth_left: int) -> list[dict]:
         n = p.get("n")
         if ev.get("type") == "assistant_action" and isinstance(ev.get("turn"), int):
             last_turn = ev["turn"]
-        if ev.get("type") == "subrun_start" and isinstance(n, int):
+        if ev.get("type") == "child_start" and isinstance(n, int):
             nodes[n] = {"n": n, "label": p.get("label"), "workflow": p.get("workflow"),
                         "mode": p.get("mode", "parallel"), "budget": p.get("budget") or {},
                         "state": "running", "turns": 0, "usage": {}, "summary": "",
                         # where the child begins in the PARENT's transcript (D193): the rail's
-                        # row links there. `subrun_start` carries no turn of its own — it is a
+                        # row links there. `child_start` carries no turn of its own — it is a
                         # side effect of the spawning action — so it takes that action's.
                         "start_turn": last_turn, "children": []}
             order.append(n)
-        elif ev.get("type") == "subrun_end" and n in nodes:
+        elif ev.get("type") == "child_end" and n in nodes:
             nodes[n].update(state=p.get("status") or "?", turns=p.get("turns") or 0,
                             usage=p.get("usage") or {}, summary=(p.get("summary") or "")[:280])
     out: list[dict] = []

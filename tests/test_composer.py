@@ -829,7 +829,7 @@ def test_the_subrun_allowance_is_what_this_node_has_left(make_routine, tmp_path)
 
 def test_replay_reconstitutes_child_announcements():
     """A child's exit announcement is a live message-list append with no 1:1 event — replay
-    rebuilds it from `subrun_end`, placed where the live message sat (before the model's
+    rebuilds it from `child_end`, placed where the live message sat (before the model's
     next action). A child whose summary rode a `wait` observation is NOT re-announced."""
     from rsched.engine.history import replay_messages
 
@@ -839,7 +839,7 @@ def test_replay_reconstitutes_child_announcements():
         {"type": "observation", "turn": 1, "payload": {"kind": "child", "mode": "sequential", "n": 1,
                                                        "label": "t1", "started": True}},
         # the child finishes between turns; announcement precedes the next action live
-        {"type": "subrun_end", "payload": {"n": 1, "label": "t1", "workflow": "general-task",
+        {"type": "child_end", "payload": {"n": 1, "label": "t1", "workflow": "general-task",
                                            "mode": "sequential", "status": "ok",
                                            "summary": "CHILD-RESULT-SENTINEL", "turns": 4}},
         {"type": "assistant_action", "turn": 2,
@@ -857,7 +857,7 @@ def test_replay_reconstitutes_child_announcements():
     events_wait = [
         {"type": "assistant_action", "turn": 1,
          "payload": {"kind": "wait", "n": 1, "say": "s"}},
-        {"type": "subrun_end", "payload": {"n": 1, "label": "t1", "workflow": "general-task",
+        {"type": "child_end", "payload": {"n": 1, "label": "t1", "workflow": "general-task",
                                            "mode": "sequential", "status": "ok",
                                            "summary": "WAITED-RESULT", "turns": 4}},
         {"type": "observation", "turn": 1,
@@ -873,7 +873,7 @@ def test_replay_reconstitutes_child_announcements():
 
 
 def test_replay_announcement_names_the_hand_back_the_live_one_did():
-    """`subrun_end` carries `collected`; the replayed announcement must render it exactly as
+    """`child_end` carries `collected`; the replayed announcement must render it exactly as
     the live leg did — a prefix that differs by the paths line is re-written to the provider
     instead of re-read from cache, and the resumed model loses the paths it was handed."""
     from rsched.engine.control import child_finished_message
@@ -882,7 +882,7 @@ def test_replay_announcement_names_the_hand_back_the_live_one_did():
     payload = {"n": 1, "label": "t1", "workflow": "general-task", "mode": "parallel",
                "status": "ok", "summary": "done", "turns": 3,
                "collected": ["artifacts/from-sub-1/report.md"]}
-    msgs, _, _ = replay_messages([{"type": "subrun_end", "payload": payload}])
+    msgs, _, _ = replay_messages([{"type": "child_end", "payload": payload}])
     live = child_finished_message(mode="parallel", n=1, label="t1", workflow="general-task",
                                   status="ok", turns=3, summary="done",
                                   collected=("artifacts/from-sub-1/report.md",))

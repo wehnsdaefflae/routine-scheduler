@@ -150,7 +150,7 @@ Long form: `docs/contracts.md` § Core contracts.
   a SHRINK-ONLY budget (`tests/test_prompt_budget.py`)
 - **Transcript events** (`engine/transcript.py` `EVENT_TYPES` — append-only JSONL, the engine is
   the only writer): `header, assistant_action, observation, question, answer, user_injection,
-  subrun_start, subrun_end, compaction, error, refusal, stopping_update, stages_skipped, finish,
+  child_start, child_end, compaction, error, refusal, stopping_update, stages_skipped, finish,
   oversight_dispatch, oversight_directive, oversight_skipped, oversight_no_directive,
   oversight_failed, action_cancelled`
   (20 — consumed by the web renderer AND the meta routines: extend the tuple and both readers

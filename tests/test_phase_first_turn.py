@@ -58,18 +58,18 @@ def test_phase_stats_first_turn_is_none_when_the_transcript_numbers_nothing(tmp_
 
 def test_build_tree_records_the_parent_turn_that_started_each_child(tmp_path):
     """A sub-run row links into the parent transcript at the turn that spawned it. The
-    `subrun_start` event carries no turn of its own (engine/childrun.py emits it as a side
+    `child_start` event carries no turn of its own (engine/childrun.py emits it as a side
     effect of the spawning action), so the read-model takes the turn of the action it
     followed — which is exactly the turn whose box the reader wants."""
     _write(tmp_path / "transcript.jsonl", [
         {"type": "assistant_action", "turn": 1, "payload": {"kind": "util"}},
         {"type": "assistant_action", "turn": 2, "payload": {"kind": "child"}},
-        {"type": "subrun_start", "payload": {"n": 1, "label": "first", "workflow": "general-task",
+        {"type": "child_start", "payload": {"n": 1, "label": "first", "workflow": "general-task",
                                              "mode": "parallel", "depth": 1}},
         {"type": "assistant_action", "turn": 5, "payload": {"kind": "child", "mode": "sequential"}},
-        {"type": "subrun_start", "payload": {"n": 2, "label": "second", "workflow": "general-task",
+        {"type": "child_start", "payload": {"n": 2, "label": "second", "workflow": "general-task",
                                              "mode": "sequential", "depth": 1}},
-        {"type": "subrun_end", "payload": {"n": 2, "status": "ok", "turns": 3, "summary": "did it"}},
+        {"type": "child_end", "payload": {"n": 2, "status": "ok", "turns": 3, "summary": "did it"}},
     ])
     tree = build_tree(tmp_path)
     assert [(n["n"], n["start_turn"]) for n in tree] == [(1, 2), (2, 5)]
@@ -79,7 +79,7 @@ def test_build_tree_start_turn_is_none_before_any_numbered_action(tmp_path):
     """A child started before any numbered action (a resumed run's re-attached children)
     reports no start turn rather than a wrong one."""
     _write(tmp_path / "transcript.jsonl", [
-        {"type": "subrun_start", "payload": {"n": 1, "label": "orphan", "workflow": "general-task",
+        {"type": "child_start", "payload": {"n": 1, "label": "orphan", "workflow": "general-task",
                                              "mode": "parallel", "depth": 1}},
     ])
     assert build_tree(tmp_path)[0]["start_turn"] is None

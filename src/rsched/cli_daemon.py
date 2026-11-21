@@ -54,6 +54,14 @@ def cmd_daemon(_args) -> int:
 
     sync_seed_rule_assists(server.libraries_home, routines_home=server.routines_home)
     adopt_library_edits(server.libraries_home, routines_home=server.routines_home)
+    # MIGRATION(expires=2026-12-31): D241's last rename — the two child-run transcript events
+    # become `child_start` / `child_end`. Unlike the other D241 migrations this one DOES rewrite
+    # stored transcripts, because an event `type` is the token three readers dispatch on and all
+    # three fail silently on an unknown one (the console drops the row, the sub-run tree renders
+    # empty, a resume's inherited child set is understated). Here, before the app starts, is the
+    # one moment no engine is appending to a transcript.
+    from .migrate_child_events import run_migration as rename_child_events
+    rename_child_events(server)
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)

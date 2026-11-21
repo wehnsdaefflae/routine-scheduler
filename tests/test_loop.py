@@ -360,14 +360,14 @@ def test_orphaned_children_detection():
     from rsched.engine.history import orphaned_children
 
     events = [
-        {"type": "subrun_start", "payload": {"n": 1, "label": "seq", "mode": "sequential"}},
-        {"type": "subrun_start", "payload": {"n": 2, "label": "par", "mode": "parallel"}},
-        {"type": "subrun_end", "payload": {"n": 1, "status": "ok"}},   # #1 finished; #2 still running
+        {"type": "child_start", "payload": {"n": 1, "label": "seq", "mode": "sequential"}},
+        {"type": "child_start", "payload": {"n": 2, "label": "par", "mode": "parallel"}},
+        {"type": "child_end", "payload": {"n": 1, "status": "ok"}},   # #1 finished; #2 still running
     ]
     orphans = orphaned_children(events)
     assert [o["n"] for o in orphans] == [2] and orphans[0]["mode"] == "parallel"
     # everything ended → no orphans
-    assert orphaned_children([*events, {"type": "subrun_end", "payload": {"n": 2}}]) == []
+    assert orphaned_children([*events, {"type": "child_end", "payload": {"n": 2}}]) == []
 
 
 def test_resume_marks_orphaned_children_dead(make_routine, scripted):
@@ -377,13 +377,13 @@ def test_resume_marks_orphaned_children_dead(make_routine, scripted):
     d = make_routine(slug="orph")
     scripted([probe("did initial work"), finish(summary="pass one")])
     _, run_dir = run_routine(d, _server(d), run_ts=TS)
-    # rewrite history: keep header + turn-1 pair, then a subtask's started pair + its subrun_start
-    # with NO subrun_end (as if the process died while the child thread was still running)
+    # rewrite history: keep header + turn-1 pair, then a subtask's started pair + its child_start
+    # with NO child_end (as if the process died while the child thread was still running)
     keep = [ln for ln in (run_dir / "transcript.jsonl").read_text(encoding="utf-8").splitlines()
             if json.loads(ln).get("type") == "header" or json.loads(ln).get("turn") == 1]
     keep.append(json.dumps({"ts": "2026-07-08T07:01:00+00:00", "type": "assistant_action",
                             "turn": 2, "payload": subtask("CHILD: the tail.", label="tail")}))
-    keep.append(json.dumps({"ts": "2026-07-08T07:01:01+00:00", "type": "subrun_start",
+    keep.append(json.dumps({"ts": "2026-07-08T07:01:01+00:00", "type": "child_start",
                             "payload": {"n": 1, "label": "tail", "mode": "sequential", "depth": 1,
                                         "transcript": "sub/1/transcript.jsonl"}}))
     keep.append(json.dumps({"ts": "2026-07-08T07:01:02+00:00", "type": "observation", "turn": 2,
@@ -396,7 +396,7 @@ def test_resume_marks_orphaned_children_dead(make_routine, scripted):
     assert all(s in json.dumps(ep2.calls[0]["messages"]) for s in ("died with the leg", "sub/1"))
     # the orphan was closed out in the transcript (aborted) so a re-resume won't re-detect it
     events, _ = read_events(run_dir / "transcript.jsonl")
-    end = next(e for e in events if e["type"] == "subrun_end" and e["payload"].get("n") == 1)
+    end = next(e for e in events if e["type"] == "child_end" and e["payload"].get("n") == 1)
     assert end["payload"]["status"] == "aborted"
 
 
@@ -1192,8 +1192,8 @@ def test_spawn_and_wait_collects_child(make_routine, scripted):
         (PARENT, finish(summary="Done via sub-workflow.")),
     ])
     assert status == "ok"
-    assert "subrun_start" in types(events) and "subrun_end" in types(events)
-    sub_end = next(e for e in events if e["type"] == "subrun_end")
+    assert "child_start" in types(events) and "child_end" in types(events)
+    sub_end = next(e for e in events if e["type"] == "child_end")
     assert sub_end["payload"]["status"] == "ok" and "42" in sub_end["payload"]["summary"]
     sub_events, _ = read_events(run_dir / "sub" / "1" / "transcript.jsonl")
     assert sub_events[0]["depth"] == 1 and sub_events[0]["parent"] == f"testr:{TS}"
@@ -1228,7 +1228,7 @@ def test_parallel_children_notify_at_boundary(make_routine, scripted):
         (PARENT, finish(summary="collected both")),
     ], slug="par")
     assert status == "ok"
-    assert len([e for e in events if e["type"] == "subrun_end"]) == 2
+    assert len([e for e in events if e["type"] == "child_end"]) == 2
     # both finish notifications reached the parent before its last completion
     final_call = ep.calls[-1]["messages"]
     joined = json.dumps(final_call)
@@ -1317,7 +1317,7 @@ def test_kill_child(make_routine, scripted, monkeypatch):
     kill_obs = next(e for e in events if e["type"] == "observation"
                     and e["payload"]["kind"] == "kill")
     assert kill_obs["payload"].get("killed") or kill_obs["payload"].get("already_finished")
-    sub_end = next(e for e in events if e["type"] == "subrun_end")
+    sub_end = next(e for e in events if e["type"] == "child_end")
     assert sub_end["payload"]["status"] == "aborted"
 
 
@@ -1334,7 +1334,7 @@ def test_children_never_outlive_parent(make_routine, scripted):
     assert status == "ok"
     fin = events[-1]
     assert "terminated at run end" in fin["payload"]["summary"]
-    sub_end = next(e for e in events if e["type"] == "subrun_end")
+    sub_end = next(e for e in events if e["type"] == "child_end")
     assert sub_end["payload"]["status"] == "aborted"
 
 
@@ -1388,7 +1388,7 @@ def test_spawn_picks_library_workflow(make_routine, scripted, tmp_path):
     child_system = next(c for c in ep.calls if "CHILD-E" in c["messages"][0]["content"])
     assert "MARKER-ECHO-BODY" in child_system["messages"][0]["content"]
     events, _ = read_events(run_dir / "transcript.jsonl")
-    start = next(e for e in events if e["type"] == "subrun_start")
+    start = next(e for e in events if e["type"] == "child_start")
     assert start["payload"]["workflow"] == "echo-task"
 
 
@@ -1403,8 +1403,8 @@ def test_subtask_starts_nonblocking_and_is_awaited(make_routine, scripted):
         (PARENT, finish(summary="Done via one sequential subtask.")),
     ], slug="seq")
     assert status == "ok"
-    start = next(e for e in events if e["type"] == "subrun_start")
-    end = next(e for e in events if e["type"] == "subrun_end")
+    start = next(e for e in events if e["type"] == "child_start")
+    end = next(e for e in events if e["type"] == "child_end")
     assert start["payload"]["mode"] == "sequential" and end["payload"]["mode"] == "sequential"
     # the subtask observation is a non-blocking 'started' note — NOT the summary
     sub_obs = next(e for e in events if e["type"] == "observation"
@@ -1439,7 +1439,7 @@ def test_child_deliverables_are_collected_into_the_parent(make_routine, scripted
     assert "artifacts/from-sub-1/report.md" in said
     # …and the exit EVENT names it too: a resumed leg rebuilds the announcement from the
     # event, and has to name the same hand-back the live one did
-    end = next(e["payload"] for e in events if e["type"] == "subrun_end")
+    end = next(e["payload"] for e in events if e["type"] == "child_end")
     assert end["collected"] == ["artifacts/from-sub-1/report.md"]
 
 
@@ -1483,11 +1483,11 @@ def test_a_resumed_leg_numbers_its_children_after_the_earlier_legs(make_routine,
     status, _ = run_routine(d, _server(d), run_ts=TS, resume_from=TS)
     assert status == "ok"
     events, _ = read_events(run_dir / "transcript.jsonl")
-    assert [e["payload"]["n"] for e in events if e["type"] == "subrun_start"] == [1, 2]
+    assert [e["payload"]["n"] for e in events if e["type"] == "child_start"] == [1, 2]
     first, _ = read_events(run_dir / "sub" / "1" / "transcript.jsonl")
     assert [e["type"] for e in first].count("header") == 1      # one child per directory
     assert not (run_dir / "sub" / "2" / "artifacts").exists()    # a workspace of its own
-    ends = [e["payload"] for e in events if e["type"] == "subrun_end"]
+    ends = [e["payload"] for e in events if e["type"] == "child_end"]
     assert ends[0]["collected"] == ["artifacts/from-sub-1/a.md"]
     assert "collected" not in ends[1]                            # it handed back nothing
     told = [str(m.get("content")) for m in ep.calls[-1]["messages"]
@@ -1527,7 +1527,7 @@ def test_subtasks_run_in_order_and_forward_results(make_routine, scripted):
         (PARENT, finish(summary="pipeline done: 42 -> 84")),
     ], slug="pipe")
     assert status == "ok"
-    ends = [e for e in events if e["type"] == "subrun_end"]
+    ends = [e for e in events if e["type"] == "child_end"]
     assert [e["payload"]["label"] for e in ends] == ["s1", "s2"]   # sequential, in order
     # when the parent composed subtask 2, subtask 1's result was already in its context
     call_s2 = next(c for c in ep.calls
@@ -1545,7 +1545,7 @@ def test_subtask_explicit_turn_budget(make_routine, scripted):
         (PARENT, finish(summary="bounded subtask done")),
     ], slug="btask")
     assert status == "ok"
-    start = next(e for e in events if e["type"] == "subrun_start")
+    start = next(e for e in events if e["type"] == "child_start")
     assert start["payload"]["budget"]["turns"] == 3
 
 
@@ -2807,7 +2807,7 @@ def test_fifth_concurrent_spawn_rejected_at_the_parallel_cap(make_routine, scrip
     assert len(rejected) == 1 and rejected[0]["label"] == "c5"
     assert f"parallel cap {MAX_PARALLEL}" in rejected[0]["reason"]
     assert f"{MAX_PARALLEL} child-tasks already running" in rejected[0]["reason"]
-    starts = [e for e in events if e["type"] == "subrun_start"]
+    starts = [e for e in events if e["type"] == "child_start"]
     assert len(starts) == MAX_PARALLEL                # the 5th child never started
     # the reason reached the model at the next turn boundary
     assert "parallel cap" in json.dumps(ep.calls[-1]["messages"])

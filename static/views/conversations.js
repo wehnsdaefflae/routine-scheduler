@@ -255,7 +255,7 @@ export async function render(view, slug, _query = {}) {
     // the phase graph rides at the top of the artifact rail: current phase lit up,
     // re-highlighted live on the live-stream state events below
     const graphBody = rail.add("phases", el("div", {}));
-    const treeBody = detail.run_id ? rail.add("sub-runs", el("div", {})) : el("div", {});
+    const treeBody = detail.run_id ? rail.add("children", el("div", {})) : el("div", {});
     const filesBody = detail.run_id ? rail.add("files", el("div", {})) : el("div", {});
     // NO browser section here (F561, operator 2026-10-01: "we wanna remove the browser preview
     // in the sidebar. it is redundant now that we have the browser preview chip"): the permanent
@@ -389,7 +389,7 @@ export async function render(view, slug, _query = {}) {
                            pendingEcho.node?.remove(); pendingEcho = null;   // the real bubble takes over (F295)
                          }
                          chat.add(ev); scrollDown();
-                         if (ev.type === "subrun_start" || ev.type === "subrun_end") subRunTree?.poke();
+                         if (ev.type === "child_start" || ev.type === "child_end") subRunTree?.poke();
                          if (ev.type === "observation" && ["read_file", "view_image", "write_file",
                              "edit_file"].includes(ev.payload?.kind)) fileActivity?.poke(); },
       onState: (s) => { setState(s.state);   // setState re-lights the state diagram

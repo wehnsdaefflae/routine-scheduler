@@ -1080,10 +1080,10 @@ and the capabilities digest's catalog listing):
   `converse` handles decomposition as inline prose.
   Children are killed at parent finish (never outlive it); exits fold usage into the parent. The
   recursive tree is visualized live in the run/conversation rail (`rsched/readmodels/subruntree.py` →
-  `static/components/subruntree.js`). `subrun_start`/`subrun_end` events carry `mode` (sequential/parallel)
+  `static/components/subruntree.js`). `child_start`/`child_end` events carry `mode` (sequential/parallel)
   + the child's allotted budget — payload EXTENSIONS, not new event types. Children running at an interruption are dead on resume — boot marks each aborted
-  (`history.orphaned_children` → a synthesized `subrun_end`) and tells the model; finished-child
-  results ARE replayed (announcements reconstituted from `subrun_end` events).
+  (`history.orphaned_children` → a synthesized `child_end`) and tells the model; finished-child
+  results ARE replayed (announcements reconstituted from `child_end` events).
   Pattern per child: pick a library slug, or `workflow: "generate"` to draft one (gated — see below).
 - **A detached background task (`detach`) is the CROSS-REPLY counterpart** — for a long fire-and-forget
   job (a 20-min scrape) that must OUTLIVE a conversation reply. Unlike a subtask/spawn thread (dies with
@@ -1383,7 +1383,7 @@ meet. A conversation's spine is its own **working plan**
   both). The sibling worry about child NUMBERING needed no fix and is pinned instead: a branch
   copies no `runs/` (`branches.COPIED_TREES` is `state` and `attachments`), and
   `childrun.claim_child` numbers from the highest child directory ON DISK rather than from the
-  transcript, so an inherited `subrun_start` event can never collide with a real child.
+  transcript, so an inherited `child_start` event can never collide with a real child.
   **Merging is deliberately a HAND-BACK, not a transcript merge** — two divergent histories cannot
   be interleaved into one coherent conversation. `hand_back` copies the branch's `artifacts/` into
   the parent's `artifacts/from-branch-<slug>/` and files ONE inbox message on the `branch` via —
@@ -1473,7 +1473,7 @@ meet. A conversation's spine is its own **working plan**
   and the conversation view render the same collapsible sections, remembered per browser —
   they were divergent copies, and only the conversation one could collapse (F296/R340).
   WHICH sections the run rail has is `components/runrail.js` — artifacts, files, phases,
-  sub-runs, goal, plus two added LAZILY only for a run that has one: `oversight`
+  children, goal, plus two added LAZILY only for a run that has one: `oversight`
   (`components/ladderstrip.js`) and `jobs` (`components/runjob.js`, F646 — which of the
   routine's jobs this run is working on, is owed, or checkpointed; docs/jobs.md).
   UI: `static/views/conversations.js` + `components/chat.js` (work folded per reply,

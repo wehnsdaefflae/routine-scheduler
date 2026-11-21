@@ -55,7 +55,7 @@ export function copyBtn(getText, cls = "copy-msg", title = "copy message text") 
  *  parent's turn — a report pointing at the wrong turn is worse than one pointing at none. */
 export function rowAddress(ev, a, opts = {}) {
   const run = opts.runId ? `run ${opts.runId}` : opts.slug ? `routine ${opts.slug}` : "this run";
-  const where = opts.sub != null && opts.sub !== "" ? `, sub-run ${opts.sub}` : "";
+  const where = opts.sub != null && opts.sub !== "" ? `, child run ${opts.sub}` : "";
   const kind = a?.kind ? `${a.kind}${a.kind === "util" && a.name ? ` ${a.name}` : ""}` : "turn";
   return `${run}${where}, turn ${ev?.turn ?? "?"} (${kind})`;
 }

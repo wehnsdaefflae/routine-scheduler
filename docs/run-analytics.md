@@ -162,7 +162,7 @@ with their `runs_detail`.
 
 **It also reports whether its own figures can be trusted.** Until 0.494.0 a run that spawned
 children under-reported its tree by up to 40% (R3112, two causes, both closed:
-`history.prior_usage` rebuilt a resumed leg's cumulative base without summing `subrun_end`, so
+`history.prior_usage` rebuilt a resumed leg's cumulative base without summing `child_end`, so
 children collected in an earlier leg vanished at the resume boundary; an orphaned child's spend
 was written as `usage: {}` with the real figure left in `sub/<n>/transcript.jsonl`). Runs from
 0.494.0 on are sound, but **the stream on disk still carries the older understated rows**, and

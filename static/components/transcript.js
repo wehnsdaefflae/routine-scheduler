@@ -376,9 +376,9 @@ export function createTranscript(container, opts = {}) {
     },
     compaction: (ev) => el("div", { class: "ev compaction" },
       compactionText(ev.payload)),
-    subrun_start: (ev) => el("div", { class: "ev subrun" }, subrunNode(ev,
+    child_start: (ev) => el("div", { class: "ev subrun" }, subrunNode(ev,
       `${ev.payload.mode === "sequential" ? "→" : "↳"} child ${ev.payload.n} "${ev.payload.label}" started (${ev.payload.workflow}, depth ${ev.payload.depth})`)),
-    subrun_end: (ev) => el("div", { class: "ev subrun" }, subrunNode(ev,
+    child_end: (ev) => el("div", { class: "ev subrun" }, subrunNode(ev,
       `${ev.payload.mode === "sequential" ? "→" : "↰"} child ${ev.payload.n} "${ev.payload.label}" ${ev.payload.status} — ${ev.payload.turns} turns, ${fmtTokens(ev.payload.usage)}`,
       md(ev.payload.summary || "(no summary)", "obs md"))),
     // The run's accounting, stamped where every reader finds it at the finish — or the finish

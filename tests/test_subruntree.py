@@ -9,19 +9,19 @@ def test_build_tree_reconstructs_recursive_children(tmp_path):
     run = tmp_path / "runs" / "T"
     run.mkdir(parents=True)
     t = Transcript(run / "transcript.jsonl")
-    t.event("subrun_start", {"n": 1, "label": "seq1", "workflow": "general-task",
+    t.event("child_start", {"n": 1, "label": "seq1", "workflow": "general-task",
                              "mode": "sequential", "depth": 1, "budget": {"turns": 8, "tokens": -1}})
-    t.event("subrun_end", {"n": 1, "label": "seq1", "workflow": "general-task", "mode": "sequential",
+    t.event("child_end", {"n": 1, "label": "seq1", "workflow": "general-task", "mode": "sequential",
                            "status": "ok", "turns": 5, "usage": {"in": 100, "out": 40},
                            "summary": "did it"})
-    t.event("subrun_start", {"n": 2, "label": "par1", "workflow": "general-task",
+    t.event("child_start", {"n": 2, "label": "par1", "workflow": "general-task",
                              "mode": "parallel", "depth": 1, "budget": {"turns": 4}})
     t.close()
     # a running child (#2) with its OWN running grandchild (#3)
     (run / "sub" / "2").mkdir(parents=True)
     ct = Transcript(run / "sub" / "2" / "transcript.jsonl")
     ct.event("assistant_action", {"kind": "util", "name": "x"}, turn=3, usage={"in": 20, "out": 10})
-    ct.event("subrun_start", {"n": 3, "label": "grand", "workflow": "general-task",
+    ct.event("child_start", {"n": 3, "label": "grand", "workflow": "general-task",
                               "mode": "sequential", "depth": 2, "budget": {"turns": 2}})
     ct.close()
 

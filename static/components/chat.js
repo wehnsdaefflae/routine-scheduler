@@ -369,7 +369,7 @@ export function createChat(container, opts = {}) {
             ? `💬 you (dialog): ${p.text}` : `✅ you answered: ${p.text}`));
           return;
         default:
-          // errors, compaction, subrun_start/end — trace detail, into the fold
+          // errors, compaction, child_start/end — trace detail, into the fold
           ensureFold().transcript.add(ev);
       }
     },

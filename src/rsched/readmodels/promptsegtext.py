@@ -112,7 +112,7 @@ def _replayed(run_dir: Path) -> list[dict]:
         kind = str(ev.get("type") or "")
         if kind == "assistant_action":
             queues["assistant"].append(last)
-        elif kind in ("observation", "user_injection", "subrun_end"):
+        elif kind in ("observation", "user_injection", "child_end"):
             queues["user"].append(last)
     messages, _last_turn, _records = history.replay_messages(events)
     seen = {"assistant": 0, "user": 0}

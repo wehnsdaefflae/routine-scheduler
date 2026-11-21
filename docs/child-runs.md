@@ -213,7 +213,7 @@ either reporter. Two paths report an exit (`wait`, which consumes finished child
 the turn-boundary announcement), so collecting in a reporter meant a child that finished during a
 wait handed nothing back. Anything that must happen once per child belongs at that one point.
 Both reporters name the landed paths in the ONE spelling `child.handback_paths_line` owns, and
-the `subrun_end` event records them (`collected`), so the announcement a resumed leg rebuilds
+the `child_end` event records them (`collected`), so the announcement a resumed leg rebuilds
 from the event can name them too.
 
 ## The decomposition gate

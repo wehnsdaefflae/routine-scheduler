@@ -179,7 +179,7 @@ def test_a_runs_page_shows_that_runs_own_accounting(ui, ui_page):
     # helpers.declare_outcome, so this page legitimately has one. A routine with no scripts/
     # gains no caption at all: tests/ui/test_run_scripts.py pins that half.
     assert [c.strip().lower() for c in caps.all_inner_texts()] == [
-        "artifacts", "files", "phases", "sub-runs", "goal", "scripts"]
+        "artifacts", "files", "phases", "children", "goal", "scripts"]
 
 
 def test_revise_recipe_lands_on_the_runs_message_box_ready_to_edit_the_recipe(ui, ui_page):

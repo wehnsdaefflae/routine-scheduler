@@ -256,7 +256,7 @@ def test_a_killed_child_names_its_parent(make_routine, scripted, monkeypatch):
     status, run_dir = run_routine(d, _server(d), run_ts=TS)
     assert status == "ok"
     events, _ = read_events(run_dir / "transcript.jsonl")
-    end = next(e for e in events if e["type"] == "subrun_end")
+    end = next(e for e in events if e["type"] == "child_end")
     assert end["payload"]["status"] == "aborted"
     child, _ = read_events(run_dir / "sub" / "1" / "transcript.jsonl")
     payload = child[-1]["payload"]

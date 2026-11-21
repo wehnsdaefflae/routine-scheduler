@@ -78,9 +78,9 @@ def _render_event(obj: dict) -> str:  # noqa: PLR0911 — one return per event t
             return (f"    ⇣ compacted context ({p['before_estimated_tokens']} → "
                     f"{p['after_estimated_tokens']} estimated tokens)")
         return f"    ⇣ compacted context ({p.get('before_chars')} → {p.get('after_chars')} chars)"
-    if t in ("subrun_start", "subrun_end"):
+    if t in ("child_start", "child_end"):
         label = child.mode_short(str(p.get("mode") or ""))
-        if t == "subrun_start":
+        if t == "child_start":
             return f'    ↳ {label} #{p.get('n')} "{p.get('label')}" started ({p.get('workflow')})'
         return f"    ↰ {label} #{p.get('n')} {p.get('status')} — {p.get('turns')} turns"
     if t == "refusal":

@@ -160,7 +160,7 @@ def spend_reached(child_dir: Path) -> dict:
                     usage = ev.get("usage")
                 elif ((etype == "observation"
                        and (ev.get("payload") or {}).get("kind") in ("llm", "decide"))
-                      or etype in ("compaction", "subrun_end")):
+                      or etype in ("compaction", "child_end")):
                     usage = (ev.get("payload") or {}).get("usage")
                 else:
                     continue

@@ -26,7 +26,7 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
     conversation and maybe_compact re-compacts it on the next turn if it's too big).
 
     Two live message feeds have no 1:1 event: child-exit ANNOUNCEMENTS are reconstituted
-    from `subrun_end` events (flushed where the live message sat — before the next
+    from `child_end` events (flushed where the live message sat — before the next
     assistant turn; a child whose summary rode a `wait` observation is not re-announced),
     and blocking-ask answers are NOT replayed from `answer` events — the answer text
     already lives inside the ask_user observation, so replaying both would duplicate it.
@@ -39,7 +39,7 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
     messages: list[dict] = []
     records: list[dict] = []
     last_turn = 0
-    # subrun_end events whose announcement has not been placed yet: n → payload
+    # child_end events whose announcement has not been placed yet: n → payload
     pending_children: dict[int, dict] = {}
     # a slash command's text, waiting for the observation it was recorded apart from: live it
     # is ONE message (command_message), so the replay has to put the pair back together
@@ -97,21 +97,21 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
             messages.append({"role": "user", "content": injected_message(
                 str(p.get("text", "")), report=bool(p.get("report")),
                 via=str(p.get("via") or ""))})
-        elif kind_ev == "subrun_end":
+        elif kind_ev == "child_end":
             n = p.get("n")
             if isinstance(n, int):
                 pending_children[n] = p
         elif kind_ev == "finish":
             # the run concluded knowing (or not needing) these — never re-announce after
             pending_children.clear()
-        # header / question / answer / compaction / error / subrun_start stay out of the prompt
+        # header / question / answer / compaction / error / child_start stay out of the prompt
     flush_children()   # a crash between _collect and the next turn still delivers the result
     return messages, last_turn, records
 
 
 def orphaned_children(events: list[dict]) -> list[dict]:
-    """Children that were RUNNING when the run was interrupted — a `subrun_start` (subtask or
-    subrun) with no matching `subrun_end`. Children are threads in the parent process, so they do
+    """Children that were RUNNING when the run was interrupted — a `child_start` (subtask or
+    subrun) with no matching `child_end`. Children are threads in the parent process, so they do
     NOT survive a restart: on resume these are dead. Returns [{n, label, mode}] so the engine can
     mark them aborted and tell the model, instead of leaving it to `wait` forever for a child that
     will never finish.
@@ -123,10 +123,10 @@ def orphaned_children(events: list[dict]) -> list[dict]:
         n = p.get("n")
         if not isinstance(n, int):
             continue
-        if ev.get("type") == "subrun_start":
+        if ev.get("type") == "child_start":
             started[n] = {"n": n, "label": p.get("label"), "mode": p.get("mode", "parallel"),
                           "workflow": p.get("workflow", "")}
-        elif ev.get("type") == "subrun_end":
+        elif ev.get("type") == "child_end":
             ended.add(n)
     return [info for n, info in started.items() if n not in ended]
 
@@ -136,7 +136,7 @@ def prior_usage(events: list[dict]) -> dict:
     a resume starts a fresh budget window (ctx.usage). Sums every event that carries usage:
     assistant actions, llm-subcall and decide observations, compaction calls, and the exit of
     every CHILD RUN an earlier leg collected — a child's spend is folded live at collection
-    (`subruns._collect`), so omitting `subrun_end` here understates a resumed tree (R3112).
+    (`subruns._collect`), so omitting `child_end` here understates a resumed tree (R3112).
     """
     total: dict = {"in": 0, "out": 0}
     for ev in events:
@@ -145,7 +145,7 @@ def prior_usage(events: list[dict]) -> dict:
             u = ev.get("usage")
         elif ((etype == "observation"
                and (ev.get("payload") or {}).get("kind") in ("llm", "decide"))
-              or etype in ("compaction", "subrun_end")):
+              or etype in ("compaction", "child_end")):
             u = (ev.get("payload") or {}).get("usage")
         else:
             continue

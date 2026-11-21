@@ -670,7 +670,7 @@ def test_run_rail_sections_collapse_and_list_a_reports_deliverable(ui, ui_page):
     expect(row).to_be_visible()
 
     # R340/R341: the caps are toggles here, exactly as in the conversation rail
-    cap = ui_page.locator('.run-rail .rail-cap[data-rail="sub-runs"]')
+    cap = ui_page.locator('.run-rail .rail-cap[data-rail="children"]')
     body = cap.locator("xpath=following-sibling::div[1]")
     expect(body).to_be_visible()
     cap.click()

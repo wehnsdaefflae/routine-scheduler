@@ -8,7 +8,7 @@
 // views/run.js when F646 added the jobs section, because that file is at its size ceiling and
 // "which sections the rail has" is one responsibility a reader should be able to see whole.
 //
-// WHAT THE RUN PRODUCED leads (artifacts, files), then where the run IS (phases, sub-runs), then
+// WHAT THE RUN PRODUCED leads (artifacts, files), then where the run IS (phases, children), then
 // the goal — this run's own accounting of what it answered for — last. Each section's collapsed
 // state is remembered per browser, so a reader who wants the goal first keeps it open and
 // everything else shut. Two further sections are added LAZILY by their own owners, only for a
@@ -56,7 +56,7 @@ export function createRunRail(view, { runId, isLive }) {
   const artBody = rail.add("artifacts", el("div", {}));
   const filesBody = rail.add("files", el("div", {}));
   const graphBody = rail.add("phases", el("div", {}));
-  const treeBody = rail.add("sub-runs", el("div", {}));
+  const treeBody = rail.add("children", el("div", {}));
   const goalBody = rail.add("goal", el("div", {}));
   const subRunTree = createSubRunTree(treeBody, {
     treeUrl: `/api/runs/${runId}/tree`, isLive, turnHref });

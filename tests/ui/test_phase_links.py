@@ -81,7 +81,7 @@ def test_a_phase_with_no_recorded_turn_is_not_a_link(ui, ui_page):
 
 
 def test_a_sub_run_row_links_to_the_turn_that_started_it(ui, ui_page):
-    """The sub-runs card is navigation too: its row lands on the parent turn whose action
+    """The children card is navigation too: its row lands on the parent turn whose action
     started the child (readmodels/subruntree `start_turn`)."""
     ts = "20260715-152000"
     _seed(ui, ts, phase="act", events=[
@@ -89,11 +89,11 @@ def test_a_sub_run_row_links_to_the_turn_that_started_it(ui, ui_page):
          "run_id": f"{SLUG}:{ts}"},
         _action(1, "act", "orienting"),
         _action(2, "act", "starting the child", kind="child"),
-        {"ts": "2026-07-15T10:02:30+00:00", "type": "subrun_start",
+        {"ts": "2026-07-15T10:02:30+00:00", "type": "child_start",
          "payload": {"n": 1, "label": "crawl", "workflow": "general-task",
                      "mode": "parallel", "depth": 1,
                      "budget": {"turns": 20, "tokens": 0}}},
-        {"ts": "2026-07-15T10:09:00+00:00", "type": "subrun_end",
+        {"ts": "2026-07-15T10:09:00+00:00", "type": "child_end",
          "payload": {"n": 1, "label": "crawl", "mode": "parallel", "status": "ok",
                      "turns": 7, "usage": {"in": 10, "out": 2}, "summary": "crawled"}},
     ])
