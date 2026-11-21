@@ -314,10 +314,11 @@ def test_a_settling_reply_names_the_rows_it_finished_on_its_card(ui, ui_page, ma
     ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
     ui_page.wait_for_selector("h1:has-text('Messages')")
 
-    # the reply NAMES the row it settled beyond the one it answers
-    expect(ui_page.locator("#ref-R3")).to_contain_text("answers R1 — closes it")
-    expect(ui_page.locator("#ref-R3")).to_contain_text("settles R2")
+    # the reply NAMES the row it settled beyond the one it answers — each id with its subject,
+    # which its link takes on once the one titles read lands (components/reflinks.js)
+    expect(ui_page.locator("#ref-R3")).to_contain_text("answers R1 — first thing — closes it")
+    expect(ui_page.locator("#ref-R3")).to_contain_text("settles R2 — second thing")
     # and BOTH disposed rows read settled, each pointing back at the reply that did it
     expect(ui_page.locator("#ref-R1")).to_contain_text("settled")
     expect(ui_page.locator("#ref-R2")).to_contain_text("settled")
-    expect(ui_page.locator("#ref-R2")).to_contain_text("answered by R3")
+    expect(ui_page.locator("#ref-R2")).to_contain_text("answered by R3 — both of those are done")
