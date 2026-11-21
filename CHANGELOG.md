@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.578.0] — 2026-11-21
+
+A code review measured what the instance actually uses and removed what it does not
+(~45k lines net), then added the checks that keep it from growing back.
+
+### Removed
+- The 16 converged boot migrations; a fresh library now gets the tracked `gu` dispatcher.
+- Unused features: the report trigger and `/api/hooks` (webhooks stay), model trials,
+  backgrounded writes (`background_order`), `autoswap`, the assist `action` payload,
+  `visionsteer`, `decision_shadow`, `errorclass`, the replace-routine candidate, the ⚑ item
+  priority, the `revise_confirm` dial, `rsched suggest`, the Ollama-native and OpenAI-decisions
+  adapters, the conversation browser-session routes, `install.sh`, the pdoc API reference, and
+  the unused seed patterns `model-trainer`, `radar` and `train-a-model`.
+- Incident history in engine/endpoints docstrings and in test docstrings; CHANGELOG releases
+  before 0.444.0 condensed to one line each; `docs/status-pages.md` cut to its retirement note.
+
+### Changed
+- CLAUDE.md is the working tier (≈260 lines); the long form is `docs/contracts.md` and
+  `docs/testing.md`.
+- Reports and reminders are read from the hook stream alone; the per-read store comparison is gone.
+- One table of sealed paths feeds every write layer (`sealtable.py`); one source of side fields
+  and a routing table for action kinds (`sidefieldset.py`).
+- The four test memory-admission modules are one (`tests/memgate.py`).
+
+### Added
+- `ask_user` carries an optional `proof` per option (D220 wired end to end).
+- A Cost regressions panel on Stats; `endpoint_watch` judges each subscription login behind
+  the gateway and a dead one shows on the blocked-work surface.
+- Runs are told when to set a note's `stale_after`.
+- Anti-crud guards: a writing standard in CLAUDE.md, a shrink-only ratchet on dates/run ids in
+  source prose, one-paragraph test docstrings, a 40-line cap on CHANGELOG entries, a 300-line cap
+  on CLAUDE.md, and `rsched census` (what the instance uses and never uses).
+- Builder orders in docs/designs.md: the D289 attention view, D152's replace step, the branch UI,
+  playbook discoverability and detach.
+
 ## [0.577.0] — 2026-11-21
 
 ### Fixed
