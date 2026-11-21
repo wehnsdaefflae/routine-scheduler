@@ -16,7 +16,8 @@ TRANSPORTS only (docs/architecture.md).
   the run's permissions (intersected with a util's own `fs:` declaration), through ONE process
   seam, `utils_run.run_jailed` (docs/sandboxing.md).
 - A run never writes `routine.yaml`: blocked at the action gate AND in the jail
-  (`ownseal.mount_own_dir` / `ownseal.sealed_names`, D179). Where the jail does not engage
+  (`ownseal.mount_own_dir` / `ownseal.sealed_names`, D179), both reading ONE table of sealed
+  paths, `rsched/sealtable.py`. Where the jail does not engage
   (`sandbox: off`, no Landlock) `ungated_write` detection is the whole mechanism.
 - The instruction contains only the task. Cross-cutting conduct is a set of GENERAL RULES, one
   library copy each (`rules:` holds slugs; the run reads the prose with `read_rule`). Schedule,

@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from . import utilgate
+from . import sealtable, utilgate
 from .grants import (
     _DEFAULT_KIND_SOURCE,
     CONFIG_FILE,
@@ -61,7 +61,7 @@ def is_recipe_path(path: str) -> bool:
 
 def is_runs_path(path: str) -> bool:
     p = _norm_rel(path)
-    return p == "runs" or p.startswith("runs/")
+    return p == sealtable.RUNS.name or p.startswith(f"{sealtable.RUNS.name}/")
 
 
 #: The words every denial of an UNDECIDED entity ends with (`GrantPolicy.request_route`).
@@ -361,8 +361,7 @@ class GrantPolicy:
                     f"runs/{self.current_run_ts}/")
                 if is_runs_path(path) and not own_run:
                     if writes:
-                        return ("runs/ is engine-owned and read-only — transcripts and results "
-                                "are written by the engine, never by the run.")
+                        return sealtable.RUNS.refusal
                     if self.run_history == "none" and not self.admin:
                         # post-D96 a routine's own policy floors at "last" — this fires
                         # only for scopes without history (sub-workflow children).
@@ -371,15 +370,8 @@ class GrantPolicy:
                                 "but sub-workflows run on their brief alone. "
                                 f"{self.request_route('runs:all')}")
                 if writes and _norm_rel(path).split("/")[-1] == CONFIG_FILE:
-                    return (f"writing {_norm_rel(path)!r} would change routine config "
-                            f"(routine.yaml — permissions, capabilities, budgets, roots). Config "
-                            f"is the user's: NO run edits it, not even the routine-improver "
-                            f"(machine-tunable knobs like deliberation live in tuning.yaml). "
-                            f"File a deferred ask_user describing the change you need.")
+                    return sealtable.CONFIG.worded(path=_norm_rel(path), lexical=True)
                 if writes and is_recipe_path(path) and not self.recipe_unlocked:
-                    return (f"writing {_norm_rel(path)!r} would modify this routine's own recipe "
-                            f"(main.md / stages/ / tuning.yaml), which needs the recipe-authoring "
-                            f"permission — this routine does not hold it, so its instructions are "
-                            f"the user's. Describe the change you need in a deferred ask_user "
-                            f"(or a report). {self.request_route('action:write_recipe')}")
+                    return sealtable.recipe_refusal(
+                        _norm_rel(path), self.request_route(sealtable.RECIPE_ENTITY))
         return None

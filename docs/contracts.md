@@ -454,9 +454,10 @@ entry for what you are about to touch.
   revisions:` lines — and the engine rotates the oldest WHOLE entries into `.ledger/<YYYY-MM>.md`
   past 32 KiB of entries. The PREAMBLE above the first engine heading (a title, a frozen brief,
   every hand-written section from before) is never moved or shown. Children, conversations and
-  detached tasks keep none. Sealed in BOTH layers — the write gate via `engine/storeseal`, the
-  jail via `ownseal` — so never re-add a rule assist, recipe stage or prose that asks a run to
-  write or rotate it: what a run would record goes in its finish summary or a `note`.
+  detached tasks keep none. Sealed in BOTH layers — the write gate and the jail via `ownseal`
+  both read its `rsched/sealtable` rows — so never re-add a rule assist, recipe stage or prose
+  that asks a run to write or rotate it: what a run would record goes in its finish summary or a
+  `note`.
   `memory_*` are the ONLY way into `.memory/` for a RUN (generic file actions are rejected
   there; a note named `X.md`, as INDEX.md spells it, is note `X` — `engine/fieldshapes.py`, the
   normalize seam's lossless repairs of evidently-intended shapes); the engine owns `.memory/INDEX.md` (built from each write's `about`); a note's ~100-line

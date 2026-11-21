@@ -975,7 +975,7 @@ and the capabilities digest's catalog listing):
   hand-written section from before the engine took the file over — is never moved, edited or
   shown in the digest, whose ledger section is the earlier ENTRIES less the last run's own (its
   result is printed just above). SEALED in both layers like `.memory/INDEX.md`: the file-action
-  gate refuses a write, edit, delete or move of either (`engine/storeseal.stores`, the
+  gate refuses a write, edit, delete or move of either (its `rsched/sealtable.py` rows, the
   observation `runledger.REFUSAL`), `ownseal.SEALED_FILES`/`SEALED_DIRS` withhold both from every
   jailed subprocess, and the operator's file endpoint refuses them by name.
 - `state/`, `inbox/` (daemon/web drop messages + answers here; a message's **`via`**
