@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.573.0] — 2026-11-21
+
+### Fixed
+- **`/api/health/blocked` no longer reads the backup share inside the request.** It was the
+  console's slowest request — about 8,020 client-side slow traces in 14 days and about 487
+  server-side rows over 2 s in 30. The slow-samples named the cause: in 14 of the 20 retained,
+  all of them this route, the request thread sat in `backup_watch.newest_stamp`'s
+  `open`/`read_text` on the off-box stamp over sshfs, because `web/operator_conditions` asked
+  `backup_watch.staleness()` afresh on every call to decide whether a `backup_stale` row still
+  holds. The daemon's own `BackupWatch` now does that read once every `CHECK_EVERY_S` (60 s), in
+  a worker thread, and KEEPS the verdict; the request reads it from memory
+  (`BackupWatch.current`). The rule that an unreadable state is UNKNOWN and never fresh holds
+  for the kept verdict too: before the first check, after a check that raised, and once the
+  verdict is older than `VERDICT_MAX_AGE_S` (300 s — what a wedged share looks like, since
+  `_off_tick` starts no second check beside a stuck one), `current()` is `None`, and the row
+  keeps counting. A by-product: the watch used to call `staleness()` ON the event loop at every
+  5-second tick, so each sshfs read also held every request and fire behind it; it now runs off
+  the loop and twelve times less often. `rsched postdeploy` still reads the stamps itself — it is
+  a separate process and that read is its job.
+
 ## [0.572.0] — 2026-11-21
 
 ### Added

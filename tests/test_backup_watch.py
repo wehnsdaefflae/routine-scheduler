@@ -159,7 +159,7 @@ def test_an_unseeable_tier_beside_a_fresh_one_is_reported_not_swallowed(tmp_path
 
 
 async def test_a_stale_snapshot_is_filed_once_a_day_not_once_a_tick(tmp_path, monkeypatch):
-    """The daemon ticks every 5 s. One row per tick would bury the stream this event exists to make
+    """The daemon checks every CHECK_EVERY_S. One row per check would bury the stream this event exists to make
     legible — the rule `tickguard` already applies to a failing item."""
     server = tmp_server(tmp_path)
     root = _stamp(tmp_path / "share", datetime.now(UTC) - timedelta(days=19))
@@ -167,7 +167,7 @@ async def test_a_stale_snapshot_is_filed_once_a_day_not_once_a_tick(tmp_path, mo
     watch = backup_watch.BackupWatch(server)
 
     for _ in range(5):
-        await watch.tick()
+        await watch.check()
     stream = server.routines_home / ".control" / HEALTH_EVENTS_FILE
     rows = [r for r in read_jsonl(stream) if r.get("event") == "backup_stale"]
     assert len(rows) == 1, rows
@@ -175,9 +175,9 @@ async def test_a_stale_snapshot_is_filed_once_a_day_not_once_a_tick(tmp_path, mo
 
     # fresh again → the memory clears, so the NEXT staleness is reported rather than swallowed
     _stamp(root, datetime.now(UTC))
-    await watch.tick()
+    await watch.check()
     _stamp(root, datetime.now(UTC) - timedelta(days=19))
-    await watch.tick()
+    await watch.check()
     rows = [r for r in read_jsonl(stream) if r.get("event") == "backup_stale"]
     assert len(rows) == 2, rows
 

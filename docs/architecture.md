@@ -1995,7 +1995,8 @@ install gets the revision from the seed sync itself.)
   then marks the six of them nothing inside the system will clear — a stale backup, dropped
   fires under a pause, a one-shot consumed unfired, a lane naming a member that is not a
   routine, an answer no run will read — and serves `operator_total`, the rail's blocked badge,
-  F796; a row counts there only while its condition still holds, `web/operator_conditions`) — a read-model is a pure
+  F796; a row counts there only while its condition still holds, `web/operator_conditions` — which
+reads the backup's from `daemon/backup_watch`'s kept verdict, never from the share) — a read-model is a pure
   derivation, deletable state, never a writer. The Decisions read model (`web/decisions_read.py` — what `/api/questions`, the
   badge, the tab-open notifier and Web Push all read) is memoized per home on the same fingerprint
   over the catalog's own sources (the home listing, every `routine.yaml`, every `questions/pending`

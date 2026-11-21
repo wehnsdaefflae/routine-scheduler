@@ -936,11 +936,14 @@ naming what only the operator can do, for `backup_stale` (a host unit did not co
 made up — D237), `oneshot_skipped` (consumed unfired), `lane_chain_member_skipped` (a lane
 names a member that is not a routine in any home) and `answer_undelivered` (an answer of his no
 run will read). A row counts only WHILE ITS CONDITION STILL HOLDS (2026-11-09,
-`web/operator_conditions.py`): the pause is still on, the backup watch still reads it stale, the
+`web/operator_conditions.py`): the pause is still on, the backup watch still reads it stale (its
+KEPT verdict, `BackupWatch.current` — the request never reads the backup share itself; it did
+until 2026-11-21 and was the console's slowest route), the
 answer still has no reader, the lane still names the missing slug. One known to be over is
 `resolved` — kept on the panel with a line saying what is true now, off the badge — because on
 2026-11-09 the badge read 10 for a pause lifted five days earlier and a backup that had come
-back; a condition that cannot be told (an `unknown` backup verdict, `oneshot_skipped`) keeps
+back; a condition that cannot be told (an `unknown` backup verdict, no current one — never
+checked, the check raised, or older than `VERDICT_MAX_AGE_S` — or `oneshot_skipped`) keeps
 counting. `operator_total` counts those as DISTINCT
 ROWS — one per thing to go and fix, so a pause that ate eight of one routine's fires is one —
 and that count is the rail's blocked badge beside Stats, on every page. Everything else clears

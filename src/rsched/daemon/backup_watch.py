@@ -46,6 +46,20 @@ every 5 s, and a row per tick would bury the stream it is meant to make legible 
 `tickguard` applies to a failing item. A stamp that becomes fresh again clears the memory, so the
 next staleness is reported rather than swallowed.
 
+THE WATCH'S VERDICT IS THE ONE THE CONSOLE READS (2026-11-21). `/api/health/blocked` asks whether a
+`backup_stale` row still holds (`web/operator_conditions`), and it used to answer by calling
+`staleness()` itself — four stamp reads, two of them on the off-box share over sshfs, inside every
+request. That made it the console's slowest request (≈8,000 client-side slow traces in 14 days,
+≈490 server rows over 2 s in 30), and 14 of the 20 retained slow-samples caught the request thread
+in `newest_stamp`'s `open`/`read_text`. So the read now happens HERE and only here, once every
+`CHECK_EVERY_S`, in a worker thread (`asyncio.to_thread` — the tick used to run it ON the event
+loop, every 5 s), and a request reads the kept verdict (`BackupWatch.current`). A verdict is
+CURRENT only while it is younger than `VERDICT_MAX_AGE_S`: a check that raised clears it, one that
+never finished (a wedged share holds its thread, and `_off_tick` starts no second one) lets it age
+out, and before the first check there is none — every one of those reads as UNKNOWN, never as the
+last `ok`, so a share that stopped answering cannot keep a backup looking fresh. A days-scale
+judgement read up to `VERDICT_MAX_AGE_S` late changes nothing an operator could act on.
+
 THAT LATCH MAKES THIS A STANDING CONDITION, and the blocked-work fold is told so rather than
 inferring it (`readmodels/blocked_kinds`, R3418): its rows are one fact that stayed true, so
 their COUNT would measure how long the daemon happened to be up — a nineteen-night gap read as
@@ -56,11 +70,13 @@ about the cadence here changed; what changed is that the unit is now declared wh
 
 from __future__ import annotations
 
+import asyncio
 import errno
 import logging
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from time import monotonic
 
 from ..config import ServerConfig
 from ..health_events import log_health_event
@@ -70,6 +86,13 @@ log = logging.getLogger("rsched.daemon")
 
 #: How long without a completed snapshot before the instance says so. See the module note.
 STALE_AFTER_DAYS = 3
+
+#: How often the daemon re-reads the stamps. The tick is 5 s; a stamp moves twice a night.
+CHECK_EVERY_S = 60.0
+
+#: How old a kept verdict may be and still be served (`BackupWatch.current`). Five missed checks:
+#: past this the share has stopped answering this process, and that is UNKNOWN, not the last `ok`.
+VERDICT_MAX_AGE_S = 300.0
 
 #: The stamp `deploy/backup.sh` writes as its last act on a complete snapshot.
 COMPLETED_STAMP = ".rsched-backup-completed"
@@ -237,21 +260,48 @@ def _tier_staleness(now: datetime | None, roots: list[Path] | None) -> tuple[str
 
 
 class BackupWatch:
-    """The daemon's backup check: one health event per day while the snapshot is stale."""
+    """The daemon's backup check: one stamp read every CHECK_EVERY_S, off the event loop; one
+    health event per day while the snapshot is stale; and the verdict the console reads.
+    """
 
     def __init__(self, server: ServerConfig) -> None:
         self.server = server
         self._last_filed: datetime | None = None
+        self._last_check: float | None = None          # monotonic stamp of the last check
+        #: (state, detail, monotonic when read) — replaced whole, so a reader on another thread
+        #: sees one check's verdict or the next one's, never half of each.
+        self._verdict: tuple[str, str, float] | None = None
+
+    def current(self) -> tuple[str, str] | None:
+        """The last check's (state, detail), or None when there is no CURRENT one — never
+        checked, the last check raised, or it is older than VERDICT_MAX_AGE_S. None is UNKNOWN:
+        a caller must not read it as a fresh backup. Reads memory only, so a request may call it.
+        """
+        kept = self._verdict
+        if kept is None or monotonic() - kept[2] > VERDICT_MAX_AGE_S:
+            return None
+        return kept[0], kept[1]
 
     async def tick(self) -> None:
-        """Read the stamp and file the event if it is due. Never raises into the tick: a check
-        about a backup must not be the thing that stops the scheduler.
+        """The scheduler's 5-second entry: a check once every CHECK_EVERY_S."""
+        now = monotonic()
+        if self._last_check is not None and now - self._last_check < CHECK_EVERY_S:
+            return
+        self._last_check = now
+        await self.check()
+
+    async def check(self) -> None:
+        """Read the stamps in a worker thread, keep the verdict, and file the event if it is due.
+        Never raises into the tick: a check about a backup must not be the thing that stops the
+        scheduler.
         """
         try:
-            state, detail = staleness()
+            state, detail = await asyncio.to_thread(staleness)
         except Exception:
+            self._verdict = None        # this check told us nothing: unknown, not the last answer
             log.exception("backup-watch: reading the completion stamp raised")
             return
+        self._verdict = (state, detail, monotonic())
         if state != "stale":
             self._last_filed = None     # fresh (or unknown) again: the next staleness is reported
             return
