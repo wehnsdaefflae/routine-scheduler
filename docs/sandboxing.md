@@ -355,6 +355,12 @@ that keep it a boundary:
 - **ONE predicate decides both sides** (`web/servable.py`): the card renders a click only where
   the route would open the file, so a chip the console cannot honour cannot reappear. A row it
   will not serve is still listed, with the boundary named in its tooltip.
+- **A row on a network share is judged OFF the request** (`web/fileverdicts.py`, 2026-11-21).
+  Resolving and statting such rows per request was the console's slowest route — up to 74 s for
+  one card, 5 s for one row on the NAS sshfs share — so a background job applies the same
+  predicate and the card serves the kept verdict, at most `VERDICT_MAX_AGE_S` old; until one
+  exists the row reads `null` and gets no click. Local rows are still judged on every call, and
+  the ROUTE still resolves everything at serve time, so a revoked grant stops serving at once.
 
 This is an arbitrary-file read through the web tier bounded by a GRANT rather than by a
 directory. It is bounded by the same grant the routine itself runs under, and the primary bearer

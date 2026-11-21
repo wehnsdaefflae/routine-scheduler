@@ -66,9 +66,13 @@ export function createFileActivity(container, { url }) {
       // D172: NO click for a row the server will not serve. `servable` is decided by the
       // same predicate the file route enforces (web/servable.py), so the card never offers
       // a button that answers 400 — which is what it used to do for every path a run read
-      // from a granted fs root. A server that does not send the field at all is treated as
-      // servable, so an older daemon keeps its buttons.
-      if (f.servable === false) {
+      // from a granted fs root. `null` is a row on a network share whose verdict a background
+      // check has not kept yet (web/fileverdicts.py): unknown is never offered as servable.
+      if (f.servable === null) {
+        row.append(el("span", { class: "file-act faint",
+                                title: "on a network share — checking whether the console "
+                                     + "can serve it" }, "…"));
+      } else if (f.servable !== true) {
         row.classList.add("unservable");
         row.title = `${detail}\n\nnot served: outside the run, its routine directory and `
                   + `the routine's granted read roots`;
@@ -100,11 +104,24 @@ export function createFileActivity(container, { url }) {
   }
 
   let loadedOnce = false;
+  // While the server is still checking rows on a network share (`pending`), fetch again —
+  // sooner at first, then backing off — and stop once the card is gone or nothing is pending.
+  let pendingTimer = null;
+  let pendingWait = 2000;
   async function refresh() {
     try {
       const d = await api(url);
       paint(d.files || [], d.history || []);
       loadedOnce = true;
+      clearTimeout(pendingTimer);
+      pendingTimer = null;
+      if (d.pending && box.isConnected) {
+        pendingTimer = setTimeout(() => { pendingTimer = null; if (box.isConnected) refresh(); },
+                                  pendingWait);
+        pendingWait = Math.min(pendingWait * 1.5, 15_000);
+      } else {
+        pendingWait = 2000;
+      }
     }
     catch (err) {
       // decoration on refresh (keep the last render) — but a FIRST load failing

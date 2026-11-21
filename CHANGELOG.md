@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.576.0] — 2026-11-21
+
+### Fixed
+- **The files card no longer stats a network share inside the request.** `GET
+  /api/runs/{id}/files` was the console's slowest route by server time — 1,070 rows over 2 s in
+  13 days, median 6.0 s, worst 87.6 s — and timed against the runs behind most of those rows,
+  every second was the D172 chip predicate resolving and statting rows on the NAS sshfs share:
+  60.9 s for a 318-row card, 73.7 s for a 2,056-row one, up to 5 s for a single row, with F896's
+  16-thread pool barely helping because the share answers one request at a time. Rows on a
+  network or FUSE mount (decided lexically from `/proc/self/mounts`, `web/netmounts.py`, with no
+  filesystem call) are now judged by a background job per viewed run, which applies the same
+  predicate and KEEPS each verdict with its time (`web/fileverdicts.py`): served without a
+  re-check for 5 minutes, refreshed while someone looks, and never served past 15. A row with no
+  current verdict is `servable: null`, the response says `pending` while a job is checking, and
+  the card renders no click for it and fetches again until it lands — an unknown row is never
+  offered as servable (the card now shows buttons only for `servable: true`). Local rows are
+  still judged on every request, which is what F896's freshness tests pin, and resolving the
+  roots for them skips roots on a share (`servable.roots_for_run(skip=…)`). The route that
+  SERVES a file is unchanged: it still resolves everything at serve time, so a revoked grant
+  stops serving at once and only the offer of a click on a share row can lag. Also,
+  `file_activity` is now memoized shared rather than deep-copied per poll (16 ms on the
+  2,056-row card); both readers only read it.
+
 ## [0.575.0] — 2026-11-21
 
 ### Fixed

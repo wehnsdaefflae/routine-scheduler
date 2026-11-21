@@ -22,7 +22,11 @@ not the other is a hole, or a dead chip, that nobody sees; that is the defect D1
 
 **Resolved at SERVE TIME, never recorded.** The roots come from the routine's live
 `routine.yaml` on every call, so revoking a grant stops serving at once — a verdict stored in
-the transcript when the file was touched would outlive the grant that justified it.
+the transcript when the file was touched would outlive the grant that justified it. The ROUTE
+holds this on every call without exception. The CHIP holds it for every local row; for a row on
+a network share it reads a verdict a background job kept, at most `VERDICT_MAX_AGE_S` old
+(`web/fileverdicts.py`, 2026-11-21) — statting those rows per request cost up to 74 s a card —
+so what can lag there is the offer of a click, never the serving.
 
 Write roots are not read roots: D172 widens READ roots only. A path under a write-only grant
 stays unserved. Containment is still proven on the opened descriptor (`artifacts.open_within`),
@@ -31,11 +35,29 @@ which takes this same root list — a path test before the open can be raced by 
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 
-def roots_for_run(server, run_dir: Path, routine_dir: Path) -> tuple[Path, ...]:
+def granted_roots(server, routine_dir: Path) -> list[Path]:
+    """The routine's effective read roots AS CONFIGURED — its `fs_read_roots` plus the
+    instance-wide shared read-only assets — unresolved, so reading them touches no filesystem
+    beyond `routine.yaml`. A routine whose config will not parse grants nothing.
+    """
+    try:
+        from ..config import load_routine
+        from ..sandbox import _shared_read_roots
+
+        cfg, _problems = load_routine(routine_dir)
+        granted = list(cfg.fs_read_roots) if cfg is not None else []
+        granted += list(_shared_read_roots(server))
+    except Exception:                        # a config we cannot read grants nothing
+        return []
+    return [Path(root) for root in granted]
+
+
+def roots_for_run(server, run_dir: Path, routine_dir: Path, *,
+                  skip: Callable[[Path], bool] | None = None) -> tuple[Path, ...]:
     """Every tree this run's files may be served from, widest-intent first: the routine dir,
     the run dir, then the routine's EFFECTIVE READ ROOTS — its configured `fs_read_roots` plus
     the instance-wide shared read-only assets, the same expression the sandbox and the gate
@@ -47,20 +69,17 @@ def roots_for_run(server, run_dir: Path, routine_dir: Path) -> tuple[Path, ...]:
 
     A run's ONE-TIME fs grants are deliberately absent — they live on the live `RunContext` in
     memory and are gone once the run ends, so no later call could resolve them honestly.
+
+    `skip` leaves out the granted roots it is true for WITHOUT resolving them: the files card
+    passes `web/netmounts.on_network`, because resolving a root on an sshfs share is itself
+    network I/O, and a LOCAL row's resolved path can never lie inside a root on a share.
     """
     roots = [routine_dir, run_dir]
-    try:
-        from ..config import load_routine
-        from ..sandbox import _shared_read_roots
-
-        cfg, _problems = load_routine(routine_dir)
-        granted = list(cfg.fs_read_roots) if cfg is not None else []
-        granted += list(_shared_read_roots(server))
-    except Exception:                        # a config we cannot read grants nothing
-        granted = []
-    for root in granted:
+    for root in granted_roots(server, routine_dir):
+        if skip is not None and skip(root):
+            continue
         try:
-            resolved = Path(root).resolve()
+            resolved = root.resolve()
         except OSError:
             continue
         if resolved.is_dir() and resolved not in roots:

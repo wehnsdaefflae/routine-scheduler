@@ -175,6 +175,7 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
             await _stop(running)
         # F896's row stats use a separate bounded pool, never the stream/handler threads.
         # Requests have drained; cancel queued checks without awaiting a stuck network stat.
+        app.state.file_verdicts.shutdown()     # its jobs submit to the pool below: stop first
         app.state.file_checks.shutdown()
         # The I/O pool LAST, once nothing is left to submit to it. `wait=False` so a shutdown is
         # never held hostage by an SSH call or a provider probe mid-flight (those threads finish

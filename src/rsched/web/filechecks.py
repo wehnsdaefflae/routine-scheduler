@@ -11,10 +11,13 @@ keeps slow filesystem checks out of both pools; no executor is created per poll.
 on demand (so a small card only needs its row count), and the app lifespan shuts the pool down.
 
 Only transcript rows are memoized, by the read model. Neither roots nor file verdicts live here
-between calls. Results retain first-touched order, and rows are copied, NEVER annotated in place
-on the memoized read model. Unexpected errors propagate in input order, just as in the old
-comprehension; queued checks are cancelled on exit. Running checks are read-only and finish
-normally. No resolved paths, root lists or exception details are added to the response.
+between calls; rows on a NETWORK share never reach this pool from a request at all —
+`web/fileverdicts.py` checks them in a background job and keeps their verdicts (2026-11-21).
+Results retain first-touched order, and rows are copied, NEVER annotated in place on the
+memoized read model (which is handed out shared, uncopied). Unexpected errors propagate in
+input order, just as in the old comprehension; queued checks are cancelled on exit. Running
+checks are read-only and finish normally. No resolved paths, root lists or exception details are
+added to the response.
 """
 
 from __future__ import annotations

@@ -20,6 +20,7 @@ from . import api_core, assetskew, routers, slowsample
 from .api_core import STATIC_DIR
 from .appwiring import _add_middlewares, _make_lifespan
 from .filechecks import FileChecks
+from .fileverdicts import KeptVerdicts
 from .ioload import attach_state
 from .screen_proxy import screen_for_path
 
@@ -176,6 +177,8 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     app.state.stream_tickets = {}   # ticket → monotonic expiry (see streams.admits / stream-ticket)
     attach_state(app)   # the live-socket ceiling + the io_pool slot the lifespan fills (ioload)
     app.state.file_checks = FileChecks()   # F896: lazy, bounded row-stat pool; not live-stream I/O
+    # rows on a network share: verdicts kept and refreshed off the request (fileverdicts.py)
+    app.state.file_verdicts = KeptVerdicts(app.state.file_checks)
     # pass → monotonic expiry, one store per relayed screen (F530). Separate from the stream
     # tickets on purpose: a different lifetime, a different scope, and a different failure if
     # one is ever mistaken for the other.

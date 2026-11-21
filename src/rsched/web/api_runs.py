@@ -215,18 +215,23 @@ def run_files(request: Request, run_id: str) -> dict:
     the same predicate that route enforces (`web/servable.py`). The card renders a click only
     for a true row — before D172 every row was clickable and a file the run read from a granted
     fs root answered 400, a chip the console could never honour.
+
+    A row on a NETWORK share is not checked here (`web/fileverdicts.py`): its verdict is the one
+    a background job kept, and `null` while there is none, with `pending` saying a job is
+    checking — statting those rows in the request took up to 74 s a card. Local rows are
+    checked fresh on every call, as before.
     """
     from ..readmodels.fileactivity import file_activity
-    from .servable import roots_for_run
+    from .fileverdicts import card
 
     _, run_dir = _run_dir(request, run_id)
-    routine_dir = run_dir.parent.parent
-    roots = roots_for_run(request.app.state.server, run_dir, routine_dir)
-    rows = request.app.state.file_checks.rows(file_activity(run_dir), run_dir, roots)
+    state = request.app.state
+    rows, pending = card(file_activity(run_dir), run_dir, run_dir.parent.parent, state.server,
+                         state.file_checks, state.file_verdicts)
     hist = run_dir / "history"
     history = (sorted(p.name for p in hist.iterdir() if p.is_file())
                if hist.is_dir() else [])
-    return {"files": rows, "history": history}
+    return {"files": rows, "history": history, "pending": pending}
 
 
 @router.get("/runs/{run_id}/file")

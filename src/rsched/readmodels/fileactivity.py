@@ -49,10 +49,13 @@ def file_activity(run_dir: Path) -> list[dict]:
     `errors` (the op never happened). `sub` marks a path any CHILD run touched, and
     `bases` names the run-relative directories it was touched under, in first-touched
     order — what a relative path resolves against.
-    Memoized on the run's transcript fingerprints (rail-polled endpoint).
+    Memoized on the run's transcript fingerprints (rail-polled endpoint), and SHARED, never
+    copied: both readers (`web/filechecks`, `api_runs.run_file`) only read the rows, and the
+    files card copies each one before giving it a verdict. A 2,056-row card cost a 16 ms deep
+    copy on every poll. Treat the result as read-only.
     """
-    return memo.memoized(f"files:{run_dir}", memo.transcript_paths(run_dir),
-                         lambda: _file_activity(run_dir))
+    return memo.memoized_shared(f"files:{run_dir}", memo.transcript_paths(run_dir),
+                                lambda: _file_activity(run_dir))
 
 
 def _file_activity(run_dir: Path) -> list[dict]:
