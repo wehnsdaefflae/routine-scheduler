@@ -27,8 +27,8 @@ def streamed(tmp_path, make_routine):
          "run_id": "", "detail": "the routine was still active"},
         {"ts": "2026-10-23T10:00:00+02:00", "event": "run_finished", "routine": "beta",
          "run_id": "beta:20261023-100000", "detail": "ok"},
-        {"ts": TS, "event": "trigger_capped", "routine": "alpha", "run_id": "",
-         "detail": "daily cap of 5 reached"},
+        {"ts": TS, "event": "lane_chain_stopped", "routine": "alpha", "run_id": "",
+         "detail": "member failed"},
     ])
     with authed_client(make_test_server(tmp_path)) as c:
         yield c
@@ -41,9 +41,9 @@ def test_the_stream_is_served_newest_first(streamed):
     assert r.status_code == 200, r.text
     body = r.json()
     assert [e["event"] for e in body["events"]] == [
-        "trigger_capped", "run_finished", "fire_refused"]
+        "lane_chain_stopped", "run_finished", "fire_refused"]
     assert body["events"][0]["ts"] == TS
-    assert body["events"][0]["detail"] == "daily cap of 5 reached"
+    assert body["events"][0]["detail"] == "member failed"
     assert body["total"] == 3
 
 
@@ -51,7 +51,7 @@ def test_the_answer_is_bounded_by_limit(streamed):
     """The live stream is ~280 KB and grows forever: a reader takes the newest N, never the
     file. `total` still counts what matched, so a bounded answer says what it left out."""
     body = streamed.get("/api/health/events?limit=1").json()
-    assert [e["event"] for e in body["events"]] == ["trigger_capped"]
+    assert [e["event"] for e in body["events"]] == ["lane_chain_stopped"]
     assert body["total"] == 3
     assert body["limit"] == 1
 
@@ -59,7 +59,7 @@ def test_the_answer_is_bounded_by_limit(streamed):
 def test_one_routine_or_one_event_can_be_asked_for(streamed):
     """The two filters a reader actually wants: this routine's events, or this event's."""
     body = streamed.get("/api/health/events?routine=alpha").json()
-    assert [e["event"] for e in body["events"]] == ["trigger_capped", "fire_refused"]
+    assert [e["event"] for e in body["events"]] == ["lane_chain_stopped", "fire_refused"]
     assert body["total"] == 2
     body = streamed.get("/api/health/events?event=run_finished").json()
     assert [e["routine"] for e in body["events"]] == ["beta"]

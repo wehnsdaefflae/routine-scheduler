@@ -431,16 +431,14 @@ Improvement passes are deliberately NOT rules: the bundled **routine-improver**
 meta routine sweeps every routine that doesn't set `improve: false` in its
 routine.yaml (an include-by-default toggle on the routine page), itself included, and starts each
 with an OUTCOME REVIEW — its measured outcome against its context volume — ending in one verdict:
-declare, improve, streamline (over its size budget) or rebuild (a candidate swapped with one
-accept, engine/candidate.py).
+declare, improve or streamline (over its size budget).
 
 ### Which rules bind a routine (the SET)
 
 `routine.yaml` `rules:` IS the state; nothing derives a copy of it — the state digest reads
-it at every boot. The **user** binds or unbinds from the conversation header, or through
-`POST /routines/{slug}/rules` / `POST /conversations/{slug}/rules` (one shared implementation,
-`api_routine_edit.apply_rule_edit`). Nothing is copied anywhere: binding records a slug. The
-routine page's *General rules* panel edits the same list as part of that page's ONE accept
+it at every boot. The **user** binds or unbinds a conversation's from its header, through
+`POST /conversations/{slug}/rules` (`api_routine_edit.apply_rule_edit`). Nothing is copied
+anywhere: binding records a slug. The routine page's *General rules* panel edits the same list as part of that page's ONE accept
 (0.369.0) — which, like every multi-field routine config edit, waits for an active run to end
 (409) and so lands at the next run. That accept is no longer lost when it is refused: it is
 held with the active run's expected end, shown on the settings page as waiting, and applied
@@ -541,7 +539,6 @@ capabilities:
   rule_confirm: always          # write_rule approval: always | creations | never
   remind_confirm: always        # curated-reminder approval: always | creations | never
   config_confirm: always        # its OWN config-patch autonomy: always | own_fields | never
-  revise_confirm: always        # who revises ITS recipe (D198): always | invited
   runs: last                    # previous-run read depth: none | last | all — enforced BOTH in
                                 # the read actions and in the Landlock jail, so a util or shell
                                 # command handed a deeper path is refused too (docs/sandboxing.md)
@@ -554,16 +551,13 @@ A new routine's default is its settings pattern's; with no pattern at all it is
 reserved utils, the last run readable, and `reminders: local`. `read_rule`, the `util` action,
 memory and the routine's own scripts are not listed because they are not gated.
 
-`runs`, `reminders`, `jobs` and the five approval dials are SETTINGS: yours per routine, never switched
-on by a permission and kept by the floor with none behind them. `revise_confirm` is the fifth
-(`rsched/revisedial.py`, D198) and it is the only one that answers for what ANOTHER routine
-proposes: a revision of THIS routine's recipe, proposed by a routine holding recipe-authoring
-(`create_routine` with `revises: true`). At `always` — every routine's default — it is one
-decision card for you; at `invited` it is handed to this routine's next run with no card. The
-dial belongs to the routine whose instructions would change, never to the proposer, and at
-neither level does the proposer write the files: the edit is made by a run of the routine that
-owns the recipe, under the one-leg unlock, and `routine.yaml` stays sealed
-(see [revise recipe](revise-recipe.md)). `config_confirm` is the fourth
+`runs`, `reminders`, `jobs` and the four approval dials are SETTINGS: yours per routine, never switched
+on by a permission and kept by the floor with none behind them. A revision of THIS routine's
+recipe proposed by ANOTHER routine holding recipe-authoring (`create_routine` with
+`revises: true`) has no dial: it is always one decision card for you, the proposer never writes
+the files, and the edit is made by a run of the routine that owns the recipe, under the one-leg
+unlock, with `routine.yaml` sealed (see [revise recipe](revise-recipe.md)). `config_confirm` is
+the fourth
 (`rsched/configdial.py`, D191): a run can never write `routine.yaml`, so it proposes the change
 on an `ask_user` carrying a `config_patch` and the Decisions page applies it with a click. At
 `own_fields` a patch the routine files FOR ITSELF naming only the declared allow-list — its
@@ -643,7 +637,7 @@ expects:                       # the SOFT edge — presumed, never enforced (see
 (No setting in `requires:` — an approval level, a history depth, the reminder or task layer is your
 choice per routine, never a doc's demand; the linter refuses one.)
 
-The shipped set — 18 docs, one file each in `library-seed/permissions/`, which is what a fresh
+The shipped set — 17 docs, one file each in `library-seed/permissions/`, which is what a fresh
 install seeds and the authority this table is written from. A permission exists only where
 holding it is a DECISION: a channel that reaches a person, an act that changes what every
 routine shares, a reach outside the routine's own world.
@@ -655,7 +649,6 @@ routine shares, a reach outside the routine's own world.
 | `rule-authoring` | `write_rule` — author or revise a general rule in the shared library (the approval level is `rule_confirm`) | opt-in |
 | `recipe-authoring` | the `write_recipe` capability — revise this routine's OWN `main.md` / `stages/` / `tuning.yaml`; `routine.yaml` stays sealed regardless | opt-in |
 | `scheduling` | `schedule_run` — arm or cancel a one-shot future run of a routine | opt-in |
-| `routine-rebuild` | the `rebuild_routine` capability — `create_routine` with `replaces` creates a REPLACEMENT CANDIDATE at once (the old routine's settings without its secrets, unscheduled) and files the one swap decision (engine/candidate.py) | opt-in |
 | `shell` | the `shell` action — one host command per turn, in the run's own jail with no secret injected | opt-in |
 | `outbound-mail` | `mail:send` — send email from the user's own mailboxes (the `fau-mail`/`gmail` → `mail` consolidation retired the two older verbs) | opt-in |
 | `browser-sessions` | `browser-session` — drive the shared browser that is already signed in (see [browser sessions](browser-sessions.md)) | opt-in |
@@ -689,9 +682,8 @@ unlocked as a SIDE EFFECT of a user-granted fs_write_root covering the routine's
 granting a routine write access to its working directory silently also granted it the right to
 reword its own task. Those are different decisions; `routine.yaml` stays sealed under both. The same capability also
 lets a run PROPOSE a revision of ANOTHER routine's recipe (`create_routine` with
-`revises: true`, D198) — never a write: the proposal is prose, the TARGET's `revise_confirm`
-dial decides whether you see a card, and the edit is made by a run of the routine that owns
-that recipe. All of those gated calls are
+`revises: true`, D198) — never a write: the proposal is prose, it is always one card for you,
+and the edit is made by a run of the routine that owns that recipe. All of those gated calls are
 rejected inside the schema-retry cycle by `validate_action`, with an error naming the way out:
 a typed ACCESS REQUEST for the denied entity (see the grant model below), or the settled
 do-not-re-request wording when the user already declined it. A run NEVER writes

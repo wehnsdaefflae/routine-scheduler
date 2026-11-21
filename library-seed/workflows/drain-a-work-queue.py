@@ -59,7 +59,7 @@ META = {
                    "convert or migrate items until none are left. The queue is read from the "
                    "world each run, batches are verified and undoable, heavy work runs on a "
                    "worker outside the run, and a migration ends in a cut-over the principal "
-                   "approves. Not for a model that improves by experiments (train-a-model).",
+                   "approves.",
     "version": 2,
     "tags": ["queue", "batch", "migration", "worker", "verification"],
     "includes": ["change-scope", "work-order", "make-failure-visible", "verify-independently"],

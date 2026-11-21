@@ -23,14 +23,14 @@ def _server(**over):
             name="otari-decisions", protocol="systemone", base_url="https://one.example",
             api_key="sk-systemone", timeout_s=60),
         "cloud": DecisionEndpointConfig(
-            name="cloud", protocol="openai", base_url="https://cloud.example",
-            api_key="sk-openai", timeout_s=60),
+            name="cloud", protocol="systemone", base_url="https://cloud.example",
+            api_key="sk-cloud", timeout_s=60),
     }
     models = {
         "jev": DecisionModelConfig(name="jev", endpoint="otari-decisions", model="typesafe/jev"),
         "vl8b": DecisionModelConfig(name="vl8b", endpoint="otari-decisions",
                                     model="qwen-vl8b", multimodal=True),
-        "gpt": DecisionModelConfig(name="gpt", endpoint="cloud", model="gpt-6-luna"),
+        "gpt": DecisionModelConfig(name="gpt", endpoint="cloud", model="typesafe/jev-latest"),
     }
     return ServerConfig(decision_endpoints=endpoints, decision_models=models,
                         decision_model="jev", decision_media_model="vl8b", **over)
@@ -60,7 +60,6 @@ def test_the_protocol_rides_the_metadata_because_f888_cost_nine_days_without_it(
     executes."""
     meta = _meta(decision_env_for_routine("probe", {}, _server()))
     assert meta["endpoints"]["otari-decisions"]["protocol"] == "systemone"
-    assert meta["endpoints"]["cloud"]["protocol"] == "openai"
     assert meta["roles"]["decision"]["protocol"] == "systemone"
 
 
@@ -112,7 +111,7 @@ def test_a_key_never_rides_the_non_secret_metadata():
     ends in KEYS so the util-authoring gate forces its declaration."""
     env = decision_env_for_routine("probe", {}, _server())
     blob = env[DECISIONS_VAR]
-    assert "sk-systemone" not in blob and "sk-openai" not in blob
+    assert "sk-systemone" not in blob and "sk-cloud" not in blob
     assert _meta(env)["endpoints"]["cloud"]["has_key"] is True
 
 

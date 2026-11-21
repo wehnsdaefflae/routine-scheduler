@@ -210,8 +210,7 @@ def test_one_accept_applies_every_kept_change_and_clears_the_draft(client):
     c.post("/api/routines/alpha/settings/follow", json={"pattern": "watcher"})
     r = c.post("/api/routines/alpha/settings", json={
         "changes": {"keep_runs": 12, "improve": False,
-                    "triggers": [{"type": "report", "cooldown_s": 900,
-                                  "max_fires_per_day": 24}],
+                    "triggers": [{"type": "webhook", "cooldown_s": 900}],
                     "finish_line": {"outcomes": [{"text": "digest sent", "judge": "run"}],
                                     "until": "2027-01-01"}},
         "pattern": "watcher"})
@@ -220,7 +219,7 @@ def test_one_accept_applies_every_kept_change_and_clears_the_draft(client):
     raw = read_yaml(tmp / "routines/alpha/routine.yaml")
     assert raw["retention"]["keep_runs"] == 12 and raw["improve"] is False
     assert raw["pattern"] == "watcher"
-    assert [t["type"] for t in raw["triggers"]] == ["report"]
+    assert [t["type"] for t in raw["triggers"]] == ["webhook"]
     assert body["draft"] is None and body["overrides"] == []
     assert body["fields"]["finish_line"]["outcomes"][0]["text"] == "digest sent"
     assert body["fields"]["finish_line"]["until"] == "2027-01-01"
@@ -231,20 +230,20 @@ def test_accepting_keeps_an_existing_triggers_identity(client):
     file leaves them out; the webhook a third party holds must keep its URL either way."""
     c, tmp = client
     c.post("/api/routines/alpha/settings", json={"changes": {"triggers": [
-        {"type": "webhook", "cooldown_s": 60, "max_fires_per_day": 0}]}})
+        {"type": "webhook", "cooldown_s": 60}]}})
     token = read_yaml(tmp / "routines/alpha/routine.yaml")["triggers"][0]["token"]
     shown = c.get("/api/routines/alpha/settings").json()["fields"]["triggers"]
     r = c.post("/api/routines/alpha/settings", json={"changes": {"triggers": [
-        *shown, {"type": "report", "cooldown_s": 900, "max_fires_per_day": 24}]}})
+        *shown, {"type": "webhook", "cooldown_s": 900}]}})
     assert r.status_code == 200, r.text
     rows = read_yaml(tmp / "routines/alpha/routine.yaml")["triggers"]
-    assert {t["type"] for t in rows} == {"webhook", "report"}
-    assert next(t for t in rows if t["type"] == "webhook")["token"] == token
+    assert sorted(t["cooldown_s"] for t in rows) == [60, 900]
+    assert next(t for t in rows if t["cooldown_s"] == 60)["token"] == token
 
 
 @pytest.mark.parametrize("refused", [
     {"finish_line": {"outcomes": [{"text": "launched", "judge": "date"}]}},   # no date
-    {"triggers": [{"type": "imap", "cooldown_s": 60, "max_fires_per_day": 0}]},
+    {"triggers": [{"type": "imap", "cooldown_s": 60}]},
 ])
 def test_an_accept_one_owner_refuses_lands_nothing(client, refused):
     """The accept routes each field to the writer that owns it, and the triggers list and the
@@ -261,10 +260,10 @@ def test_an_accept_one_owner_refuses_lands_nothing(client, refused):
 
 
 def test_a_trigger_row_compares_equal_with_or_without_its_defaults():
-    bare = [{"id": "t-1", "type": "webhook", "token": "x", "cooldown_s": 60}]
-    spelled = [{"type": "webhook", "cooldown_s": 60, "max_fires_per_day": 0}]
+    bare = [{"id": "t-1", "type": "webhook", "token": "x"}]
+    spelled = [{"type": "webhook", "cooldown_s": 60}]
     assert fields.equal("triggers", bare, spelled)
-    assert not fields.equal("triggers", bare, [{**spelled[0], "max_fires_per_day": 5}])
+    assert not fields.equal("triggers", bare, [{**spelled[0], "cooldown_s": 5}])
 
 
 def test_an_unknown_setting_is_refused(client):
@@ -342,7 +341,7 @@ def test_every_shipped_pattern_is_sound_and_governs_every_field():
     """A pattern is a whole settings document: a field it leaves out is a field nobody can
     see a routine depart from. `name` and `description` are the routine's own."""
     shipped = _seed_patterns()
-    assert len(shipped) == 14
+    assert len(shipped) == 12
     for p in shipped:
         assert p["problems"] == [], (p["slug"], p["problems"])
         assert set(p["settings"]) == set(fields.GOVERNABLE), p["slug"]

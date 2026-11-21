@@ -145,7 +145,7 @@ def test_capabilities_for_raises_the_base_to_cover_active_docs(tmp_path):
     assert caps == {"actions": ["write_util"], "utils": ["discord"], "runs": "none",
                     "confirm": "always", "rule_confirm": "always", "jobs": "off",
                     "remind_confirm": "always", "config_confirm": "always",
-                    "revise_confirm": "always", "reminders": "none"}  # D198: the recipe dial
+                    "reminders": "none"}
 
     # the settings pass through untouched: the raise only ever adds means
     base = {"actions": ["shell"], "utils": [], "confirm": "never", "runs": "all"}
@@ -166,17 +166,17 @@ def test_floor_capabilities_binds_gated_capabilities_to_held_permissions(tmp_pat
     assert floor_capabilities([], lib, orphan) == {
         "actions": [], "utils": [], "confirm": "never", "rule_confirm": "always",
         "remind_confirm": "always", "runs": "all", "config_confirm": "always",
-        "revise_confirm": "always", "reminders": "none", "jobs": "off"}
+        "reminders": "none", "jobs": "off"}
     # util-authoring held → write_util survives; discord is still floored
     assert floor_capabilities(["util-authoring"], lib, orphan) == {
         "actions": ["write_util"], "utils": [], "confirm": "never", "runs": "all",
-        "rule_confirm": "always", "remind_confirm": "always", "revise_confirm": "always",
+        "rule_confirm": "always", "remind_confirm": "always",
         "config_confirm": "always", "reminders": "none", "jobs": "off"}
     # raise THEN floor == exactly the held docs' requires + settings, no contradiction
     active = ["util-authoring", "messaging-discord"]
     assert floor_capabilities(active, lib, capabilities_for(active, lib)) == {
         "actions": ["write_util"], "utils": ["discord"], "confirm": "always", "runs": "none",
-        "rule_confirm": "always", "remind_confirm": "always", "revise_confirm": "always",
+        "rule_confirm": "always", "remind_confirm": "always",
         "config_confirm": "always", "reminders": "none", "jobs": "off"}
 
 

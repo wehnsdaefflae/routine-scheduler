@@ -22,7 +22,6 @@ SCHEMA = {"type": "object", "additionalProperties": False, "required": ["answer"
 
 @pytest.mark.parametrize(("endpoint", "model"), [
     ("openrouter", "z-ai/glm-5.2"),
-    ("ollama-local", "gemma4:latest"),
     ("anthropic", "claude-sonnet-5"),
 ])
 def test_live_schema_completion(endpoint, model):

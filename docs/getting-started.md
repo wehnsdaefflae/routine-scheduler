@@ -47,7 +47,7 @@ tinted band, in the palette's violet — is how the system is changing and wheth
 (Changes, Stats, Library); **System** holds Settings and Help.
 
 - **Endpoints** (Settings) are model *transports*, and there are two kinds: OpenAI-compatible
-  APIs (OpenRouter, vLLM, Ollama) and the Anthropic Messages API — which is also how a Claude or
+  APIs (OpenRouter, vLLM) and the Anthropic Messages API — which is also how a Claude or
   Codex SUBSCRIPTION is billed, through a gateway in front of CLIProxyAPI on the `anthropic` kind
   (see *Model gateway setup*). A
   **model** is a named catalog entry bound to an endpoint, carrying its own context window,

@@ -22,7 +22,7 @@ CLAUDE.md's Commands section is the short form.
   without starting; `RSCHED_TEST_MEM_WAIT=0` skips it): on 2026-11-05 a gate started on a host
   with ~2 GB free and the global OOM killed a live run. Both budgets are the stages' MEASURED
   hold — `held_peak_bytes`, anon + swap — not an estimate; `NEED_MB`'s comment holds the table. Two conftest
-  env knobs keep it honest AND fast: `RSCHED_SKIP_DOCS_BUILD` (the app lifespan's pdoc build
+  env knobs keep it honest AND fast: `RSCHED_SKIP_DOCS_BUILD` (the app lifespan's docs build
   — a to_thread task shutdown can only await) and `RSCHED_RETRY_BASE_DELAY` (endpoint retry
   LOGIC runs, the 1s/2s backoff clock doesn't); test_docs_build / test_with_retries_backoff
   clear them to pin the real paths. Single test: `uv run pytest tests/test_loop.py -q`
@@ -119,7 +119,7 @@ CLAUDE.md's Commands section is the short form.
 - `uv run rsched run-once <slug>` — execute one run from the CLI (slug under `routines_home`, or a dir
   path), streaming events. `--model kind=catalog-name` overrides a model role (catalog names, not endpoint:model pairs) and `--effort kind=level` a role's reasoning effort (effort is its own setting, `routine.yaml` `efforts:` — never a catalog row per level); `--quiet` drops the stream.
 - `uv run rsched daemon` — scheduler + web UI in one process (what systemd runs).
-- `uv run rsched validate | lint | suggest --instruction … | scaffold <slug> --workflow … | abort <slug>[:<ts>] | drain | postdeploy | reports --wrongly-settled`
+- `uv run rsched validate | lint | scaffold <slug> --workflow … | abort <slug>[:<ts>] | drain | postdeploy | reports --wrongly-settled`
   — see `rsched --help`. `validate` checks every routine's `routine.yaml`, lints its recipe
   prose (`main.md`, `stages/`) AND reports its SETUP SURFACE (`readmodels/surface.py` joined with
   `readmodels/remedies.py`: what the held docs, bound rules and reserved utils still need, each

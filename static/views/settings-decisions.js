@@ -1,10 +1,9 @@
 // Settings → Decision endpoints: the catalog behind the `decide` action (docs/decision-models.md).
 //
-// A decision model (TypeSafe's Jev, OpenAI's Decisions API, local-model-server) answers a typed
-// question with probabilities over the answers it was offered — never text — so it has its own
-// endpoints and models beside the LLM ones, and no chat role can pick one. Two wire PROTOCOLS
-// cover every provider; the add form's presets fill in the protocol, base URL and key name for
-// the known ones. Each model carries a live probe: one yes/no question with an obvious answer.
+// A decision model (TypeSafe's Jev, local-model-server) answers a typed question with
+// probabilities over the answers it was offered — never text — so it has its own endpoints and
+// models beside the LLM ones, and no chat role can pick one. One wire PROTOCOL covers every
+// provider; the add form's presets fill in the protocol, base URL and key name for the known ones. Each model carries a live probe: one yes/no question with an obvious answer.
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
@@ -12,21 +11,16 @@ import { savedToast } from "/static/views/settings-common.js";
 import { act, el, skeleton, toast } from "/static/util.js";
 
 const PROTOCOL = {
-  openai: "OpenAI Decisions protocol — POST {base}/decisions, text and images",
   systemone: "System One protocol (Jev) — POST {base}/systemone, text; images where the server reads them",
 };
 // Known providers: picking one fills the form. `key_var` names the Secrets entry the key is
 // read from, so an OpenRouter key already stored for the LLM endpoint serves Jev as well.
 const PRESETS = [
-  { id: "openai", label: "OpenAI Decisions API (gpt-6-luna)", protocol: "openai",
-    base_url: "https://api.openai.com/v1", key_var: "OPENAI_API_KEY", model: "gpt-6-luna" },
   { id: "openrouter", label: "Jev via OpenRouter (typesafe/jev-1.13)", protocol: "systemone",
     base_url: "https://openrouter.ai/api/v1", key_var: "OPENROUTER_API_KEY",
     model: "typesafe/jev-1.13" },
   { id: "typesafe", label: "Jev direct from TypeSafe (jev-latest)", protocol: "systemone",
     base_url: "https://api.typesafe.ai/v1", key_var: "TYPESAFE_API_KEY", model: "jev-latest" },
-  { id: "self", label: "Self-hosted, OpenAI-shaped (e.g. local-model-server)",
-    protocol: "openai", base_url: "http://host:8790/v1", key_var: "", model: "" },
   { id: "gateway", label: "System One through a gateway or local-model-server (Otari, llama-server)",
     protocol: "systemone", base_url: "http://host:4000/api/v1", key_var: "", model: "" },
 ];
@@ -38,9 +32,6 @@ function credLine(ep) {
   else if (ks.source === "secret")
     line.append(el("span", { style: "color:var(--ok)" }, `secret ${ks.var} ✓`));
   else if (ks.source === "env_file") line.append(`env file ${ks.env_file} (${ks.var})`);
-  else if (ks.keyless_ok)
-    line.append(el("span", { class: "muted" },
-      `none — fine for a self-hosted server without a token; otherwise set ${ks.var || "a key"} in Secrets`));
   else line.append(el("span", { style: "color:var(--err)" },
     `✗ missing — paste one below${ks.var ? ` or set ${ks.var} in Secrets` : ""}`));
   return line;

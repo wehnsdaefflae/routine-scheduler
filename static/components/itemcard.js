@@ -166,8 +166,7 @@ function commentBox(item, queued, { onSave, onWithdraw }) {
       el("div", { style: "flex:1" }, note), saveBtn, dropBtn));
 }
 
-export function itemCard(item, { queued, onSave, onWithdraw, answered, onPriority,
-                                 onRead } = {}) {
+export function itemCard(item, { queued, onSave, onWithdraw, answered, onRead } = {}) {
   const status = item.status || "unknown";
   const isSummary = item.type === "summary";
   // An answered decision (durable marker, survives inbox consumption) reads as answered here
@@ -183,20 +182,8 @@ export function itemCard(item, { queued, onSave, onWithdraw, answered, onPriorit
     : label === "read" ? "idle"
     : label === "answered" ? "ok" : (STATUS_TONE[status] ?? "");
   const sev = SEV.includes(item.severity) ? item.severity : "";
-  // The ⚑ toggle: the user's "work this first" — floats the card on the page and the
-  // OWNING routine's next run reads the flagged ids in its state digest (D75).
-  const flag = !onPriority ? null : el("button", {
-    class: `btn small ${item.priority ? "" : "ghost"}`,
-    title: item.priority
-      ? "unflag — stops floating this item and drops it from the owner's priority list"
-      : "flag as priority — floats the card AND the owning routine's next run reads it first",
-    onclick: async (e) => {
-      e.target.disabled = true;
-      try { await onPriority(!item.priority); } finally { e.target.disabled = false; }
-    },
-  }, item.priority ? "⚑ flagged" : "⚑");
-  // Dismiss / undismiss. Not offered on a maintenance item: `priorities.ITEM_ID_RE` rejects a
-  // run id by design, and a finding is settled by the work rather than by being looked at.
+  // Dismiss / undismiss. Not offered on a maintenance item: a finding is settled by the work
+  // rather than by being looked at.
   const readBtn = !(isSummary && onRead) ? null : el("button", {
     class: `btn small ${status === "settled" ? "ghost" : ""}`,
     title: status === "settled"
@@ -210,14 +197,13 @@ export function itemCard(item, { queued, onSave, onWithdraw, answered, onPriorit
   const head = el("div", { class: "row spread" },
     el("div", { class: "row", style: "gap:9px" },
       chip(label, tone),
-      item.priority ? chip("⚑ priority", "partial") : null,
       chip(TYPE_LABEL[item.type] || item.type, "idle"),
       sev ? chip(sev, `sev-${sev}`) : null,
       // a summary's outcome is the thing that decides whether you read it now
       isSummary && OUTCOME_TONE[item.outcome]
         ? chip(item.outcome, OUTCOME_TONE[item.outcome]) : null,
       el("strong", { class: "prose" }, item.title || item.id)),
-    el("div", { class: "row", style: "gap:8px" }, isSummary ? readBtn : flag,
+    el("div", { class: "row", style: "gap:8px" }, isSummary ? readBtn : null,
       isSummary
         ? el("a", { class: "faint small", href: `#/run/${item.id}` }, "open the run")
         : el("span", { class: "faint small" }, item.id)));

@@ -32,12 +32,10 @@ WHAT MAKES AN EVENT STANDING is its writer's latch, not how bad it sounds:
   - `process_overhead_high` — `engine/overhead_alarm.LATCH_HOURS` = 24, read back off the
     stream so a restart remembers it.
 
-And what deliberately is NOT, though it looks it: `trigger_capped` is "one event per day AT
-THE TRANSITION" (F276) — a cap re-earned by real trigger traffic is a new fact each time;
-`scheduler_tick_error` is filed once per failure EPISODE, "until it next succeeds"
-(`daemon/tickguard`); `postdeploy_failed` is once per PROCESS, and each boot that served the
-wrong build is its own fact. Each of those three counts occurrences, which is what counting
-them means.
+And what deliberately is NOT, though it looks it: `scheduler_tick_error` is filed once per
+failure EPISODE, "until it next succeeds" (`daemon/tickguard`); `postdeploy_failed` is once per
+PROCESS, and each boot that served the wrong build is its own fact. Each of those two counts
+occurrences, which is what counting them means.
 
 This module holds the judgement alone, the way `operator_blocks` holds "who can clear it": one
 place decides it, `health_stream` renders it into every row as `kind`, and the console branches

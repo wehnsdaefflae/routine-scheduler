@@ -1,14 +1,12 @@
-"""Help-tab content builder: pdoc API reference + rendered markdown guides.
+"""Help-tab content builder: the rendered markdown guides.
 
-The console's Help tab serves static HTML generated from THIS source tree. pdoc renders
-the `rsched` package's docstrings — they are plain markdown prose, pdoc's native format —
-into fully self-contained pages (inline CSS/JS, offline search, no CDNs, matching the
-frontend's no-external-assets standard). The hand-written guides in `docs/*.md` are
-rendered through markdown2 (already present as a pdoc dependency) into a dark shell that
-matches the console. Output lands OUTSIDE the source repo (`~/.cache/routine-scheduler/docs`)
-and the web app mounts it at `/docs`; `ensure_docs` is called at daemon boot in a thread and
-skips the build when the source stamp is unchanged, so a restart onto unchanged code costs
-one directory scan.
+The console's Help tab serves static HTML generated from THIS source tree: the hand-written
+guides in `docs/*.md`, rendered through markdown2 into fully self-contained pages (inline CSS,
+no CDNs, matching the frontend's no-external-assets standard) in a shell that follows the
+console's theme. Output lands OUTSIDE the source repo (`~/.cache/routine-scheduler/docs`) and
+the web app mounts it at `/docs`; `ensure_docs` is called at daemon boot in a thread and skips
+the build when the source stamp is unchanged, so a restart onto unchanged docs costs one
+directory scan.
 """
 
 from __future__ import annotations
@@ -31,7 +29,7 @@ FAVICON = ("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='
 
 # A generated page is read INSIDE the console's own frame, so it follows the console's theme or
 # it reads as a foreign site — which is what a hard-coded dark shell did on a light console, on
-# the one page whose job is explaining the console. Both shells below therefore declare the
+# the one page whose job is explaining the console. The shell below therefore declares the
 # palette once as `light-dark()` over `color-scheme: light dark`, exactly as base.css does, and
 # the frame's `?theme=` parameter stamps `data-theme` for the two explicit choices.
 THEME_SCRIPT = """
@@ -82,35 +80,6 @@ blockquote { border-left: 3px solid var(--iris); margin-left: 0; padding-left: 1
 hr { border: none; border-top: 1px solid var(--rule); }
 """
 
-
-# pdoc in the console's palette — pdoc's own variables, our tokens. Without this the API
-# reference renders in pdoc's default and looks like a foreign site inside the Help tab.
-PDOC_THEME_CSS = THEME_TOKENS + """
-/* watchfloor theme for pdoc (overrides templates/theme.css) — pdoc's own variables, our tokens */
-:root { --pdoc-background: var(--deck); }
-.pdoc {
-    --text: var(--ink);
-    --muted: var(--ink-2);
-    --link: var(--signal);
-    --link-hover: var(--signal);
-    --code: var(--plate-2);
-    --active: var(--plate-2);
-
-    --accent: var(--plate-2);
-    --accent2: var(--rule);
-
-    --nav-hover: var(--plate-2);
-    --name: var(--iris);
-    --def: var(--signal);
-    --annotation: var(--ink-2);
-}
-.pdoc h1, .pdoc h2, .pdoc h3, .pdoc h4 { color: var(--ink); font-family: var(--f-display); }
-.pdoc pre { border: 1px solid var(--rule); border-radius: 8px; }
-.pdoc .docstring code, .pdoc summary code { border: 1px solid var(--rule); border-radius: 4px; }
-input[type="search"] { background: var(--plate-2); color: var(--ink);
-  border: 1px solid var(--rule); }
-"""
-
 # The Help tab's reading order: orientation first, worked examples second, then the deeper
 # contract docs. Guides not named here sort alphabetically after them, so a NEW guide reaches
 # the tab whether or not anyone remembers this list — the list only decides where it reads well.
@@ -139,16 +108,14 @@ def docs_out_dir() -> Path:
 
 
 def source_stamp(source_repo: Path) -> str:
-    """Cheap staleness key: version + newest mtime across the doc inputs. Mtime (not git
-    HEAD) so uncommitted docstring edits rebuild too — the scan is a stat per file, a few
-    hundred of them.
+    """Cheap staleness key: version + newest mtime across the guides. Mtime (not git HEAD) so
+    uncommitted guide edits rebuild too — the scan is a stat per file.
     """
     from . import __version__
 
     newest = 0
-    for pattern, root in (("src/rsched/**/*.py", source_repo), ("docs/*.md", source_repo)):
-        for p in root.glob(pattern):
-            newest = max(newest, int(p.stat().st_mtime))
+    for p in source_repo.glob("docs/*.md"):
+        newest = max(newest, int(p.stat().st_mtime))
     return f"{__version__}:{newest}"
 
 
@@ -177,17 +144,9 @@ def render_guide(text: str, title: str) -> str:
             f"</head><body>{body}</body></html>")
 
 
-#: The run gate's JAIL-side modules. `gatekit/run.py` puts its own directory on the import path
-#: and the kit modules import each other by bare name, because the jail mounts nothing else; as
-#: members of the package they cannot load, and one module that cannot load fails the whole API
-#: build. pdoc applies a `!<regex>` spec to the modules walked before it (docs/run-gates.md
-#: describes the kit).
-API_EXCLUDE = r"!rsched\.gatekit\.(kit_\w+|run)$"
 
-
-def build_docs(source_repo: Path, out: Path, *, modules: tuple[str, ...] = ("rsched",),
-               force: bool = False) -> bool:
-    """Generate guides + API reference into `out`. Returns False when the stamp says the
+def build_docs(source_repo: Path, out: Path, *, force: bool = False) -> bool:
+    """Generate the guides into `out`. Returns False when the stamp says the
     source is unchanged (the cheap path a no-op restart takes). The stamp is written LAST,
     so a failed build retries on the next boot.
     """
@@ -207,20 +166,10 @@ def build_docs(source_repo: Path, out: Path, *, modules: tuple[str, ...] = ("rsc
         atomic_write(out / "guides" / f"{md.stem}.html", render_guide(text, title))
         guides.append({"slug": md.stem, "title": title})
 
-    import pdoc
-    import pdoc.render
-
-    template_dir = out / "_pdoc-template"
-    atomic_write(template_dir / "theme.css", PDOC_THEME_CSS)
-    pdoc.render.configure(favicon=FAVICON, template_directory=template_dir,
-                          footer_text="rsched — generated from source by pdoc")
-    pdoc.pdoc(*modules, API_EXCLUDE, output_directory=out / "api")
-
     from . import __version__
 
-    atomic_write_json(out / "index.json", {
-        "version": __version__, "stamp": stamp, "guides": guides,
-        "api": f"api/{modules[0]}.html"})
+    atomic_write_json(out / "index.json", {"version": __version__, "stamp": stamp,
+                                           "guides": guides})
     atomic_write(marker, stamp)
     return True
 
@@ -228,7 +177,7 @@ def build_docs(source_repo: Path, out: Path, *, modules: tuple[str, ...] = ("rsc
 def ensure_docs(source_repo: Path) -> None:
     """Boot-time entry: build if stale, never raise (docs must not take the daemon down)."""
     # Test/ops opt-out (RSCHED_NO_SCHEDULER's sibling): without it every TestClient(app)
-    # pays a pdoc build — the lifespan's to_thread task cannot be cancelled, only awaited.
+    # pays a docs build — the lifespan's to_thread task cannot be cancelled, only awaited.
     if os.environ.get("RSCHED_SKIP_DOCS_BUILD"):
         return
     try:

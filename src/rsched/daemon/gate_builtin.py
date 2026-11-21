@@ -27,8 +27,7 @@ def pending_inbox(directory: Path) -> bool:
     until a run the gate DOES admit reads it, and the `max_quiet` backstop bounds that wait.
     Counted, closures were the gate's biggest single leak: of the 43 fires the inbox admitted
     up to 2026-11-08, 10 held nothing but closures — nine of them rules-review's, whose
-    reports other routines answer and close as a matter of course. The report trigger has
-    excluded them since it existed (`daemon/triggers.py`); the gate now agrees with it.
+    reports other routines answer and close as a matter of course.
     """
     return inbox_mod.has_pending_messages(directory, include_closures=False,
                                           on_unparseable=True)

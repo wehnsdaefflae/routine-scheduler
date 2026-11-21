@@ -1,11 +1,10 @@
 """`rsched` CLI: `daemon` (scheduler + web UI, what systemd runs), `run-once` (execute one
 run now, streaming events), `validate` (server config + routine.yaml checks), `lint`
-(workflow library), `suggest` (rank library workflows for an instruction), `scaffold`
-(create a routine dir from a library workflow), `abort` (stop a run), `drain` (quiesce before a
-deploy), `postdeploy` (check the LIVE instance after one, and record the session) and `reports`
-(read the report ledger — which rows a non-owner disposed of) — plus the
-internal `engine-run` the daemon spawns for each run. `rsched <cmd> --help` lists per-command
-flags.
+(workflow library), `scaffold` (create a routine dir from a library workflow), `abort` (stop a
+run), `drain` (quiesce before a deploy), `postdeploy` (check the LIVE instance after one, and
+record the session) and `reports` (read the report ledger — which rows a non-owner disposed of)
+— plus the internal `engine-run` the daemon spawns for each run. `rsched <cmd> --help` lists
+per-command flags.
 """
 
 from __future__ import annotations
@@ -159,18 +158,6 @@ def cmd_lint(args) -> int:
     return 1 if bad else 0
 
 
-def cmd_suggest(args) -> int:
-    from .workflows.suggest import suggest
-
-    server, _ = load_server_config()
-    result = suggest(server, args.instruction)
-    for s in result["suggestions"]:
-        print(f"{s['confidence']:.2f}  {s['slug']}  — {s['reason']}")
-    if result.get("none_fit"):
-        print(f"none fit — hint: {result.get('new_workflow_hint', '')}", file=sys.stderr)
-    return 0
-
-
 def cmd_scaffold(args) -> int:
     from .workflows.scaffold import scaffold
 
@@ -285,10 +272,6 @@ def main(argv: list[str] | None = None) -> int:
     li.add_argument("--libraries-home", help="lint this library dir directly, skipping the "
                     "server-config load (lets sandboxed callers lint without ~/.config access)")
     li.set_defaults(fn=cmd_lint)
-
-    su = sub.add_parser("suggest", help="rank library workflows for an instruction")
-    su.add_argument("--instruction", required=True)
-    su.set_defaults(fn=cmd_suggest)
 
     sc = sub.add_parser("scaffold", help="create a routine dir from a library workflow")
     sc.add_argument("slug")

@@ -55,26 +55,23 @@ def test_removing_a_trigger_takes_effect_on_accept(ui, ui_page):
     until(lambda: stored_config(ui).get("triggers") == [], what="the removed trigger")
 
 
-def test_a_report_triggers_bounds_edit_in_place_and_one_is_the_limit(ui, ui_page):
-    """The cooldown on a listed trigger IS an editor. Each add-button makes a trigger with its
-    type's own defaults; a second report trigger stays refused."""
+def test_a_new_triggers_cooldown_edits_in_place(ui, ui_page):
+    """The cooldown on a listed trigger IS an editor, and the add-button makes a trigger with
+    the default cooldown."""
     panel = open_section(ui, ui_page, "sec-triggers")
-    panel.get_by_role("button", name="+ add report trigger").click()
+    panel.get_by_role("button", name="+ add webhook trigger").click()
     row = panel.locator(".trigger-row").first
     cooldown = row.locator("input.cooldown-in")
-    expect(cooldown).to_have_value("900")            # the type's own default
-    expect(row.locator("input.cap-in")).to_have_value("24")
+    expect(cooldown).to_have_value("60")             # the default
     cooldown.fill("120")
     cooldown.press("Tab")
     expect(panel.locator(".trigger-row").first.locator("input.cooldown-in")).to_have_value("120")
-    expect(panel.get_by_role("button", name="+ add report trigger")).to_be_disabled()
 
     accept(ui_page)
     until(lambda: (stored_config(ui).get("triggers") or [{}])[0].get("cooldown_s") == 120,
-          what="the accepted report trigger")
+          what="the accepted webhook trigger")
     stored = stored_config(ui)["triggers"][0]
-    assert stored["type"] == "report" and stored["max_fires_per_day"] == 24
+    assert stored["type"] == "webhook" and "max_fires_per_day" not in stored
     ui_page.reload()
     panel = open_section(ui, ui_page, "sec-triggers")
     expect(panel.locator(".trigger-row").first.locator("input.cooldown-in")).to_have_value("120")
-    expect(panel.get_by_role("button", name="+ add report trigger")).to_be_disabled()

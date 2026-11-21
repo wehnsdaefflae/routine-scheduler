@@ -10,7 +10,7 @@ import yaml
 from conftest import finish, write_file
 from helpers import server_for
 from rsched.config.decisionconf import DecisionEndpointConfig, DecisionModelConfig
-from rsched.endpoints import decisions_openai
+from rsched.endpoints import decisions_systemone
 from rsched.endpoints.decisions import Decision, DecisionAnswer
 from rsched.engine.actions import normalize_action, validate_action
 from rsched.engine.decideaction import format_decide, questions_from
@@ -94,11 +94,12 @@ def test_the_observation_reads_as_numbers():
 # --- a whole run ---------------------------------------------------------------------------------
 def _with_decision_models(server):
     server.decision_endpoints = {
-        "predator": DecisionEndpointConfig(name="predator", protocol="openai",
+        "predator": DecisionEndpointConfig(name="predator", protocol="systemone",
                                            base_url="http://box:8790/v1"),
         "jev": DecisionEndpointConfig(name="jev", protocol="systemone")}
     server.decision_models = {
-        "vl8b": DecisionModelConfig(name="vl8b", endpoint="predator", model="qwen3-vl"),
+        "vl8b": DecisionModelConfig(name="vl8b", endpoint="predator", model="qwen3-vl",
+                                    multimodal=True),
         "jev": DecisionModelConfig(name="jev", endpoint="jev", model="jev-latest")}
     server.decision_model, server.decision_media_model = "jev", "vl8b"
     return server
@@ -121,7 +122,7 @@ def test_a_run_decides_over_images_and_text_files(make_routine, scripted, monkey
                                         choice="bright", confidence=0.7)],
                         usage={"in": 640, "out": 0})
 
-    monkeypatch.setattr(decisions_openai.OpenAIDecisions, "decide", fake_decide)
+    monkeypatch.setattr(decisions_systemone.SystemOneDecisions, "decide", fake_decide)
     scripted([
         _decide(questions=[{"name": "full_body", "question": "Is the whole body visible?"},
                            {"name": "mood", "question": "Which mood?",
@@ -149,7 +150,7 @@ def test_a_run_decides_over_images_and_text_files(make_routine, scripted, monkey
 def test_a_text_only_model_is_never_sent_images(make_routine, scripted, monkeypatch):
     d = make_routine(slug="nopix")
     (d / "state" / "photo.png").write_bytes(b"\x89PNG\r\n\x1a\nfake")
-    monkeypatch.setattr(decisions_openai.OpenAIDecisions, "decide",
+    monkeypatch.setattr(decisions_systemone.SystemOneDecisions, "decide",
                         lambda *a, **k: pytest.fail("no request may be sent"))
     scripted([_decide(question="Smiling?", files=["state/photo.png"], model="jev"),
               finish()])
@@ -197,7 +198,7 @@ def test_a_routines_decision_role_answers_its_calls(make_routine, scripted, monk
         return Decision([DecisionAnswer("answer", "yes_no", {"yes": 0.7, "no": 0.3},
                                         probability=0.7)], usage={"in": 5, "out": 0})
 
-    monkeypatch.setattr(decisions_openai.OpenAIDecisions, "decide", fake_decide)
+    monkeypatch.setattr(decisions_systemone.SystemOneDecisions, "decide", fake_decide)
     ep = scripted([_decide(question="Urgent?", evidence="down for days"), finish()])
     status, _ = run_routine(d, _with_decision_models(server_for(d)), run_ts=TS)
     assert status == "ok"

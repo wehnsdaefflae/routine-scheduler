@@ -5,7 +5,7 @@ The stream had fourteen writers and no reader inside the product: the nightly au
 opens the file over ssh; nothing a person clicks in the console showed a line of it.
 `BLOCKED_EVENTS` are the ones that say the same thing — something DUE did not happen — and
 they are precisely the ones nothing else surfaces: a refused fire leaves no run, a stopped
-chain leaves no member run, a capped trigger leaves a dark routine, a commit that did not land
+chain leaves no member run, a commit that did not land
 leaves files no history holds. A failure has a run page; a fire that never happened has
 nothing at all, which is how F316's week of missed lane fires passed with zero signal.
 
@@ -90,7 +90,6 @@ BLOCKED_EVENTS: dict[str, str] = {
     # judged that ending did not run — so nothing verified what the run claimed.
     "finish_gate_failed": "a run's finish GATE raised instead of judging: the run finished on "
                           "its own authored status and summary, unchecked",
-    "trigger_capped": "a trigger hit its daily cap: the routine is dark until the cap resets",
     "commit_failed": "a commit into a versioned repo did not land — the files are on disk and "
                      "out of its history until a later commit takes them",
     "backup_stale": "the nightly state snapshot is not current — the last attempt did not "
@@ -270,8 +269,8 @@ def blocked_fleet(server: ServerConfig, *, days: int = DEFAULT_WINDOW_DAYS) -> d
     `total`: one number over two units is what made a nineteen-night backup gap read as the
     same magnitude as nineteen distinct refused fires. Both are 0 on a healthy instance.
 
-    `subject` is the event's `routine` field as written — a routine slug for a refused fire
-    or a capped trigger, a LANE ID for the three lane events (opaque by contract: resolve it
+    `subject` is the event's `routine` field as written — a routine slug for a refused
+    fire, a LANE ID for the three lane events (opaque by contract: resolve it
     against the lane store, never by reading a prefix), and empty for a scheduler tick.
     """
     days = max(1, min(int(days), MAX_WINDOW_DAYS))

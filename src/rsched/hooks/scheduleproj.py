@@ -131,7 +131,7 @@ def record_event(routines_home, *, hook_id: str, event: str, detail: str = "") -
     An append-only stream says "this ended" with another row about the same id, which is what
     `reportproj.event` does for a report's lifecycle. Same best-effort contract as above, and
     an event outside `EVENTS` is refused rather than written: a vocabulary nothing checks is
-    how `trigger_capped` went unread for weeks.
+    how `prompt_oversize_shrunk` went unread for weeks.
     """
     from . import store as hookstore
 

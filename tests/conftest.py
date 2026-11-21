@@ -15,8 +15,8 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
-# Three knobs, each cleared by the test that pins the real path: the lifespan's pdoc docs build
-# (~3s of teardown per app test, test_docs_build), the endpoint retry backoff clock (the 3-try
+# Three knobs, each cleared by the test that pins the real path: the lifespan's docs build
+# (teardown per app test, test_docs_build), the endpoint retry backoff clock (the 3-try
 # LOGIC stays, test_with_retries_backoff), and the post-run review leg — one more model call a
 # scripted run's reply list never wrote (engine/reviewleg.py, test_review_leg).
 os.environ.setdefault("RSCHED_SKIP_DOCS_BUILD", "1")

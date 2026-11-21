@@ -114,7 +114,7 @@ Built in, never configured, because each one is work by construction:
   predicate (`engine/inbox.has_pending_messages`, read by `daemon/gate_builtin.pending_inbox`),
   fail-open like every gate read: a `msg-*` file it cannot parse counts as work. A CLOSURE is
   not freight — a `closes: true` reply ends a thread and asks nothing, so it waits unconsumed
-  for the next admitted run (the report trigger has always excluded it). Counted, closures had
+  for the next admitted run. Counted, closures had
   been the gate's biggest single leak: 10 of the 43 fires the inbox admitted up to 2026-11-08
   held nothing else, nine of them rules-review's;
 - an answer to one of its questions waits to be read (an answer never STARTS a run, but a fired

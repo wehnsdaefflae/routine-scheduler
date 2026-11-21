@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import yaml
 
-from rsched.endpoints import decisions_openai
+from rsched.endpoints import decisions_systemone
 from rsched.endpoints.decisions import Decision, DecisionAnswer
 
 
@@ -15,13 +15,14 @@ def _cfg(tmp_path) -> dict:
 
 def _seed(c) -> None:
     assert c.post("/api/settings/decision-endpoints", json={
-        "name": "predator", "protocol": "openai", "base_url": "http://box:8790/v1",
+        "name": "predator", "protocol": "systemone", "base_url": "http://box:8790/v1",
         "api_key": "tok"}).json()["problems"] == []
     assert c.post("/api/settings/decision-endpoints", json={
         "name": "or-jev", "protocol": "systemone", "base_url": "https://openrouter.ai/api/v1",
         "key_var": "OPENROUTER_API_KEY"}).json()["ok"]
     assert c.post("/api/settings/decision-models", json={
-        "name": "vl8b", "endpoint": "predator", "model": "qwen3-vl-8b-instruct"}).json()["ok"]
+        "name": "vl8b", "endpoint": "predator", "model": "qwen3-vl-8b-instruct",
+        "multimodal": True}).json()["ok"]
     assert c.post("/api/settings/decision-models", json={
         "name": "jev", "endpoint": "or-jev", "model": "typesafe/jev-1.13"}).json()["ok"]
 
@@ -33,17 +34,16 @@ def test_the_catalog_round_trips(api_client):
         "decision_model": "jev", "decision_media_model": "vl8b"}).json()["problems"] == []
     cfg = _cfg(tmp_path)
     assert cfg["decision_endpoints"]["predator"] == {
-        "protocol": "openai", "base_url": "http://box:8790/v1", "api_key": "tok",
+        "protocol": "systemone", "base_url": "http://box:8790/v1", "api_key": "tok",
         "timeout_s": 300}
     assert cfg["decision_models"]["jev"] == {"endpoint": "or-jev", "model": "typesafe/jev-1.13"}
     view = c.get("/api/settings/decisions").json()
-    assert view["protocols"] == ["openai", "systemone"]
+    assert view["protocols"] == ["systemone"]
     assert (view["decision_model"], view["decision_media_model"]) == ("jev", "vl8b")
     eps = {e["name"]: e for e in view["endpoints"]}
     assert eps["predator"]["key_source"]["source"] == "inline"
     assert "api_key" not in eps["predator"]                      # never the value
     assert eps["or-jev"]["images_default"] is False      # systemone carries them; Jev reads none
-    assert eps["predator"]["images_default"] is True
     assert eps["or-jev"]["default_base_url"] == "https://api.typesafe.ai/v1"
     models = {m["name"]: m for m in view["models"]}
     assert models["vl8b"]["images"] is True
@@ -54,7 +54,7 @@ def test_a_blank_key_keeps_the_saved_one(api_client):
     c, tmp_path = api_client
     _seed(c)
     c.put("/api/settings/decision-endpoints/predator", json={
-        "name": "predator", "protocol": "openai", "base_url": "http://box:9000/v1"})
+        "name": "predator", "protocol": "systemone", "base_url": "http://box:9000/v1"})
     ep = _cfg(tmp_path)["decision_endpoints"]["predator"]
     assert (ep["api_key"], ep["base_url"]) == ("tok", "http://box:9000/v1")
 
@@ -100,7 +100,7 @@ def test_the_probe_asks_one_obvious_question(api_client, monkeypatch):
                                         probability=0.99)], usage={"in": 42, "out": 0},
                         model="qwen3-vl-8b-instruct")
 
-    monkeypatch.setattr(decisions_openai.OpenAIDecisions, "decide", fake)
+    monkeypatch.setattr(decisions_systemone.SystemOneDecisions, "decide", fake)
     r = c.post("/api/settings/decision-models/vl8b/test").json()
     assert r["ok"]
     assert r["probability"] == 0.99
@@ -128,9 +128,10 @@ def test_the_routine_token_cannot_read_the_catalog(tmp_path):
 
 # --- a routine's own decision roles ---------------------------------------------------------------
 _CATALOG = {
-    "decision_endpoints": {"predator": {"protocol": "openai", "base_url": "http://box:8790/v1"},
+    "decision_endpoints": {"predator": {"protocol": "systemone",
+                                        "base_url": "http://box:8790/v1"},
                            "or-jev": {"protocol": "systemone"}},
-    "decision_models": {"vl8b": {"endpoint": "predator", "model": "qwen3-vl"},
+    "decision_models": {"vl8b": {"endpoint": "predator", "model": "qwen3-vl", "multimodal": True},
                         "jev": {"endpoint": "or-jev", "model": "typesafe/jev-1.13"}},
     "decision_model": "jev", "decision_media_model": "vl8b"}
 

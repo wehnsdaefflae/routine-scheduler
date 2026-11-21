@@ -104,8 +104,6 @@ def boot(loop) -> None:
             ctx.transcript.event("answer", {"qid": qa.get("qid", ""), "text": qa["answer"],
                                             "source": "deferred", "question": qa["question"]})
         digest = state_digest(ctx.routine.dir, deferred_qa, open_qs,
-                              routines_home=ctx.server.routines_home,
-                              slug=ctx.routine.slug,
                               held_rules=rules.when_lines(ctx.server.rules_home,
                                                           list(ctx.routine.rules)),
                               store_notes=store_notes, goals=ctx.goals,

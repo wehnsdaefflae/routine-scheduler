@@ -377,22 +377,11 @@ entry for what you are about to touch.
   own routine.yaml, which no run may write. A within-reply CHILD (depth > 0) is
   refused outright and never sees the kinds: the queue is for a run that HAS a user, just not
   right now. Ungated like `report` — the approval is the gate, and it is a human.
-  ONE exception creates at once: `create_routine` with `replaces: <slug>` from a depth-0 run
-  holding the `rebuild_routine` capability (the `routine-rebuild` permission, routine-improver's)
-  makes a REPLACEMENT CANDIDATE (`engine/candidate.py`) — the old routine's routine.yaml with
-  its own slug, on no schedule, in no lane and WITHOUT its `grants`, so it holds no authority the
-  operator did not already give and cannot act in the principal's name — and files ONE
-  `replace-routine` card. Accepting it is the SWAP (`api_pending._materialize_replace`): the
-  candidate takes the old routine's lane place, cron and grants through the ordinary writers and
-  the old one is switched off (kept); discarding switches the candidate off.
-  `.control/candidates.json` says which routine is a candidate for which.
-  `create_routine` with `revises: true` is the THIRD mode and the only one that touches an
+  `create_routine` with `revises: true` is the SECOND mode and the only one that touches an
   existing routine's recipe (`engine/reviseroutine.py`, D198): a caller holding `write_recipe`
   proposes a revision of ANOTHER routine's recipe, `prompt` carrying it one line per change as
-  prose (never a diff, `recipeproposal`'s reason). The dial is the TARGET's, never the caller's
-  — `revise_confirm` (`rsched/revisedial.py`): `always`, the default, files ONE `revise-routine`
-  card (`api_recipe_revision.materialize_revise`); `invited` arms it at once. Either way the
-  WRITE is the target's own next run under the one-leg unlock, handed the lines as its
+  prose (never a diff, `recipeproposal`'s reason). It always files ONE `revise-routine` card
+  (`api_recipe_revision.materialize_revise`); approved, the WRITE is the target's own next run under the one-leg unlock, handed the lines as its
   instruction through an invitation spool (`rsched/reciperevise.py`, consumed at that run's
   init so nothing is rewritten mid-flight) — and a routine may not revise ITSELF through this
   path, which the three own-recipe mechanisms already cover.
@@ -630,8 +619,8 @@ by a test, by the engine, or by a past incident.
   out its week.
 - **Documentation is swept, not patched.** On any change, revise ALL affected doc surfaces
   (CLAUDE.md, `docs/`, `static/views/help.js`, README, docstrings) — not the one you were
-  asked about. A module DOCSTRING is a doc surface: pdoc renders it on the Help tab beside the
-  `docs/` page that may now say the opposite.
+  asked about. A module DOCSTRING is a doc surface: it is read beside the `docs/` page that may
+  now say the opposite.
 - **The quality gates run on the FULL repo**, not the changed files. `tests/test_quality.py`
   runs ruff, mypy AND vulture (dead code — what ruff cannot see is a symbol whose last caller
   went away; `src` and `tests` are scanned together so a src symbol used only by a test is not
@@ -930,7 +919,7 @@ by a test, by the engine, or by a past incident.
   explicit forms:
   a BLOCKING question parks and resumes its run, and the Decisions page's "answer & run now"
   (`run_now: true` on the answer route) is ONE manual fire, the same as the routine page's Run
-  now. The report trigger stays an explicit opt-in for a routine whose job IS its inbox. The
+  now. The
   health stream files a `partial` as `budget_exhausted` ONLY when a budget violation forced it;
   a partial the model chose is `run_partial`.
   **The GLOBAL PAUSE is the complement of that sentence, so every self-starting path owes it a
@@ -1063,7 +1052,9 @@ by a test, by the engine, or by a past incident.
   It is served by `GET /changes/{slug}/cost` and read by the **Per-run cost** panel of a routine's
   development view (#/changes/<slug>, `static/components/cost-panel.js`), which prints
   `integrity.detail` verbatim and marks every window `mixed_accounting` names — in the warn tone,
-  beside that window's own median — rather than showing it as a clean figure.
+  beside that window's own median — rather than showing it as a clean figure. That integrity
+  half is temporary: its module declares an expiry of 2027-01-15, by which the pre-0.494.0 rows
+  have aged out of every window, and `tests/test_policy.py` forces its deletion then.
 - **What a run COSTS is its VOLUME, never `tokens`.** `tokens` (fresh input + output) is what a
   token BUDGET meters — adapters keep cache traffic out of it — and a subscription's `cost` is
   0.0 on every call, so ranking by either put freelance-radar (33M cached tokens a run) among the
@@ -1241,8 +1232,8 @@ by a test, by the engine, or by a past incident.
   comparing `res.updated` against every patch key (the R102 honesty gate, which an
   undefined-on-failure return would erase) and `skewbanner.js` deliberately leaves its button dead
   on success. Convert an old site only while you are in that file for another reason; the four
-  that qualify are `decision-lifecycle.js`, `swap-card.js`, `unowned-card.js` and
-  `conversations.js` — and that last one is shrink-only, so a conversion there must tighten its
+  that qualified were `decision-lifecycle.js`, `swap-card.js` (since deleted with the replacement
+  candidate), `unowned-card.js` and `conversations.js` — and that last one is shrink-only, so a conversion there must tighten its
   ratchet ceiling in the same change. The design system is `base.css` ("watchfloor"): colour is STATE, and the palette turns
   on one distinction — SIGNAL (cyan) is the machine working and is the interactive colour, SUMMONS
   (coral) is what waits on a PERSON, IRIS (violet) is structure. Type says who wrote the words:
@@ -1306,8 +1297,7 @@ A bump MUST land with a matching `## [x.y.z]` CHANGELOG.md header in the same co
 
 ## Deploy
 
-`deploy/install.sh` (idempotent host install: venv, config + token, seeds, systemd user service + linger)
-or Docker (`docker compose up -d` — a disposable engine-only image; source, config, `~/.credentials`,
+Docker (`docker compose up -d` — a disposable engine-only image; source, config, `~/.credentials`,
 `~/routines`, `~/conversations`, `~/background`, the messenger session stores
 (`~/{telegram,signal,whatsapp}-sessions` — a linked session IS the credential, so losing one
 unlinks the account), the library repo, and any PROJECT WORKSPACE a routine works inside
@@ -1324,8 +1314,8 @@ llm-interfaces gateway stack (Otari, with the subscription logins' CLIProxyAPI b
 on the docker host's bridge address (`docs/model-gateway.md`). That inventory has ONE copy, `deploy/state-paths.sh`, read by both
 consumers: `bundle.sh` writes the one-shot migration tarball (DOCKER.md's flow ends by
 decommissioning the source, which is why a frozen snapshot is fine there) and `backup.sh` keeps
-DATED SNAPSHOTS of the same homes (nightly via the `rsched-backup` user timer, which `install.sh`
-deliberately does NOT install — the backup root is host-specific): `<root>/snapshots/<YYYY-MM-DD>`,
+DATED SNAPSHOTS of the same homes (nightly via the `rsched-backup` user timer, which nothing here
+installs, deliberately — the backup root is host-specific): `<root>/snapshots/<YYYY-MM-DD>`,
 rsync `--link-dest` so a file unchanged since the newest earlier snapshot is a hard link into it,
 built under a temporary name that takes the date only once every home copied, and pruned — after
 a successful run only — to the 14 newest plus the newest of each of 8 older ISO weeks. A single

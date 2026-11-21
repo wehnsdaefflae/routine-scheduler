@@ -1,11 +1,10 @@
 """The suggesters: what the console asks the SYSTEM MODEL on a person's behalf.
 
 All the same shape — build a prompt, get one JSON object back, degrade quietly if it does not
-come. Here: rank the library's workflows against an instruction (`suggest`) and write a
-routine's description at create time (`generate_description`); the settings recommender
-(`patterns/recommend.py`) asks through the same `_ask_json`. None of them may fail the flow
-they sit in; a person is waiting on a form, and "pick it yourself" is always an acceptable
-answer where "500" is not.
+come. Here: write a routine's description at create time (`generate_description`); the settings
+recommender (`patterns/recommend.py`) asks through the same `_ask_json`. None of them may fail
+the flow they sit in; a person is waiting on a form, and "pick it yourself" is always an
+acceptable answer where "500" is not.
 """
 
 from __future__ import annotations
@@ -17,28 +16,6 @@ from ..endpoints import EndpointRegistry
 from ..paths import read_yaml
 from ..schema_guard import SchemaViolation, parse_reply, validate
 from .library import list_workflows
-
-SUGGEST_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["suggestions", "none_fit"],
-    "properties": {
-        "suggestions": {
-            "type": "array", "maxItems": 3,
-            "items": {"type": "object", "additionalProperties": False,
-                      "required": ["slug", "confidence", "reason"],
-                      "properties": {"slug": {"type": "string"},
-                                     "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-                                     "reason": {"type": "string"}}},
-        },
-        "none_fit": {"type": "boolean",
-                     "description": "true when no listed workflow fits well and a new one "
-                                    "should be drafted"},
-        "new_workflow_hint": {"type": "string",
-                              "description": "when none_fit: one paragraph sketching the "
-                                             "missing workflow"},
-    },
-}
 
 
 def _ask_json(server: ServerConfig, prompt: str, schema: dict, *,
@@ -53,7 +30,7 @@ def _ask_json(server: ServerConfig, prompt: str, schema: dict, *,
     `why` is `"unavailable"` (no system model, or the endpoint failed) or `"malformed"` (it
     answered twice and neither answer fit the schema). Both mean "pick it yourself", so most
     callers drop it — but they are different facts about the instance, one a configuration
-    problem and one a model problem, and `suggest()` puts which it was in front of the user.
+    problem and one a model problem.
 
     Written once because it was written four times, and the copies had already drifted: three of
     them called `for_system()` OUTSIDE the try, so an instance with no system_model configured
@@ -95,46 +72,6 @@ def _checked(completion, schema: dict) -> dict:
     if problems := validate(completion.parsed, schema):
         raise SchemaViolation(problems)
     return completion.parsed
-
-
-def suggest(server: ServerConfig, instruction: str) -> dict:
-    candidates = list(list_workflows(server.libraries_home))
-    if not candidates:
-        return {"suggestions": [], "none_fit": True,
-                "new_workflow_hint": "library has no workflows yet"}
-    listing = "\n\n".join(
-        f"- slug: {w['slug']}\n  description: {w['description']}\n  when_to_use: {w['when_to_use']}"
-        for w in candidates)
-    prompt = (
-        "An instruction for a recurring LLM agent routine needs a control-flow workflow from "
-        "the library below. Rank up to 3 fitting workflows with confidence 0-1 and a one-line "
-        "reason each; set none_fit=true (with new_workflow_hint) if nothing fits well.\n\n"
-        # R1165/R1181: two patterns can describe the same SUBJECT ("coach an application",
-        # "steward a project") and differ only in the machinery a routine is born with — where
-        # its state lives, what it publishes to, which services it assumes. Ranked on subject
-        # words alone the matcher picks the one whose prose is most colourful, and the routine
-        # is born wired to a store or a host it will never reach. So the deciding dimension is
-        # stated, and stated first.
-        "Rank on MECHANISM before subject. What decides the fit is the shape of the work — how "
-        "the routine's state persists between runs, what it publishes or delivers, what it "
-        "reads each run, and whether a human edits its output in between — not how many of the "
-        "instruction's topic words a workflow's prose happens to repeat. Two workflows that "
-        "describe the same subject with different machinery are NOT close: picking the wrong "
-        "one gives the routine a persistence or publishing model it cannot reach. Where a "
-        "workflow states which mechanism it is for, treat that as binding.\n\n"
-        f"INSTRUCTION:\n{instruction}\n\nLIBRARY:\n{listing}\n\n"
-        "Reply with ONLY one JSON object matching this schema (no prose):\n"
-        + json.dumps(SUGGEST_SCHEMA)
-    )
-    obj, why = _ask_json(server, prompt, SUGGEST_SCHEMA, purpose="Rank library workflows")
-    if obj is None:
-        hint = ("suggester reply was malformed; pick manually" if why == "malformed"
-                else "suggester unavailable; pick manually")
-        return {"suggestions": [], "none_fit": True, "new_workflow_hint": hint}
-    known = {w["slug"] for w in candidates}
-    obj["suggestions"] = [s for s in obj.get("suggestions", []) if s["slug"] in known]
-    obj["suggestions"].sort(key=lambda s: -s["confidence"])
-    return obj
 
 
 # ---------------------------------------------------- generate_description() -------------------

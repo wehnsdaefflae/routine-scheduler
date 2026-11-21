@@ -17,7 +17,7 @@ def test_every_shipped_pattern_carries_every_default_rule():
 def test_the_defaults_are_all_rules_the_seed_library_actually_ships():
     """The other half of the same guard: a DEFAULT_RULES entry the seed library has no document
     for would be dropped by `scaffold`'s own `if r in available_rules` filter — so adding it to
-    all fourteen patterns would satisfy the test above while still reaching no routine.
+    all twelve patterns would satisfy the test above while still reaching no routine.
     """
     from rsched import library_docs
     from rsched.config.base import DEFAULT_RULES

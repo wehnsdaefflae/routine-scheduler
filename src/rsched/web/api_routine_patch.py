@@ -180,10 +180,10 @@ def _apply_pattern_fields(server, raw: dict, updates: dict) -> None:
 
 def _apply_rules_field(rules_home: Path, routine_dir: Path, raw: dict, updates: dict) -> None:
     """Bind/unbind the routine's general rules from a PATCH `rules` list — REPLACE wholesale,
-    validated against the library. Shares the ONE canonical path (rules.apply_changes) with the
-    /routines/{slug}/rules picker so a config_patch carrying `rules` (a Decisions-page
-    `approve & apply` for a rule-binding decision) applies through the generic PATCH too —
-    before F392 the key hit RoutinePatch's extra=forbid and 422'd invisibly. Pops `rules`;
+    validated against the library through the ONE canonical path (rules.apply_changes), so a
+    config_patch carrying `rules` (a Decisions-page `approve & apply` for a rule-binding
+    decision) applies here — before F392 the key hit RoutinePatch's extra=forbid and 422'd
+    invisibly. Pops `rules`;
     an unknown slug is a legible 400. Next-run semantics like every other field here.
     """
     if "rules" not in updates:
@@ -202,8 +202,7 @@ def _apply_rules_field(rules_home: Path, routine_dir: Path, raw: dict, updates: 
 
 def _apply_permissions_fields(request: Request, info, raw: dict, updates: dict) -> None:
     """Apply a PATCH's `permissions` / `capabilities` through the ONE canonical path — the
-    same two-layer resolve the dedicated `PUT /routines/{slug}/permissions` editor uses
-    (D132/F482).
+    two-layer resolve a conversation's permissions editor uses too (D132/F482).
 
     A decision could propose every other part of a routine's config and not this one: the
     two authority keys were absent from `RoutinePatch`, so a config_patch carrying them hit
@@ -365,8 +364,8 @@ def apply_updates(request: Request, info, updates: dict, *, message: str = "") -
     if "tags" in updates:
         raw["tags"] = clean_tags(updates.pop("tags"))
     # Rules bind/unbind through the ONE canonical path (rules.apply_changes) — F392: a
-    # config_patch carrying `rules` now applies through the generic PATCH, not only the
-    # dedicated /routines/{slug}/rules picker. LAST of the appliers, because it is the one
+    # config_patch carrying `rules` applies through the generic PATCH. LAST of the appliers,
+    # because it is the one
     # that writes: it refuses an unknown slug before writing, and nothing after it refuses.
     _apply_rules_field(_state(request).server.rules_home, info.cfg.dir, raw, updates)
     for key, val in updates.items():

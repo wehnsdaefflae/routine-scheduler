@@ -128,11 +128,11 @@ def _waiting(routine_dir: Path, *, vias: tuple[str, ...] | None,
 
     - `vias` — the delivery channels that count. None counts every channel; a live leg passes
       LIVE_MESSAGE_VIAS, the reap USER_MESSAGE_VIAS.
-    - `include_closures` — whether a report that only CLOSES a thread counts. The report
-      trigger says no: a closure is the end of work, and firing runs for closures chains.
-    - `on_unparseable` — what an unreadable file counts AS. The trigger manager and run gate
-      are fail-OPEN (a spurious run costs a run, a missed one is silence); every live-run
-      predicate is fail-CLOSED, mirroring `drain_messages`, because counting freight the drain
+    - `include_closures` — whether a report that only CLOSES a thread counts. The run gate
+      says no: a closure is the end of work, and firing runs for closures chains.
+    - `on_unparseable` — what an unreadable file counts AS. The run gate is fail-OPEN (a
+      spurious run costs a run, a missed one is silence); every live-run predicate is
+      fail-CLOSED, mirroring `drain_messages`, because counting freight the drain
       never consumes makes a wait-yield or finish-deferral spin forever.
 
     `answer-*` files are never counted here: they have their own pass
@@ -166,17 +166,6 @@ def has_pending_messages(routine_dir: Path, *, vias: tuple[str, ...] | None = No
     """
     return next(_waiting(routine_dir, vias=vias, include_closures=include_closures,
                          on_unparseable=on_unparseable), None) is not None
-
-
-def count_pending(routine_dir: Path, *, vias: tuple[str, ...] | None = None,
-                  include_closures: bool = True, on_unparseable: bool = False) -> int:
-    """How many, for the surfaces that show a number (the routine page's report-trigger row).
-    The same filter as `has_pending_messages`, so a page can never disagree with the engine
-    about whether there is freight.
-    """
-    return sum(1 for _ in _waiting(routine_dir, vias=vias,
-                                   include_closures=include_closures,
-                                   on_unparseable=on_unparseable))
 
 
 def queued_freight(routine_dir: Path, *, exclude_vias: tuple[str, ...]) -> list[dict]:
@@ -282,7 +271,6 @@ __all__ = [
     "VIAS",
     "answered_questions",
     "collect_deferred_answers",
-    "count_pending",
     "drain_messages",
     "file_message",
     "file_question",

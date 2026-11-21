@@ -231,8 +231,8 @@ def _reference_uid(server) -> int:
     NOT `os.getuid()`. A session that reaches the container with `docker compose exec` and forgets
     `-u mark` runs this as root, and then every root-owned file — the defect — would compare equal
     and the check would pass on exactly the instance it exists to catch (`deploy/DOCKER.md`: "an
-    `exec` as root is how root-owned files landed in mark's caches before"). The home install.sh
-    created is the instance's uid by construction, and it is the uid `backup.sh` reads as.
+    `exec` as root is how root-owned files landed in mark's caches before"). The home the
+    instance was set up with is its uid by construction, and it is the uid `backup.sh` reads as.
     """
     try:
         return server.routines_home.stat().st_uid

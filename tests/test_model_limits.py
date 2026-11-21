@@ -202,7 +202,7 @@ def test_the_ttl_stops_a_refresh_per_tick(tmp_path, monkeypatch):
 @pytest.mark.parametrize(("base", "kind", "want"), [
     ("https://openrouter.ai/api/v1", "openai", "openrouter"),
     ("https://nano-gpt.com/api/v1", "openai", "nanogpt"),
-    ("http://localhost:11434/v1", "openai", "ollama"),
+    ("http://localhost:11434/v1", "openai", "openai"),
     ("https://api.featherless.ai/v1", "openai", "openai"),
     ("", "anthropic", "table"),
     ("https://api.anthropic.com", "anthropic", "table"),

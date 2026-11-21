@@ -200,8 +200,8 @@ def _tar_files(archive: Path) -> set[str]:
 
 
 def test_an_install_without_key_files_bundles(tmp_path):
-    """`~/.credentials` is the optional last rung of the credential ladder: install.sh never
-    creates it and the Secrets store replaced it, so a host that never used it is complete —
+    """`~/.credentials` is the optional last rung of the credential ladder: nothing creates it
+    and the Secrets store replaced it, so a host that never used it is complete —
     the bundle carries what it has and says what it skipped, instead of refusing."""
     home = _home(tmp_path)
     shutil.rmtree(home / ".credentials")

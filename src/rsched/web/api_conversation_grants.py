@@ -35,7 +35,7 @@ why conversations were excluded — because nothing was: the exclusion was an om
 Two shapes were available and this is the narrower one:
 
 * A parallel ROUTER rather than a widening of `routines_common._info` across homes — the same
-  split D216 rank 1 made for a conversation's own secrets (`api_conversation_secrets.py`).
+  split D216 rank 1 made for a conversation's own secrets (`api_scoped_secrets.py`).
   Widening the lookup would admit conversations to every `/routines/{slug}/*` surface at once.
 * CLEAR ONE ENTITY rather than a wholesale `grants` replace (which is what the routine page's
   PATCH does). The routine page can replace the mapping safely because it is a DRAFT the

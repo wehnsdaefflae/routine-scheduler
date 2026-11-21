@@ -8,7 +8,7 @@ import yaml
 
 from rsched.config import ServerConfig, load_server_config
 from rsched.config.decisionconf import DecisionEndpointConfig, DecisionModelConfig
-from rsched.endpoints import decisions_openai, decisions_systemone, instrument
+from rsched.endpoints import decisions_systemone, instrument
 from rsched.endpoints.base import EndpointError
 from rsched.endpoints.decisions import (
     DecisionImage,
@@ -28,8 +28,8 @@ QS = [DecisionQuestion("is_bug", "yes_no", "Is it a defect?"),
 def _server(**over) -> ServerConfig:
     s = ServerConfig(
         decision_endpoints={
-            "luna": DecisionEndpointConfig(name="luna", protocol="openai"),
-            "predator": DecisionEndpointConfig(name="predator", protocol="openai",
+            "luna": DecisionEndpointConfig(name="luna", protocol="systemone"),
+            "predator": DecisionEndpointConfig(name="predator", protocol="systemone",
                                                base_url="http://box:8790/v1", api_key="tok"),
             "jev": DecisionEndpointConfig(name="jev", protocol="systemone",
                                           base_url="https://openrouter.ai/api/v1",
@@ -37,9 +37,9 @@ def _server(**over) -> ServerConfig:
         decision_models={
             "jev": DecisionModelConfig(name="jev", endpoint="jev", model="typesafe/jev-1.13"),
             "vl8b": DecisionModelConfig(name="vl8b", endpoint="predator",
-                                        model="qwen3-vl-8b-instruct"),
+                                        model="qwen3-vl-8b-instruct", multimodal=True),
             "luna-text": DecisionModelConfig(name="luna-text", endpoint="luna",
-                                             model="gpt-6-luna", multimodal=False)},
+                                             model="jev-latest", multimodal=False)},
         decision_model="jev", decision_media_model="vl8b")
     for k, v in over.items():
         setattr(s, k, v)
@@ -62,14 +62,13 @@ def _load(tmp_path, extra: dict):
     return load_server_config(tmp_path / "config.yaml")
 
 
-def test_the_decision_catalog_loads_with_per_protocol_key_defaults(tmp_path):
+def test_the_decision_catalog_loads_with_the_protocols_key_default(tmp_path):
     server, problems = _load(tmp_path, {
-        "decision_endpoints": {"oa": {"protocol": "openai"}, "ts": {"protocol": "systemone"}},
-        "decision_models": {"a": {"endpoint": "oa", "model": "gpt-6-luna"},
+        "decision_endpoints": {"ts": {"protocol": "systemone"}},
+        "decision_models": {"a": {"endpoint": "ts", "model": "vl", "multimodal": True},
                             "b": {"endpoint": "ts", "model": "jev-latest"}},
         "decision_model": "b", "decision_media_model": "a"})
     assert problems == []
-    assert server.decision_endpoints["oa"].key_var == "OPENAI_API_KEY"
     assert server.decision_endpoints["ts"].key_var == "TYPESAFE_API_KEY"
     assert server.decision_models["a"].name == "a"
 
@@ -95,7 +94,7 @@ def test_defaults_follow_the_payload():
     s = _server()
     assert pick_decision_model(s, None, images=False)[1].name == "jev"
     assert pick_decision_model(s, None, images=True)[1].name == "vl8b"
-    assert pick_decision_model(s, "luna-text", images=False)[1].model == "gpt-6-luna"
+    assert pick_decision_model(s, "luna-text", images=False)[1].model == "jev-latest"
 
 
 def test_a_bad_pick_names_the_alternatives():
@@ -113,66 +112,9 @@ def test_catalog_rows_mark_the_defaults():
     rows = {r["name"]: r for r in decision_catalog(_server())}
     assert rows["jev"] == {"name": "jev", "endpoint": "jev", "model": "typesafe/jev-1.13",
                            "protocol": "systemone", "images": False, "default": "default"}
-    assert rows["vl8b"]["images"] is True
+    assert rows["vl8b"]["images"] is True        # the model's own flag beats the protocol's
     assert rows["vl8b"]["default"] == "default for images"
-    assert rows["luna-text"]["images"] is False   # the model's own flag beats the protocol's
-
-
-# --- the openai protocol -----------------------------------------------------------------------
-def test_openai_sends_the_published_shape(monkeypatch, tmp_path):
-    img = tmp_path / "a.png"
-    img.write_bytes(b"\x89PNG")
-    seen: list = []
-    _respond(monkeypatch, decisions_openai, {"answers": [], "usage": {}}, seen=seen)
-    endpoint, ref = pick_decision_model(_server(), "vl8b", images=True)
-    with pytest.raises(EndpointError, match="no answer came back for is_bug, team, urgency"):
-        endpoint.decide("two photos", [DecisionImage(img, "image/png")], QS, model=ref.model,
-                        timeout=30)
-    call = seen[0]
-    assert call["url"] == "http://box:8790/v1/decisions"
-    assert call["headers"] == {"Authorization": "Bearer tok"}
-    assert call["body"]["input"] == [{"role": "user", "content": [
-        {"type": "input_text", "text": "two photos"},
-        {"type": "input_image", "image_url": "data:image/png;base64,iVBORw=="}]}]
-    assert call["body"]["questions"] == [
-        {"type": "predicate", "name": "is_bug", "instructions": "Is it a defect?"},
-        {"type": "choice", "name": "team", "instructions": "Which team?",
-         "choices": [{"value": "payments", "description": "Checkout issues"},
-                     {"value": "frontend"}]},
-        {"type": "score", "name": "urgency", "instructions": "How urgent?",
-         "levels": [{"label": "low", "description": "can wait"}, {"label": "high"}]}]
-    # Structured evidence is ANNOUNCED rather than sent as a bare JSON document: `input` takes
-    # a string or a message list, so a string that parses as JSON is ambiguous and the gateway
-    # serving this instance's default decision model refuses the request outright (measured
-    # 2026-11-13; tests/test_decision_evidence_wire.py carries the reading and every shape).
-    text_only = endpoint.body({"ticket": "x"}, [], QS[:1], "m")
-    assert text_only["input"] == 'EVIDENCE (JSON):\n{\n "ticket": "x"\n}'
-
-
-def test_openai_answers_are_normalised(monkeypatch):
-    _respond(monkeypatch, decisions_openai, {"model": "qwen3-vl", "answers": [
-        {"type": "score", "name": "urgency", "score": 0.8, "confidence": 0.6,
-         "probabilities": [{"value": 0, "label": "low", "probability": 0.2},
-                           {"value": 1, "label": "high", "probability": 0.8}]},
-        {"type": "predicate", "name": "is_bug", "probability": 0.92},
-        {"type": "refusal", "name": "team"}],
-        "usage": {"input_tokens": 480, "output_tokens": 0}})
-    endpoint, ref = pick_decision_model(_server(), "vl8b", images=False)
-    out = endpoint.decide("x", [], QS, model=ref.model, timeout=30)
-    bug, team, urgency = out.answers
-    assert (bug.probability, bug.probabilities) == (0.92, {"yes": 0.92, "no": 0.08})
-    assert team.refused
-    assert urgency.score == 0.8
-    assert urgency.probabilities == {"low": 0.2, "high": 0.8}
-    assert out.usage == {"in": 480, "out": 0}
-    assert out.model == "qwen3-vl"
-
-
-def test_a_malformed_answer_is_a_transport_error(monkeypatch):
-    _respond(monkeypatch, decisions_openai, {"answers": [{"type": "choice", "name": "team"}]})
-    endpoint, ref = pick_decision_model(_server(), "vl8b", images=False)
-    with pytest.raises(EndpointError, match="does not have the choice shape"):
-        endpoint.decide("x", [], [QS[1]], model=ref.model, timeout=30)
+    assert rows["luna-text"]["images"] is False
 
 
 # --- the systemone protocol --------------------------------------------------------------------
@@ -244,7 +186,7 @@ def test_systemone_needs_a_key(monkeypatch):
 
 
 def test_an_auth_failure_says_so(monkeypatch):
-    _respond(monkeypatch, decisions_openai, {"error": {"message": "bad key"}}, status=401)
+    _respond(monkeypatch, decisions_systemone, {"error": {"message": "bad key"}}, status=401)
     endpoint, ref = pick_decision_model(_server(), "vl8b", images=False)
     with pytest.raises(EndpointError) as err:
         endpoint.decide("x", [], QS, model=ref.model, timeout=30)
@@ -261,8 +203,8 @@ def test_a_decision_is_recorded_like_a_completion(monkeypatch):
 
     instrument.set_sink(Sink())
     try:
-        _respond(monkeypatch, decisions_openai, {"answers": [
-            {"type": "predicate", "name": "is_bug", "probability": 0.5}],
+        _respond(monkeypatch, decisions_systemone, {
+            "answers": {"is_bug": {"type": "noul", "noul": 0.5}},
             "usage": {"input_tokens": 9}})
         from rsched.endpoints.decisions import decide
         endpoint, ref = pick_decision_model(_server(), "vl8b", images=False)
@@ -286,7 +228,7 @@ def test_a_routines_roles_come_before_the_instance_defaults():
     # answers instead
     assert pick(s, {"decision": "jev"}, images=True) == "vl8b"
     s.decision_models["luna"] = DecisionModelConfig(name="luna", endpoint="luna",
-                                                    model="gpt-6-luna")
+                                                    model="jev-vision", multimodal=True)
     assert pick(s, {"decision": "luna"}, images=True) == "luna"     # it takes images: it wins
     assert pick(_server(decision_model="", decision_media_model=""), {}, images=False) == ""
 

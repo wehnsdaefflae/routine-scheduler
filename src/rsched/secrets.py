@@ -36,12 +36,9 @@ import json
 import re
 from collections.abc import Callable
 from pathlib import Path
-from typing import TypeVar
 
 from .ids import is_slug
 from .paths import atomic_write, config_file, file_lock
-
-T = TypeVar("T")
 
 SECRETS_FILE = "secrets.env"
 SCOPED_DIR = "secrets.d"                             # one <slug>.env per routine (D103)
@@ -173,7 +170,7 @@ def _check_key(key: str) -> None:
         raise ValueError(f"{key!r} is not a valid environment variable name")
 
 
-def _update(path: Path, edit: Callable[[dict[str, str]], T]) -> T:  # noqa: UP047 — pdoc can't parse PEP 695 generics
+def _update[T](path: Path, edit: Callable[[dict[str, str]], T]) -> T:
     """Apply `edit` to one store's {KEY: VALUE} map under that file's lock, writing the file
     back only when the map changed — the one read-modify-write every setter goes through.
     """

@@ -105,22 +105,6 @@ def test_lint_seed_clean_then_flags_junk(cli_server, capsys):
     junk.unlink()
 
 
-# ---- suggest ----------------------------------------------------------------------------
-
-
-def test_suggest_prints_ranking_and_none_fit(cli_server, capsys, monkeypatch):
-    import rsched.workflows.suggest as sug
-
-    monkeypatch.setattr(sug, "suggest", lambda server, instruction: {
-        "suggestions": [{"slug": "general-task", "confidence": 0.9, "reason": "fits"},
-                        {"slug": "converse", "confidence": 0.2, "reason": "chatty"}],
-        "none_fit": True, "new_workflow_hint": "a bespoke scraping flow"})
-    assert cli.cmd_suggest(_args(instruction="watch a feed")) == 0
-    captured = capsys.readouterr()
-    assert "0.90  general-task" in captured.out and "0.20  converse" in captured.out
-    assert "a bespoke scraping flow" in captured.err
-
-
 # ---- scaffold ---------------------------------------------------------------------------
 
 

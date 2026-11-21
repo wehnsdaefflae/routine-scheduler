@@ -46,8 +46,8 @@ def invite(routines_home: Path, target: str, *, lines: list[str], by: str, run_i
            approved_by: str = "") -> Path | None:
     """File one invitation for `target`, or None when its queue is full.
 
-    `approved_by` records WHAT authorized it — a decision id when the operator clicked, or the
-    dial level that armed it without a card. Kept on the record because "who may rewrite whose
+    `approved_by` records WHAT authorized it — the decision id the operator approved. Kept on
+    the record because "who may rewrite whose
     recipe" is the question this path answers, and the answer has to be auditable per entry.
     """
     if len(pending(routines_home, target)) >= MAX_PENDING:

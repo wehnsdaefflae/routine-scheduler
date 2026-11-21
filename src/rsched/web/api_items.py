@@ -4,11 +4,10 @@ the page rename is D74 — the ids and the endpoint keep the item vocabulary).
 
 Mostly the READ half; `api_audit` keeps the page's structured write channel (reviewer
 feedback into the self-audit routine's inbox) and `api_messages` the free-form one, while the
-writes that live HERE are about an item rather than addressed to a run: the ⚑ priority toggle
-(priorities.py) and, as a side effect of SERVING the index, each item's origin stamp
-(firstseen.py — this handler is the one place holding the whole merged id set, so it is that
-store's only writer; it adds an id it has never seen and never moves one it has, F753). The
-GET also carries the report header the page shows —
+write that lives HERE is about an item rather than addressed to a run: as a side effect of
+SERVING the index, each item's origin stamp (firstseen.py — this handler is the one place
+holding the whole merged id set, so it is that store's only writer; it adds an id it has never
+seen and never moves one it has, F753). The GET also carries the report header the page shows —
 the current window, the summary, the last self-audit run — which is why the old
 `GET /api/audit` is gone rather than kept beside it.
 """
@@ -21,9 +20,9 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
 
-from .. import firstseen, priorities, registry
+from .. import firstseen, registry
+from ..item_records import SELF_AUDIT_SLUG
 from ..paths import read_json
-from ..priorities import SELF_AUDIT_SLUG
 from ..readmodels import item_counts, memo, summaries
 from ..readmodels import items as items_model
 from .api_audit import _routine_dir, answered_decisions, queued_messages
@@ -142,11 +141,7 @@ def items(request: Request,
                 "queued": [], "answered_decisions": []}
 
     merged = items_model.build(routine_dir, server.routines_home)
-    # ⚑ outranks recency (items_model floats the flagged band to the top of its index) — and
-    # it has to outrank the summaries too, or one per routine sits above the flagged item
-    flagged = [i for i in merged["items"] if i.get("priority")]
-    rest = [i for i in merged["items"] if not i.get("priority")]
-    all_items = flagged + summary_rows + rest
+    all_items = summary_rows + merged["items"]
     shown = items_model.filter_items(all_items, type_=type_, status=status,
                                      routine=routine, target=target, owner=owner,
                                      search=search, folded=folded)
@@ -238,10 +233,6 @@ class ReadBody(BaseModel):
     read: bool = True
 
 
-class PriorityBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    on: bool = True
-
 
 @router.post("/items/{item_id}/read")
 def set_item_read(request: Request, item_id: str, body: ReadBody) -> dict:
@@ -267,16 +258,3 @@ def mark_all_summaries_read(request: Request) -> dict:
     server = request.app.state.server
     return {"ok": True, "marked": summaries.mark_all_read(server.routines_home, server)}
 
-
-@router.post("/items/{item_id}/priority")
-def set_item_priority(request: Request, item_id: str, body: PriorityBody) -> dict:
-    """Flag or unflag one item as a user priority (`{"on": true|false}`). The ⚑ floats
-    the item to the top of the page AND reaches the OWNING routine's next run as a
-    state-digest section — ownership resolution lives in priorities.py (D75).
-    """
-    on = body.on
-    try:
-        priorities.set_priority(request.app.state.server.routines_home, item_id, on)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from None
-    return {"ok": True, "id": str(item_id).strip().upper(), "on": on}

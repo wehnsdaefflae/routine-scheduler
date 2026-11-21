@@ -120,7 +120,6 @@ scratch from the routine's first runs (keyed by run id, arbitrary payloads), whi
   survives solely through the changelog / answered markers.
 - **`left_report`** — on a finding or decision the current report no longer holds but the
   item records do: when the report first omitted it (`""` while it is in the report).
-- **`priority`** — present (`true`) only on an item the user flagged ⚑ (see below).
 - **`owner`** (findings and decisions) — who must act next, verbatim from the row self-audit
   wrote: a routine slug, or `operator` for an item only the operator can move. `""` when the
   row names none, which the counts show as `unassigned` — never inferred from the status or the
@@ -522,39 +521,6 @@ re-formatted from fields, which is why they cannot ride the generic endpoint. Ev
 else — the free note for the next run, and withdrawing ANY queued message — goes through
 the generic per-routine message endpoints (docs/messages.md, D74). Answering a *decision*
 still happens on the Decisions page, through the same inbox.
-
-## The ⚑ priority flag
-
-The user's "work this first" (D75) on any `F`/`D`/`R` item: `POST /api/items/{id}/priority
-{"on": true|false}` writes `<routines>/.control/item-priorities.json` (`rsched/priorities.py`,
-the web layer's store — never `report.json`, which self-audit rewrites whole every run, and
-never the append-only ledger, which records what runs SAID rather than UI state; the age store
-above is the second built on that reasoning). A flagged item sorts above everything else —
-unflagged maintenance items and run summaries alike — each band keeping its own order, and
-its OWNING routine's next run reads it in a "PRIORITY items" state-digest section. The store is
-the read model's fifth fingerprinted input, so a toggle invalidates the memo.
-
-**Who the flag reaches** is resolved from the item's own row at read time, never stored, so a
-hand-over or a completion moves the flag with no migration. An `R<n>` belongs to its `target`
-— for a folded row, the target its carrier handed it to — and an untargeted one to self-audit,
-which owns triage. An `F`/`D` lives in self-audit's `report.json` whoever owns it, so
-`priorities.flagged_item_owner` reads the row: **`scheduler-builder`** when self-audit has
-HANDED the row over and the work is still in progress (its `detail` carries the
-`HANDED_TO_BUILDER` line — `Handed to scheduler-builder <date>: …` — *and* its status is
-`in_progress`), **`self-audit`** otherwise. Both conditions are required: the marker also sits
-in the prose of a row self-audit has only written up, and in the prose of one the builder has
-already shipped (a later run appends behind it), while `in_progress` alone is the keeper's own
-ongoing work. An `addressed` row goes back to the keeper deliberately — a flag on finished work
-still has to reach someone who can clear or answer it.
-
-Until 0.525.0 every flagged `F`/`D` resolved to self-audit, from before the operator split that
-routine into maintenance (`self-audit`) and feature development (`scheduler-builder`) with no
-overlap between them: the "work this first" signal landed with the routine that may not build
-the item, for exactly the items it is most likely to be set on (D240). The marker is one
-constant in `rsched/priorities.py` so the recipes' wording and this resolver cannot drift apart
-silently — `tests/test_priorities.py` pins it against the `detail` text of a real handed row,
-and the same tests pin that the Messages page's `owner` column names the routine the flag goes
-to.
 
 ## Report ids
 

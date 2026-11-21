@@ -287,142 +287,6 @@ async def test_crash_replayed_event_lands_exactly_once(tmp_path):
     assert runner.fired == [("webby", "trigger")] * 2   # it does fire again - delivery is the invariant
 
 
-# -- the report trigger (protocol rec 5) ---------------------------------------------------
-
-REPORT_TRIG = {"id": "t-rep00001", "type": "report", "cooldown_s": 900}
-
-
-def test_a_report_trigger_without_a_cooldown_gets_the_report_default():
-    """docs/triggers.md: a report trigger's cooldown defaults to 900 s — generous so a delivery
-    burst becomes ONE run — and the daemon's own fallback says the same. Validation filled the
-    webhook's 60 s into every type first, so the report default could never apply."""
-    out, problems = triggers.validate_triggers([{"id": "t-rep", "type": "report"},
-                                                {"id": "t-web", "type": "webhook", "token": "x"}])
-    assert problems == []
-    assert out[0]["cooldown_s"] == triggers.DEFAULT_REPORT_COOLDOWN_S
-    assert out[1]["cooldown_s"] == triggers.DEFAULT_COOLDOWN_S
-    out, problems = triggers.validate_triggers([{"id": "t-rep", "type": "report",
-                                                 "cooldown_s": "soon"}])
-    assert out[0]["cooldown_s"] == triggers.DEFAULT_REPORT_COOLDOWN_S
-    assert f"using {triggers.DEFAULT_REPORT_COOLDOWN_S}" in problems[0]
-    # the comparison form agrees with what validation makes of the same row
-    assert triggers.with_defaults({"id": "t-rep", "type": "report"})["cooldown_s"] \
-        == triggers.DEFAULT_REPORT_COOLDOWN_S
-
-
-def test_validate_triggers_accepts_report_without_warning():
-    out, problems = triggers.validate_triggers([dict(REPORT_TRIG)])
-    assert problems == []                       # implemented type: no reserved-inert flag
-    assert out[0]["type"] == "report" and out[0]["cooldown_s"] == 900
-    trig = triggers.new_report_trigger()
-    assert trig["type"] == "report"
-    assert trig["cooldown_s"] == triggers.DEFAULT_REPORT_COOLDOWN_S
-    assert "token" not in trig                  # nothing external can reach it
-
-
-async def test_report_delivery_fires_the_target(tmp_path):
-    """A report landing in the inbox of a routine that declares a report trigger fires it
-    on the next tick; nothing is consumed daemon-side (the run's own drain does that)."""
-    from rsched.reports import file_report
-
-    server = tmp_server(tmp_path)
-    d = _routine(server, slug="target", trig=[dict(REPORT_TRIG)])
-    file_report(server.routines_home, routine="sender", run_id="sender:20260805-010101",
-                title="fix it", detail="d", target="target", target_dir=d)
-    runner = FakeRunner()
-    mgr = TriggerManager(server, runner)
-    await mgr.tick(registry.scan(server))
-    assert runner.fired == [("target", "trigger")]
-    assert list((d / "inbox").glob("msg-rep-*.json"))           # still there for the run
-    state = triggers.read_state(server.routines_home, "target")
-    assert state["fires"] == 1
-    assert state["triggers"]["t-rep00001"]["last_fired"]
-
-
-async def test_report_deliveries_coalesce_within_cooldown(tmp_path):
-    """A second delivery inside the cooldown window fires nothing more — one run per
-    window drains everything; after the window an unconsumed message fires again."""
-    from datetime import UTC, datetime, timedelta
-
-    from rsched.reports import file_report
-
-    server = tmp_server(tmp_path)
-    d = _routine(server, slug="target", trig=[dict(REPORT_TRIG)])
-    file_report(server.routines_home, routine="s", run_id="s:1", title="one",
-                target="target", target_dir=d)
-    runner = FakeRunner()
-    mgr = TriggerManager(server, runner)
-    catalog = registry.scan(server)
-    await mgr.tick(catalog)
-    assert runner.fired == [("target", "trigger")]
-    runner.active.clear()                        # the fired run "finished" without draining
-    file_report(server.routines_home, routine="s", run_id="s:2", title="two",
-                target="target", target_dir=d)
-    await mgr.tick(catalog)
-    assert runner.fired == [("target", "trigger")]              # within cooldown: coalesced
-    # age the stamp past the window → the still-unconsumed messages fire one more run
-    state = triggers.read_state(server.routines_home, "target")
-    state["triggers"]["t-rep00001"]["last_fired"] = (
-        datetime.now(UTC) - timedelta(seconds=901)).isoformat()
-    triggers.write_state(server.routines_home, "target", state)
-    await mgr.tick(catalog)
-    assert runner.fired == [("target", "trigger"), ("target", "trigger")]
-
-
-async def test_report_trigger_respects_disabled_active_closures_and_answers(tmp_path):
-    from rsched.paths import atomic_write_json
-    from rsched.reports import Disposal, file_report
-
-    server = tmp_server(tmp_path)
-    # disabled routine: delivery never fires it
-    d_off = _routine(server, slug="offline", trig=[dict(REPORT_TRIG)], enabled=False)
-    file_report(server.routines_home, routine="s", run_id="s:1", title="t",
-                target="offline", target_dir=d_off)
-    # active routine: the fire waits (the running run's drain will pick the message up)
-    d_busy = _routine(server, slug="busy", trig=[dict(REPORT_TRIG)])
-    file_report(server.routines_home, routine="s", run_id="s:2", title="t",
-                target="busy", target_dir=d_busy)
-    # a routine WITHOUT the trigger keeps the default: a report waits for its next
-    # scheduled run — a routine must never wake another routine by default (that chains)
-    d_plain = _routine(server, slug="plain")
-    file_report(server.routines_home, routine="s", run_id="s:3", title="t",
-                target="plain", target_dir=d_plain)
-    # a closure asks nothing; an ANSWER never fires anything — a deferred question's answer
-    # waits for the next scheduled run, or for the operator's own "answer & run now" (a
-    # manual fire, api_questions.py), never for a trigger — with or without a pending record
-    d_closed = _routine(server, slug="closed", trig=[dict(REPORT_TRIG)])
-    file_report(server.routines_home, routine="s", run_id="s:4", title="done",
-                target="closed", target_dir=d_closed,
-                disposal=Disposal(answers="R1", closes=True))
-    d_answered = _routine(server, slug="answered", trig=[dict(REPORT_TRIG)])
-    atomic_write_json(d_answered / "questions" / "pending" / "q-1.json",
-                      {"qid": "q-1", "question": "?", "options": [], "mode": "deferred"})
-    atomic_write_json(d_answered / "inbox" / "answer-q-1.json", {"qid": "q-1", "text": "Do it"})
-    d_defer = _routine(server, slug="deferred")
-    atomic_write_json(d_defer / "inbox" / "answer-q-2.json", {"qid": "q-2", "defer": True})
-
-    runner = FakeRunner()
-    runner.active["routines", "busy"] = "20260805-090000"
-    mgr = TriggerManager(server, runner)
-    await mgr.tick(registry.scan(server))
-    assert runner.fired == []
-
-
-async def test_an_in_flight_temp_file_never_buys_a_run(tmp_path):
-    """The report-trigger watch selects `msg-*.json` — the stem the ONE writer produces —
-    and not "any file that is not `answer-*`". `paths.atomic_write` creates its temp file IN
-    the target directory, so the old filter also matched `.msg-….json.XXXX.tmp`; that file
-    is unreadable, unreadable WAKES here by design, and a race with any inbox write
-    therefore bought a whole run of the recipe."""
-    server = tmp_server(tmp_path)
-    d = _routine(server, slug="racy", trig=[dict(REPORT_TRIG)])
-    (d / "inbox" / ".msg-20260922T101010-abcd1234.json.9f3a.tmp").write_text(
-        '{"text": "hal', encoding="utf-8")
-    runner = FakeRunner()
-    await TriggerManager(server, runner).tick(registry.scan(server))
-    assert runner.fired == []
-
-
 async def test_one_routine_that_raises_never_starves_the_rest_of_the_pass(tmp_path,
                                                                         monkeypatch):
     """The whole pass sat in one try/except, so a routine whose servicing raised on every tick
@@ -431,59 +295,26 @@ async def test_one_routine_that_raises_never_starves_the_rest_of_the_pass(tmp_pa
     from rsched.health_events import HEALTH_EVENTS_FILE
 
     server = tmp_server(tmp_path)
-    _routine(server, slug="aaa-broken", trig=[dict(REPORT_TRIG)])
-    d = _routine(server, slug="zzz-fine", trig=[dict(REPORT_TRIG)])
-    (d / "inbox" / "msg-x.json").write_text('{"text": "work", "via": "report"}', "utf-8")
+    for slug in ("aaa-broken", "zzz-fine"):
+        _routine(server, slug=slug, trig=[dict(WEBHOOK)])
+        triggers.write_event(server.routines_home, slug, trigger_id=WEBHOOK["id"],
+                             payload="work")
     runner = FakeRunner()
     mgr = TriggerManager(server, runner)
-    real = mgr._service_report
+    real = mgr._service
 
     async def service(slug, info):
         if slug == "aaa-broken":
             raise OSError("an unreadable trigger state file")
         await real(slug, info)
 
-    monkeypatch.setattr(mgr, "_service_report", service)
+    monkeypatch.setattr(mgr, "_service", service)
     catalog = registry.scan(server)
     await mgr.tick(catalog)
     await mgr.tick(catalog)
     assert runner.fired == [("zzz-fine", "trigger")]
     stream = (server.routines_home / ".control" / HEALTH_EVENTS_FILE).read_text("utf-8")
     assert stream.count('"scheduler_tick_error"') == 1 and "aaa-broken" in stream
-
-
-async def test_the_page_counts_exactly_what_the_report_trigger_fires_on(tmp_path):
-    """The routine page's pending number and the daemon's watch read the ONE inbox predicate
-    with the same flags. They used to differ on an unparseable file: the watch is fail-OPEN
-    and fired a run for it while the page counted it as nothing — "0 pending" over a fire."""
-    server = tmp_server(tmp_path)
-    d = _routine(server, slug="garbled", trig=[dict(REPORT_TRIG)])
-    (d / "inbox" / "msg-20260922T101010-abcd1234.json").write_text("{not json",
-                                                                   encoding="utf-8")
-    runner = FakeRunner()
-    await TriggerManager(server, runner).tick(registry.scan(server))
-    assert runner.fired == [("garbled", "trigger")]
-    [row] = triggers.describe_triggers(server.routines_home, "garbled", [dict(REPORT_TRIG)])
-    assert row["pending"] == 1
-
-
-async def test_a_retired_routine_is_not_fired_by_a_report_trigger(tmp_path):
-    """`retired` is the routine's own final goal being met, and it was honoured by the
-    schedule and the lane chain only. A sibling filing an addressed report would then fire a
-    routine the system says is DONE — one run spent re-asserting a met goal and re-filing the
-    retirement proposal already waiting on the Decisions page."""
-    from rsched.reports import file_report
-
-    server = tmp_server(tmp_path)
-    d = _routine(server, slug="finished", trig=[dict(REPORT_TRIG)])
-    file_report(server.routines_home, routine="s", run_id="s:1", title="one more thing",
-                target="finished", target_dir=d)
-    catalog = registry.scan(server)
-    catalog["finished"].retired = True          # every goal-scoped condition met
-    runner = FakeRunner()
-    await TriggerManager(server, runner).tick(catalog)
-    assert runner.fired == []
-    assert list((d / "inbox").glob("msg-rep-*.json"))   # the message keeps, unread
 
 
 async def test_a_retired_routine_drops_its_spooled_webhook_events(tmp_path):

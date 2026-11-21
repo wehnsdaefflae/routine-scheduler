@@ -17,7 +17,7 @@ def _many(n: int) -> list[dict]:
 
 
 def test_an_empty_guide_set_says_so_and_where_to_look(ui, ui_page):
-    _index(ui_page, {"version": "0.0.0", "guides": [], "api": "api/rsched.html"})
+    _index(ui_page, {"version": "0.0.0", "guides": []})
     ui_page.goto(f"{ui.url}/#/help")
     note = ui_page.locator("[data-no-guides]")
     expect(note).to_be_visible()
@@ -25,18 +25,17 @@ def test_an_empty_guide_set_says_so_and_where_to_look(ui, ui_page):
     # it names the control that settles it, rather than leaving the reader to guess
     expect(note.get_by_role("link", name="Settings → Source")).to_have_attribute(
         "href", "#/settings?section=source")
-    # and the API reference is still served — the note explains the page, it does not replace it
-    expect(ui_page.locator(".help-entry", has_text="API reference")).to_be_visible()
+    expect(ui_page.locator(".help-entry")).to_have_count(0)
 
 
 def test_guides_lead_and_no_note_is_shown_when_they_exist(ui, ui_page):
-    _index(ui_page, {"version": "0.0.0", "api": "api/rsched.html", "guides": [
+    _index(ui_page, {"version": "0.0.0", "guides": [
         {"slug": "getting-started", "title": "Getting started"},
         {"slug": "authoring", "title": "Authoring"}]})
     ui_page.goto(f"{ui.url}/#/help")
     entries = ui_page.locator(".help-entry")
     expect(entries.first).to_have_text("Getting started")      # the server's reading order
-    expect(entries.last).to_have_text("API reference")         # generated, and last
+    expect(entries).to_have_count(2)                           # the guides, and nothing else
     expect(ui_page.locator("[data-no-guides]")).to_have_count(0)
     # the first guide opens by default, and the frame takes the console's theme with it
     expect(ui_page.locator(".help-frame")).to_have_attribute(
@@ -47,9 +46,9 @@ def test_three_dozen_guides_stay_an_index_beside_the_frame(ui, ui_page):
     """As chips they wrapped into a five-line wall and pushed the reading frame off the first
     screen. A column indexes them all and the frame keeps the top of the page."""
     ui_page.set_viewport_size({"width": 1425, "height": 900})
-    _index(ui_page, {"version": "0.0.0", "api": "api/rsched.html", "guides": _many(37)})
+    _index(ui_page, {"version": "0.0.0", "guides": _many(37)})
     ui_page.goto(f"{ui.url}/#/help")
-    expect(ui_page.locator(".help-entry")).to_have_count(38)   # every guide + the reference
+    expect(ui_page.locator(".help-entry")).to_have_count(37)   # every guide
     frame = ui_page.locator(".help-frame")
     expect(frame).to_be_in_viewport()
     index_box = ui_page.locator(".help-index").bounding_box()
@@ -61,7 +60,7 @@ def test_three_dozen_guides_stay_an_index_beside_the_frame(ui, ui_page):
 
 
 def test_opening_a_guide_lights_it_and_loads_it(ui, ui_page):
-    _index(ui_page, {"version": "0.0.0", "api": "api/rsched.html", "guides": _many(6)})
+    _index(ui_page, {"version": "0.0.0", "guides": _many(6)})
     ui_page.goto(f"{ui.url}/#/help")
     ui_page.locator(".help-entry", has_text="Guide 4").click()
     ui_page.wait_for_url(f"{ui.url}/#/help/guide-4")

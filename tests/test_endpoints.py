@@ -133,7 +133,7 @@ def test_retry_after_hint_honored_and_capped(monkeypatch):
 
 def _oai(schema_mode="json_schema"):
     return OpenAICompatEndpoint(EndpointConfig(
-        name="ollama-local", kind="openai", base_url="http://x/v1",
+        name="vllm-local", kind="openai", base_url="http://x/v1",
         api_key="k", schema_mode=schema_mode, context_tokens=9000, temperature=0.2))
 
 
@@ -178,8 +178,6 @@ def test_openai_schema_mode_degradation(monkeypatch):
         return FakeResponse(payload={"choices": [{"message": {"content": "x"}}]})
 
     monkeypatch.setattr(oai_mod.httpx, "post", fake_post)
-    _oai("json_object").complete(MESSAGES, model="m", schema={"type": "object"})
-    assert seen["body"]["response_format"] == {"type": "json_object"}
     _oai("none").complete(MESSAGES, model="m", schema={"type": "object"})
     assert "response_format" not in seen["body"]
 
@@ -390,30 +388,6 @@ def test_openai_think_preamble_stripped(monkeypatch):
     assert "<think>" in c2.text  # unclosed block: kept as-is for the empty/retry path
 
 
-def test_ollama_native_structured_output(monkeypatch):
-    ep = OpenAICompatEndpoint(EndpointConfig(
-        name="ollama", kind="openai", base_url="http://x/v1", api_key="ollama",
-        schema_mode="ollama_native", context_tokens=9000, temperature=0.2))
-    seen = {}
-
-    def fake_post(url, json=None, headers=None, timeout=None):
-        seen.update(url=url, body=json)
-        return FakeResponse(payload={"message": {"content": '{"say":"s","kind":"finish"}'},
-                                     "prompt_eval_count": 12, "eval_count": 5})
-
-    monkeypatch.setattr(oai_mod.httpx, "post", fake_post)
-    c = ep.complete(MESSAGES, model="gemma4:latest", schema={"type": "object"}, max_tokens=999)
-    assert seen["url"] == "http://x/api/chat"          # native endpoint, not /v1/chat/completions
-    assert seen["body"]["format"] == {"type": "object"}  # the schema drives constrained decoding
-    assert seen["body"]["options"]["num_ctx"] == 9000    # actual token window, prevents truncation
-    assert seen["body"]["options"]["num_predict"] == 999
-    assert c.text == '{"say":"s","kind":"finish"}' and c.usage == {"in": 12, "out": 5}
-    # without a schema the native path is skipped (plain /v1 generation)
-    monkeypatch.setattr(oai_mod.httpx, "post",
-                        lambda *a, **k: FakeResponse(payload={"choices": [{"message": {"content": "x"}}]}))
-    assert ep.complete(MESSAGES, model="m").text == "x"
-
-
 def test_openai_error_mapping(monkeypatch):
     monkeypatch.setattr("time.sleep", lambda s: None)
     codes = iter([500, 500, 500])
@@ -441,17 +415,6 @@ def test_openai_malformed_json_on_200_is_retryable(monkeypatch):
         _oai().complete(MESSAGES, model="m")
     assert exc.value.retryable and len(calls) == 3        # went through the retry wrapper
     assert "unparseable JSON" in str(exc.value) and "502 from a proxy" in str(exc.value)
-
-
-def test_ollama_native_malformed_json_on_200_is_retryable(monkeypatch):
-    monkeypatch.setattr("time.sleep", lambda s: None)
-    ep = OpenAICompatEndpoint(EndpointConfig(
-        name="ollama", kind="openai", base_url="http://x/v1", api_key="ollama",
-        schema_mode="ollama_native", context_tokens=9000))
-    monkeypatch.setattr(oai_mod.httpx, "post", lambda *a, **k: BrokenJSONResponse(text="not json"))
-    with pytest.raises(EndpointError) as exc:
-        ep.complete(MESSAGES, model="m", schema={"type": "object"})
-    assert exc.value.retryable
 
 
 # --- anthropic -------------------------------------------------------------------

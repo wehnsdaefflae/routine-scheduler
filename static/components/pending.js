@@ -17,16 +17,13 @@
 //    CALENDAR reached cannot be reopened — reopening changes nothing a date decides — so its
 //    card sends the reader to the routine's Goal settings to change the date instead. Leaving
 //    a card is a real third state, not a delay.
-// 4. REPLACEMENTS — a candidate routine-improver rebuilt and proved, waiting for the ONE swap
-//    accept (components/swap-card.js, engine/candidate.py).
-// 5. UNOWNED WORK — a report nobody would act on for a week: give it to a routine or close it
+// 4. UNOWNED WORK — a report nobody would act on for a week: give it to a routine or close it
 //    (components/unowned-card.js, daemon/owed_watch.py).
-// 6. OWED TO YOU — an obligation whose next move is the operator's (components/owed-card.js).
+// 5. OWED TO YOU — an obligation whose next move is the operator's (components/owed-card.js).
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { RECIPE, recipeRow } from "/static/components/recipe-card.js";
-import { SWAP, swapRow } from "/static/components/swap-card.js";
 import { UNOWNED, unownedRow } from "/static/components/unowned-card.js";
 import { OWED, owedRow } from "/static/components/owed-card.js";
 import { el, groupHead, toast, toastError, when } from "/static/util.js";
@@ -164,21 +161,16 @@ export function pendingBand({ onChanged } = {}) {
     if (!recs.length) { host.replaceChildren(); return; }
     const drift = recs.filter((r) => r.kind === DRIFT);
     const goals = recs.filter((r) => r.kind === GOAL);
-    const swaps = recs.filter((r) => r.kind === SWAP);
     const unowned = recs.filter((r) => r.kind === UNOWNED);
     const owed = recs.filter((r) => r.kind === OWED);
     const recipes = recs.filter((r) => r.kind === RECIPE);
-    const creations = recs.filter((r) => ![DRIFT, GOAL, SWAP, UNOWNED, OWED, RECIPE].includes(r.kind));
+    const creations = recs.filter((r) => ![DRIFT, GOAL, UNOWNED, OWED, RECIPE].includes(r.kind));
     host.replaceChildren();
     // Finished routines first: this is the only band whose subject has ALREADY changed state.
     if (goals.length) {
       host.append(band("Finished",
         "these routines reached their finish line and have stopped running",
         goals, goalRow));
-    }
-    if (swaps.length) {
-      host.append(band("Replacements", "a rebuilt routine proved beside the one it replaces",
-        swaps, (rec) => swapRow(rec, { reload: load, onChanged })));
     }
     if (owed.length) {
       host.append(band("Owed to you", "a routine's obligation whose next move is yours",

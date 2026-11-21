@@ -88,15 +88,10 @@ only route that existed before: a routine holding both recipe-authoring and a wr
 `~/routines` could already rewrite another routine's `main.md` with `edit_file` — silently, with no
 record and no dial, and invisible to the routine whose instructions changed.
 
-**Who approves it is the dial of the routine being revised, never the proposer's** — `recipe
-approval` (`revise_confirm`) in its *Permissions & capabilities* panel:
+**You approve it, always**: the proposal becomes one decision card for you, and nothing reaches
+the recipe until you approve it.
 
-- **`always`** (the default for every routine) — the proposal becomes one decision card for you,
-  and nothing reaches the recipe until you approve it.
-- **`invited`** — a recipe-authoring routine's revision is handed to this routine's next run with
-  no card. You chose that when you set the dial.
-
-Either way the **edit is made by a run of the routine that owns the recipe**, under the same
+The **edit is made by a run of the routine that owns the recipe**, under the same
 one-leg unlock below — never by the proposer. Its next ordinary fire boots with the lines as its
 instruction, told plainly whose words they are, and it may refuse a line that is wrong about what
 its runs actually do, saying so in its summary instead. That run is a FULL run, not the narrow

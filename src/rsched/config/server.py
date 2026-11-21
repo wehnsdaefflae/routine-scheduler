@@ -182,7 +182,8 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
                  "run this from an unjailed shell"),
             ]
     else:
-        problems.append(f"{path}: not found (using defaults; run deploy/install.sh)")
+        problems.append(f"{path}: not found (using defaults; `rsched daemon` writes one at "
+                        "first boot)")
     if not isinstance(raw, dict):
         return ServerConfig(source=path), [f"{path}: expected a mapping at top level"]
 

@@ -884,13 +884,13 @@ health stream for that window held exactly one event, about an unrelated oversiz
 
 ## Blocked work (`/api/health/blocked`)
 
-Everything above measures runs that HAPPENED. 20 health events record the opposite —
+Everything above measures runs that HAPPENED. 19 health events record the opposite —
 `postdeploy_failed` (the daemon's own post-boot checklist found that what it serves, or what it
 can write or back up, is not what the deploy intended — most sharply a build that did not
 relaunch, which is a deploy that was due and did not land; `daemon/postdeploy_watch.py`),
 `fire_refused`, `lane_fire_refused`, `fire_paused`, `lane_fire_paused`, `oneshot_skipped`,
 `lane_chain_stopped`,
-`lane_chain_member_skipped`, `scheduler_tick_error`, `trigger_capped`, `commit_failed`,
+`lane_chain_member_skipped`, `scheduler_tick_error`, `commit_failed`,
 `backup_stale`, `migration_expired`, `migration_due_soon`, `obligation_overdue`,
 `finish_gate_failed`, `item_dropped_live`, `model_chain_exhausted` and
 `process_overhead_high` (a routine's run time going to its own process rather than its task —
@@ -936,7 +936,7 @@ back; a condition that cannot be told (an `unknown` backup verdict, `oneshot_ski
 counting. `operator_total` counts those as DISTINCT
 ROWS — one per thing to go and fix, so a pause that ate eight of one routine's fires is one —
 and that count is the rail's blocked badge beside Stats, on every page. Everything else clears
-itself and is deliberately left off: the next fire, the next tick, a daily cap reset, a
+itself and is deliberately left off: the next fire, the next tick, a
 cooldown lapsing, a later commit, a routine's own next run — and `process_overhead_high` and
 `finish_gate_failed` are measurements of runs that DID happen, so a badge counting them would
 never be dark, which is the same as not having one.

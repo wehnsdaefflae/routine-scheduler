@@ -39,7 +39,7 @@ STATE_PATHS_OPTIONAL=(
   .credentials                         # SECRETS: the key files an endpoint's `key_env_file`
                                        # names — the last rung of the credential ladder, below
                                        # the Secrets store, so an install that never used one
-                                       # has none (install.sh does not create it)
+                                       # has none (nothing creates it)
   chrome-profile                       # the logged-in browser sessions (docs/browser-sessions.md)
   telegram-sessions                    # a LINKED SESSION is the credential — there is no API key to
   signal-sessions                      # re-enter, so losing one of these unlinks the account and
@@ -114,7 +114,7 @@ rsched_collect_state_paths() {
   local p
   for p in "${STATE_PATHS_REQUIRED[@]}"; do
     [ -e "${HOME}/${p}" ] || {
-      echo "MISSING: ${HOME}/${p} — run deploy/install.sh first?" >&2
+      echo "MISSING: ${HOME}/${p} — has the daemon ever booted on this host?" >&2
       return 1
     }
     STATE_PATHS+=("${p}")

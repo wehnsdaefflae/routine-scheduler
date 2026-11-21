@@ -81,15 +81,15 @@ def test_rows_group_by_event_and_subject_newest_first(tmp_path):
          "detail": "overrun"},
         {"event": "fire_refused", "routine": "alpha", "run_id": "", "ts": _ago(2),
          "detail": "draining"},
-        {"event": "trigger_capped", "routine": "beta", "run_id": "", "ts": _ago(1),
-         "detail": "report trigger"},
+        {"event": "lane_chain_stopped", "routine": "beta", "run_id": "", "ts": _ago(1),
+         "detail": "member failed"},
         # a non-blocked event never enters the fold — a failure already has a run page
         {"event": "run_failed", "routine": "alpha", "run_id": "x", "ts": _ago(1)},
     ])
     out = blocked_fleet(server)
     assert out["incident_total"] == 3
     assert [(r["event"], r["subject"], r["count"]) for r in out["rows"]] == [
-        ("trigger_capped", "beta", 1), ("fire_refused", "alpha", 2)]
+        ("lane_chain_stopped", "beta", 1), ("fire_refused", "alpha", 2)]
     alpha = out["rows"][1]
     assert alpha["detail"] == "draining"          # the NEWEST detail, not the first
     assert alpha["first_ts"] < alpha["last_ts"]
@@ -156,7 +156,7 @@ def test_the_window_moves_with_the_clock_while_the_file_stands_still(tmp_path, m
     from rsched.readmodels import health_stream
 
     server = tmp_server(tmp_path, create=False)
-    _write(server, [{"event": "trigger_capped", "routine": "beta", "run_id": "",
+    _write(server, [{"event": "lane_chain_stopped", "routine": "beta", "run_id": "",
                      "ts": _at(-timedelta(days=6), 2)},
                     {"event": "budget_exhausted", "routine": "beta", "run_id": "b1",
                      "ts": _at(-timedelta(days=6), 2)}])
@@ -300,16 +300,16 @@ def test_a_healthy_fleet_reads_zero_on_both_figures(tmp_path):
 def test_each_row_says_which_unit_its_magnitude_is_in(tmp_path):
     """A mixed window: the console branches on `kind` to pick a unit, so every row carries it.
     `obligation_overdue` is latched one row per routine per day (`daemon/owed_watch`), while a
-    capped trigger is re-earned by real traffic each day.
+    stopped chain is a new fact each time.
     """
     server = tmp_server(tmp_path, create=False)
-    _write(server, [{"event": "trigger_capped", "routine": "beta", "run_id": "", "ts": _ago(2),
-                     "detail": "daily cap of 5 reached"},
+    _write(server, [{"event": "lane_chain_stopped", "routine": "beta", "run_id": "", "ts": _ago(2),
+                     "detail": "member failed"},
                     {"event": "obligation_overdue", "routine": "beta", "run_id": "",
                      "ts": _ago(48), "detail": "2 obligations open since 2026-11-01"},
                     {"event": "obligation_overdue", "routine": "beta", "run_id": "",
                      "ts": _ago(2), "detail": "2 obligations open since 2026-11-01"}])
     out = blocked_fleet(server)
     kinds = {row["event"]: row["kind"] for row in out["rows"]}
-    assert kinds == {"trigger_capped": "incident", "obligation_overdue": "standing"}
+    assert kinds == {"lane_chain_stopped": "incident", "obligation_overdue": "standing"}
     assert out["incident_total"] == 1 and out["standing_rows"] == 1

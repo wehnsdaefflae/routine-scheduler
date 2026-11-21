@@ -11,8 +11,8 @@ leg answers it by existing; within the drafting leg (a BLOCKING `ask_user` answe
 draft's recorded user-utterance count must have grown. A changed field is a DESIGN CHANGE: it
 replaces the draft and restarts the round-trip.
 
-It MATERIALIZES only in a ROOT CONVERSATION, else QUEUES a proposal; a child is refused,
-`replaces` creates a CANDIDATE and `revises` revises a recipe, at once. Scaffolding is
+It MATERIALIZES only in a ROOT CONVERSATION, else QUEUES a proposal; a child is refused, and
+`revises` revises a recipe at once. Scaffolding is
 synchronous; the registry rescan picks the dir up.
 """
 
@@ -23,7 +23,7 @@ from pathlib import Path
 
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json
-from . import candidate, draftlint, outcome_words, reviseroutine
+from . import draftlint, outcome_words, reviseroutine
 from .run_context import RunContext
 from .runkind import is_root_conversation
 
@@ -298,13 +298,12 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
     root conversation; QUEUE the proposal for the operator anywhere else. Returns the
     observation dict.
 
-    `replaces` creates a REPLACEMENT CANDIDATE (engine/candidate.py); `produces` is required
-    before anything is created or queued. Every field is part of the draft's identity.
+    `produces` is required before anything is created or queued. Every field is part of the
+    draft's identity.
     """
-    # `replaces` creates a candidate; `revises` revises an EXISTING recipe behind its own dial
-    if act := (candidate.create if action.get("replaces") else
-               reviseroutine.revise if action.get("revises") else None):
-        return act(ctx, action)                    # both act at once; neither is ever drafted
+    # `revises` proposes a revision of an EXISTING recipe at once; it is never drafted
+    if action.get("revises"):
+        return reviseroutine.revise(ctx, action)
     slug = str(action.get("target") or "").strip()
     name = str(action.get("name") or "").strip()
     instruction = str(action.get("prompt") or "").strip()

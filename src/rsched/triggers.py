@@ -2,13 +2,8 @@
 
 A trigger fires a routine on an EXTERNAL EVENT, alongside cron: routine.yaml grows one
 canonical `triggers:` list (user config — created/deleted on the routine page, never by a
-run), each entry `{id, type, ...}` carrying its type's own keys. Two types are
-implemented: `webhook` (POST /api/webhooks/<slug>/<token>; `/api/hooks/...` is the
-deprecated spelling of the same route, served and recorded by api_hooks) and `report` — fire
-when a
-report/inbox message lands for this routine, so a delivered hand-off is worked within the
-cooldown window instead of waiting for the next scheduled run (the durable inbox file IS
-the event; no spool entry exists, the daemon watches the inbox directly). `imap` (mail
+run), each entry `{id, type, ...}` carrying its type's own keys. One type is
+implemented: `webhook` (POST /api/webhooks/<slug>/<token>). `imap` (mail
 arrival) and `watch_path` (file drop) are reserved names in the SAME shape so they slot
 in later without reshaping anything — their watchers will drop the same spool events a
 webhook does and everything downstream is already type-agnostic.
@@ -33,27 +28,14 @@ from collections import Counter
 from pathlib import Path
 
 from . import spool
-from .engine import inbox
 from .ids import now_iso
 from .paths import read_json
 
-TRIGGER_TYPES = ("webhook", "report", "imap", "watch_path")
+TRIGGER_TYPES = ("webhook", "imap", "watch_path")
 # Minimum seconds between trigger-initiated fires of one routine — the budget backstop
 # that makes a leaked hook URL boring: however hard it is hammered, at most one run per
 # window, everything else coalesces (docs/triggers.md § Coalescing).
 DEFAULT_COOLDOWN_S = 60
-# The report trigger's default is deliberately GENEROUS: report deliveries come in bursts
-# (a meta routine closing a sweep files several), and the value of the trigger is "worked
-# today, not at the next cron" — not "worked within a minute". One run per window; every
-# message that landed meanwhile is drained by that one run.
-DEFAULT_REPORT_COOLDOWN_S = 900
-# The loop backstop the cooldown cannot be: a cooldown bounds the RATE of trigger fires,
-# never their TOTAL, so two routines answering each other stay awake forever at one run per
-# window. A day's cap converts that into a bounded, visible cost. Report triggers carry it
-# because routines feed each other; a webhook is driven by an external system whose volume
-# is the operator's business (0 = uncapped, and that stays the webhook default).
-DEFAULT_REPORT_MAX_FIRES_PER_DAY = 24
-UNCAPPED_FIRES = 0
 MAX_PAYLOAD_BYTES = 64 * 1024   # a webhook body past this is rejected 413, never stored
 MAX_PENDING_EVENTS = 32         # spool cap per routine — past it new events are rejected 429
 
@@ -68,24 +50,9 @@ def new_webhook_trigger(*, cooldown_s: int = DEFAULT_COOLDOWN_S) -> dict:
             "cooldown_s": int(cooldown_s), "created": now_iso()}
 
 
-def new_report_trigger(*, cooldown_s: int = DEFAULT_REPORT_COOLDOWN_S,
-                       max_fires_per_day: int = DEFAULT_REPORT_MAX_FIRES_PER_DAY) -> dict:
-    """A fresh report trigger entry: fire this routine when a report/inbox message lands
-    for it, coalesced by cooldown_s and capped per day. No token — nothing external can
-    reach it; the only writers of an inbox are the engine's report delivery, the daemon
-    managers and the web.
-    """
-    return {"id": f"t-{uuid.uuid4().hex[:8]}", "type": "report",
-            "cooldown_s": int(cooldown_s), "max_fires_per_day": int(max_fires_per_day),
-            "created": now_iso()}
-
-
 def hook_path(slug: str, trigger: dict) -> str:
     """The URL path a third party POSTs to (the UI prefixes its own origin).
 
-    The CANONICAL spelling only. `/api/hooks/...` still reaches the same handler so every URL
-    already in a third party's hands keeps working, but nothing hands that spelling out any
-    more — a deprecation whose URL builder keeps minting the old path can never end.
     """
     return f"/api/webhooks/{slug}/{trigger.get('token', '')}"
 
@@ -108,24 +75,11 @@ def webhook_tokens(routine_data: object) -> list[str]:
     return out
 
 
-def default_cooldown(ttype: str) -> int:
-    """A trigger type's own cooldown when its entry names none: report 900s, others 60s."""
-    return DEFAULT_REPORT_COOLDOWN_S if ttype == "report" else DEFAULT_COOLDOWN_S
-
-
-def default_cap(ttype: str) -> int:
-    """A trigger type's own per-day cap when its entry names none: report 24, others uncapped."""
-    return DEFAULT_REPORT_MAX_FIRES_PER_DAY if ttype == "report" else UNCAPPED_FIRES
-
-
 def with_defaults(entry: dict) -> dict:
-    """`entry` with its type's defaults spelled out (`cooldown_s`, `max_fires_per_day`) — what
-    `validate_triggers` makes of it — so a row that names a default and one that leaves it out
-    compare equal.
+    """`entry` with its default `cooldown_s` spelled out — what `validate_triggers` makes of
+    it — so a row that names the default and one that leaves it out compare equal.
     """
-    ttype = str(entry.get("type") or "")
-    return {"cooldown_s": default_cooldown(ttype), "max_fires_per_day": default_cap(ttype),
-            **entry}
+    return {"cooldown_s": DEFAULT_COOLDOWN_S, **entry}
 
 
 def validate_triggers(raw: object) -> tuple[list[dict], list[str]]:
@@ -160,25 +114,15 @@ def validate_triggers(raw: object) -> tuple[list[dict], list[str]]:
         if tid in seen:
             problems.append(f"{where}: duplicate id {tid!r}")
             continue
-        # Absent = the type's own default (report 900s, everything else 60s) — filled in here,
-        # so every later reader sees the value that applies.
-        cool_default = default_cooldown(ttype)
+        # Absent = the default — filled in here, so every later reader sees the value that
+        # applies.
+        cool_default = DEFAULT_COOLDOWN_S
         cooldown = entry.get("cooldown_s", cool_default)
         if isinstance(cooldown, bool) or not isinstance(cooldown, int) or cooldown < 0:
             problems.append(f"{where}: cooldown_s must be a non-negative integer "
                             f"(got {cooldown!r}; using {cool_default})")
             cooldown = cool_default
         entry["cooldown_s"] = cooldown
-        # Absent = the type's own default (report 24/day, everything else uncapped), the
-        # same convention cooldown_s follows — so a trigger written before the cap existed
-        # is capped without a migration.
-        fallback = default_cap(ttype)
-        cap = entry.get("max_fires_per_day", fallback)
-        if isinstance(cap, bool) or not isinstance(cap, int) or cap < 0:
-            problems.append(f"{where}: max_fires_per_day must be a non-negative integer "
-                            f"(got {cap!r}; using {fallback})")
-            cap = fallback
-        entry["max_fires_per_day"] = cap
         if ttype == "webhook" and not str(entry.get("token") or "").strip():
             problems.append(f"{where}: webhook trigger without a token — dropped "
                             "(recreate it on the routine page)")
@@ -240,26 +184,17 @@ def describe_triggers(routines_home: Path, slug: str, entries: list[dict]) -> li
         ev = read_json(p)
         if isinstance(ev, dict):
             counts[str(ev.get("trigger"))] += 1
-    # a report trigger's "pending" is the routine's unconsumed inbox messages — its events
-    # live there, not in the spool. The ONE inbox predicate answers it (engine/inbox), so the
-    # number on the page cannot disagree with what the daemon will actually fire on.
-    inbox_pending = inbox.count_pending(routines_home / slug, include_closures=False,
-                                        on_unparseable=True)
     rows = []
     for t in entries:
         tid = str(t.get("id"))
         got = per.get(tid)
         mine: dict = got if isinstance(got, dict) else {}
         ttype = str(t.get("type"))
-        today = now_iso()[:10]
         rows.append({"id": tid, "type": ttype,
                      "cooldown_s": int(t.get("cooldown_s") or 0),
-                     "max_fires_per_day": int(t.get("max_fires_per_day") or UNCAPPED_FIRES),
-                     "fires_today": (int(mine.get("fires_today") or 0)
-                                     if mine.get("day") == today else 0),
                      "created": str(t.get("created") or ""),
                      "url_path": hook_path(slug, t) if ttype == "webhook" else "",
                      "last_fired": str(mine.get("last_fired") or ""),
                      "events": int(mine.get("events") or 0),
-                     "pending": inbox_pending if ttype == "report" else counts.get(tid, 0)})
+                     "pending": counts.get(tid, 0)})
     return rows

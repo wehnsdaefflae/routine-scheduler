@@ -1,9 +1,9 @@
 """What each provider's CATALOG says about its models — the per-provider readers behind
 `limits.refresh`.
 
-Four dialects, one answer shape (`Listing`): OpenRouter's public `/models` (sized by its
-`top_provider`), Nano-GPT's detailed listing (`/api/v1/models?detailed=true`), Ollama's per-model
-`/api/show`, and the OpenAI-shaped `/models` every other gateway serves (vLLM adds
+Three dialects, one answer shape (`Listing`): OpenRouter's public `/models` (sized by its
+`top_provider`), Nano-GPT's detailed listing (`/api/v1/models?detailed=true`), and the
+OpenAI-shaped `/models` every other gateway serves (vLLM adds
 `max_model_len`; a subscription proxy lists ids and nothing else). A direct Anthropic endpoint is
 read from nothing: `limits.STATIC_WINDOWS` answers for it. A GATEWAY endpoint's figures come from
 the route each name takes instead (`routes`, `routecatalogs`); its own listing still says which
@@ -51,19 +51,15 @@ def provider_of(ep) -> str:
         return "openrouter"
     if "nano-gpt.com" in base:
         return "nanogpt"
-    if ":11434" in base or "ollama" in base:
-        return "ollama"
     return "openai"
 
 
-def read(provider: str, ep, model_ids: list[str]) -> Listing:
+def read(provider: str, ep) -> Listing:
     """`provider`'s answer (as `provider_of` named it) for the models `ep` serves."""
     if provider == "openrouter":
         return _openrouter(ep)
     if provider == "nanogpt":
         return _nanogpt(ep)
-    if provider == "ollama":
-        return _ollama(ep, model_ids)
     if provider == "table":
         return {}, None
     return _openai_generic(ep)
@@ -228,34 +224,3 @@ def _openai_generic(ep) -> Listing:
         if isinstance(ctx, int | float) and ctx > 0:
             out[str(row["id"])] = (int(ctx), None)
     return out, listed_ids(body)
-
-
-def _ollama(ep, model_ids: list[str]) -> Listing:
-    """`POST {origin}/api/show` per model → `model_info["<arch>.context_length"]`. Ollama has no
-    output limit of its own, so the output cap is derived from the window (`limits`).
-
-    This does NOT reach `openai_compat`'s native `num_ctx`, which still comes from the
-    ENDPOINT's `context_tokens` — set that to the largest served model, or a request can be
-    truncated although compaction's budget is right.
-    """
-    out: dict[str, tuple[int, int | None]] = {}
-    for mid in model_ids:
-        try:
-            resp = httpx.post(
-                f"{_origin(ep.base_url or '')}/api/show", json={"model": mid},
-                timeout=httpx.Timeout(_TIMEOUT, connect=CONNECT_TIMEOUT))
-        except httpx.HTTPError:
-            continue
-        if resp.status_code != 200:
-            continue
-        try:
-            info = (resp.json() or {}).get("model_info") or {}
-        except ValueError:
-            continue
-        ctx = next((v for k, v in info.items()
-                    if k.endswith(".context_length") and isinstance(v, int | float)), None)
-        if ctx:
-            out[mid] = (int(ctx), None)
-    # No served set: /api/show is probed per id, so an id that did not answer is
-    # indistinguishable from a daemon that was not running. Unanswered, never "absent".
-    return out, None

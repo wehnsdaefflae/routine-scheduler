@@ -295,22 +295,6 @@ def test_messages_defaults_to_the_active_backlog(ui, ui_page, make_routine):
     expect(ui_page).to_have_url(re.compile(r"status=all"))
 
 
-def test_messages_priority_flag_round_trips(ui, ui_page, make_routine):
-    """The ⚑ toggle (D75): flagging a card floats it, badges it, and lands in the
-    .control/item-priorities.json store the owning routine's next run reads; unflagging
-    clears the store again."""
-    _seed(ui, make_routine)
-    ui_page.goto(f"{ui.url}/#/messages?type=all")
-    ui_page.wait_for_selector("#ref-D1")
-    ui_page.locator("#ref-D1 button[title*='flag as priority']").click()
-    expect(ui_page.locator("#ref-D1")).to_contain_text("⚑ priority")
-    store = ui.routines / ".control" / "item-priorities.json"
-    assert "D1" in json.loads(store.read_text(encoding="utf-8"))
-    ui_page.locator("#ref-D1 button[title*='unflag']").click()
-    expect(ui_page.locator("#ref-D1 button[title*='flag as priority']")).to_be_visible()
-    assert json.loads(store.read_text(encoding="utf-8")) == {}
-
-
 def test_a_settling_reply_names_the_rows_it_finished_on_its_card(ui, ui_page, make_routine):
     """D134 on the surface: a reply that disposes of SEVERAL rows says which ones, and the rows
     it settled read `settled` with it as their `answered_by`.

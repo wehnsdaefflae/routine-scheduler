@@ -22,7 +22,7 @@ How a field is judged, in the order tried:
 * a field with an owner of its own (`_WHOLE`): `triggers` and `finish_line` are not fields of
   `RoutinePatch` at all (the accept routes them to `api_hooks.reconciled_triggers` and
   `engine/finishline.py`), so judging them by the patch model would refuse every value —
-  including the `triggers: []` and empty `finish_line` that all 14 SHIPPED patterns carry. A
+  including the `triggers: []` and empty `finish_line` that all 12 SHIPPED patterns carry. A
   guard that blocks the operator is worse than the defect it closes.
 * everything else: SHAPE by `RoutinePatch`, then MEANING by the accept route's own validators
   (`semantic_checks`). `NO_SEMANTIC_CHECK` names every governable field with no semantic check
@@ -246,7 +246,7 @@ def _triggers_problem(value: object) -> str:
     from ..web.api_hooks import reconciled_triggers
 
     if value is not None and not isinstance(value, (list, tuple)):
-        return "triggers: a trigger list is a list of {type, cooldown_s, max_fires_per_day}"
+        return "triggers: a trigger list is a list of {type, cooldown_s}"
     try:
         reconciled_triggers([], list(value or []))
     except HTTPException as exc:

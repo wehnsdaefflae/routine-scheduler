@@ -24,8 +24,9 @@ def field_problems(obj: dict) -> list[str]:
         return []
     # `closes` is a property OF a disposal (`answers` one exchange, `settles` several); with
     # neither there is nothing to complete. The refusal tells an ORIGINATING notice what to do
-    # (drop `closes`): a closure is kept out of the report trigger's inbox predicate
-    # (`daemon/triggers`), so marking one would hide the notice rather than deliver it quietly.
+    # (drop `closes`): a closure is kept out of the run gate's inbox predicate
+    # (`daemon/gate_builtin`), so marking one would hide the notice rather than deliver it
+    # quietly.
     if (obj.get("closes")
             and not str(obj.get("answers") or "").strip()
             and not obj.get("settles")):
@@ -34,8 +35,8 @@ def field_problems(obj: dict) -> list[str]:
             "this reply belongs to) or 'settles' (every row it finishes) — it marks a disposal "
             "as complete, and a report that originates something completes none. Filing a "
             "notice that asks nothing back: leave 'closes' out. The row is then the recipient's "
-            "to dispose of, which is what puts it in front of them — a closure is kept out of "
-            "the report trigger on purpose, so it is not the quiet way to be heard.")
+            "to dispose of, which is what puts it in front of them — a closure does not admit "
+            "a gated fire on purpose, so it is not the quiet way to be heard.")
     # `answers` is ONE report id: the ledger matches ids, so free text would dispose of
     # nothing while the run believed the exchange answered.
     if ((answered := str(obj.get("answers") or "").strip())

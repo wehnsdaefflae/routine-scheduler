@@ -1,10 +1,10 @@
-"""Routine config editing: general rules, the two permission layers, run-now, archive and
-the deletion of a routine's own local reminder —
-the write half of the old api_routines, which keeps the read surfaces (cards, detail,
-health, the phase graph). The generic validated `PATCH /routines/{slug}` lives in
-api_routine_patch.py and routes its two authority keys back through
-`write_permission_layers` here; a routine's artifacts and recipe files are
-api_routine_files.py.
+"""Routine config editing: the rule-edit and permission-layer writers both homes share, run-now,
+archive and the deletion of a routine's own local reminder — the write half of the old
+api_routines, which keeps the read surfaces (cards, detail, health, the phase graph). A
+routine's rules and permissions are saved through the generic validated
+`PATCH /routines/{slug}` (api_routine_patch.py), which routes its two authority keys back
+through `write_permission_layers` here; a conversation's own routes call `apply_rule_edit` and
+`resolve_permission_layers`. A routine's artifacts and recipe files are api_routine_files.py.
 """
 
 from __future__ import annotations
@@ -18,14 +18,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from .. import pending_edits
 from .. import rules as rules_mod
 from ..ids import now_iso, run_ts
-from ..paths import read_yaml
 from .routines_common import (
     _git_commit,
     _info,
     _state,
-    active_run_dir,
     guard_not_active,
-    write_routine_config,
 )
 
 router = APIRouter(tags=["routines"])
@@ -85,14 +82,6 @@ def apply_rule_edit(request: Request, routine_dir: Path, body: RulesBody,
             "rules": rules_mod.current_rules(routine_dir)}
 
 
-@router.post("/routines/{slug}/rules")
-def set_routine_rules(request: Request, slug: str, body: RulesBody) -> dict:
-    """Bind/unbind this routine's general rules. Applies to a LIVE run too (see
-    apply_rule_edit); otherwise it lands at the next run.
-    """
-    info = _info(request, slug)
-    return apply_rule_edit(request, info.cfg.dir, body, active_run_dir(info))
-
 
 class PermissionsBody(BaseModel):
     active: list[str]
@@ -128,8 +117,7 @@ def resolve_permission_layers(server, body: PermissionsBody,
 
 def write_permission_layers(server, info, body: PermissionsBody, raw: dict) -> dict:
     """Resolve both permission layers for one save and record them in `raw` — the whole of
-    the two-layer write, for every endpoint that performs one (the editor's PUT and a PATCH
-    carrying `permissions`/`capabilities`), so both doors write exactly the same thing:
+    the two-layer write, for a PATCH carrying `permissions`/`capabilities`:
     unknown docs dropped, the mapping raised to cover every held doc's requires and floored
     back to them (`resolve_permission_layers`).
 
@@ -140,26 +128,6 @@ def write_permission_layers(server, info, body: PermissionsBody, raw: dict) -> d
     raw["capabilities"] = caps
     return {"active": active, "capabilities": caps}
 
-
-@router.put("/routines/{slug}/permissions")
-def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
-    """Set both permission layers (user-only; a routine can never change its own): the
-    held conduct docs AND the capabilities mapping. Pure routine.yaml config, read at run
-    start, so changes take effect at the next run. The general rules are config too, but
-    they have their own endpoint (they can reach a LIVE run).
-    """
-    info = _info(request, slug)
-    # No busy-guard (D35): the engine reads routine.yaml exactly ONCE, at run boot
-    # (runtime.run_routine); a save during a live run cleanly applies to the NEXT run.
-    path = info.cfg.dir / "routine.yaml"
-    raw = read_yaml(path, {})
-    layers = write_permission_layers(_state(request).server, info, body, raw)
-    write_routine_config(request, info, raw,
-                         message=f"permissions: {', '.join(layers['active']) or '(none)'}",
-                         fields=["permissions", "capabilities"],
-                         values={"permissions": layers["active"],
-                                 "capabilities": layers["capabilities"]})
-    return {"ok": True, **layers}
 
 
 class RunNow(BaseModel):

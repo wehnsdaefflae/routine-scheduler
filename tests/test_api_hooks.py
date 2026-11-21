@@ -9,7 +9,6 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from helpers import health_events
 from rsched import registry, triggers
 from rsched.daemon.triggers import TriggerManager
 from rsched.paths import atomic_write_json, read_json
@@ -106,7 +105,7 @@ def test_hook_non_ascii_token_is_the_same_404(api_client, make_routine):
 def test_hook_walks_the_catalog_off_the_event_loop(api_client, make_routine, monkeypatch):
     """The ingest is async (it streams the body) and unauthenticated, and answering it walks
     every routine's config and run index. On the event loop that walk stalled every SSE stream
-    and async route for as long as anyone cared to POST garbage at /api/hooks."""
+    and async route for as long as anyone cared to POST garbage at /api/webhooks."""
     c, tmp = api_client
     make_routine(slug="testr")
     _add_trigger(tmp, "testr")
@@ -127,59 +126,9 @@ def test_hook_walks_the_catalog_off_the_event_loop(api_client, make_routine, mon
     assert on_loop == [False, False]
 
 
-def test_both_spellings_reach_the_same_handler(api_client, make_routine):
-    """`/api/webhooks/...` is canonical and `/api/hooks/...` is the deprecated spelling of the
-    same route: every URL a third party already holds has to keep working, or a rename breaks
-    callers nobody in this instance can reach."""
-    c, tmp = api_client
-    make_routine(slug="testr")
-    _add_trigger(tmp, "testr", cooldown_s=0)
-    bare = TestClient(c.app)
-    assert bare.post(f"/api/webhooks/testr/{TOK}", content=b"new").status_code == 202
-    assert bare.post(f"/api/hooks/testr/{TOK}", content=b"old").status_code == 202
-    events = triggers.pending_events(tmp / "routines", "testr")
-    assert [read_json(e)["payload"] for e in events] == ["new", "old"]
-
-
-def test_an_accepted_call_on_the_deprecated_path_is_countable(api_client, make_routine):
-    """The only question a deprecation cannot be ended without is who still calls the old
-    path, so an ACCEPTED old-path call files one `deprecated_route` event naming the slug and
-    the canonical replacement. The canonical path files none."""
-    c, tmp = api_client
-    make_routine(slug="testr")
-    _add_trigger(tmp, "testr", cooldown_s=0)
-    bare = TestClient(c.app)
-    assert bare.post(f"/api/hooks/testr/{TOK}", content=b"x").status_code == 202
-    rows = health_events(tmp / "routines", event="deprecated_route")
-    assert len(rows) == 1
-    assert rows[0]["routine"] == "testr" and rows[0]["run_id"] == ""
-    assert rows[0]["route"] == "/api/hooks/{slug}/{token}"
-    assert rows[0]["replacement"] == "/api/webhooks/{slug}/{token}"
-    assert "/api/webhooks/testr/" in rows[0]["detail"]
-
-    assert bare.post(f"/api/webhooks/testr/{TOK}", content=b"y").status_code == 202
-    assert len(health_events(tmp / "routines", event="deprecated_route")) == 1
-
-
-def test_a_rejected_call_on_the_deprecated_path_files_nothing(api_client, make_routine):
-    """Filed past every rejection, on purpose: a 404 probe or a wrong token is not a caller to
-    migrate, and the hook route is the one unauthenticated API route — recording rejections
-    would let anyone fill the health stream through it."""
-    c, tmp = api_client
-    make_routine(slug="testr")
-    _add_trigger(tmp, "testr")
-    bare = TestClient(c.app)
-    assert bare.post(f"/api/hooks/testr/{'x' * 32}", content=b"x").status_code == 404
-    assert bare.post(f"/api/hooks/ghost/{TOK}", content=b"x").status_code == 404
-    oversize = b"x" * (triggers.MAX_PAYLOAD_BYTES + 1)
-    assert bare.post(f"/api/hooks/testr/{TOK}", content=oversize).status_code == 413
-    assert health_events(tmp / "routines", event="deprecated_route") == []
-
-
-def test_the_url_handed_out_is_the_canonical_one_only(api_client, make_routine):
-    """The other half of a deprecation that can END: nothing mints the old spelling any more,
-    so the set of old-path callers can only shrink. `hook_path` is the one URL builder and the
-    routine page renders its `url_path` verbatim."""
+def test_the_url_handed_out_is_the_one_the_route_serves(api_client, make_routine):
+    """`hook_path` is the one URL builder and the routine page renders its `url_path`
+    verbatim."""
     c, tmp = api_client
     make_routine(slug="testr")
     _add_trigger(tmp, "testr")
@@ -273,8 +222,7 @@ def test_hook_to_daemon_handoff(api_client, make_routine):
 # removed in the draft and lands with the page's one accept (web/api_settings). What the server
 # mints is IDENTITY — the id, and a webhook's token, the hook's only auth.
 
-WEBHOOK = {"type": "webhook", "cooldown_s": 120, "max_fires_per_day": 0}
-REPORT = {"type": "report", "cooldown_s": 900, "max_fires_per_day": 24}
+WEBHOOK = {"type": "webhook", "cooldown_s": 120}
 
 
 def _accept(c, rows, slug="testr"):
@@ -302,44 +250,28 @@ def test_an_accepted_webhook_has_a_working_url_until_it_is_removed(api_client, m
     assert TestClient(c.app).post(url, content=b"hi").status_code == 404
 
 
-def test_a_zero_bound_is_a_value_not_an_absence(api_client, make_routine):
-    """`0` is documented as no wait (cooldown) and no cap (daily fires). The accept read a
-    zero cooldown as falsy and minted the type's default instead — 60 s, or 900 s for a
-    report trigger — so the value the operator typed never reached the file."""
+def test_a_zero_cooldown_is_a_value_not_an_absence(api_client, make_routine):
+    """`0` is documented as no wait. The accept read a zero cooldown as falsy and minted the
+    default instead, so the value the operator typed never reached the file."""
     c, tmp = api_client
     make_routine(slug="testr")
-    r = _accept(c, [{**WEBHOOK, "cooldown_s": 0},
-                    {**REPORT, "cooldown_s": 0, "max_fires_per_day": 0}])
+    r = _accept(c, [{**WEBHOOK, "cooldown_s": 0}])
     assert r.status_code == 200, r.text
-    assert sorted((t["type"], t["cooldown_s"], t["max_fires_per_day"])
-                  for t in _saved_triggers(tmp)) == [("report", 0, 0), ("webhook", 0, 0)]
-
-
-def test_a_report_trigger_has_no_url_and_a_routine_has_one(api_client, make_routine):
-    c, tmp = api_client
-    make_routine(slug="testr")
-    assert _accept(c, [REPORT]).status_code == 200
-    [trig] = _saved_triggers(tmp)
-    assert trig["type"] == "report" and "token" not in trig
-    assert c.get("/api/routines/testr").json()["triggers"][0]["url_path"] == ""
-    # one inbox, one watcher — the card disables its button, the accept refuses the second
-    r = _accept(c, [REPORT, {**REPORT, "cooldown_s": 300}])
-    assert r.status_code == 422 and "one report trigger" in r.json()["detail"]
-    assert _saved_triggers(tmp) == [trig]
+    assert [(t["type"], t["cooldown_s"]) for t in _saved_triggers(tmp)] == [("webhook", 0)]
 
 
 @pytest.mark.parametrize("row", [
     {**WEBHOOK, "type": "imap"},             # reserved shape: nothing would ever fire it
     {**WEBHOOK, "type": "nonsense"},
     {**WEBHOOK, "cooldown_s": -1},
-    {**WEBHOOK, "max_fires_per_day": "lots"},
+    {**WEBHOOK, "cooldown_s": "lots"},
+    {**WEBHOOK, "max_fires_per_day": 5},     # the removed daily cap: a key nothing reads
     {**WEBHOOK, "cooldown_s": True},
     {**WEBHOOK, "host": "imap.example.org"},  # a key no creatable trigger reads
 ])
 def test_the_accept_refuses_a_trigger_it_cannot_create(api_client, make_routine, row):
-    """Any type that was not `report` used to become a WEBHOOK — a new token, a new public
-    entry point — and a bound the loader would later replace with its default was written
-    as given."""
+    """Any type used to become a WEBHOOK — a new token, a new public entry point — and a
+    bound the loader would later replace with its default was written as given."""
     c, tmp = api_client
     make_routine(slug="testr")
     r = _accept(c, [row])
@@ -371,65 +303,3 @@ def test_trigger_edits_are_bearer_gated_and_wait_for_an_active_run(api_client, m
     _mk_active_run(tmp, "testr")
     assert _accept(c, [WEBHOOK]).status_code == 409
     assert _saved_triggers(tmp) == []
-
-
-def _add_report_trigger(tmp, slug, *, tid="t-report01", cooldown_s=0, cap=24):
-    path = tmp / "routines" / slug / "routine.yaml"
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    raw.setdefault("triggers", []).append(
-        {"id": tid, "type": "report", "cooldown_s": cooldown_s, "max_fires_per_day": cap})
-    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
-
-
-def _fire_once(c, tmp):
-    from conftest import FakeRunner
-
-    runner = FakeRunner()
-    asyncio.run(TriggerManager(c.app.state.server, runner).tick(registry.scan(c.app.state.server)))
-    return runner
-
-
-def test_closure_message_does_not_buy_a_run(api_client, make_routine):
-    """A closure asks nothing, so it must not WAKE the target — it rides in the inbox and
-    is read by the next run that happens anyway. Anything else in the inbox still fires."""
-    c, tmp = api_client
-    make_routine(slug="testr")
-    _add_report_trigger(tmp, "testr")
-    inbox = tmp / "routines" / "testr" / "inbox"
-    inbox.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(inbox / "msg-rep-R2.json", {
-        "text": "REPORT R2 (answering R1 — closes the exchange, no reply needed)",
-        "ts": "2026-08-05T23:00:00+02:00", "via": "report", "report": "R2",
-        "from": "peer", "closes": True})
-    assert _fire_once(c, tmp).fired == []                    # closure-only inbox stays quiet
-
-    atomic_write_json(inbox / "msg-rep-R3.json", {
-        "text": "REPORT R3 — real work", "ts": "2026-08-05T23:01:00+02:00",
-        "via": "report", "report": "R3", "from": "peer"})
-    assert _fire_once(c, tmp).fired == [("testr", "trigger")]             # a real report still wakes it
-    # the closure was never consumed by the trigger — the fired run's drain owns that
-    assert (inbox / "msg-rep-R2.json").exists()
-
-
-def test_report_trigger_daily_cap(api_client, make_routine):
-    """The cooldown bounds the RATE of fires; the cap bounds the day's TOTAL, so a
-    routine-to-routine exchange cannot stay awake forever. Hitting it is visible."""
-    c, tmp = api_client
-    make_routine(slug="testr")
-    _add_report_trigger(tmp, "testr", cooldown_s=0, cap=2)
-    inbox = tmp / "routines" / "testr" / "inbox"
-    inbox.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(inbox / "msg-1.json", {"text": "work", "ts": "2026-08-05T23:00:00+02:00"})
-
-    assert _fire_once(c, tmp).fired == [("testr", "trigger")]
-    assert _fire_once(c, tmp).fired == [("testr", "trigger")]
-    assert _fire_once(c, tmp).fired == []                    # cap reached — no third fire
-    events = (tmp / "routines" / ".control" / "health-events.jsonl").read_text(encoding="utf-8")
-    assert "trigger_capped" in events
-    assert events.count("trigger_capped") == 1               # once per trigger per day
-
-    # a new day releases it (the counter is dated, not a rolling window)
-    state = read_json(tmp / "routines" / ".control" / "triggers" / "testr" / "state.json")
-    state["triggers"]["t-report01"]["day"] = "2026-08-04"
-    atomic_write_json(tmp / "routines" / ".control" / "triggers" / "testr" / "state.json", state)
-    assert _fire_once(c, tmp).fired == [("testr", "trigger")]

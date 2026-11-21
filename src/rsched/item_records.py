@@ -23,11 +23,18 @@ is exactly what self-audit wrote, verbatim.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from .ids import now_iso
 from .paths import atomic_write_json, file_lock, read_json
 
+#: The routine whose `report.json` holds every finding and decision, and whose triage holds the
+#: untargeted reports. The ONE definition: every reader of that file imports it from here.
+SELF_AUDIT_SLUG = "self-audit"
+#: An item id — a finding, a decision or a report. Unbounded like the ledger's own
+#: `reports.REPORT_ID_RE`: the report counter passed R2000 in its second month.
+ITEM_ID_RE = re.compile(r"^[FDR]\d+$")
 #: The two report.json arrays and the item type each holds.
 KINDS = (("finding", "findings"), ("decision", "decisions"))
 

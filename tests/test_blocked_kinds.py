@@ -16,14 +16,13 @@ LATCHED_BY_THE_DAY = {
 }
 
 #: Events whose every row is a distinct thing that happened, so counting them is counting facts.
-#: `trigger_capped` and `scheduler_tick_error` are the two that look latched and are not: a cap
-#: is re-earned each day by real trigger traffic ("one event per day AT THE TRANSITION", F276),
-#: and `tickguard` files one row per failure EPISODE, not per day it lasts. `postdeploy_failed`
+#: `scheduler_tick_error` is the one that looks latched and is not: `tickguard` files one row per
+#: failure EPISODE, not per day it lasts. `postdeploy_failed`
 #: is once per process by construction — each boot that served the wrong build is its own fact.
 COUNTABLE_INCIDENTS = (
     "fire_refused", "lane_fire_refused", "fire_paused", "lane_fire_paused", "oneshot_skipped",
     "lane_chain_stopped", "lane_chain_member_skipped", "scheduler_tick_error",
-    "finish_gate_failed", "trigger_capped", "commit_failed", "item_dropped_live",
+    "finish_gate_failed", "commit_failed", "item_dropped_live",
     "model_chain_exhausted", "postdeploy_failed",
 )
 

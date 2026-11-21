@@ -25,18 +25,11 @@ those are `archive_only` and carry no prose of their own. The self-audit
 routine writes a `status` on every finding; one still reading `unknown` was written before it
 did, and an absent status is NEVER recovered from title prose.
 
-This model and `priorities.flagged_item_owner` MUST AGREE on who owns a finding or decision
-(D240): a card's `owner` is the one self-audit wrote into the row (`item_rows.report_item`,
-never inferred from status or prose), and the ⚑ resolver reads the hand-over marker in that
-same row to pick the digest the flag lands in — so a row being built names
-`scheduler-builder` on the Messages page and in the builder's digest alike
-(`tests/test_priorities.py` pins the pair). Self-audit writes the marker line and the `owner`
-field in one act; written apart, this page would show the field while the flag followed the
-marker, and the two surfaces would name different routines.
+A card's `owner` is the one self-audit wrote into the row (`item_rows.report_item`, never
+inferred from status or prose), so a row being built names `scheduler-builder` (D240).
 
 Read-model discipline: nothing here writes, and the merge is memoized behind the stat
-fingerprint of those files plus the ⚑ priorities store (`priorities.py`), whose flags float
-an item to the top of the list. An item's AGE is NOT from here (`origin.ts` is its source's own
+fingerprint of those files. An item's AGE is NOT from here (`origin.ts` is its source's own
 date): `firstseen.py` stamps the served rows, off a store it writes, so not a memo source (F753).
 """
 
@@ -50,7 +43,6 @@ from typing import Any
 
 from ..item_records import read_records, records_path
 from ..paths import read_json
-from ..priorities import priorities_path, read_priorities
 from ..reports import read_reports, reports_path
 from . import decision_answers, memo
 from .item_counts import owner_of
@@ -68,8 +60,6 @@ def _audit_dir(routine_dir: Path) -> Path:
 
 def source_paths(routine_dir: Path, routines_home: Path) -> list[Path]:
     """The inputs, in the order the docs list them — also the memo fingerprint.
-    The priorities store rides along so a ⚑ toggle invalidates the memo like any other
-    source edit.
     """
     audit = _audit_dir(routine_dir)
     # The audit INBOX rides along because a queued `[AUDIT decision · …] selected: …` message
@@ -79,8 +69,7 @@ def source_paths(routine_dir: Path, routines_home: Path) -> list[Path]:
     # for the same reason.
     return [audit / "report.json", audit / "changelog.jsonl",
             audit / "decisions-answered.json", routine_dir / "inbox",
-            reports_path(routines_home), priorities_path(routines_home),
-            records_path(routines_home)]
+            reports_path(routines_home), records_path(routines_home)]
 
 
 # ---- source readers ---------------------------------------------------------------------
@@ -229,15 +218,7 @@ def _build(routine_dir: Path, routines_home: Path) -> dict:
         if item_id and item_id not in items and item_id[:1] in TYPE_BY_PREFIX:
             items[item_id] = archive_item(item_id, addressed.get(item_id, []), answered)
 
-    flagged = set(read_priorities(routines_home))
-    for item in items.values():
-        if item["id"] in flagged:
-            item["priority"] = True
-    ordered = sorted(items.values(), key=_sort_key, reverse=True)
-    # A ⚑ outranks recency: the user's explicit "work this first" floats above the feed
-    # (stable sort — flagged and unflagged each keep newest-origin-first inside their band).
-    ordered.sort(key=lambda i: not i.get("priority"))
-    return {"items": ordered}
+    return {"items": sorted(items.values(), key=_sort_key, reverse=True)}
 
 
 def filter_items(items: list[dict], *, type_: str = "", status: str = "",

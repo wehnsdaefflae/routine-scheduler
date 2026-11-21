@@ -82,7 +82,7 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
             library_docs.ensure_dir(server.permissions_home)
         except Exception as exc:  # never block startup on a library hiccup
             log.warning("library bootstrap %s: %s", server.libraries_home, exc)
-        # regenerate the Help tab's content (pdoc + guides) when the source changed — in a
+        # regenerate the Help tab's guides when the docs changed — in a
         # thread, and ensure_docs never raises, so startup is never blocked on it
         docs_task = asyncio.create_task(asyncio.to_thread(ensure_docs, server.source_repo))
         task = None

@@ -34,8 +34,6 @@ known to be over is marked `resolved` instead — kept on the panel as history, 
 
 OUT, with the reason, because a badge that cries wolf is worse than no badge:
   - `fire_refused`, `scheduler_tick_error` — the next fire or the next tick clears them.
-  - `trigger_capped` — the event's own sentence says the routine is dark "until the cap
-    resets": the cap resets daily by itself.
   - `model_chain_exhausted` — a cooling member clears when the cooldown lapses, and the turn
     that could not be taken leaves a failed run page of its own.
   - `commit_failed` — the files are on disk and a later commit takes them.

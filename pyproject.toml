@@ -12,12 +12,12 @@ dependencies = [
     "jsonschema>=4.23",
     "tenacity>=9.1.4",
     "python-frontmatter>=1.3.0",
-    "pdoc>=16.0",
     "pywebpush>=2.0",
     "python-multipart>=0.0.9",
     # Imported DIRECTLY across config/ and web/, so they are declared directly. They arrive
-    # transitively today (pydantic via fastapi, markdown2 via pdoc, cryptography + py_vapid via
-    # pywebpush) — a bump that repins or drops one would otherwise break us silently.
+    # transitively today (pydantic via fastapi, cryptography + py_vapid via pywebpush) — a bump
+    # that repins or drops one would otherwise break us silently. markdown2 renders the Help
+    # tab's guides (docs_build.py) and arrives through nothing else.
     "pydantic>=2.11",
     "markdown2>=2.5",
     "cryptography>=43.0",
