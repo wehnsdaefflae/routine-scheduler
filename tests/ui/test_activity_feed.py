@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from playwright.sync_api import expect
 
 from .conftest import until
-from .helpers import watch_requests
+from .helpers import release, watch_requests
 
 
 def _ts(minutes_ago: int) -> str:
@@ -68,7 +68,7 @@ def test_one_load_is_in_flight_at_a_time(ui, ui_page):
     until(lambda: held, what="the next poll round's load", page=ui_page)
     ui_page.wait_for_timeout(4600)                               # another poll round passes
     assert len(held) == 1, f"{len(held)} loads in flight at once"
-    ui_page.unroute(runs)                 # releases the held request with the handler
+    release(ui_page, runs, held)
 
 
 def test_reopening_a_row_mid_fetch_renders_its_transcript_once(ui, ui_page):

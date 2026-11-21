@@ -7,7 +7,7 @@ import re
 from playwright.sync_api import expect
 
 from .conftest import until
-from .helpers import hold_requests
+from .helpers import hold_requests, release
 
 ANSWER = re.compile(r"/api/questions/q-color/answer$")
 LIST = re.compile(r"/api/questions(\?settled=\d+)?$")   # the page asks for its window
@@ -32,9 +32,7 @@ def test_a_stale_list_does_not_reopen_an_answered_question(ui, ui_page):
     card.get_by_role("button", name="1 · red").click()
     expect(card.locator(".chip.ok")).to_contain_text("answered")
 
-    for route in held_lists:                 # the stale reply arrives AFTER the answer
-        route.continue_()
-    ui_page.unroute(LIST)
+    release(ui_page, LIST, held_lists)       # the stale reply arrives AFTER the answer
     ui_page.wait_for_timeout(600)
 
     # The settled state stands, and no fresh answer control is offered for it.
@@ -89,9 +87,7 @@ def test_an_intermediate_reply_is_not_marked_answered(ui, ui_page):
 
     ui_page.evaluate("() => window.__f780form.submit(true)")    # the INTERMEDIATE reply
     ui_page.wait_for_timeout(200)
-    for route in held_lists:
-        route.continue_()
-    ui_page.unroute(LIST)
+    release(ui_page, LIST, held_lists)
     ui_page.wait_for_timeout(600)
 
     answered = ui_page.evaluate("""() => {

@@ -7,7 +7,7 @@ import re
 from playwright.sync_api import expect
 
 from .conftest import until
-from .helpers import hold_requests
+from .helpers import hold_requests, release
 
 ANSWER = re.compile(r"/api/questions/q-color/answer$")
 
@@ -26,7 +26,7 @@ def test_a_double_clicked_option_sends_one_answer(ui, ui_page):
     assert len(held) == 1, f"{len(held)} answer POSTs for one decision"
     expect(card.get_by_role("button", name="2 · blue")).to_be_disabled()   # all of it waits
 
-    ui_page.unroute(ANSWER)                 # releases the held request with the handler
+    release(ui_page, ANSWER, held)
     expect(card.locator(".chip.ok")).to_contain_text("answered")
 
 
@@ -43,4 +43,4 @@ def test_enter_pressed_twice_sends_one_answer(ui, ui_page):
     until(lambda: held, what="the answer POST", page=ui_page)
     ui_page.wait_for_timeout(400)
     assert len(held) == 1, f"{len(held)} answer POSTs for one answer"
-    ui_page.unroute(ANSWER)
+    release(ui_page, ANSWER, held)
