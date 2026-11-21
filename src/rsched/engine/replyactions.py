@@ -34,10 +34,11 @@ from typing import TypeGuard
 
 from ..schema_guard import SchemaViolation, extract_json
 from .actionschema import KINDS, canon
+from .sidefieldset import FILED_FIELDS
 
 #: Fields that narrate an action rather than define it: two objects equal but for these are one
 #: action written twice.
-NARRATION_FIELDS = frozenset({"say", "note", "remind", "remind_feedback"})
+NARRATION_FIELDS = frozenset({"say", *FILED_FIELDS})
 
 #: A text that names an action kind but yields no readable action — the one shape in which the
 #: engine cannot know what came first.

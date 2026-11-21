@@ -1140,7 +1140,8 @@ and the capabilities digest's catalog listing):
   (`_gate_for_background` → the D39 secret gate for `util`/`script`, which a thread cannot run
   because it files a blocking ask and a thread has no turn to block on — F633), then hands the
   action to `engine/background.py`, which runs the ordinary dispatch path for that kind in a daemon
-  thread (`background._runner`: `executor.do_script` for `script`, `executor.dispatch` otherwise)
+  thread (`background._runner`: `executor.do_script` for `script`, `executor.dispatch` otherwise —
+  the same callable `actionroute._route` runs behind the gate in the foreground)
   and returns a *started* observation (a handle,
   the kind, a note) at once, so the turn ends and the conversation keeps its speaking turn. The
   real observation is appended at a later turn boundary by `background.collect`, beside

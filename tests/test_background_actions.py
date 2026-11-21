@@ -580,11 +580,11 @@ def test_every_kind_route_owns_is_gated_before_it_may_be_backgrounded():
     BEFORE the executor sees it; for `util` and `script` that something is the D39 call-time
     secret gate, which a background thread cannot run (it files a BLOCKING ask and a thread has
     no turn to block on). So every backgroundable kind that `_route` gates must also appear in
-    `_BACKGROUND_GATES` — otherwise the flag is a way around the gate."""
+    `_SECRET_GATES` — otherwise the flag is a way around the gate."""
     from rsched.engine import actionroute
 
-    assert set(actionroute._BACKGROUND_GATES) == {"util", "script"}
-    for kind, gate in actionroute._BACKGROUND_GATES.items():
+    assert set(actionroute._SECRET_GATES) == {"util", "script"}
+    for kind, gate in actionroute._SECRET_GATES.items():
         assert kind in BACKGROUNDABLE_KINDS, kind
         assert gate is not None
 

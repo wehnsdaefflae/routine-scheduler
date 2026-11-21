@@ -192,7 +192,8 @@ cannot offer.
   the decision** (F633). `util` and `script` are the two backgroundable kinds `actionroute._route`
   owns rather than `executor.DISPATCH`, because D39 decided secret exposure at call time and the
   user answers it while the run waits; a thread has no turn to block on, so the gate cannot live
-  there. `actionroute._gate_for_background` runs it before anything starts, and a refusal or a
+  there. `actionroute._gate_for_background` runs it before anything starts — from
+  `actionroute._SECRET_GATES`, the one table `_route` gates the foreground call from too — and a refusal or a
   pending request becomes that turn's observation with nothing backgrounded. Before this, a
   backgrounded `script` raised `KeyError: 'script'` every time and a backgrounded `util` ran with
   its exposure gate never asked — an ergonomics flag had relocated a security decision.

@@ -96,7 +96,8 @@ def _pendings(loop) -> list[Pending]:
 
 
 def _runner(kind: str):
-    """The callable the FOREGROUND would have used for `kind` — the one the thread must use.
+    """The callable that executes `kind` — the thread's, and the foreground's behind its secret
+    gate (`actionroute._route` calls it too, so the two paths cannot pick different ones).
 
     `script` is absent from `executor.DISPATCH` on purpose (`actionroute._route` owns it, behind
     its secret gate), so it needs its handler named here; the gate itself already ran on the
