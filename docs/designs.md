@@ -25,6 +25,57 @@ decided in conversation before any finding exists says so and carries none.
 
 ---
 
+## A merge queue for main: whoever is green merges next, and the merge renumbers (decided 2026-11-21, code review)
+
+**Decided by the operator 2026-11-21 (code review), no finding.** He asked for this after seeing
+scheduler-builder's run of 2026-11-21 lose most of its window to releases landing under it.
+
+**Problem.** Three kinds of writer ship to `main` with nothing ordering them: `self-audit`,
+`scheduler-builder` and the operator's interactive sessions. On 2026-11-21 sixteen releases landed
+in one day. A release gate (`candidate_gate`: quality → fast → ui) takes 25-40 minutes, and the
+gate LOCK (`/tmp/rsched-gates.lock`) serializes the TEST runs but not the MERGES. So whoever goes
+green second finds `main` moved: `scheduler-builder:20261121-140004` was overtaken four times
+(0.581.0 → 0.582.0 → 0.583.0), re-gated three times and spent about two hours of its window on it.
+None of the overtaking commits overlapped a file of its own. Its own note
+(`.memory/scheduler-main-moves-under-a-release-gate.md`) records the costs: a refused
+fast-forward that reads like a success when only the push is checked, a version number taken
+while the gate ran, and a verdict that describes bytes no longer being merged. The operator's
+sessions hit the same wall the same day, renumbering twice.
+
+**Shape.** One merge path that every writer uses, with three properties:
+1. **The version is assigned at MERGE time, not at candidate time.** The merge step rebases the
+   candidate, gives its top CHANGELOG entry and `__version__` the next minor above `main`'s
+   newest header, and commits that renumbering. "Your number was taken" stops being a conflict
+   anyone resolves by hand. `test_changelog_versions_never_repeat_or_go_backwards` keeps
+   pinning the result.
+2. **Green-ordered serialization.** A merge LEASE (its own lock file, separate from the gate
+   lock) is taken only by a candidate holding a green verdict on its current base. One merger
+   at a time: rebase onto `main`, classify the delta, merge, push, read `origin` back by commit
+   AND version, release the lease. A candidate still gating never blocks a green one.
+3. **The re-gate rule is code, not judgement.** It classifies the files in `<base>..main` that
+   the candidate did not write:
+   - docs, CHANGELOG and memory files only → no re-gate;
+   - test modules only, none of them a conftest, a shared helper (`tests/helpers.py`,
+     `tests/ui/helpers.py`) or a fixture the candidate's tests import → run those modules plus
+     the quality stage on the rebased tree;
+   - anything else (source, static, conftest, helpers, config) → a full re-gate from `fast`.
+
+   The classification and the stamp that covers the merged bytes go into the merge commit's
+   message, so "which verdict covers which bytes" stays answerable.
+
+Interactive sessions use the same entry point. A writer that bypasses it is what the queue
+exists to stop, so the post-commit hook warns when `main` advances without the merge step's
+trailer line.
+
+**First increment.** The merge step as ONE script in `deploy/` (stdlib only, so self-audit's
+`candidate_gate` and the builder's close-out can call it, and a session can run it by hand):
+rebase, renumber, classify, then ff, push and read back under the lease. Tests for the
+renumbering and the three delta classes. One line in CLAUDE.md's Commands, and the builder's
+and self-audit's recipes switch their merge step to it. The hook warning is the second
+increment.
+
+---
+
 # Handed over from the 0.371.0–0.372.2 review (2026-10-01)
 
 Everything below was PROPOSED by the review of 0.371.0 and the work that built 0.372.0–0.372.2,
