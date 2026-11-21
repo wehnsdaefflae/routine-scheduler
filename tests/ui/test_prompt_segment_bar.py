@@ -1,17 +1,8 @@
-"""The run rail's PROMPT BY SEGMENT bar (D270) — what this turn's window is being spent on.
-
-`engine/promptsegments.py` measures the prompt's make-up beside the token-ratio calibration and
-`status.json` carries it; `GET /api/runs/<id>` hands it to the page and
-`components/promptsegbar.js` draws it as one stacked bar in the rail. The measurement half is
-pinned in tests/test_prompt_segments.py — these are the claims only a BROWSER can settle:
-
-- a run with a breakdown shows the bar, one drawn segment per measured part, in prompt order,
-  with each part's token count and share readable beside it;
-- a run with no breakdown (recorded before the measurement, or one no provider ever reported a
-  prompt size for) gains NO rail caption at all — tests/ui/test_finish_line.py pins the caption
-  list exactly, and an always-present empty card teaches a reader to skip the one place the
-  window is explained;
-- the bar's poller dies with the view, like every other poller in the rail.
+"""The run rail's PROMPT BY SEGMENT bar (D270): what this turn's window is spent on. The
+measurement half is pinned in tests/test_prompt_segments.py; these are the claims only a browser
+can settle: a run with a breakdown draws one segment per measured part, in prompt order, with its
+token count and share; a run without one gains NO rail caption (tests/ui/test_finish_line.py pins
+the caption list); and the bar's poller dies with the view.
 """
 
 from __future__ import annotations
@@ -128,11 +119,9 @@ def _seed_transcript(run, events: list[dict]) -> None:
 
 
 def test_clicking_a_grown_segment_shows_what_was_sent(ui, ui_page):
-    """R3341, the operator's own words: "can we click on it to see the actual prompt?"
-
-    `history` is the message list, which IS on disk, so the click opens the real text — replayed
-    through the engine's own renderers — and the panel says it is a recording rather than
-    implying it. Asserts the opener is PRESENT before asserting what it opens.
+    """Clicking `history` opens the real message list, replayed through the engine's own
+    renderers, and the panel says it is a recording (R3341). Asserts the opener is PRESENT before
+    asserting what it opens.
     """
     ts = "20260907-140000"
     run = _seed_with_segments(ui, ts, state="finished")

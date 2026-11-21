@@ -1,13 +1,8 @@
-"""F696 — the console TELLS the operator when the page is newer than the server.
-
+"""The console tells the operator when the page is newer than the server (F696):
 `/static` is served live from disk while every Python object stays at the build this process
-booted with, and pydantic drops an unknown multipart field SILENTLY. The server publishes the
-verdict (`build_skew` + `disk_build` on `/api/status`, `web/assetskew.py`), but a status key
-nobody renders tells a person nothing — which is why this is a browser test that LOADS the
-console and reads the banner, not an assertion about the payload.
-
-The specimen is the operator's R2546: he set up everything on the conversation-creation page and
-"most of the settings were gone" once the conversation started.
+booted with, and pydantic drops an unknown multipart field silently. The server publishes the
+verdict (`build_skew` + `disk_build` on `/api/status`, `web/assetskew.py`); a status key nobody
+renders tells a person nothing, so this test LOADS the console and reads the banner.
 """
 
 import json
@@ -46,13 +41,9 @@ def test_a_newer_page_against_an_older_server_says_so_with_a_reload(ui, ui_page)
 
 
 def test_the_primary_action_restarts_the_server_because_reloading_cannot_fix_it(ui, ui_page):
-    """F745, operator 2026-10-22: "Clicking the button doesn't do anything."
-
-    The banner offered `location.reload()`, and in THIS direction — a page newer than the
-    server — reloading re-fetches the files the browser already has, so the banner comes
-    straight back and the operator reasonably reads the button as dead. The stale half is the
-    PROCESS, and only a daemon relaunch replaces it. So the primary button posts the same
-    restart Settings posts, and says what stands between the request and the exit.
+    """The primary button posts the daemon restart, not a page reload (F745): with a page newer
+    than the server a reload re-fetches what the browser already has and the banner comes straight
+    back, because the stale half is the PROCESS. It says what stands between request and exit.
     """
     posted = []
 

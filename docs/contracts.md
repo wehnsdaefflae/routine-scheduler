@@ -1268,6 +1268,23 @@ by a test, by the engine, or by a past incident.
   health) lives at `#/changes/<slug>`; the production routine page carries ONE line pointing
   there (`components/dev-line.js`) and nothing else of it — a new development reading joins the
   development view, not the production page (docs/run-analytics.md).
+- **Writing standard.** The source says what the code is, never how it came to be. A docstring or
+  comment states WHAT the thing does, the INVARIANT a change must keep, and a one-line WHY. The
+  history behind it — dates, run ids, measurements, the operator's quotes, "used to …", the
+  version that changed it, the incident that found it — goes in the commit message and the
+  CHANGELOG, where it is dated by construction and nobody has to read it to change the code. A
+  finding or decision id (`F746`, `D193`) may stand as a short pointer to that history, never as
+  a retelling of it. Narration left in the source is read by every later author, rots silently
+  when the code moves, and invites the next author to append the next incident.
+  The bounds that hold it, each a machine check because no prompt can guarantee them:
+  `tests/test_prose_history.py` ratchets the HISTORY MARKERS (ISO dates outside a `MIGRATION`
+  expiry, run ids, conversation ids, "since/before/after/until 0.N" version narration) in every
+  `src/` docstring and comment — a file outside `tests/prose_history.json` holds none, a file in
+  it may only go down, and a shrink is recorded with `python tests/test_prose_history.py
+  --update`, which refuses to raise a ceiling or baseline a new file. A test docstring is ONE
+  paragraph (`test_policy.test_test_docstrings_are_one_paragraph`); a CHANGELOG entry from 0.574.0
+  on is at most 40 lines under its header; and CLAUDE.md, the working tier, stays at or under 300
+  lines — a new contract gets ONE line there and its long form in this file.
 - Tests accompany every module in the same commit; `ScriptedEndpoint` in `tests/conftest.py` replays
   canned actions and is the main engine harness. Endpoint adapters are mock-tested; anything touching the
   network hides behind `RSCHED_LIVE_TESTS=1`.

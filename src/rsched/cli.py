@@ -2,10 +2,10 @@
 run now, streaming events), `validate` (server config + routine.yaml checks), `lint`
 (workflow library), `suggest` (rank library workflows for an instruction), `scaffold`
 (create a routine dir from a library workflow), `abort` (stop a run), `drain` (quiesce before a
-deploy), `postdeploy` (check the LIVE instance after one, and record the session) and `reports`
-(read the report ledger — which rows a non-owner disposed of) — plus the
-internal `engine-run` the daemon spawns for each run. `rsched <cmd> --help` lists per-command
-flags.
+deploy), `postdeploy` (check the LIVE instance after one, and record the session), `reports`
+(read the report ledger — which rows a non-owner disposed of) and `census` (what the instance
+uses, and never uses, of its vocabularies) — plus the internal `engine-run` the daemon spawns
+for each run. `rsched <cmd> --help` lists per-command flags.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import signal
 import sys
 from pathlib import Path
 
+from .cli_census import add_parser as add_census_parser
 from .cli_daemon import LOG_FORMAT, cmd_daemon
 from .cli_overrides import parse_effort_overrides, parse_model_overrides
 from .cli_postdeploy import add_parser as add_postdeploy_parser
@@ -312,6 +313,7 @@ def main(argv: list[str] | None = None) -> int:
                          "date, title — a READ, so no row re-opens")
     rp.add_argument("--json", action="store_true", help="one JSON document instead of lines")
     rp.set_defaults(fn=cmd_reports)
+    add_census_parser(sub)
 
     args = p.parse_args(argv)
     return args.fn(args)

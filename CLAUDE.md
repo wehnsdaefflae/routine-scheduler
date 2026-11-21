@@ -91,6 +91,8 @@ about to touch, not all of them.
   — see `rsched --help`. `validate` checks every routine's config, recipe prose and SETUP SURFACE
   (a `blocks` row or a recipe contract defect fails it). `drain` (before) and `postdeploy` (after)
   BRACKET A DEPLOY. `engine-run` is internal
+- `uv run rsched census [--days 60] [--json]` — what the instance uses and NEVER uses (action kinds,
+  side fields, config keys, capabilities, health events); read it before adding to a feature
 - The test floors (`production_guard`, `render_guard`, double conformance, size ratchet, prompt
   budget, durations) and why each exists: `docs/testing.md`
 
@@ -233,6 +235,11 @@ Each is enforced somewhere — a test, the engine, or a past incident. Long form
   `act()` (the old hand-rolled sites stay — operator ruling 2026-10-28). Colour is STATE, tokens
   only (`base.css`, both themes; `tests/test_stylesheet_tokens.py`, `tests/test_static_class_contract.py`).
   Production pages and the Develop group stay apart
+- **Writing standard** (long form `docs/contracts.md` § Standards): a docstring or comment says
+  WHAT, the invariant, and a one-line WHY. Dates, run ids, measurements, quotes and "used to …"
+  history go in the commit message and CHANGELOG, never the source (`tests/test_prose_history.py`
+  ratchets `src/`); a finding/decision id only as a short pointer. A test docstring is one
+  paragraph; a CHANGELOG entry is ≤ 40 lines; a new contract gets ONE line here (≤ 300 lines)
 - Tests accompany every module in the same commit; `ScriptedEndpoint` (tests/conftest.py) is the
   main engine harness; network tests hide behind `RSCHED_LIVE_TESTS=1`
 - The seed trees are excluded from ruff; `util-seed/gu` is gated by `tests/test_dispatcher_seed.py`
