@@ -1,7 +1,7 @@
 """Which routines' finish claims a DECISION model may screen, and at what probability (D302).
 
 D287 asked for a cascade: a typed screen over each claim, with the prose judge called only on
-the claims it flags. D302 is its narrowing — the operator, 2026-11-21: *"Cascade per routine:
+the claims it flags. D302 is its narrowing — the operator's answer: *"Cascade per routine:
 the six routines at 100% agreement get the screen, the three below 85% keep the prose judge for
 every claim."* This module is that table and nothing else; `engine/verifier.py` consults it and
 `engine/decision_shadow.py` keeps measuring every routine, screened or not, so the table has a
@@ -15,7 +15,7 @@ screening half of them saves nothing and loses the judge's view of the rest.
 THE THRESHOLD IS NOT THE SHADOW'S 0.5. The stream recorded comparisons at 0.5 because that is
 the only threshold that is not a tuning choice; using it HERE would pass 8 of the 11 claims the
 prose judge refuted (probabilities 0.549 to 0.942, seven different routines). Measured over the
-515 finish claims in `.control/decision-shadow.jsonl` (2026-11-15 → 11-21), zero refutations are
+515 finish claims in `.control/decision-shadow.jsonl` (a seven-day window), zero refutations are
 missed fleet-wide from 0.95 up, so 0.95 is the floor and the table sets it.
 
 WHAT IT IS WORTH, measured the same day and deliberately recorded here rather than in a report:
@@ -49,7 +49,7 @@ THRESHOLD = 0.95
 MIN_PAIRS = 12
 
 #: slug → (agreeing claims, claims compared) in the measurement window
-#: (`.control/decision-shadow.jsonl`, 2026-11-15 → 2026-11-21, 515 finish claims, fleet
+#: (`.control/decision-shadow.jsonl`, a seven-day window, 515 finish claims, fleet
 #: agreement 92.6%). Every entry is traceable to that stream and re-derivable from it; the
 #: operator's answer names these six and no others.
 MEASURED: dict[str, tuple[int, int]] = {

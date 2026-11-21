@@ -1,7 +1,7 @@
 """One-shot boot migration: stored transcripts carry `child_start` / `child_end`
 — MIGRATION(expires=2026-12-31).
 
-D241 (operator, 2026-10-17: *"sub-runs / subtasks (why two terms for the same thing? fix
+D241 (the operator in conversation: *"sub-runs / subtasks (why two terms for the same thing? fix
 that)"*) renames the two child-run transcript events from `subrun_start` / `subrun_end`. The
 kinds and the budget keys shipped in increments 1 and 2; this is the event vocabulary, and the
 vocabulary is a CONTRACT rather than a statement of fact.
@@ -136,8 +136,13 @@ def run_migration(server) -> dict | None:
     record_path = Path(server.routines_home) / RECORD
     if record_path.exists():
         return None
-    homes = [Path(server.routines_home), Path(server.conversations_home),
-             Path(server.background_home)]
+    # Read with getattr and fail open: this runs at BOOT, before the app exists, and the boot
+    # sequence is exercised with minimal server stand-ins that supply only the homes the step
+    # under test needs. A migration that raises there would take the whole daemon down over a
+    # home it had nothing to do — a home that is absent simply holds no transcripts.
+    homes = [Path(h) for h in (getattr(server, "routines_home", None),
+                               getattr(server, "conversations_home", None),
+                               getattr(server, "background_home", None)) if h]
     files = 0
     rows = 0
     unreadable: list[str] = []
