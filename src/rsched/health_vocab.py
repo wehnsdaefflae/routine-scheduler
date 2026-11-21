@@ -35,16 +35,19 @@ nothing (an unmounted share reads as unknown, never as stale). F602: the unit fa
 2026-09-12 to 10-01 and nothing in this product read backup state. The other half of that fix is
 the unit's own `OnFailure=` push, which still works when this daemon is down.
 
-endpoint_needs_reauth: every proxy account that could serve a model ENDPOINT is unavailable with no
-retry expected — the credential is dead and a run whose model resolves there fails at turn 0
-(`daemon/endpoint_watch`, R2195). routine is empty (an instance fact, `backup_stale`'s idiom);
-`endpoint` and the `probe` that asked ride as fields, one row a day while the state holds. On
-2026-09-14 06:18 a claude-proxy subscription token expired and eight routines failed at turn 0
-within two minutes, each `503 auth_unavailable`: the daemon kept user CONNECTIONS alive and never
-asked it of the model credentials. An account the proxy expects back is `cooling`, never this
-(`oauth_refresh`: only a REFUSAL flags `needs_reauth`). It PREDICTS failed work rather than
-reporting work that was due and did not happen, so it is deliberately absent from
-`readmodels/health_stream.BLOCKED_EVENTS`.
+endpoint_needs_reauth: every account of a SUBSCRIPTION LOGIN behind the model gateway is
+unavailable with no retry expected — the credential is dead and a run whose model routes to it
+fails at turn 0 (`daemon/endpoint_watch`, R2195; re-pointed from endpoints to the gateway's
+`plans:` logins by C5, 2026-11-21). routine is empty (an instance fact, `backup_stale`'s idiom);
+`login` (`<gateway>/<provider>`, e.g. `otari/claude`), `gateway`, `provider` and the `probe` that
+asked ride as fields, one row a day per login while the state holds. On 2026-09-14 06:18 a
+claude-proxy subscription token expired and eight routines failed at turn 0 within two minutes,
+each `503 auth_unavailable`: the daemon kept user CONNECTIONS alive and never asked it of the
+model credentials. An account the proxy expects back is `cooling`, never this (`oauth_refresh`:
+only a REFUSAL flags `needs_reauth`). It is in `readmodels/health_stream.BLOCKED_EVENTS` as a
+STANDING condition only the operator clears (a sign-in is his act): every fire whose model routes
+to the dead login is work that will not happen, and the row counts only while the record
+(`endpoints/endpoint_health`) still says so.
 
 deprecated_route: a request ARRIVED on an API path that has been renamed and is served only for
 compatibility (`web/api_hooks.py`: the old webhook spelling `/api/hooks/<slug>/<token>`, whose

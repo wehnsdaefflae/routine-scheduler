@@ -73,6 +73,32 @@ def binding(server, name: str) -> EndpointConfig | None:
     return None
 
 
+def management_endpoint(server) -> tuple[EndpointConfig | None, str]:
+    """The instance's ONE management binding — the endpoint the gateway's subscription logins
+    are read through (`daemon/endpoint_watch`) — or (None, why). None or several is said, never
+    guessed: which proxy holds the logins is configuration, not inference.
+    """
+    found = sorted((ep for ep in server.endpoints.values() if ep.quota_source == "cliproxy"),
+                   key=lambda ep: ep.name)
+    if len(found) == 1:
+        return found[0], ""
+    if not found:
+        return None, ("no endpoint carries the proxy's management binding "
+                      "(`quota_source: cliproxy`), so its logins cannot be read")
+    return None, (f"{len(found)} endpoints carry a proxy management binding "
+                  f"({', '.join(ep.name for ep in found)}) — which one holds these logins "
+                  "is not said")
+
+
+def plan_provider(plan: str) -> str:
+    """The auth-file provider whose login a CLIProxyAPI catalog PLAN GROUP belongs to
+    (`GatewayConfig.plans`): the group's own name or its `<provider>-` prefix — `claude`,
+    `antigravity`, `codex-plus` → `codex`. "" for a group no known login claims.
+    """
+    low = str(plan).lower()
+    return next((p for p in LOGIN_PROVIDER if low == p or low.startswith(f"{p}-")), "")
+
+
 def bound_model_ids(server, name: str) -> list[str]:
     """The provider model ids the catalog binds to endpoint `name`."""
     return [m.model for m in server.models.values() if m.endpoint == name]

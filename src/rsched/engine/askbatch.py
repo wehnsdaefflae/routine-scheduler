@@ -17,7 +17,7 @@ from ..ids import batch_id
 from . import askclass, interact
 
 #: The single-question fields a batch carries per question instead of once per action.
-_PER_QUESTION = ("options", "default", "request", "config_patch", "blocks_work")
+_PER_QUESTION = ("options", "default", "request", "config_patch", "blocks_work", "proof")
 
 
 def _one(spec: dict) -> dict:
@@ -52,8 +52,11 @@ def handle(loop, action: dict, poll_s: float) -> dict:
     note = "".join(f" {len(refused)} REFUSED, so {'it is' if len(refused) == 1 else 'they are'} "
                    "on NO surface of his and nobody was asked — re-file this turn: "
                    + "; ".join(r["error"] for r in refused) if refused else "")
+    # D220: each filed question's PROOF clause, once per distinct wording
+    proof = "".join(dict.fromkeys(f["proof_note"] for f in filed if f.get("proof_note")))
     return {"kind": "ask_user", "batch": bid, "mode": "deferred",
             "count": sum(1 for f in filed if not f.get("error")), "filed": filed,
             **({"refused": refused, "refused_note": note} if refused else {}),
+            **({"proof_note": proof} if proof else {}),
             "blocking": sum(1 for f in filed
                             if f["class"] == askclass.BLOCKING and not f.get("error"))}

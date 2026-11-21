@@ -3,7 +3,8 @@
 Prompt surface (docs/prompt-anatomy.md pins it), kept apart from the driver (engine/reviewleg.py)
 so the wording reads in one place. The keeping standard is Hermes Agent's, each clause answering
 a measured failure: only what this run SHOWED; a general rule plus one clause of why, one lesson
-once; no negative claim about a tool from one failure; no unresolved failure as a method.
+once; an expiry on what will date; no negative claim about a tool from one failure; no unresolved
+failure as a method.
 
 "Nothing to keep" is stated as a complete answer on purpose: a leg pressed to always write
 something produces the bookkeeping the overhead measurement exists to catch.
@@ -30,6 +31,8 @@ def note(status: str, reasons: list[str], *, kinds: list[str], turns: int, unrea
         "- in the note that already covers it — memory_read it first (a note you have not read "
         "in this leg cannot be overwritten) and correct it in place, never by appending an "
         "'update:' line;\n"
+        "- with `stale_after` set when it states what will go out of date — a price, a deadline, "
+        "a version, someone's availability — so a later run checks it instead of trusting it;\n"
         "- never that a tool or source CANNOT do something because it failed once here — that "
         "hardens into a refusal later runs cite against themselves — and never an unresolved "
         "failure written up as a working method.")

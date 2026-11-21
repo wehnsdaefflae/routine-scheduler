@@ -654,14 +654,17 @@ expiry, persists rotation and flags `needs_reauth` on
 rejection — which badges it in Settings → Connections, the only notification there is (0.230.0
 deleted every implicit outbound send) — a no-op for non-expiring providers (Notion).
 `daemon/endpoint_watch.py` (`EndpointWatch`, R2195) does the same for the MODEL credentials every
-run depends on: every `CHECK_EVERY_S` (10 min, never the 5 s tick) it asks each CLIProxy-managed
-endpoint for its account list — the LIGHTEST already-implemented probe, never a completion — and
-writes a four-state verdict to `.control/endpoint-health.json` (`endpoints/endpoint_health.py`,
-derived state like `endpoints/limits.py`), filing `endpoint_needs_reauth` once a day while a
-credential is dead with no retry expected. Before it, nothing detected a dead credential until a
-run spent its first turn: a claude-proxy token expiring on 2026-09-14 06:18 failed eight routines
-at turn 0 inside two minutes. An endpoint with no proxy binding is skipped — the light probe for
-an API-key endpoint is the credits read, still inline in `web/settings/endpoint_probe.py`.
+run depends on: every `CHECK_EVERY_S` (10 min, never the 5 s tick) it reads the CLIProxyAPI
+account list ONCE through the instance's one management binding — the LIGHTEST already-implemented
+probe, never a completion — and judges each SUBSCRIPTION LOGIN the gateways' `plans:` name
+(`<gateway>/<provider>`, C5), writing a four-state verdict per login to
+`.control/endpoint-health.json` (`endpoints/endpoint_health.py`, derived state like
+`endpoints/limits.py`) and filing `endpoint_needs_reauth` once a day while one is dead with no
+retry expected — a STANDING condition on the blocked-work surface that only the operator clears
+(`readmodels/operator_blocks`), retired when the record reads it alive
+(`web/operator_conditions`). Before it, nothing detected a dead credential until a run spent its
+first turn: a claude-proxy token expiring on 2026-09-14 06:18 failed eight routines at turn 0
+inside two minutes. A gateway provider with no `plans` is a metered key and is not watched.
 **Engine injection**:
 `executor.do_util` resolves the routine's bound connections to `{<PROVIDER>_ACCESS_TOKEN: token}`
 and passes them to `utils_run.run_util` as `extra_secrets`; `_child_env` injects each ONLY if the
@@ -1979,17 +1982,18 @@ install gets the revision from the seed sync itself.)
   SINGLE-FLIGHT per key (0.340.0: a burst of identical requests — every open tab refetching one
   endpoint on a bus event — computes once while the rest wait and re-read), `readmodels/usage_stream`
   is the ONE parser of workflow-usage.jsonl and `readmodels/health_stream` the ONE parser of
-  health-events.jsonl (plus the blocked-fleet fold behind `GET /api/health/blocked`: the 20
+  health-events.jsonl (plus the blocked-fleet fold behind `GET /api/health/blocked`: the 21
   events that mean WORK THAT WAS DUE DID NOT HAPPEN — `postdeploy_failed`, `fire_refused`, `lane_fire_refused`,
   `fire_paused`, `lane_fire_paused`, `oneshot_skipped`, `lane_chain_stopped`, `lane_chain_member_skipped`, `scheduler_tick_error`,
   `finish_gate_failed`, `trigger_capped`, `commit_failed`, `backup_stale`,
   `migration_expired`, `migration_due_soon`, `obligation_overdue`,
-  `item_dropped_live`, `model_chain_exhausted`, `process_overhead_high`, `answer_undelivered` — one row per (event, subject) with a count and the newest
+  `item_dropped_live`, `model_chain_exhausted`, `process_overhead_high`, `answer_undelivered`,
+  `endpoint_needs_reauth` — one row per (event, subject) with a count and the newest
   detail, because none of them can reach a run page, Items row or Stats slice; the count and
   the names are pinned by `tests/test_chain_exhausted_blocked.py`; `readmodels/operator_blocks`
-  then marks the six of them nothing inside the system will clear — a stale backup, dropped
+  then marks the seven of them nothing inside the system will clear — a stale backup, dropped
   fires under a pause, a one-shot consumed unfired, a lane naming a member that is not a
-  routine, an answer no run will read — and serves `operator_total`, the rail's blocked badge,
+  routine, an answer no run will read, a dead subscription login behind the gateway — and serves `operator_total`, the rail's blocked badge,
   F796; a row counts there only while its condition still holds, `web/operator_conditions`) — a read-model is a pure
   derivation, deletable state, never a writer. The Decisions read model (`web/decisions_read.py` — what `/api/questions`, the
   badge, the tab-open notifier and Web Push all read) is memoized per home on the same fingerprint

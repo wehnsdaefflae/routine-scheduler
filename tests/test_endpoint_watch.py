@@ -1,4 +1,5 @@
-"""The daemon asks whether each endpoint's CREDENTIAL is still alive, and says so once."""
+"""The daemon asks whether each subscription LOGIN behind the gateway is still alive, and says
+so once a day (C5: re-pointed from endpoints to the gateway's `plans:` logins)."""
 
 from __future__ import annotations
 
@@ -9,21 +10,26 @@ import httpx
 import pytest
 
 from helpers import health_events, mock_proxy, server_config
-from rsched.config import EndpointConfig, ModelConfig
+from rsched.config import EndpointConfig, GatewayConfig
 from rsched.daemon import endpoint_watch
 from rsched.daemon.endpoint_watch import EndpointWatch
 from rsched.endpoints import cliproxy_mgmt, endpoint_health
 
+LOGIN = "otari/claude"
 
-def _server(tmp_path, **attrs):
-    """An instance whose one endpoint is a CLIProxy-managed Claude proxy."""
+
+def _server(tmp_path, plans=None, mgmt=("cliproxy-mgmt",)):
+    """This instance's shape: models reach the Otari gateway, whose `plans:` name the CLIProxyAPI
+    logins, and ONE model-less endpoint carries the proxy's management binding."""
+    endpoints = {"otari": EndpointConfig(name="otari", kind="anthropic", gateway="otari",
+                                         base_url="http://gw:4000/api")}
+    for name in mgmt:
+        endpoints[name] = EndpointConfig(name=name, kind="anthropic", base_url="http://proxy:8318",
+                                         quota_source="cliproxy")
     server = server_config(
-        routines_home=tmp_path / "routines",
-        endpoints={"proxy": EndpointConfig(name="proxy", kind="anthropic",
-                                           base_url="http://proxy:8317/v1",
-                                           quota_source="cliproxy")},
-        models={"opus": ModelConfig(name="opus", endpoint="proxy", model="claude-opus-5")},
-        **attrs)
+        routines_home=tmp_path / "routines", endpoints=endpoints,
+        gateways={"otari": GatewayConfig(name="otari",
+                                         plans=plans or {"cliproxy": ["claude"]})})
     server.routines_home.mkdir(parents=True, exist_ok=True)
     return server
 
@@ -74,7 +80,7 @@ def test_a_dead_credential_is_needs_reauth_and_a_usage_limit_is_only_cooling():
 
 
 def test_one_live_account_is_ok_even_beside_a_dead_one():
-    """The endpoint still serves: the fold must not read as blocked while a credential works."""
+    """The login still serves: the fold must not read as blocked while a credential works."""
     reply = {"ok": True, "accounts": [{"label": "dead@example.org", "unavailable": True},
                                       {"label": "live@example.org"}]}
     state, detail = endpoint_health.verdict(reply)
@@ -121,14 +127,15 @@ async def test_a_dead_proxy_credential_lands_in_the_record_and_the_health_stream
 
     await EndpointWatch(server).tick()
 
-    row = endpoint_health.get(server.routines_home, "proxy")
+    row = endpoint_health.get(server.routines_home, LOGIN)
     assert row is not None
     assert row["state"] == "needs_reauth" and row["needs_reauth"] is True
     assert row["probe"] == endpoint_watch.PROBE and row["checked_at"]
 
     rows = health_events(server.routines_home, event="endpoint_needs_reauth")
     assert len(rows) == 1
-    assert rows[0]["endpoint"] == "proxy" and rows[0]["probe"] == endpoint_watch.PROBE
+    assert rows[0]["login"] == LOGIN and rows[0]["probe"] == endpoint_watch.PROBE
+    assert rows[0]["gateway"] == "otari" and rows[0]["provider"] == "claude"
     # an instance fact, not a routine's — `backup_stale`'s idiom
     assert rows[0]["routine"] == "" and rows[0]["run_id"] == ""
     assert "refresh token expired" in rows[0]["detail"]
@@ -140,18 +147,17 @@ async def test_a_healthy_credential_is_recorded_and_files_nothing(tmp_path, monk
 
     await EndpointWatch(server).tick()
 
-    assert endpoint_health.get(server.routines_home, "proxy")["state"] == "ok"
+    assert endpoint_health.get(server.routines_home, LOGIN)["state"] == "ok"
     assert health_events(server.routines_home, event="endpoint_needs_reauth") == []
 
 
-async def test_an_endpoint_with_no_proxy_binding_is_skipped_rather_than_guessed_at(tmp_path,
-                                                                                   monkeypatch):
-    """The light probe for an API-key endpoint is the CREDITS read, which is still inline in
-    `web/settings/endpoint_probe.py`. Until it is extracted this manager claims NOTHING about
-    such an endpoint — no record, no event, and no request either."""
+async def test_a_gateway_with_no_plans_names_no_login_and_asks_nothing(tmp_path, monkeypatch):
+    """A gateway provider without `plans` is a metered key (OpenRouter, Nano-GPT), not a login:
+    no record, no event, and no request either."""
     server = server_config(routines_home=tmp_path / "routines",
                            endpoints={"or": EndpointConfig(name="or", kind="openai",
-                                                           base_url="https://openrouter.ai/api/v1")})
+                                                           base_url="https://openrouter.ai/api/v1")},
+                           gateways={"otari": GatewayConfig(name="otari")})
     server.routines_home.mkdir(parents=True, exist_ok=True)
     mock_proxy(monkeypatch, lambda request: pytest.fail("no request expected"))
 
@@ -160,30 +166,70 @@ async def test_an_endpoint_with_no_proxy_binding_is_skipped_rather_than_guessed_
     assert endpoint_health.load(server.routines_home) == {}
 
 
-async def test_one_unreachable_endpoint_does_not_starve_the_rest_of_the_pass(tmp_path,
-                                                                            monkeypatch):
-    """`oauth_refresh`'s rule: one bad connection must not starve the others. Here the FIRST
-    endpoint alphabetically raises, and the second must still be probed."""
-    server = _server(tmp_path)
-    server.endpoints["a-broken"] = EndpointConfig(name="a-broken", kind="anthropic",
-                                                  base_url="http://broken:1/v1",
-                                                  quota_source="cliproxy")
-    seen: list[str] = []
-    real_providers = cliproxy_mgmt.endpoint_providers    # captured BEFORE the patch
+async def test_each_login_is_judged_alone_so_one_dead_subscription_is_not_hidden(tmp_path,
+                                                                                monkeypatch):
+    """The point of C5: the per-endpoint probe judged every account in ONE list, so a dead Codex
+    login beside a live Claude one read `ok` ("2 of 3 available"). Per login, it is flagged —
+    and the whole pass costs ONE read of the proxy's account list."""
+    server = _server(tmp_path, plans={"cliproxy": ["claude", "antigravity"],
+                                      "chatgpt": ["codex-plus"]})
+    calls: list[int] = []
 
-    def boom(server_arg, name):
-        seen.append(name)
-        if name == "a-broken":
-            raise RuntimeError("the proxy exploded")
-        return real_providers(server_arg, name)
+    def handler(request):
+        calls.append(1)
+        return _files(_claude(), {"name": "ag.json", "provider": "antigravity",
+                                  "email": "me@example.org", "status": "active"},
+                      {"name": "codex-plus.json", "provider": "codex", "email": "me@example.org",
+                       "unavailable": True, "status_message": "refresh token revoked"})(request)
 
-    monkeypatch.setattr(endpoint_watch.cliproxy_mgmt, "endpoint_providers", boom)
+    mock_proxy(monkeypatch, handler)
+    await EndpointWatch(server).tick()
+
+    states = {k: v["state"] for k, v in endpoint_health.load(server.routines_home).items()}
+    assert states == {"otari/claude": "ok", "otari/antigravity": "ok",
+                      "otari/codex": "needs_reauth"}
+    assert len(calls) == 1
+    [row] = health_events(server.routines_home, event="endpoint_needs_reauth")
+    assert row["login"] == "otari/codex" and "refresh token revoked" in row["detail"]
+
+
+@pytest.mark.parametrize("mgmt", [(), ("mgmt-a", "mgmt-b")])
+async def test_which_proxy_holds_the_logins_is_never_guessed(tmp_path, monkeypatch, mgmt):
+    """No management binding, or two: every login is UNKNOWN with the reason — never `ok`, never
+    a request to a proxy picked by order."""
+    server = _server(tmp_path, mgmt=mgmt)
+    mock_proxy(monkeypatch, lambda request: pytest.fail("no request expected"))
+
+    await EndpointWatch(server).tick()
+
+    row = endpoint_health.get(server.routines_home, LOGIN)
+    assert row["state"] == "unknown" and "management binding" in row["detail"]
+
+
+async def test_an_unknown_plan_group_is_unknown_and_the_rest_are_still_judged(tmp_path,
+                                                                              monkeypatch):
+    server = _server(tmp_path, plans={"cliproxy": ["claude"], "mystery": ["kiro-pro"]})
     mock_proxy(monkeypatch, _files(_claude()))
 
     await EndpointWatch(server).tick()
 
-    assert seen == ["a-broken", "proxy"]       # sorted, and the exception did not stop the pass
-    assert endpoint_health.get(server.routines_home, "proxy") is not None
+    rows = endpoint_health.load(server.routines_home)
+    assert rows[LOGIN]["state"] == "ok"
+    assert rows["otari/kiro-pro"]["state"] == "unknown"
+    assert "names no login provider" in rows["otari/kiro-pro"]["detail"]
+
+
+async def test_a_login_no_gateway_names_any_more_leaves_the_record(tmp_path, monkeypatch):
+    """The per-endpoint keys of the probe this replaces (`claude-proxy`, `cliproxy-mgmt`) would
+    otherwise sit in the record forever, and the blocked-work surface reads that record."""
+    server = _server(tmp_path)
+    endpoint_health.remember(server.routines_home, "claude-proxy", state="needs_reauth",
+                             detail="old", probe=endpoint_watch.PROBE)
+    mock_proxy(monkeypatch, _files(_claude()))
+
+    await EndpointWatch(server).tick()
+
+    assert set(endpoint_health.load(server.routines_home)) == {LOGIN}
 
 
 # ---- the cadence: minutes, and one row a day ---------------------------------------------
@@ -223,7 +269,7 @@ async def test_a_standing_dead_credential_files_one_row_a_day_across_a_daemon_re
 
     # a day later the condition is still true, and still worth saying
     stale = (datetime.now(UTC) - timedelta(days=2)).isoformat()
-    endpoint_health.remember(server.routines_home, "proxy", state="needs_reauth",
+    endpoint_health.remember(server.routines_home, LOGIN, state="needs_reauth",
                              detail="token expired", probe=endpoint_watch.PROBE,
                              filed_at=stale)
     await EndpointWatch(server).tick()
@@ -243,31 +289,18 @@ async def test_a_credential_that_comes_back_reports_its_next_death(tmp_path, mon
     mock_proxy(monkeypatch, lambda request: httpx.Response(200, json={"files": current}))
 
     await EndpointWatch(server).tick()
-    assert endpoint_health.get(server.routines_home, "proxy")["state"] == "needs_reauth"
+    assert endpoint_health.get(server.routines_home, LOGIN)["state"] == "needs_reauth"
 
     current[:] = [_claude()]
     await EndpointWatch(server).tick()
-    assert endpoint_health.get(server.routines_home, "proxy")["state"] == "ok"
+    assert endpoint_health.get(server.routines_home, LOGIN)["state"] == "ok"
 
     current[:] = [dead]
     await EndpointWatch(server).tick()
     assert len(health_events(server.routines_home, event="endpoint_needs_reauth")) == 2
 
 
-# ---- the registration, in BOTH places ----------------------------------------------------
-
-
-def test_the_event_is_in_the_writers_vocabulary_and_deliberately_not_in_the_readers_fold():
-    """Both halves of the registration, which is what keeps a new event from being written and
-    read by nobody (`tests/test_health_events.py` checks the enum both ways; this pins the
-    JUDGEMENT about the other surface).
-    """
-    from rsched import health_vocab
-    from rsched.readmodels.health_stream import BLOCKED_EVENTS
-
-    assert endpoint_watch.EVENT == "endpoint_needs_reauth"
-    assert endpoint_watch.EVENT in health_vocab.EVENTS
-    assert endpoint_watch.EVENT not in BLOCKED_EVENTS
+# ---- the registration in the daemon ----------------------------------------------------
 
 
 async def test_a_running_scheduler_ticks_the_endpoint_watch_beside_its_tick(tmp_path,

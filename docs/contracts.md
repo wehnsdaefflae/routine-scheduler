@@ -413,8 +413,15 @@ entry for what you are about to touch.
   A decision may also carry a PROOF per option (D220, `rsched/proofs.py`): what would have to be
   true for that option's answer to have been carried out — a `predicate` id, what it `reads`, and
   its `category` (`operator_act` = an act only he can perform, `routine_act` = one of the
-  routine's own). Filed with the record (`file_question(..., proof=…)`), it starts `open` per
-  option; answering moves the chosen one to `in_progress` and the rest to `declined`; the daily
+  routine's own). A run files it through `ask_user`'s optional `proof` field — on a single ask
+  or per entry of a `questions` batch — which `engine/askproof.py` checks where the action is
+  validated: keyed by option (so the ask needs options), every option named with all three
+  fields (`proofs.problems`), and `config_patch_live` refused on a question carrying no
+  `config_patch`, since it would read negative forever. A predicate the registry
+  (`proofcheck.PREDICATES`) does not know is NOT refused — it is a check only that routine can
+  compute — but the observation NAMES it, saying the sweep will leave that option alone so the
+  run must show the work landed itself. Filed with the record (`file_question(..., proof=…)`),
+  it starts `open` per option; answering moves the chosen one to `in_progress` and the rest to `declined`; the daily
   owed-work sweep (`rsched/proofcheck.sweep_home`, called from `daemon/owed_watch`) runs the
   predicate and writes `positive` (it landed) or `negative` (performed, proof still absent —
   which renders LOUDER than an unanswered question). Only `positive`, or his are-you-sure-gated
@@ -468,7 +475,10 @@ entry for what you are about to touch.
   its OWN digest heading instead of among the notes a run is told to consult. The markers MERGE
   (`notemeta.meta_of` reads them back off the line): a revision that does not restate an expiry
   keeps it, which is what stops an ordinary write silently dropping what an earlier run knew.
-  A value the engine cannot render is LEFT OUT, never refused — the note is the payload, and the
+  A field nobody sets does nothing, so both places a run is told how to write a note — the
+  `stale_after` description and the review leg's note (`engine/reviewnote.py`) — say to set it
+  whenever the note states what will go out of date: a price, a deadline, a version, someone's
+  availability. A value the engine cannot render is LEFT OUT, never refused — the note is the payload, and the
   observation names what was recorded. `memory_read` with `args` (words) instead of a `name`
   SEARCHES the routine's PAST RUNS (`engine/runsearch.py`: SQLite FTS5 in `runs/.recall.sqlite`,
   the searching run excluded, three hits from distinct runs). Which notes runs READ is counted per
@@ -1085,20 +1095,25 @@ by a test, by the engine, or by a past incident.
   a subscription route the cap is therefore LIST-PRICE dollars, not an invoice — the only dollar
   figure that exists there — and an UNPRICED model still meters 0.0, so no ceiling binds it.
 - **A dead model CREDENTIAL is noticed before a run spends a turn.** `daemon/endpoint_watch.py`
-  (R2195) is to endpoints what `daemon/oauth_refresh.py` is to connections: every
-  `CHECK_EVERY_S` (10 min, never the 5 s tick, `_off_tick` like every other manager) it asks each
-  CLIProxy-managed endpoint for its account list — the LIGHTEST already-implemented probe, never
-  the live completion test and never an upstream request — and writes one of four states to
+  (R2195) is to model credentials what `daemon/oauth_refresh.py` is to connections: every
+  `CHECK_EVERY_S` (10 min, never the 5 s tick, `_off_tick` like every other manager) it reads the
+  CLIProxyAPI account list ONCE through the instance's one `quota_source: cliproxy` endpoint —
+  the LIGHTEST already-implemented probe, never the live completion test and never an upstream
+  request — and judges each SUBSCRIPTION LOGIN behind the gateway (C5, 2026-11-21): the gateways'
+  `plans:` name them, each plan group one login provider (`cliproxy_mgmt.plan_provider`), keyed
+  `<gateway>/<provider>`. One of four states per login goes to
   `<routines>/.control/endpoint-health.json` (`endpoints/endpoint_health.py`, derived state, never
   config): `ok` · `cooling` (all accounts unavailable, a retry expected — a usage limit) ·
   `needs_reauth` (all unavailable, no retry: the credential is dead) · `unknown` (the proxy could
-  not be read, or no account is signed in — nothing claimed, `backup_stale`'s rule).
-  `needs_reauth` files `endpoint_needs_reauth` once a day while it holds, and the latch lives in
-  the RECORD so a daemon restart cannot re-file the fleet. It PREDICTS failed work rather than
-  reporting a missed fire, so it is deliberately NOT in `health_stream.BLOCKED_EVENTS`. An
-  endpoint with no proxy binding is skipped: its light probe is the credits read, still inline in
-  `web/settings/endpoint_probe.py`. Before this, one expiring claude-proxy token (2026-09-14
-  06:18) failed eight routines at turn 0 within two minutes and nothing detected it.
+  not be read, no account is signed in, or which proxy holds the logins is not said — nothing
+  claimed, `backup_stale`'s rule). `needs_reauth` files `endpoint_needs_reauth` once a day while
+  it holds, and the latch lives in the RECORD so a daemon restart cannot re-file the fleet. It is
+  a STANDING condition on the blocked-work surface and an operator block (a sign-in is his act),
+  retired the moment the record reads every login alive (`web/operator_conditions`); a login no
+  gateway names any more leaves the record at the next pass. Judging per login is the point: the
+  per-endpoint probe it replaced read one list of all accounts, so a dead subscription beside a
+  live one read `ok`. Before any of this, one expiring claude-proxy token (2026-09-14 06:18)
+  failed eight routines at turn 0 within two minutes and nothing detected it.
 - **A model's limits are DISCOVERED, not configured — and they are the ROUTE's.**
   `endpoints/limits.py` asks what each model's real context window and output maximum are and
   caches it under `<routines>/.control/model-limits.json` — derived state, never config —

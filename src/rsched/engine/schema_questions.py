@@ -1,4 +1,4 @@
-"""The SEVERAL-questions-in-one-action fields as schema — `questions` and `blocks_work`.
+"""The SEVERAL-questions-in-one-action fields as schema — `questions`, `blocks_work`, `proof`.
 
 Its own module because `engine/actionschema.py` is over the size bar (D212).
 
@@ -29,14 +29,13 @@ QUESTIONS_FIELD = {
         "default": {"type": "string"},
         "request": {"type": "string"},
         "config_patch": {"type": "object"},
-        "blocks_work": {"type": "boolean"}}},
+        "blocks_work": {"type": "boolean"},
+        "proof": {"type": "object"}}},
     "description": "decide: SEVERAL independent questions over the same evidence, in "
-                   "one call (instead of question/answer_type/options) — one evidence, "
-                   "many questions is what these models are fastest and cheapest at · "
+                   "one call (instead of question/answer_type/options) · "
                    "ask_user: SEVERAL questions in ONE action, each entry carrying for "
                    "itself what a single ask carries — one decision record each, sharing "
-                   "a batch id. One turn, not five. Not a waiting mode: a batch is filed "
-                   "and you carry on",
+                   "a batch id. Not a waiting mode: a batch is filed and you carry on",
 }
 
 def batch_brief(batch: list) -> str:
@@ -52,10 +51,20 @@ def batch_brief(batch: list) -> str:
 BLOCKS_WORK_FIELD = {
     "type": "boolean",
     "description": "ask_user: OPTIONAL — this question is BLOCKING: without this answer the "
-                   "run cannot do the work it was fired to do. Every record carries that "
-                   "class, set by its subject (an access `request` blocking, a plain question "
-                   "closing — you finish without it and the answer shapes your next run); "
-                   "this overrides. NOT `mode`, which is the separate thing that makes your "
-                   "process WAIT — marking a question blocking suspends nothing. On a "
-                   "`questions` batch, set it per question",
+                   "run cannot do the work it was fired to do. It overrides the class the "
+                   "subject sets (an access `request` blocking, a plain question closing). NOT "
+                   "`mode`, which makes your process WAIT — marking a question blocking "
+                   "suspends nothing",
+}
+
+
+#: D220: what would show each option's answer was CARRIED OUT (`engine/askproof.py`). Only the
+#: registry's one predicate is named, because a run choosing one reads this and nothing else.
+PROOF_FIELD = {
+    "type": "object",
+    "description": "ask_user: OPTIONAL — per option, what shows its answer was CARRIED OUT: "
+                   '{"<option>": {"predicate": "<id>", "reads": "<what>", "category": '
+                   '"routine_act|operator_act"}}. The decision stays open until one holds; '
+                   "`config_patch_live` (your config_patch is live) is checked for you, other "
+                   "ids are yours to show",
 }

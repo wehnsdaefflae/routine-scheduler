@@ -14,6 +14,9 @@ So each row is asked about NOW, by the one reader that already decides that cond
 - `answer_undelivered` — does that routine or conversation still hold an answer no run will
   read (`readmodels/answer_pickup`)?
 - `lane_chain_member_skipped` — does a lane still name that slug while no routine has it?
+- `endpoint_needs_reauth` — does the credential watch's record still hold a login it judged
+  dead (`endpoints/endpoint_health.any_needs_reauth`)? Its subject is the instance, so the one
+  row stands while ANY login is dead; a record never written cannot be told.
 
 And since 2026-11-19 every STANDING condition (`readmodels/blocked_kinds`), not only the
 operator's: the same week-long linger made the blocked-work list read like history — an
@@ -43,6 +46,7 @@ from functools import cache
 
 from .. import lanes, migration_markers, registry
 from ..daemon import backup_watch, owed_watch, pause
+from ..endpoints import endpoint_health
 from ..readmodels import answer_pickup, overhead_reading
 
 
@@ -93,6 +97,8 @@ def checker(state) -> Callable[[str, str], bool | None]:
             return undelivered(subject)
         if event == "lane_chain_member_skipped":
             return missing_member(subject)
+        if event == "endpoint_needs_reauth":
+            return endpoint_health.any_needs_reauth(server.routines_home)
         return standing(event, subject)
 
     def standing(event: str, subject: str) -> bool | None:

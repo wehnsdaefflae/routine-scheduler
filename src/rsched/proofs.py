@@ -44,9 +44,10 @@ the engine READS them (`engine/inbox_questions` carries them onto the answer pai
 `engine/composer` renders the line the asking run reads), and `engine/` imports nothing from
 `web/`.
 
-A record that carries NO proof behaves exactly as it always did. Every ask the fleet has ever
-filed is in that state, so `unproven` is False for them: this mechanism must not re-open the
-instance's whole settled history on the day it ships.
+A record that carries NO proof behaves exactly as it always did. Every ask filed before the
+`ask_user` `proof` field existed (`engine/askproof.py`, the way in), and every ask that sets
+none, is in that state, so `unproven` is False for them: this mechanism must not re-open the
+instance's whole settled history.
 """
 
 from __future__ import annotations
@@ -204,8 +205,8 @@ def unproven(record: dict) -> bool:
     The predicate the Decisions page needs to stop treating "recorded" as "done": True while
     an answered decision's chosen option sits `in_progress`, or came back `negative`, or the
     answer selected no option at all. False once any option is `positive` (checked or
-    overridden) — and False for a record with no proof, which is every ask the engine files
-    today.
+    overridden) — and False for a record with no proof, which is every ask whose `ask_user`
+    set no `proof`.
 
     A consequence of the lifecycle rather than its centre (the builder's reading in R3064):
     it is one derived question over the stored map, so no surface has to know the rules.

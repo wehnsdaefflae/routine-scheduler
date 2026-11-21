@@ -1,44 +1,43 @@
-"""Is the credential behind each model endpoint still alive? The scheduled caller the probes
+"""Is each SUBSCRIPTION LOGIN behind the model gateway still alive? The scheduled caller the probes
 never had.
 
 The daemon has kept user CONNECTIONS alive since `daemon/oauth_refresh.py`. The MODEL
 credentials every run depends on had no such pass: on 2026-09-14 06:18 a claude-proxy
 subscription token expired and eight routines failed at turn 0 within two minutes, each `503
-auth_unavailable`. The probes to notice that existed already — `web/settings/endpoint_probe.py`
-says storing endpoint config and "going out to the network to see whether it works are different
-jobs", which is right; the second job simply had no scheduled caller. This is it.
+auth_unavailable`. This is that pass.
 
-What it probes with, and why that one: `endpoints/cliproxy_login.accounts` — the proxy's own
-account listing, which carries each account's status word and the proxy's one-line reason when
-one is unavailable ("a dead refresh token", a usage limit). Three reasons it is the probe for
-this pass:
+WHAT IT WATCHES — the logins, not the endpoints (C5, operator 2026-11-21). Every model call
+leaves through the Otari gateway (docs/model-gateway.md), so no endpoint in `config.yaml` is a
+proxy any more: `otari`, `otari-openai` and `otari-openai-plain` all reach Otari, and Otari
+routes a name to the standalone CLIProxyAPI that holds the subscription logins. The facts that
+say which logins those are live in the gateway's config, never on the wire:
+`gateways.<name>.plans` maps each gateway provider that is a CLIProxyAPI login to the catalog
+plan groups it signs in with (`cliproxy: [claude, antigravity]`, `chatgpt: [codex-plus]`), and
+each plan group belongs to one auth-file provider of the proxy (`cliproxy_mgmt.plan_provider`:
+`codex-plus` is a `codex` login). So the watch judges ONE record per (gateway, login provider) —
+`otari/claude`, `otari/antigravity`, `otari/codex` — over the accounts of that provider alone.
+The per-endpoint probe it replaces judged all three logins in one list, where "2 of 3 available"
+read `ok` while one subscription was dead.
 
-- it is the LIGHTEST of the three already-implemented probes. The credits read and the quota
-  read each make an upstream request (api.anthropic.com through the proxy, or a provider's
-  balance API); this is one GET against the proxy on the same host. The live completion test is
-  never used here at any cadence — it costs a completion, which is what a watchdog may not do;
-- it answers the INCIDENT's question directly. A dead subscription credential is exactly what
-  the proxy reports as an unavailable account, and it says so before any run asks for a
-  completion;
-- it needs nothing moved. It already lives outside the settings router, so this manager calls
-  the same function the Settings card does, with no extraction and no second copy of the logic.
+What it probes with: `endpoints/cliproxy_login.accounts`, the proxy's own account listing — one
+READ-ONLY GET against the management API of the instance's one `quota_source: cliproxy` endpoint
+(`cliproxy-mgmt`), fetched ONCE per pass and filtered per login. It carries each account's status
+word and the proxy's one-line reason. The credits read, the quota read and the live completion
+test each go upstream; none is used here.
 
-WHAT IS NOT COVERED, stated plainly: an endpoint that resolves no proxy management binding is
-skipped and gets no record at all. For an API-key endpoint with a balance API (OpenRouter,
-Nano-GPT) the light probe is the CREDITS read, and that one is still inline in
-`web/settings/endpoint_probe.py` — extracting it is its own change. Until then this manager
-claims nothing about those endpoints, rather than claiming they are healthy.
+WHAT IS NOT COVERED, stated plainly: a gateway provider with no `plans` (OpenRouter, Nano-GPT,
+Anthropic's API) is a metered key, not a login, and gets no record. When the instance has no
+management endpoint, or more than one, every login is recorded `unknown` with that reason —
+which proxy holds the logins is not something to guess.
 
 CADENCE. Every 10 minutes (`CHECK_EVERY_S`), never the 5-second tick, and one pass at a time
-(`Scheduler._off_tick`): a credential dies on the order of a token lifetime, and this is a
-watchdog, not a monitor. The pass runs in a worker thread so a proxy that answers slowly cannot
-hold a fire behind it — the lesson `_off_tick`'s docstring records.
+(`Scheduler._off_tick`): a credential dies on the order of a token lifetime. The pass runs in a
+worker thread so a proxy that answers slowly cannot hold a fire behind it.
 
-The event is filed at most once a day while the condition holds (`REFILE_AFTER`), the
-`daemon/backup_watch` rule for a standing condition, with one difference: the latch lives in the
-RECORD (`endpoint_health`'s `filed_at`) rather than on this object. A process-memory latch
-re-files the whole fleet's standing conditions at every daemon restart, and a restart is common
-in exactly the window an operator is fixing a credential.
+The event is filed at most once a day while the condition holds (`REFILE_AFTER`), with the latch
+in the RECORD (`endpoint_health`'s `filed_at`) so a daemon restart cannot re-file it. A record
+for a login no gateway names any more is dropped at the end of the pass, so the blocked-work
+surface (`web/operator_conditions`) never asks a retired login whether it is still dead.
 """
 
 from __future__ import annotations
@@ -62,11 +61,26 @@ CHECK_EVERY_S = 600.0
 #: How long one filing keeps the next quiet while the same state holds.
 REFILE_AFTER = timedelta(days=1)
 
-#: Which probe wrote a record — carried on the row and the event, so a reader of either knows
-#: what was actually asked (and a later increment's heavier probe is distinguishable).
+#: Which probe wrote a record — carried on the row and the event.
 PROBE = "cliproxy-accounts"
 
 EVENT = "endpoint_needs_reauth"
+
+
+def logins(server: ServerConfig) -> list[tuple[str, str, str]]:
+    """Every subscription login a gateway names, as (record key, gateway, login provider).
+
+    A plan group no login provider claims is kept with provider "" — it is judged `unknown`
+    with that reason rather than dropped, since dropping it would claim nothing was configured.
+    """
+    out: dict[str, tuple[str, str, str]] = {}
+    for gname, gateway in sorted((server.gateways or {}).items()):
+        for plans in (gateway.plans or {}).values():
+            for plan in plans:
+                provider = cliproxy_mgmt.plan_provider(plan)
+                key = f"{gname}/{provider or plan}"
+                out.setdefault(key, (key, gname, provider))
+    return list(out.values())
 
 
 class EndpointWatch:
@@ -90,29 +104,41 @@ class EndpointWatch:
             log.exception("endpoint watch tick failed")
 
     def _probe_all(self) -> None:
-        for name in sorted(self.server.endpoints or {}):
+        targets = logins(self.server)
+        home = self.server.routines_home
+        if not targets:
+            endpoint_health.keep_only(home, set())
+            return
+        mgmt, why = cliproxy_mgmt.management_endpoint(self.server)
+        listing = (cliproxy_login.accounts(mgmt) if mgmt is not None
+                   else {"ok": False, "error": why})
+        for key, gateway, provider in targets:
             try:
-                self._probe_one(name)
-            except Exception:   # one bad endpoint must not starve the rest of the pass
-                log.exception("endpoint watch: probing %s failed", name)
+                self._judge(key, gateway, provider, listing)
+            except Exception:   # one bad login must not starve the rest of the pass
+                log.exception("endpoint watch: judging %s failed", key)
+        endpoint_health.keep_only(home, {key for key, _, _ in targets})
 
-    def _probe_one(self, name: str) -> None:
-        bound = cliproxy_mgmt.binding(self.server, name)
-        if bound is None:
-            return      # no light probe reaches this endpoint — see the module docstring
-        reply = cliproxy_login.accounts(
-            bound, cliproxy_mgmt.endpoint_providers(self.server, name))
-        state, detail = endpoint_health.verdict(reply)
-        previous = endpoint_health.get(self.server.routines_home, name) or {}
+    def _judge(self, key: str, gateway: str, provider: str, listing: dict) -> None:
+        if not provider:
+            state, detail = "unknown", (f"plan group {key.split('/', 1)[1]!r} of gateway "
+                                        f"{gateway!r} names no login provider this instance "
+                                        f"knows ({', '.join(cliproxy_mgmt.LOGIN_PROVIDER)}) — "
+                                        "nothing is claimed about it")
+        else:
+            rows = [r for r in (listing.get("accounts") or []) if r.get("provider") == provider]
+            state, detail = endpoint_health.verdict({**listing, "accounts": rows})
+        home = self.server.routines_home
+        previous = endpoint_health.get(home, key) or {}
         # A state CHANGE is a new fact and is reported; the same state re-reports once a day.
         filed_at = str(previous.get("filed_at") or "") if previous.get("state") == state else ""
         if state == "needs_reauth" and _due(filed_at):
-            log_health_event(self.server.routines_home, EVENT, routine="", run_id="",
-                             detail=detail, endpoint=name, probe=PROBE)
-            log.warning("endpoint watch: %s needs re-auth (%s)", name, detail)
+            log_health_event(home, EVENT, routine="", run_id="", detail=f"{key}: {detail}",
+                             login=key, gateway=gateway, provider=provider, probe=PROBE)
+            log.warning("endpoint watch: %s needs re-auth (%s)", key, detail)
             filed_at = now_iso()
-        endpoint_health.remember(self.server.routines_home, name, state=state, detail=detail,
-                                 probe=PROBE, filed_at=filed_at)
+        endpoint_health.remember(home, key, state=state, detail=detail, probe=PROBE,
+                                 filed_at=filed_at)
 
 
 def _due(filed_at: str) -> bool:
