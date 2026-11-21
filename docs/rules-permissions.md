@@ -657,7 +657,7 @@ routine shares, a reach outside the routine's own world.
 | `scheduling` | `schedule_run` — arm or cancel a one-shot future run of a routine | opt-in |
 | `routine-rebuild` | the `rebuild_routine` capability — `create_routine` with `replaces` creates a REPLACEMENT CANDIDATE at once (the old routine's settings without its secrets, unscheduled) and files the one swap decision (engine/candidate.py) | opt-in |
 | `shell` | the `shell` action — one host command per turn, in the run's own jail with no secret injected | opt-in |
-| `outbound-mail` | `mail:send` — send email from the user's own mailboxes (the `fau-mail`/`gmail` → `mail` consolidation retired the two older verbs: `migrate_permission_requires` corrected the doc, `migrate_dead_reserved_utils` dropped them from every installed `capabilities.utils`) | opt-in |
+| `outbound-mail` | `mail:send` — send email from the user's own mailboxes (the `fau-mail`/`gmail` → `mail` consolidation retired the two older verbs) | opt-in |
 | `browser-sessions` | `browser-session` — drive the shared browser that is already signed in (see [browser sessions](browser-sessions.md)) | opt-in |
 | `desktop-sessions` | `desktop` — drive this routine's OWN desktop VM the way a person would, its granted folders mounted inside (see [desktop sessions](desktop-sessions.md)) | opt-in |
 | `darknet` | `darknet` — read Tor hidden services (see [darknet](darknet.md)) | opt-in |

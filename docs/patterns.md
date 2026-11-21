@@ -227,8 +227,7 @@ Patterns ride the library repo's sync like
 rules and permissions; the seed sync only adds a pattern a library lacks, never overwrites one.
 That is why a corrected SHIPPED pattern does not reach a live instance: these files are
 operator-editable, so an overwrite would discard his wording. A shipped value that must change
-on a live library is carried by a one-shot migration instead (`rsched/migrate_pattern_drift.py`
-for the `max_total_turns` / ladder / `outcome-first` convergence, D283), which converts only the
-keys it names against the pattern's own seed twin, leaves a pattern with no twin alone, and
-leaves a list the operator narrowed as he left it — a migration that widened one back would be
-the silent discard the add-only rule exists to prevent.
+on a live library is carried by a one-shot migration instead (D283's `max_total_turns` / ladder / `outcome-first`
+convergence was one), which converts only the keys it names against the pattern's own seed
+twin and leaves a list the operator narrowed as he left it — a migration that widened one back
+would be the silent discard the add-only rule exists to prevent.

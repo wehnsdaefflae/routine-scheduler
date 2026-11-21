@@ -384,8 +384,8 @@ the edit is judged by whether THAT failure came back, not by whether an average 
   change never repeated it ("an edit that cannot name the moment is speculation"). An unreadable
   commit range leaves `aims` null — unknown, never "none declared".
 - **Unknown is not clean.** A run with no `frictions` (recorded before 0.454.0 and not
-  backfilled, or no transcript to read) is left out of both sides. The one-shot boot backfill
-  (`migrate_frictions.py`) counted every run whose transcript retention kept, on its newest leg.
+  backfilled, or no transcript to read) is left out of both sides. A one-shot boot backfill
+  counted every run whose transcript retention kept, on its newest leg.
 
 What reaches MANY routines at once is judged across them, POOLED (`readmodels/change_fleet.py`):
 each routine adds the runs on either side of its boundary that carry its own key unchanged, its
@@ -684,8 +684,7 @@ DOMAIN ledger — named for what it tracks, worked through the routine's own scr
 reports — is invisible to a conservative classifier, and routine-improver's outcome review (a
 routine whose outcome series stays flat while its runs finish `ok`) is the complementary net. The usage stream is the ONE source: a run whose row
 carries no `overhead` is unmeasured and left out, never recomputed from a transcript and never a
-zero. The kept runs before this release were measured once, at boot, from their transcripts
-(`migrate_overhead.py`, the `migrate_frictions.py` shape).
+zero. The kept runs before this release were measured once, at boot, from their transcripts.
 
 Where the reading goes, over the bar:
 
@@ -731,7 +730,7 @@ a call that used a token class whose rate its source does not publish, gets no f
 the cache's `unpriced` list names every such configured model; nothing is estimated, defaulted or
 borrowed. Rows from before 2026-10-17 carry `notional_cost: null` (what those tokens cost at the
 prices of the day was never recorded), and their `volume` was backfilled from what each run
-itself recorded (`migrate_usage_volume.py`), `null` where nothing did.
+itself recorded, `null` where nothing did.
 
 ### …and what a cost BUDGET meters (`budgets.max_cost`)
 
