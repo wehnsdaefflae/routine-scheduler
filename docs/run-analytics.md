@@ -1023,11 +1023,22 @@ compare against a UTC cutoff moved the window's edge by that offset.
 
 Every measurement above asks whether a feature works; none asks whether anything USES it.
 `rsched census [--days 60] [--json]` (`src/rsched/cli_census.py`, read-only) reads the retained
-transcripts of every routine and conversation, every `routine.yaml` and the health stream, and
-reports per name a count and the number of distinct routines or conversations: action kinds
-landed, side fields used, top-level config keys, `capabilities` values, health events written.
-Each known vocabulary — `actionschema.KINDS`, `actions.SIDE_FIELDS`, `config.routine.TOP_KEYS`,
-`health_vocab.EVENTS` — also gets its explicit **never used** list for the window.
+transcripts of every routine and conversation, the health stream, and every `routine.yaml` —
+routines', conversations' and detached background tasks', since `kind` and `playbook` live only in
+a conversation's and `owner` only in a task's — and reports per name a count and the number of
+distinct subjects: action kinds landed, side fields used, top-level config keys, `capabilities`
+values, health events written. Each known vocabulary — `actionschema.KINDS`,
+`actions.SIDE_FIELDS`, `config.routine.TOP_KEYS`, `health_vocab.EVENTS` — also gets its explicit
+**never used** list for the window.
+
+Two vocabularies need care to be measurable at all. An ALIAS kind (`websearch`, `code_search`,
+`engine/kindaliases.py`) is rewritten into the util call it spells before anything is recorded,
+so its landed `assistant_action` EVENT carries `spelled: <alias kind>` beside `turn` and `phase`
+(never in the payload, so the model's own history is the util call alone); the census counts that
+mark under the alias kind, and `util` still counts every util call however it was written. And
+`TOP_KEYS` leaves out `config.routine.RUNTIME_FIELDS` — `dir`, `deliberation`, `tuning`, which the
+loader fills and no writer puts in a `routine.yaml` — so the loader reports one found there as an
+unknown key instead of the census listing it as a key nobody uses.
 
 Run it before adding to a feature: building onto something nothing exercises is how unused
 machinery accretes. A feature at zero for 60 days is a removal candidate for the operator to

@@ -193,13 +193,9 @@ class RoutineConfig(_Config):
     # not in tuning: authority over being watched is not machine-tunable. The turn interval `n`
     # and the rung's own turn cap are (tuning.yaml's `ladder_turn_interval` / `oversight_turns`).
     ladder: dict = Field(default_factory=lambda: dict(DEFAULT_LADDER))
-    # How much thinking lands on paper (see DELIBERATION_LEVELS). The runtime handle
-    # only: load_routine fills it from TUNING (tuning.yaml) — routine.yaml never carries
-    # it (config = authority, tuning = machine-tunable behavior).
+    # How much thinking lands on paper (DELIBERATION_LEVELS) and the whole of tuning.yaml as
+    # loaded (engine/ladder.ladder_settings): RUNTIME_FIELDS load_routine fills from tuning.yaml
     deliberation: str = DEFAULT_DELIBERATION
-    # The whole of tuning.yaml as loaded, for the readers that want a knob by name rather than
-    # a promoted field (engine/ladder.ladder_settings). A runtime handle like `deliberation`:
-    # load_routine fills it, routine.yaml never carries it.
     tuning: dict = Field(default_factory=dict)
 
     @field_validator("cron")
@@ -268,9 +264,12 @@ class RoutineConfig(_Config):
 
 
 SCHEDULE_KEYS = frozenset({"cron", "tz"})
+#: Fields the LOADER fills — the routine's own dir, tuning.yaml's level and the whole of it — so
+#: never routine.yaml keys: no writer puts one there, and one found there is flagged unknown.
+RUNTIME_FIELDS = frozenset({"dir", "deliberation", "tuning"})
 #: Every top-level routine.yaml key: an aliased field loads from its CONTAINER key
 #: (schedule.cron, workflow.library_slug, playbook.slug, retention.keep_runs).
-TOP_KEYS = frozenset((set(RoutineConfig.model_fields) - {
+TOP_KEYS = frozenset((set(RoutineConfig.model_fields) - RUNTIME_FIELDS - {
     "cron", "tz", "workflow_slug", "workflow_commit", "playbook_slug", "keep_runs"})
     | {"schedule", "workflow", "playbook", "retention"})
 _RETIRED_SCHEDULE_KEYS = {
@@ -321,8 +320,9 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     if not isinstance(raw.get("schedule") or {}, dict):
         problems.append("schedule: expected a mapping")
 
-    # Any other top-level key is a typo whose real field silently reverted to its default.
-    problems.extend(f"{key}: unknown routine.yaml key — check the spelling (ignored)"
+    # Any other top-level key is read by nothing: a typo's real field silently reverted to default.
+    problems.extend(f"{key}: unknown routine.yaml key — " + ("the loader fills it, never this file"
+                    if key in RUNTIME_FIELDS else "check the spelling") + " (ignored)"
                     for key in sorted(set(raw) - TOP_KEYS))
     # The same check one level down: `schedule:` holds exactly the two keys its aliased fields
     # read. A stray one is read by nothing, and a RETIRED one says what replaced it (D237).

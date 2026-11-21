@@ -1,8 +1,14 @@
 """`rsched census` — what this instance actually USES, so disuse is visible before anything is
-added to a feature. Over the retained transcripts (routines and conversations) and routine
-configs it counts action kinds landed, side fields used, routine.yaml top-level keys,
-`capabilities` values and health events written — each with its count and the number of distinct
-routines or conversations — and lists every entry of each known vocabulary at zero. Read-only.
+added to a feature. Over the retained transcripts (routines and conversations) and every
+`routine.yaml` (routines, conversations and detached background tasks — a conversation's `kind`
+and `playbook` and a task's `owner` live only there) it counts action kinds landed, side fields
+used, top-level config keys, `capabilities` values and health events written — each with its
+count and the number of distinct subjects — and lists every entry of each known vocabulary at
+zero. Read-only.
+
+An ALIAS kind (`websearch`, `code_search` — engine/kindaliases.py) lands as the util call it
+spells, so it is counted from the event's `spelled` mark, IN ADDITION to that util call: the
+`util` count is every util call however it was written.
 """
 
 from __future__ import annotations
@@ -48,7 +54,9 @@ def _subjects(home: Path) -> Iterator[Path]:
 
 
 def _actions(path: Path, since: str) -> Iterator[dict]:
-    """Every landed action's payload in one transcript (plain or rotated) from `since` on."""
+    """Every landed `assistant_action` event in one transcript (plain or rotated) from `since`
+    on — the whole event, since the alias mark rides beside the payload.
+    """
     try:
         with (gzip.open(path, "rb") if path.suffix == ".gz" else path.open("rb")) as fh:
             for raw in fh:
@@ -60,7 +68,7 @@ def _actions(path: Path, since: str) -> Iterator[dict]:
                     continue
                 if (isinstance(ev, dict) and ev.get("type") == "assistant_action"
                         and str(ev.get("ts", "")) >= since and isinstance(ev.get("payload"), dict)):
-                    yield ev["payload"]
+                    yield ev
     except (OSError, EOFError):
         return
 
@@ -73,38 +81,47 @@ def _scan_transcripts(server, since: str, days: int, kinds: _Tally, sides: _Tall
                 if path.suffix not in {".jsonl", ".gz"} or path.stat().st_mtime < oldest_mtime:
                     continue
                 transcripts += 1
-                for action in _actions(path, since):
+                for event in _actions(path, since):
+                    action = event["payload"]
                     kinds.add(str(action.get("kind")), subject.name)
+                    if spelled := event.get("spelled"):
+                        kinds.add(str(spelled), subject.name)
                     for field in (f for f in SIDE_FIELDS if action.get(f)):
                         sides.add(field, subject.name)
     return transcripts
 
 
-def _scan_configs(routines_home: Path, keys: _Tally, caps: _Tally) -> None:
-    for routine in _subjects(routines_home):
-        try:
-            raw = read_yaml(routine / "routine.yaml", {})
-        except (OSError, yaml.YAMLError):
-            continue
-        if not isinstance(raw, dict):
-            continue
-        for key in raw:
-            keys.add(str(key), routine.name)
-        held = raw.get("capabilities")
-        for cap, value in (held.items() if isinstance(held, dict) else ()):
-            for one in value if isinstance(value, list) else [value]:
-                caps.add(f"{cap}={one}" if isinstance(one, str | int | bool) else cap, routine.name)
+def _scan_configs(server, keys: _Tally, caps: _Tally) -> int:
+    """Count every config's top-level keys and capability values; returns how many were read."""
+    configs = 0
+    for home in (server.routines_home, server.conversations_home, server.background_home):
+        for subject in _subjects(home):
+            try:
+                raw = read_yaml(subject / "routine.yaml", {})
+            except (OSError, yaml.YAMLError):
+                continue
+            if not isinstance(raw, dict) or not raw:
+                continue
+            configs += 1
+            for key in raw:
+                keys.add(str(key), subject.name)
+            held = raw.get("capabilities")
+            for cap, value in (held.items() if isinstance(held, dict) else ()):
+                for one in value if isinstance(value, list) else [value]:
+                    caps.add(f"{cap}={one}" if isinstance(one, str | int | bool) else cap,
+                             subject.name)
+    return configs
 
 
 def census(server, days: int) -> dict:
     since = (datetime.now(tz=UTC) - timedelta(days=days)).date().isoformat()
     kinds, sides, keys, caps, events = _Tally(), _Tally(), _Tally(), _Tally(), _Tally()
     transcripts = _scan_transcripts(server, since, days, kinds, sides)
-    _scan_configs(server.routines_home, keys, caps)
+    configs = _scan_configs(server, keys, caps)
     for row in read_jsonl(server.routines_home / ".control" / HEALTH_EVENTS_FILE):
         if str(row.get("ts", "")) >= since:
             events.add(str(row.get("event")), str(row.get("routine", "")))
-    return {"days": days, "since": since, "transcripts": transcripts,
+    return {"days": days, "since": since, "transcripts": transcripts, "configs": configs,
             "action_kinds": kinds.section(KINDS), "side_fields": sides.section(SIDE_FIELDS),
             "config_keys": keys.section(TOP_KEYS), "capabilities": caps.section(None),
             "health_events": events.section(EVENTS)}
@@ -118,8 +135,8 @@ def cmd_census(args) -> int:
     if args.json:
         print(json.dumps(doc, indent=2))
         return 0
-    print(f"census since {doc['since']} ({doc['days']} days, {doc['transcripts']} transcripts) "
-          f"— count · routines/conversations · name")
+    print(f"census since {doc['since']} ({doc['days']} days, {doc['transcripts']} transcripts, "
+          f"{doc['configs']} configs) — count · routines/conversations/tasks · name")
     for title in ("action_kinds", "side_fields", "config_keys", "capabilities", "health_events"):
         section = doc[title]
         print(f"\n{title}:")

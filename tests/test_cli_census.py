@@ -82,3 +82,38 @@ def test_census_cli_prints_lines_or_one_json_document(cli_server, make_routine, 
     assert "action_kinds:" in out and "never used:" in out and "read_file" in out
     assert cli.main(["census", "--json", "--days", "30"]) == 0
     assert json.loads(capsys.readouterr().out)["days"] == 30
+
+
+def test_an_alias_kind_is_counted_from_its_mark_and_the_util_call_too(cli_server, make_routine):
+    """A `websearch` spelling lands as `util`; the event's `spelled` mark is what the census counts
+    under the alias kind, and the util count stays every util call however it was written."""
+    run = make_routine(slug="alpha") / "runs" / "20261120-010000"
+    run.mkdir(parents=True)
+    marked = json.loads(_action("util", name="websearch", args=["q"]))
+    (run / "transcript.jsonl").write_text(
+        json.dumps({**marked, "spelled": "websearch"}) + "\n" + _action("util", name="x"),
+        encoding="utf-8")
+    kinds = census(cli_server, 60)["action_kinds"]
+    assert _used(kinds) == {"util": (2, 1), "websearch": (1, 1)}
+    assert "websearch" not in kinds["never"] and "code_search" in kinds["never"]
+
+
+def test_config_keys_are_measured_in_every_home_and_runtime_fields_are_not_keys(cli_server,
+                                                                                make_routine):
+    """`kind`/`playbook` live in a conversation's routine.yaml and `owner` in a background task's,
+    so the census reads those homes too; the loader-filled fields are not vocabulary at all."""
+    make_routine(slug="alpha")
+    for home, raw in ((cli_server.conversations_home / "c-1",
+                       {"kind": "conversation", "playbook": {"slug": "p"}}),
+                      (cli_server.background_home / "bg-1", {"owner": {"slug": "c-1"}})):
+        home.mkdir(parents=True)
+        (home / "routine.yaml").write_text(yaml.safe_dump({"slug": home.name, **raw}),
+                                           encoding="utf-8")
+    (cli_server.background_home / ".requests").mkdir()
+    doc = census(cli_server, 60)
+    used = _used(doc["config_keys"])
+    assert doc["configs"] == 3
+    assert used["slug"] == (3, 3)
+    assert used["kind"] == used["playbook"] == used["owner"] == (1, 1)
+    assert not {"kind", "playbook", "owner"} & set(doc["config_keys"]["never"])
+    assert not {"dir", "deliberation", "tuning"} & set(doc["config_keys"]["never"])
