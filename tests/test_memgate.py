@@ -1,8 +1,12 @@
-"""A test session waits for the HOST to have the memory it needs (tests/memgate.py, 2026-11-05)."""
+"""A test session waits for room, runs no more workers than fit, and is ended over its cap
+(tests/memgate.py, 2026-11-05; collapsed into one module by C7, 2026-11-21)."""
 
 from __future__ import annotations
 
+import signal
 import types
+
+import pytest
 
 import memgate
 
@@ -114,12 +118,6 @@ def test_an_unreadable_meminfo_waits_for_nothing(tmp_path):
     assert memgate.available_mb(tmp_path / "meminfo") == 4096
 
 
-def test_the_switch_turns_it_off(monkeypatch):
-    monkeypatch.setenv("RSCHED_TEST_MEM_WAIT", "0")
-    memgate.wait_for_memory("browser", read=lambda: 1, read_cgroup=lambda: 1,
-                            sleep=lambda _s: None, clock=lambda: 0)
-
-
 #: What a SERIAL selection was measured to HOLD, in MB — `held_peak_bytes` at its worst across
 #: every `-n 0` stage the gate has sampled whose log is still on disk to prove it was serial
 #: (21 rows, 876-2700 MB, median 1965; plus 5 `fast-serial` re-runs at 851-1317). The two 4 GB
@@ -172,49 +170,25 @@ def test_the_message_says_which_selection_it_priced(monkeypatch, capsys):
         "every priced selection needs prose for its message")
 
 
-def test_the_fast_budget_still_covers_the_worker_count_it_claims_to():
-    """The two halves must move together — nothing has ever checked that they do."""
-    import browsersource
-
-    workers = browsersource.FAST_WORKERS
-    #: MB a fast xdist worker really holds, from the gate's `held_peak_bytes` rows: the fast
-    #: stage's increment over a `-n 0` controller, at its WORST, divided by the worker count.
-    #: Four-fold the ~250 MB this test used to assume.
-    per_worker = 600
-    floor = workers * per_worker
-    assert memgate.NEED_MB["fast"] >= floor, (
-        f"memgate's fast budget is {memgate.NEED_MB['fast']} MB but FAST_WORKERS={workers} at "
-        f"~{per_worker} MB each (measured, held_peak_bytes) needs at least {floor} MB — raise "
-        "NEED_MB['fast'] or lower FAST_WORKERS")
-    assert memgate.NEED_MB["browser"] >= browsersource.BROWSER_WORKERS * 250
-
-
 #: What the fast stage was measured to HOLD, in MB — `held_peak_bytes` (anon + swapped pages)
-#: at its worst across every fast stage the gate has sampled since the field shipped
-#: (3.29 GB of the 5 GiB cgroup; the median is 3.16 GB). The figure an OOM is decided on, as
-#: distinct from `peak_pct_of_limit`, which counts reclaimable page cache and read 96-100 % on
-#: the same stages while `oom_kill` stayed 0.
+#: at its worst across every fast stage the gate has sampled (3.29 GB of the 5 GiB cgroup; the
+#: median is 3.16 GB) — the figure an OOM is decided on, unlike `peak_pct_of_limit`.
 MEASURED_FAST_HOLD_MB = 3367
 
 
-def test_the_fast_budget_covers_what_the_stage_was_measured_to_hold():
-    """The check whose absence let the budget be wrong for a week, silently."""
-    assert memgate.NEED_MB["fast"] >= MEASURED_FAST_HOLD_MB, (
-        f"memgate's fast budget is {memgate.NEED_MB['fast']} MB but the fast stage was measured "
-        f"holding {MEASURED_FAST_HOLD_MB} MB (held_peak_bytes, the figure an OOM is decided on) "
-        "— the gate would wait for less memory than the stage then takes")
-
-
-def test_the_fast_budget_still_fits_inside_the_cgroup_it_waits_for():
-    """A budget larger than the ceiling can never be satisfied: the gate would wait out
-    `RSCHED_TEST_MEM_WAIT_S` and exit 3 on every run, on an idle box, forever. The engine
-    container's cgroup is 5 GiB, so the budget must leave room for the daemon and the live runs
-    that share it — the whole reason the cgroup half of this guard exists.
+def test_the_fast_budget_covers_its_workers_and_its_measured_hold_and_fits_the_cgroup():
+    """The checks whose absence let the budget be wrong for a week, silently: it must cover
+    FAST_WORKERS at ~600 MB each (measured, four-fold the ~250 MB once assumed) and the stage's
+    measured hold, and still fit the 5 GiB engine cgroup with room for the daemon — a budget
+    above the ceiling would wait out `RSCHED_TEST_MEM_WAIT_S` on an idle box, forever.
     """
-    cgroup_mb = 5 * 1024
-    assert memgate.NEED_MB["fast"] < cgroup_mb, (
-        f"the fast budget ({memgate.NEED_MB['fast']} MB) must fit inside the engine cgroup "
-        f"({cgroup_mb} MB) with room for the daemon beside it")
+    import browsersource
+
+    fast = memgate.NEED_MB["fast"]
+    assert fast >= browsersource.FAST_WORKERS * 600, "raise NEED_MB['fast'] or lower FAST_WORKERS"
+    assert fast >= MEASURED_FAST_HOLD_MB, "the gate would wait for less than the stage takes"
+    assert fast < 5 * 1024, "the fast budget must fit inside the engine cgroup"
+    assert memgate.NEED_MB["browser"] >= browsersource.BROWSER_WORKERS * 250
 
 
 # ---- who may block: the controller only (2026-11-10, gate 1794268634309389266-release)
@@ -254,3 +228,113 @@ def test_a_unit_tests_config_stub_never_enters_the_wait():
     assert entered == [], (
         f"a config stub reached the memory wait for {entered} — on a loaded box that blocks "
         "for the pytest timeout and the gate holds the shared lock while it does")
+
+
+# ---- the browser charge and the cgroup it is read against (b9, the operator 2026-11-19) ----
+
+#: the uitest container's ceiling (docker-compose.override.yml `mem_limit: 4g`)
+UITEST_MB = 4096
+#: what the browser stage really peaked at, per `submit.py`, over the five stages before the fix
+MEASURED_BROWSER_PEAKS_MB = (1876, 1831, 1840, 1811, 1797)
+
+
+def test_the_browser_charge_is_the_measured_peak_not_the_containers_ceiling():
+    """A charge equal to the ceiling can never be satisfied while anything else runs in that
+    container, which is what refused a stage with 4,040 MB of headroom available."""
+    charge = memgate.NEED_MB["browser"]
+    assert max(MEASURED_BROWSER_PEAKS_MB) <= charge < UITEST_MB, charge
+    assert charge - max(MEASURED_BROWSER_PEAKS_MB) <= 256, "within 256 MB of the worst peak"
+
+
+def test_a_browser_session_is_read_against_the_container_it_runs_in(monkeypatch):
+    """Measured 2026-11-19 inside `uitest`: cgroup headroom 4,040 MB, host 2,290-2,413 MB — so
+    reading the host refused a stage the container had ample room for. Every other selection
+    keeps being bound by BOTH, which is what D291's worker count needs."""
+    readings = dict(memgate.readings_for("browser", lambda: 2413, lambda: 4040))
+    assert readings == {"this container's cgroup": 4040}, readings
+    for selection in ("fast", "serial"):
+        both = dict(memgate.readings_for(selection, lambda: 2413, lambda: 4040))
+        assert both == {"host memory": 2413, "this container's cgroup": 4040}, (selection, both)
+    monkeypatch.delenv("RSCHED_TEST_MEM_WAIT", raising=False)
+    admitted = memgate.wait_for_memory(
+        "browser", read=lambda: 2290, read_cgroup=lambda: 4040,
+        sleep=lambda _s: pytest.fail("it waited, so the host reading still refuses it"),
+        clock=lambda: 0.0)
+    assert admitted == memgate.NEED_MB["browser"]
+
+
+def test_a_browser_stage_that_really_cannot_fit_still_waits(monkeypatch):
+    """Not a rubber stamp: when the CONTAINER itself is short, the wait is still the answer."""
+    monkeypatch.delenv("RSCHED_TEST_MEM_WAIT", raising=False)
+    waits: list[float] = []
+    bounded = memgate.wait_for_memory(
+        "browser", read=lambda: 8000, read_cgroup=lambda: 500, read_hold=lambda: 100,
+        sleep=waits.append, clock=lambda: 0.0 if not waits else 10_000.0)
+    assert waits, "a container with 500 MB free took the browser stage without waiting"
+    assert bounded == 600, bounded
+
+
+# ---- the watchdog: an overrun ends the TEST RUN, never a live routine run (D295) ----------
+
+def _watchdog(holds, cap=1000):
+    """A watchdog over a scripted sequence of readings, recording what it would have killed."""
+    readings = list(holds)
+    killed: list[tuple[int, int]] = []
+    dog = memgate.Watchdog(cap=cap, pid=4242,
+                           read=lambda _pid: readings.pop(0) if readings else 0.0,
+                           kill=lambda pid, sig: killed.append((pid, sig)),
+                           warn=lambda _line: None)
+    return dog, killed
+
+
+def test_a_session_inside_its_cap_is_never_touched_and_a_zero_reading_never_ends_one():
+    """Where there is no cgroup, `cgroup_hold_mb` answers 0.0 — below every cap by construction,
+    so the watchdog is inert rather than trigger-happy."""
+    dog, killed = _watchdog([100, 400, 999, 0.0], cap=1000)
+    for _ in range(4):
+        dog.sample()
+    assert not killed and dog.killed_at_mb is None
+
+
+def test_a_session_over_its_cap_is_interrupted_once_however_long_it_lasts():
+    """SIGINT, so pytest stops its workers and reports; once, because a session held over its
+    cap for a minute must not be signalled every 0.25 s."""
+    dog, killed = _watchdog([500, 1500, 1600, 1700], cap=1000)
+    dog.sample()
+    assert not killed, "the first reading is inside the cap"
+    for _ in range(3):
+        dog.sample()
+    assert killed == [(4242, signal.SIGINT)]
+    assert dog.killed_at_mb == 1500
+
+
+def test_the_hold_is_read_in_the_same_unit_the_charges_were_measured_in(tmp_path):
+    """The unit that cost gate 1795100129134213629-release its fast stage: anon + swap, and NOT
+    the page cache in `file` that the kernel drops at the limit."""
+    (tmp_path / "memory.stat").write_text("anon 2097152000\nfile 4000000000\n")
+    (tmp_path / "memory.swap.current").write_text("1048576000\n")
+    assert memgate.cgroup_hold_mb(0, tmp_path) == 3000.0
+    assert memgate.cgroup_hold_mb(0, tmp_path / "missing") == 0.0, "no cgroup, no bound"
+
+
+def test_the_cap_is_the_charge_plus_slack_not_the_memory_that_happens_to_be_free(monkeypatch):
+    """This box had 2,802 MB available while the fast stage is measured holding 3.08-3.29 GB, so a
+    headroom-derived cap would kill a legitimate release gate. A deadline admission smaller than
+    the charge never lowers the cap either (1,056 MB stage killed under a 1,024 MB cap)."""
+    caps: list[int] = []
+    monkeypatch.setattr(memgate.Watchdog, "start", lambda self: caps.append(self.cap) or self)
+    fast = types.SimpleNamespace(option=types.SimpleNamespace(dist="worksteal", numprocesses=4))
+    for admitted in (memgate.need_mb("fast", 4), 128):
+        monkeypatch.setattr(memgate, "wait_for_memory", lambda *_a, _m=admitted, **_k: _m)
+        memgate.wait_for_config(fast, "not ui")
+    assert caps == [3584 + memgate.SLACK_MB] * 2, caps
+
+
+def test_the_switch_that_turns_off_the_wait_turns_off_the_watchdog(monkeypatch):
+    """"No admission" must mean "nothing is killed": a cap from nothing bounds by no measurement."""
+    monkeypatch.setenv("RSCHED_TEST_MEM_WAIT", "0")
+    assert memgate.wait_for_memory("browser", read=lambda: 1, read_cgroup=lambda: 1,
+                                   sleep=lambda _s: pytest.fail("it waited"), clock=lambda: 0) is None
+    monkeypatch.setattr(memgate.Watchdog, "start", lambda self: pytest.fail("it was armed"))
+    serial = types.SimpleNamespace(option=types.SimpleNamespace(dist="no", numprocesses=0))
+    memgate.wait_for_config(serial, "not ui")
