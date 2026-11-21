@@ -15,14 +15,10 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .. import rundepth
-from ..grants import CONFIG_FILE
+from .. import rundepth, sealtable
 from ..paths import atomic_write, read_json
 from ..readmodels.statemap import STAGES_DIR
 from . import docread, fileformat, grounding, readwindow, storeseal
-from .finishline import FILE as FINISH_LINE
-from .outputs import OUTPUTS_DIR
-from .reach import routine_dirs
 from .run_context import RunContext, resolve_action_path
 
 if TYPE_CHECKING:
@@ -37,15 +33,6 @@ UTIL_DEFAULT_TIMEOUT_S = 300
 def _own_dir(ctx: RunContext) -> Path:
     """The run's own dir, resolved — the one the grounding rules exempt."""
     return ctx.routine.dir.resolve()
-
-
-def _within(resolved: Path, sealed: Path) -> bool:
-    """Does the action path lie in (or at) `sealed`, taken at its own place or at what it
-    resolves to? An action path is resolved — wholly, or up to its final entry for delete and
-    move (`_entry`) — so a sealed path that is itself a link is met at its target by one and
-    at its own place by the other.
-    """
-    return resolved.is_relative_to(sealed) or resolved.is_relative_to(sealed.resolve())
 
 
 def _listing_lines(path: Path) -> Iterator[str]:
@@ -191,142 +178,40 @@ def do_read_file(action: dict, ctx: RunContext) -> dict:
     return {"kind": "read_file", **_read_one(action["path"], action, ctx)}
 
 
-MEMORY_REFUSAL = (".memory/ is reachable only through memory_read / memory_write — the engine "
-                  "owns .memory/INDEX.md (built from each note's 'about' line), which a generic "
-                  "file action would bypass")
+#: The rows a READ meets too, and the two halves of the write gate's precedence (`sealtable`).
+_READ_SEALS = tuple(s for s in sealtable.SEALS if s.reads)
+_BEFORE_REMOVAL = tuple(s for s in sealtable.SEALS if s.precedes_removal)
+_AFTER_REMOVAL = tuple(s for s in sealtable.SEALS if not s.precedes_removal)
 
 
 def _memory_gate(ctx: RunContext, resolved) -> str | None:
-    """The `.memory/` seal, on the RESOLVED path — where its siblings live.
+    """The seals a READ meets too — `.memory/` — on the RESOLVED path, where its siblings live.
 
     `engine/actions.py` also tests it LEXICALLY — a cheap correction, not a seal: a
     traversal or an absolute path walks past it.
     """
-    for d in routine_dirs(ctx):
-        if _within(resolved, d / ".memory"):
-            return MEMORY_REFUSAL
-        # …and a JOB's notebook (rsched/jobs.py): an open job's memory actions resolve in
-        # its workspace, so every `.memory/` under the routine is the engine's alike
-        for base in (d, d.resolve()):
-            if resolved.is_relative_to(base) and ".memory" in resolved.relative_to(base).parts:
-                return MEMORY_REFUSAL
-    return None
-
-
-FINISH_LINE_REFUSAL = ("the finish line is the operator's — a run reports against it in its "
-                       "finish `accounting` (a distance, or met for an outcome the run proves) "
-                       "and never edits it; if you believe it is wrong, file a report saying why")
-
-
-def _finish_line_gate(ctx: RunContext, resolved) -> str | None:
-    """The finish line decides when the routine RETIRES, so it is the operator's alone: a run
-    answers for it through its finish accounting and never edits it.
-    """
-    if any(resolved in (d / FINISH_LINE, (d / FINISH_LINE).resolve())
-           for d in routine_dirs(ctx)):
-        return FINISH_LINE_REFUSAL
-    return None
-
-
-def _jobs_gate(ctx: RunContext, resolved) -> str | None:
-    """The engine-owned stores (`storeseal`) — a file, or a directory and all beneath it."""
-    for d in routine_dirs(ctx):
-        for rel, why in storeseal.stores(ctx).items():
-            if _within(resolved, d / rel):
-                return why
-    return None
-
-
-def _removal_gate(ctx: RunContext, resolved: Path) -> str | None:
-    """What a REMOVAL — delete, a move's source — may not take with it. Every other seal asks
-    whether a path lies INSIDE something sealed; a removal also takes everything inside the
-    path. A routine dir the run can reach is never removed whole, and neither is a directory
-    holding its finish line or an engine-owned store.
-    """
-    for d in routine_dirs(ctx):
-        if d.is_relative_to(resolved):
-            return ("this would remove a routine's own directory, and its config, recipe, "
-                    "memory and run history with it — remove what is inside it instead")
-        line = d / FINISH_LINE
-        if line.exists() and line.is_relative_to(resolved):
-            return f"this would remove {FINISH_LINE}: {FINISH_LINE_REFUSAL}"
-        for rel, why in storeseal.stores(ctx).items():
-            if (d / rel).exists() and (d / rel).is_relative_to(resolved):
-                return f"this would remove {rel}: {why}"
-    return None
-
-
-def _holds_config(resolved: Path) -> bool:
-    """Is there a routine.yaml anywhere in this tree? Removing the tree writes that file too."""
-    return (resolved.is_dir() and not resolved.is_symlink()
-            and any(CONFIG_FILE in files for _root, _dirs, files in os.walk(resolved)))
-
-
-def _engine_owned(ctx: RunContext, resolved) -> str | None:
-    """`runs/` and `.util_outputs/` of every reachable routine dir: the engine's record of
-    what happened, never rewritten by the run it records — and `.doc_cache/`, whose files a
-    later read trusts by content hash. One exemption, only in the ROUTINE's runs/: a child's
-    own workspace tree is where it WORKS. Everything else there (control.json, status.json,
-    transcripts) is the engine's and the web's.
-    """
-    dirs = routine_dirs(ctx)
-    workspace = dirs[-2] if len(dirs) > 1 else None     # the top-most child workspace
-    for d in dirs:
-        if _within(resolved, d / "runs") and not (
-                d == dirs[-1] and workspace is not None and resolved.is_relative_to(workspace)):
-            return "runs/ is engine-owned and read-only for the run"
-        if _within(resolved, d / OUTPUTS_DIR):
-            return (f"{OUTPUTS_DIR}/ is engine-owned and read-only for the run — it is the "
-                    "saved full text of util output too large for its observation (read_file "
-                    "it); a run does not rewrite the record of what a util returned")
-        if _within(resolved, d / docread.CACHE_DIR):
-            return (f"{docread.CACHE_DIR}/ is engine-owned and read-only for the run — it "
-                    "holds the Markdown read_file converted documents to; read_file the "
-                    "document itself, and write what you derive from it elsewhere")
-    return None
+    return storeseal.refusal(ctx, resolved, _READ_SEALS)
 
 
 def _write_gate(ctx: RunContext, resolved, *, creates: bool = True) -> str | None:
     """Backstop for engine-owned and permission-gated writes (GrantPolicy.deny handles the
     relative-path form; this catches absolute paths and traversals into every routine dir
-    the run can reach — `routine_dirs`).
+    the run can reach — `routine_dirs`). WHAT is sealed, and the words, are `sealtable`'s;
+    which row a resolved path falls under is `storeseal`'s.
 
     `creates` is False for a path the action only REMOVES (delete, a move's source): a note
     left in a shared store for a routine that does not share it is refused when it is written;
     clearing one that is already stranded there is the repair, not the defect. A removal is
-    held to what it would take WITH it instead (`_removal_gate`).
+    held to what it would take WITH it instead (`storeseal.removal_refusal`).
     """
-    # All structural, not grants: they hold with no policy loaded.
-    err = (_memory_gate(ctx, resolved) or _finish_line_gate(ctx, resolved)
-           or _jobs_gate(ctx, resolved))
+    err = storeseal.refusal(ctx, resolved, _BEFORE_REMOVAL, creates=creates)
     if err is None and creates:
         from ..recipients import note_refusal
 
         err = note_refusal(ctx.server, resolved)
     elif err is None:
-        err = _removal_gate(ctx, resolved)
-    if err:
-        return err
-    if err := _engine_owned(ctx, resolved):
-        return err
-    # routine.yaml is config — never writable by ANY run, even with the recipe unlocked.
-    if resolved.name == CONFIG_FILE or (not creates and _holds_config(resolved)):
-        return ("routine.yaml is config (permissions, capabilities, budgets, roots) — no run "
-                "edits it, not even the routine-improver (machine-tunable knobs live in "
-                "tuning.yaml); file a deferred ask_user instead")
-    # Only the RECIPE seal reads the policy; the two above are structural.
-    if (g := ctx.grants) is None:
-        return None
-    if not g.recipe_unlocked:
-        from ..grantpolicy import is_recipe_path
-
-        if any(resolved.is_relative_to(d) and is_recipe_path(str(resolved.relative_to(d)))
-               for d in routine_dirs(ctx)):
-            return ("editing this routine's own recipe (main.md / stages/ / tuning.yaml) "
-                    "needs the recipe-authoring permission, which this routine does not "
-                    "hold — its instructions are the user's. File a deferred ask_user (or a "
-                    "report) describing the change instead")
-    return None
+        err = storeseal.removal_refusal(ctx, resolved)
+    return err or storeseal.refusal(ctx, resolved, _AFTER_REMOVAL, creates=creates)
 
 
 def do_write_file(action: dict, ctx: RunContext) -> dict:

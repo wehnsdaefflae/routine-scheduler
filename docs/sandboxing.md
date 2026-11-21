@@ -241,14 +241,15 @@ the jail, is the decision.
 
 Every write protection the engine has lives in the FILE-action gate — the `.memory/` seal, the
 engine-ownership of `runs/` and `.util_outputs/`, the `routine.yaml` refusal, the
-recipe-authoring boundary, `_removal_gate`. A `bash -c` redirect calls none of them, and which
-writes a shell line performs is undecidable in general, so nothing tries to refuse one by
-inspecting the command. D158 traded prevention for ACCOUNTABILITY:
+recipe-authoring boundary, `storeseal.removal_refusal`. A `bash -c` redirect calls none of
+them, and which writes a shell line performs is undecidable in general, so nothing tries to
+refuse one by inspecting the command. D158 traded prevention for ACCOUNTABILITY:
 `engine/shellwrite.marks_a_write` tests the command's SHAPE (conservative in one direction
 only — "may have written", never "did not") and the observation carries `ungated_write`.
 
 **Inside the routine's own directory the KERNEL now refuses them anyway (D179).** The seals
-above are path predicates, so `ownseal` subtracts those paths from the jail: the own dir is
+above are path predicates — ONE table of them, `rsched/sealtable.py`, which the file gate and
+the jail both read — so `ownseal` subtracts its top-level paths from the jail: the own dir is
 mounted LIST-ONLY (read-only until D207 moved the read boundary in beside it — see *The
 run-history depth* below) and its UNSEALED children read-write, which means `.memory/`, `runs/`,
 `.util_outputs/`, `.doc_cache/`, `routine.yaml`, the engine-written process record `LEDGER.md`

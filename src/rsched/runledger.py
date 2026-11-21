@@ -15,11 +15,11 @@ this run did, chose and rejected — is exactly the finish summary's `**Process:
 every run already writes once.
 
 It is SEALED like `.memory/INDEX.md`: the file-action write gate refuses a model's write, edit,
-delete or move of it (`engine/storeseal.py`, with `REFUSAL` below as the observation) and the
-Landlock own-dir seal withholds it and the archive from every jailed subprocess
-(`ownseal.SEALED_FILES` / `SEALED_DIRS` import these names), so a shell heredoc cannot write it
-either. The operator's file endpoint refuses it by name (`web/api_routine_files`). The engine
-writes it in-process, outside any jail.
+delete or move of it (its rows in `rsched/sealtable.py`, with `REFUSAL` below as the
+observation) and the Landlock own-dir seal withholds it and the archive from every jailed
+subprocess (`ownseal.SEALED_FILES` / `SEALED_DIRS`, derived from those rows), so a shell heredoc
+cannot write it either. The operator's file endpoint refuses it by name
+(`web/api_routine_files`). The engine writes it in-process, outside any jail.
 
 ## Entry shape
 

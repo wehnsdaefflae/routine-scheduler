@@ -12,6 +12,7 @@ prose-outside-JSON failures.
 from __future__ import annotations
 
 from ..ids import is_slug
+from ..sealtable import MEMORY
 from . import fieldshapes, notemeta, thenscript
 from .actionschema import KINDS, PSEUDO_UTILS
 from .askfields import ASK_OPTIONS_MAX
@@ -303,9 +304,8 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
             rel = str(raw or "")
             while rel.startswith("./"):
                 rel = rel[2:]
-            if rel == ".memory" or rel.startswith(".memory/"):
-                problems.append(f"kind={kind} may not touch .memory/ — use memory_read / "
-                                "memory_write (the engine maintains .memory/INDEX.md for you)")
+            if rel == MEMORY.name or rel.startswith(f"{MEMORY.name}/"):
+                problems.append(MEMORY.worded(kind=kind, lexical=True))
                 break
     # A rule is read by its catalog SLUG: the name is joined onto the library dir, so a path
     # would read past the run's fs jail.

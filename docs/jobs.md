@@ -34,9 +34,10 @@ A record in the engine-owned store `state/jobs.json` (`rsched/jobs.py`):
 | `last`, `history` | the last checkpoint (`run`, `at`, `outcome`, `summary`, `accounting`) and the twelve before it |
 | `origin` | the routine this job WAS, when a routine was merged in as a job — see "Merging routines" |
 
-The store is sealed against generic file actions (`fileops._jobs_gate`, and the removal gate):
-a write that could clear a carry or fake a checkpoint would defeat the gate that reads them. The
-run changes it with the `job` action; the operator through the routine page.
+The store is sealed against generic file actions (`fileops._write_gate` over its `sealtable`
+row, and the removal gate): a write that could clear a carry or fake a checkpoint would defeat
+the gate that reads them. The run changes it with the `job` action; the operator through the
+routine page.
 
 ## The WORKSPACE is the working directory
 

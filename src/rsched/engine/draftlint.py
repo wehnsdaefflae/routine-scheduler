@@ -8,15 +8,15 @@ still be reworded for free.
 the seal another way (the seal is on the exact path). The warning reaches the drafting run and
 the user; the write-time refusal is unchanged — this is an earlier reading, not a second gate.
 
-**One list, from the module that owns it** (`engine/storeseal`'s constants; `stores(ctx)` needs
-a run). The jobs file is included unconditionally, since a draft cannot know the dial.
+**One list, from the module that owns it** (`rsched/sealtable`'s constants; `storeseal.stores`
+needs a run). The jobs file is included unconditionally, since a draft cannot know the dial.
 """
 
 from __future__ import annotations
 
 import re
 
-#: Paths reserved outside `storeseal`'s map, each with the action or owner that does own it.
+#: Paths reserved outside the table's store rows, each with the action or owner that does own it.
 _OTHER_RESERVED: dict[str, str] = {
     ".memory/": ("the memory store is reached only through the `memory_read` / `memory_write` "
                  "actions — `read_file` and `write_file` are refused on those paths"),
@@ -32,12 +32,13 @@ def _reserved() -> dict[str, str]:
     """
     from .. import runledger
     from ..jobs import JOBS_FILE
-    from . import obligations, storeseal
+    from ..sealtable import JOBS_REFUSAL
+    from . import obligations
 
     return {str(obligations.FILE): obligations.REFUSAL,
             runledger.FILE: runledger.REFUSAL,
             runledger.ARCHIVE_DIR: runledger.ARCHIVE_REFUSAL,
-            JOBS_FILE: storeseal.JOBS_REFUSAL,
+            JOBS_FILE: JOBS_REFUSAL,
             **_OTHER_RESERVED}
 
 

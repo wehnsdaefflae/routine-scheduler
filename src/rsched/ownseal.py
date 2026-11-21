@@ -21,40 +21,27 @@ hierarchies, and a nested rule can only ADD rights — it cannot carve a read-on
 writable parent. So the only way to seal `.memory/` inside a writable own_dir is to stop
 mounting own_dir writable and mount its writable children instead.
 
-ONE source for both enforcers. The names here are the gate's own constants, IMPORTED, not
-copied: `CONFIG_FILE` and `RECIPE_PREFIXES` from `grants` — the same two the gate reads through
-`grantpolicy.is_recipe_path`. A second list kept in step by hand is how two gates drift, which
-is the defect this closes. (The engine-owned directory names are spelled here because the gate
-spells them too, each at its own site: a shared tuple is the next step, not this one.)
+ONE source for both enforcers: `rsched/sealtable.py`, the table the file gate reads too. Every
+TOP-LEVEL row there is withheld here (a nested one, `state/jobs.json`, would take its whole
+parent with it, so the file gate alone holds those). A second list kept in step by hand is how
+two gates drift, which is the defect this closes.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from . import rundepth, runledger
-from .grants import CONFIG_FILE, RECIPE_PREFIXES
+from . import rundepth, sealtable
 
-#: Engine-owned or sealed children of a routine dir, as `_write_gate` refuses them. `runs/` is
-#: the engine's record of what happened; `.util_outputs/` the saved full text of util output;
-#: `.doc_cache/` the converted documents a later read trusts by content hash; `.memory/` the
-#: name-addressed store whose INDEX the engine owns; `.ledger/` the archive the engine
-#: rotates old LEDGER.md entries into (`runledger`).
-SEALED_DIRS = (".memory", "runs", ".util_outputs", ".doc_cache", runledger.ARCHIVE_DIR)
+if TYPE_CHECKING:
+    from pathlib import Path
 
-#: Sealed FILES directly under the routine dir. `routine.yaml` is config — permissions,
-#: capabilities, budgets, roots — and no run edits it, not even the routine-improver.
-#: `LEDGER.md` is the process record the engine writes from each finish summary (P1).
-SEALED_FILES = (CONFIG_FILE, runledger.FILE)
+#: The engine-owned or sealed DIRECTORIES directly under a routine dir — `.memory/`, `runs/`,
+#: `.util_outputs/`, `.doc_cache/`, `.ledger/` (each row's reason is in `sealtable`).
+SEALED_DIRS = sealtable.jail_names(recipe_unlocked=True, kind="dir")
 
-
-def _recipe_names() -> tuple[str, ...]:
-    """The recipe's top-level entries, from the same prefixes `grantpolicy.is_recipe_path`
-    tests. A prefix is relative to the routine dir and may name a file (`main.md`) or a
-    directory (`stages/`); only its FIRST segment matters here, because the jail mounts (or
-    withholds) whole top-level entries.
-    """
-    return tuple(sorted({p.strip("/").split("/")[0] for p in RECIPE_PREFIXES if p.strip("/")}))
+#: The sealed FILES directly under the routine dir — `routine.yaml` and `LEDGER.md`.
+SEALED_FILES = sealtable.jail_names(recipe_unlocked=True, kind="file")
 
 
 def sealed_names(*, recipe_unlocked: bool) -> tuple[str, ...]:
@@ -64,10 +51,7 @@ def sealed_names(*, recipe_unlocked: bool) -> tuple[str, ...]:
     it: the recipe seal is the one entry here that a permission can lift, exactly as in
     `_write_gate`, so a routine that MAY edit its own recipe can still do it through `shell`.
     """
-    names = {*SEALED_DIRS, *SEALED_FILES}
-    if not recipe_unlocked:
-        names |= set(_recipe_names())
-    return tuple(sorted(names))
+    return tuple(sorted(sealtable.jail_names(recipe_unlocked=recipe_unlocked)))
 
 
 def recipe_unlocked_for(ctx) -> bool:
