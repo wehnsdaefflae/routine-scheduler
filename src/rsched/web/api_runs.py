@@ -12,7 +12,6 @@ from fastapi import APIRouter, HTTPException, Query, Request, WebSocket
 from starlette.requests import HTTPConnection
 
 from .. import registry
-from ..config import load_routine
 from ..engine.transcript import read_events
 from ..ids import is_slug, parse_run_id
 from ..paths import read_json
@@ -107,7 +106,7 @@ def run_detail(request: Request, run_id: str) -> dict:
         # pre-engine boot stub: status.json has no model yet — report the routine's
         # CONFIGURED main model instead of nothing (the run page's widget showed the
         # catalog's first entry as if it were the setting; F166, operator note 2026-07-23)
-        cfg, _ = load_routine(run_dir.parent.parent)
+        cfg, _ = registry.load_config(run_dir.parent.parent)
         model = (cfg.models.get("main") or "") if cfg is not None else ""
     deliberation = st.get("deliberation") if isinstance(st, dict) else ""
     # the finish's own accounting, the operator's brief and the run's goals (engine/goals.py),

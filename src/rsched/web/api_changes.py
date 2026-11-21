@@ -68,10 +68,10 @@ def routine_outcome(request: Request, slug: str, weeks: int = DEFAULT_WEEKS) -> 
     per declared measure what moved over the last `weeks`, the window's runs, volume and notional
     dollars, and the run-by-run series. Nothing the routine says about itself is read.
     """
-    from ..config import load_routine
+    from ..registry import load_config
 
     home = _routine_home(request, slug)
-    cfg, _problems = load_routine(home / slug)
+    cfg, _problems = load_config(home / slug)
     if cfg is None:
         raise HTTPException(409, f"{slug}: routine.yaml does not load")
     return review(home, cfg, weeks=max(1, min(weeks, 52)))

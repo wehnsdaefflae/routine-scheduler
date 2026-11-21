@@ -1975,7 +1975,12 @@ install gets the revision from the seed sync itself.)
   NOT daemon-owned) derives the catalog and run-index live from the filesystem every rescan — no
   database, no cache files; parsing is memoized per file behind a stat() fingerprint
   (inode+mtime+size, so atomic rewrites always miss), pruned for deleted dirs, copies returned —
-  the disk stays the source of truth on every lookup. Every other derived view lives in
+  the disk stays the source of truth on every lookup. A request path reads a routine's config
+  through that memo (`registry.load_config`), never `load_routine` afresh: a fresh load resolves
+  every fs root, and a root on a network share takes 0.4-1.4 s to resolve. The scheduler's own
+  scans run in a thread (boot and every `registry_rescan_s`), because a COLD scan pays those
+  resolutions — 3.3 s for the routines home at boot on 2026-11-21 — and on the event loop it
+  held every request and every fire behind it. Every other derived view lives in
   **`rsched/readmodels/`** (stats, run_health, util_stats, statemap, fileactivity, subruntree,
   items — the maintenance index of findings/decisions/bug reports, docs/items.md — summaries —
   each routine's latest finish message, shaped as a fourth item type and merged into the same

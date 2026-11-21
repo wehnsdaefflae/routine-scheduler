@@ -45,10 +45,10 @@ def granted_roots(server, routine_dir: Path) -> list[Path]:
     beyond `routine.yaml`. A routine whose config will not parse grants nothing.
     """
     try:
-        from ..config import load_routine
+        from ..registry import load_config
         from ..sandbox import _shared_read_roots
 
-        cfg, _problems = load_routine(routine_dir)
+        cfg, _problems = load_config(routine_dir)
         granted = list(cfg.fs_read_roots) if cfg is not None else []
         granted += list(_shared_read_roots(server))
     except Exception:                        # a config we cannot read grants nothing

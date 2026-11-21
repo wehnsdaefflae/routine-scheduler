@@ -243,7 +243,7 @@ def _entry(d: Path) -> RoutineInfo:
     build through here, so what an unloadable routine.yaml reads as cannot differ between the
     whole-home walk and the one-directory lookup.
     """
-    cfg, problems = _load_routine_memo(d)
+    cfg, problems = load_config(d)
     if cfg is None:
         cfg = RoutineConfig(slug=d.name, dir=d, enabled=False)
         problems = [*problems, "unloadable routine.yaml — treated as disabled"]
@@ -251,7 +251,12 @@ def _entry(d: Path) -> RoutineInfo:
                        open_questions=_open_questions_memo(d), retired=_retired_from_goal(d))
 
 
-def _load_routine_memo(d: Path) -> tuple[RoutineConfig | None, list[str]]:
+def load_config(d: Path) -> tuple[RoutineConfig | None, list[str]]:
+    """`load_routine(d)`, re-read only when a file it reads changed — what every REQUEST path
+    should call. A fresh load resolves each fs root to report one that links into a credential
+    store, and a root on a network share takes 0.4-1.4 s to resolve (2026-11-21): a route that
+    loaded on every call paid that on every call. The value is a private deep copy.
+    """
     # Every file `load_routine` reads has to be in the key, or the memo serves an answer the
     # disk no longer gives. Config AND tuning feed the parsed RoutineConfig — tuning because a
     # slider move (or the improver re-levelling deliberation) changes the config without
