@@ -1,5 +1,7 @@
 """D231 — the curator may retire a reminder row in ANOTHER routine's store, running or not."""
 
+import json
+
 import yaml
 
 from conftest import finish, util, write_file
@@ -157,6 +159,33 @@ def test_a_curating_run_marks_a_row_dead_in_another_routines_store(make_routine,
     assert mark["by"] == CURATOR and mark["reason"] == "premise disproved at the source"
     assert "marked DEAD" in prompt_text(ep)
     assert status == "ok"
+
+
+def test_a_row_marked_dead_is_not_served_by_the_stream_read(make_routine, scripted, tmp_path):
+    """`op=dead` reaches the hook stream as a `dead` row, which ANNOTATES (D231: the console
+    still lists the row with its tally) — so what keeps it from holding under the stream-only
+    read is the dead filter where the live set is formed. Pinned for the live shape too: a
+    stream definition whose store ROW is gone while the annotation stays (F908)."""
+    rid = "rem-20260921-024619-1"
+    a = _curator(make_routine)
+    holder = _holder(tmp_path, "funscript-trainer", [_row(rid, "^util:remote ", {"fires": 22})])
+    scripted([{**write_file("state/x.txt", content="x"),
+               "remind": {"op": "dead", "target": "funscript-trainer", "id": rid,
+                          "description": "premise disproved at the source"}}, finish()])
+    assert run_routine(a, server_for(a), run_ts=TS)[0] == "ok"
+    from rsched.hooks import reminderread
+    from rsched.hooks import store as hookstore
+
+    last = [h for h in hookstore.read_hooks(holder.parent) if h.id == rid][-1]
+    assert (last.disposition, last.addressee) == ("dead", "routine:funscript-trainer")
+    home = tmp_path / "lib" / "reminders"
+    assert store.active(holder, home, "local", run_id="funscript-trainer:2") == []
+    shown, _ = reminderread.read_local(holder.parent, holder)
+    assert [r.id for r in shown] == [rid] and shown[0].stats["fires"] == 22   # tally kept
+    path = store.local_path(holder)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    path.write_text(json.dumps({**raw, "reminders": []}), encoding="utf-8")   # row gone
+    assert store.active(holder, home, "local", run_id="funscript-trainer:3") == []
 
 
 def test_a_disabled_target_makes_no_difference(make_routine, scripted, tmp_path):
