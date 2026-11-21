@@ -29,6 +29,7 @@ from __future__ import annotations
 import logging
 
 from ..schema_guard import SchemaViolation, extract_json
+from . import claim_screen
 
 log = logging.getLogger("rsched.verifier")
 
@@ -171,6 +172,18 @@ def refuted(loop, claims: list[dict], summary: str) -> list[dict]:
     if not claims:
         return []
     ctx = loop.ctx
+    # D302: the typed screen runs FIRST, and for a routine the table screens it may answer for
+    # the prose judge when every claim of this finish clears its threshold. One claim below it
+    # sends the whole finish to the judge — the judge is one call over all the claims, so a
+    # partial skip saves nothing and loses its view of the rest.
+    screen = _screen(ctx, claims, summary, _tail(loop))
+    slug = getattr(getattr(ctx, "routine", None), "slug", "")
+    if claim_screen.may_skip_judge(slug, [screen.get(str(c["id"])) for c in claims]):
+        log.info("finish: the claim screen answered for the prose judge (%s, %d claim(s))",
+                 slug, len(claims))
+        _shadow_claims(ctx, claims, summary, _tail(loop), set(), screen=screen,
+                       judge_skipped=True)
+        return []
     try:
         endpoint, ref = ctx.registry.for_model("tool_call", ctx.routine.models, ctx.routine.efforts)
         completion = endpoint.complete(
@@ -200,7 +213,62 @@ def refuted(loop, claims: list[dict], summary: str) -> list[dict]:
             out.append({"id": claim["id"], "text": claim["text"],
                         "evidence": str(v.get("evidence") or "").strip()
                         or "the transcript does not show this being done"})
+    # D287: the same claims screened by a DECISION model, recorded beside the prose judge's
+    # verdicts and changing none of them (engine/decision_shadow.py). `screen` is handed over
+    # rather than re-asked: the cascade above already paid for those probabilities, and asking
+    # twice would make the measurement cost double what the cascade saves.
+    _shadow_claims(ctx, claims, summary, _tail(loop), {str(c["id"]) for c in out},
+                   screen=screen or None, judge_skipped=False)
     return out
+
+
+#: What the typed screen is asked, at both the cascade and the shadow. ONE wording, so the
+#: probabilities the table was measured from and the ones it now acts on are comparable.
+SCREEN_QUESTION = ("Does the run's own record below SUPPORT this claim? Answer yes only if "
+                   "the summary and the transcript tail show the thing being done.")
+
+
+def _screen(ctx, claims: list[dict], summary: str, tail: str) -> dict[str, float | None]:
+    """The decision model's probability per claim, or `{}` — never raising.
+
+    An empty result is the fail-open case and reaches `may_skip_judge` as "no answer", so the
+    prose judge runs: the cascade may be cheaper than the judge, never quieter than it.
+    """
+    try:
+        from . import decision_shadow
+
+        return decision_shadow.screen_claims(
+            ctx, question=SCREEN_QUESTION,
+            evidence={"summary": summary, "transcript_tail": tail}, claims=claims)
+    except Exception as exc:                      # a screen that can break a finish is worse
+        log.info("finish: the claim screen could not run (%s)", exc)
+        return {}
+
+
+def _shadow_claims(ctx, claims: list[dict], summary: str, tail: str, refuted_ids: set[str],
+                   *, screen: dict[str, float | None] | None = None,
+                   judge_skipped: bool = False) -> None:
+    """Hand the comparison to the shadow, and never let it reach the run.
+
+    A measurement inside a fail-open verifier buys the run nothing, so it never raises. The
+    shadow keeps recording for EVERY routine, screened or not: the table in `claim_screen` is
+    only revisable while the stream it was measured from keeps growing.
+    """
+    try:
+        from . import decision_shadow
+
+        decision_shadow.compare_claims(
+            ctx,
+            question=SCREEN_QUESTION,
+            evidence={"summary": summary, "transcript_tail": tail},
+            claims=claims,
+            chat_supported=({} if judge_skipped else
+                            {str(c["id"]): str(c["id"]) not in refuted_ids for c in claims}),
+            screen=screen,
+            judge_skipped=judge_skipped,
+        )
+    except Exception as exc:                      # a measurement never raises
+        log.info("finish: the claim shadow could not run (%s)", exc)
 
 
 def challenge_message(items: list[dict]) -> str:
