@@ -6,12 +6,9 @@ records. Built ONLY from what the run already produced — the summary as result
 accounting the finish gate stored on the context, the revision lines the summary named — so the
 record costs the run no turn and says nothing the run did not say.
 
-Who keeps one: a depth-0 ROUTINE run. A child's record is its hand-back to the parent; a
-conversation's is its own transcript, which every reply already replays (and which is why a
-conversation is no longer seeded a LEDGER.md at all — nothing read one but the digest, and 134
-of 138 live ones still held only their seed line); a detached background task is a one-shot
-brief that ends by delivering its result. `recipeproposal.asks_for_revisions` is that same
-predicate — a run with a recipe of its own — so it is read rather than restated.
+Who keeps one: a depth-0 ROUTINE run. A child's record is its hand-back, a conversation's its
+own transcript, a detached task's its delivered result. `recipeproposal.asks_for_revisions` is
+that same predicate (a run with a recipe of its own), so it is read rather than restated.
 
 Best-effort like every store write at an ending: a failure becomes a transcript `error`, never a
 failed run.

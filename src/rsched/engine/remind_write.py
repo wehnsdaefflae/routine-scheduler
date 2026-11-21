@@ -1,22 +1,11 @@
-"""WRITING a reminder down — the store half of the reminder layer, lifted out of `remind.py`.
+"""WRITING a reminder down — the store half of the reminder layer.
 
-`engine/remind.py` is the runtime: interception, the authoring ops, the ask-backs, the tally.
-This module is the three functions that actually PUT a definition somewhere — the local file,
-the library file and its commit — plus the hook mirror that records the same write in the one
-hook store (`engine/hookmirror`, `rsched/hooks`, D152).
+`engine/remind.py` is the runtime (interception, authoring ops, ask-backs, tally); this module
+PUTS a definition somewhere — the local file, the library file and its commit — and mirrors each
+write into the one hook store (`engine/hookmirror`, D152). It decides nothing about an op.
 
-The boundary was already in the code: every op ends by calling `persist`, and nothing in these
-three functions decides anything about an op. Separating them is what let the mirror land
-without growing a file that is over the house size bar and may only shrink.
-
-It is also where the two FOREIGN-store writes live, for that same reason and because they are
-writes: `dispose`, a routine's say over a hook someone set on IT, and `curate` (D231), the
-CURATOR's disposal of a row in a store it does not own — `dead` (the row keeps its tally and
-stops firing, `rsched/remind_dead`) or `delete` for a row with no evidence worth keeping. That
-second one exists because a reminder store's only other channel is an addressed report, read on
-the owner's next scheduled run, which for a routine whose config is `enabled: false` never
-comes; its authorization is the `reminders: global` dial that already governs writing the
-shared store, asked once, with no second gate over it.
+It also holds the two FOREIGN-store writes: `dispose`, a routine's say over a hook set on IT,
+and `curate` (D231), the curator's disposal of a row in a store it does not own.
 """
 
 from __future__ import annotations
@@ -49,19 +38,10 @@ def remove(loop, target: Reminder) -> None:
     """DELETE one reminder of this routine's own — the live set, the store its scope names, and
     the hook row that records the deletion.
 
-    Here beside `persist` because it is the same act in reverse, and because that is what was
-    wrong: `persist` mirrored every write while the removal wrote only the store, so the stream
-    kept definitions their routines had deleted. Measured over all 31 live routines on
-    2026-11-14 (`hooks/reminderproj.drift`): **23 ids on the stream and in no store**, five of
-    them from November. The campaign's end state is the store SERVED from the stream, and a fold
-    that cannot see a deletion re-raises a pattern its routine removed — which, since a reminder
-    decides whether an action is HELD, changes what binds a run rather than merely looking stale.
-
-    The mirror covers the LOCAL scope, which is what a routine's own store holds and what the
-    comparator (`reminderproj.drift`) compares. A global reminder lives in the library and its
-    deletion is already recorded where that store's history is — the library git commit the
-    caller makes — so a `self`-addressed row for it would claim one routine's view of a store
-    every routine reads.
+    The inverse of `persist`, and mirrored like it: a stream that cannot see a deletion
+    re-raises a pattern its routine removed, which changes what a run is HELD on. Only the LOCAL
+    scope is mirrored; a global reminder's deletion is recorded by the library commit the caller
+    makes, and a `self`-addressed row would claim one routine's view of a shared store.
     """
     loop.reminders = [r for r in loop.reminders if r.id != target.id]
     if target.scope == "global":
@@ -76,10 +56,7 @@ def dispose(loop, target: Reminder, disposition: str) -> str:
     record it on the hook stream. Returns what was actually applied, or "" when the record is
     no longer in the store.
 
-    Here rather than in `remind.py` because this is a WRITE, which is this module's whole
-    subject: the store write and the hook row are one act, and a caller that could do the first
-    without the second is how the two came to disagree in the first place (D152 step 4 — step 2
-    recorded a reminder's definition and never what the target decided about it).
+    The store write and the hook row are one act, so no caller can do the first alone.
     """
     applied = store.dispose(loop.ctx.routine.dir, target.id, str(disposition),
                             loop.ctx.run_id)
@@ -92,23 +69,13 @@ def curate(loop, op: dict, slug: str, rid: str, verb: str) -> str:
     """The CURATOR's disposal of one row in ANOTHER routine's store (D231) — the note the
     curating run reads back, never an exception: a refused disposal is not a failed turn.
 
-    `dead` is the primary act and `delete` the fallback, which is the operator's own ordering:
-    "prefer ANNOTATE-AS-DEAD over DELETE, so a row's hold tally survives", because "a deletion
-    loses the tally that proves the pattern was too broad". So `dead` keeps the row and every
-    count on it and stops it firing (`rsched/remind_dead`), while `delete` is for a row whose
-    tally says nothing worth keeping.
+    `dead` is preferred: it keeps the row and its tally (the evidence a pattern was too broad)
+    and stops it firing (`rsched/remind_dead`); `delete` is for a row whose tally says nothing.
 
-    WHY THIS EXISTS AT ALL: a reminder store belongs to its routine, so the curator's only
-    channel was an addressed report, read on the owner's NEXT SCHEDULED RUN — and a routine
-    whose config is `enabled: false` has none. Four consecutive curation passes recorded the
-    same four rows nobody could dispose of. `enabled` is therefore consulted nowhere here: the
-    holder's schedule is the holder's business, and a capability that only worked on disabled
-    routines would leave the curator unable to retire the row in the live routine next door.
-
-    AUTHORIZATION is the dial that already exists and gets no second gate: `reminders: global`
-    — the curator's setting, what lets a routine write the SHARED store — asked once through
-    `GrantPolicy.reminder_denial`, so a routine without it is refused with the denial that
-    names what is missing. A sub-workflow is refused like every other cross-routine write.
+    It exists because an addressed report is read only on the owner's next scheduled run, which
+    a disabled routine never has; `enabled` is consulted nowhere here. AUTHORIZATION is the
+    existing `reminders: global` dial via `GrantPolicy.reminder_denial`, with no second gate. A
+    sub-workflow is refused like every other cross-routine write.
     """
     from pathlib import Path
 
@@ -138,16 +105,8 @@ def curate(loop, op: dict, slug: str, rid: str, verb: str) -> str:
         return (f"{slug} does not hold a reminder {rid!r} — nothing was marked dead; the ids "
                 "are the rows of that routine's own store")
     hookmirror.reminder_curated(loop, marked, slug, "dead")
-    # F908: when the retired row is THIS run's own, drop it from the live set too. The
-    # annotation is applied to the STORE, and the dead filter runs where `reminders.active`
-    # forms the live set — i.e. at construction — so a `dead` op landing mid-run left
-    # `loop.reminders` holding the row it had just retired. Observed on the live instance:
-    # `rules-review:20261117-061103` retired `rem-20261117-061103-1` at 07:29:29 and that same
-    # cached row HELD an action at 07:46:27, 16m58s later, costing the run a turn and a
-    # `could_not` label for a caution it had already withdrawn. `refresh` cannot catch this —
-    # it re-reads only when the capability LEVEL moves, not when a marker changes — and nothing
-    # needs re-reading anyway: the operational set is reconciled in place, while the prompt
-    # prefix (an append-only caching contract) stays untouched.
+    # A row retired from THIS run's own store leaves the live set too: the dead filter runs
+    # only when the live set is formed, so the cached row would otherwise keep holding actions.
     if slug == ctx.routine.slug:
         loop.reminders = [r for r in loop.reminders if r.id != rid]
     counts = " / ".join(f"{n} {f}" for f, n in (marked.get("stats") or {}).items() if n)
@@ -158,8 +117,7 @@ def curate(loop, op: dict, slug: str, rid: str, verb: str) -> str:
 def _curate_delete(loop, target_dir, slug: str, rid: str, reason: str) -> str:
     """The fallback: remove a row outright, for one whose tally says nothing worth keeping.
 
-    Here rather than in `curate` because it is the branch that DESTROYS evidence, and the note
-    says so: a reader of the stream has to be able to tell the two acts apart.
+    A separate branch because it DESTROYS evidence, and the note says so.
     """
     from .. import remind_dead
 
@@ -177,17 +135,10 @@ def _curate_delete(loop, target_dir, slug: str, rid: str, reason: str) -> str:
 def save_local(loop) -> None:
     """Rewrite the local store: DEFINITIONS from memory, TALLIES from disk.
 
-    The split is load-bearing. `store.record` is the only writer of a tally and does its own
-    read-modify-write, so DISK is authoritative for stats; this run's ops are what changed the
-    definitions, so MEMORY is authoritative for those. Taking both halves from memory rolled
-    every `fires` this run recorded back to its boot-time value, because a frozen in-memory
-    `Reminder` never saw the increment — the global tallies were already merged this way, and
-    the local half needed the same treatment.
-
-    MUTED records are the one exception to "memory owns the definitions", and for the reason
-    mute exists: it silences a foreign hook for the rest of this run WITHOUT destroying the
-    definition its owner can still see, so the live set no longer holds it — and a rewrite from
-    memory alone would delete it — though its `muted_run` stamp expires (`remind_mute`, F697).
+    `store.record` is the only tally writer, so DISK owns stats; this run's ops change the
+    definitions, so MEMORY owns those (an in-memory `Reminder` never sees the increments).
+    MUTED records are kept from disk: mute drops a foreign hook from the live set for this run
+    without destroying the owner's definition (`remind_mute`).
     """
     on_disk, gstats = store.load_local(loop.ctx.routine.dir)
     tallies = {r.id: r.stats for r in on_disk}

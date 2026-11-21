@@ -1,32 +1,19 @@
-"""The `create_routine` action handler — a CONVERSATION graduates the work it just
-clarified with the user into a real scheduled routine (D58), in TWO steps (D92):
-preview first, materialize only after the user has confirmed the draft.
+"""The `create_routine` action handler — a CONVERSATION graduates the work it clarified with
+the user into a scheduled routine, in TWO steps: preview first, materialize after confirmation.
 
-The conversation agent (or a `/create_routine` slash command) clarifies the task WITH the
-user in the normal chat, then emits this action. The FIRST call VALIDATES the named workflow
-against the live library, then stores a DRAFT under the conversation's own
-`state/routine-draft.json` and returns a preview observation carrying the pattern catalog —
-nothing is created yet; the
-agent relays the preview and finishes its reply. When the user answers, the agent calls
-`create_routine` again with the SAME fields, and only then does the handler materialize —
-through the same `workflows.scaffold` path the retired wizard's build half called
-(decompose the chosen workflow into main.md + stages/, adapt rules, write routine.yaml,
-init the auto-push git repo — one materializer only).
+The FIRST call validates the workflow against the live library, stores a DRAFT in
+`state/routine-draft.json` and returns a preview carrying the pattern catalog; nothing is
+created. A second call with the SAME fields materializes through `workflows.scaffold` (the one
+materializer).
 
-The confirm gate asks ONE question: has the user spoken since the draft was written? A
-conversation reply usually runs as its own engine process, so a LATER leg answers it by
-existing — a root conversation only gets one after the user (or a background delivery)
-speaks. But a BLOCKING `ask_user` is answered INSIDE the drafting leg, and a pid alone then
-reads the user's own "create it now" as nobody having spoken: the orchestrator had to end
-the reply and bounce them for a second, content-free "go" (R1310). So the draft records the
-leg's user-utterance count beside its pid, and the same leg may confirm once that count has
-grown. A changed field on the confirming call is a DESIGN CHANGE, not a confirmation: it
+The confirm gate asks ONE question: has the user spoken since the draft was written? A later
+leg answers it by existing; within the drafting leg (a BLOCKING `ask_user` answered inline) the
+draft's recorded user-utterance count must have grown. A changed field is a DESIGN CHANGE: it
 replaces the draft and restarts the round-trip.
 
-Structural rule: it MATERIALIZES only in a ROOT CONVERSATION, else QUEUES a proposal (F328);
-a child is refused, `replaces` creates a CANDIDATE and `revises` revises a recipe, at once.
-
-It scaffolds SYNCHRONOUSLY (the user is waiting); the registry rescan picks the dir up.
+It MATERIALIZES only in a ROOT CONVERSATION, else QUEUES a proposal; a child is refused,
+`replaces` creates a CANDIDATE and `revises` revises a recipe, at once. Scaffolding is
+synchronous; the registry rescan picks the dir up.
 """
 
 from __future__ import annotations
@@ -44,12 +31,8 @@ from .runkind import is_root_conversation
 # workflow, same default the spawn/subtask/detach actions use.
 DEFAULT_WORKFLOW = "general-task"
 
-#: The choice that is always on the workflow question beside the library patterns: draft one
-#: FITTED to this task. No catalog covers every task, and a routine built on a pattern that
-#: merely almost fits carries that mismatch for its whole life, so the list is never closed.
-#: The user PICKING it is the gate: this is the only place a pattern is drafted — no run drafts
-#: one on its own initiative, where nobody is watching — and here someone chose it one screen
-#: ago, so the confirming call is the answer to that choice.
+#: The always-present choice beside the library patterns: draft one FITTED to this task, so the
+#: list is never closed. The user picking it is the gate — the only place a pattern is drafted.
 GENERATE_SLUG = "generate"
 
 #: Below this many tokens left in the reply's budget, drafting the picked pattern (≈2
@@ -57,9 +40,7 @@ GENERATE_SLUG = "generate"
 #: draft that tips the reply over its budget leaves neither the pattern nor the routine.
 GEN_FLOOR_TOKENS = 20_000
 
-#: Where a conversation's pending routine draft lives (relative to the conversation dir).
-#: ONE draft per conversation: a new slug simply replaces the old draft — the flow is a
-#: linear chat, not a queue.
+#: Where a conversation's pending routine draft lives; ONE per conversation, a new slug replaces it.
 DRAFT_RELPATH = Path("state") / "routine-draft.json"
 
 
@@ -75,19 +56,13 @@ def _load_draft(ctx: RunContext) -> dict | None:
     return draft if isinstance(draft, dict) and draft.get("slug") else None
 
 
-#: Patterns tagged `meta` are HARNESSES, not task patterns: `converse` assumes a present user
-#: who reads the reply and writes back, which a scheduled routine never has. The tag already
-#: existed for exactly this ("keeps it out of spawn-pattern lists and wizard suggestions") —
-#: the creation catalog was the one surface that never applied it, so it offered `converse`
-#: as a buildable choice against that pattern's own `when_to_use`.
+#: Patterns tagged `meta` are HARNESSES (e.g. `converse` assumes a present user), not buildable.
 META_TAG = "meta"
 
 
 def _catalog(server) -> list[dict]:
-    """Every BUILDABLE library pattern, one line each, and `generate` LAST: what the draft
-    observation shows so the choice is made against the real catalog rather than from memory
-    (F383), and against an open list rather than a closed one. Harness patterns (`meta`) are
-    excluded — see META_TAG.
+    """Every BUILDABLE library pattern, one line each, and `generate` LAST — the real catalog
+    the draft's choice is made against. `meta` patterns are excluded.
     """
     from ..workflows import library
 
@@ -104,10 +79,7 @@ def _generate_pattern(ctx: RunContext, slug: str, name: str, instruction: str) -
     """Draft the fitted pattern the user picked. Returns its library slug, or an observation
     dict when it could not be drafted.
 
-    Never falls back on failure, the way a child run falls back to the builtin body when its
-    pattern is unavailable: a child has nobody to tell and a job to get on with, whereas here
-    the user chose `generate` OVER every catalog entry — quietly building on one of them would
-    materialize the option they rejected, under the name they approved.
+    Never falls back to a catalog pattern on failure: the user chose `generate` over all of them.
     """
     def refused(reason: str) -> dict:
         return {"kind": "create_routine", "slug": slug, "workflow": GENERATE_SLUG,
@@ -131,20 +103,15 @@ def _generate_pattern(ctx: RunContext, slug: str, name: str, instruction: str) -
 
 
 def _unknown_workflow_obs(slug: str, workflow_slug: str, catalog: list[dict]) -> dict:
-    """A draft naming a pattern the library does not hold is refused HERE — before the user
-    is asked to confirm — instead of at the expensive materialize step (F387/R493).
-    """
+    """A draft naming an unknown pattern is refused before the user is asked to confirm."""
     return {"kind": "create_routine", "slug": slug, "workflow": workflow_slug,
             "rejected": True, "workflow_catalog": catalog,
             "reason": f"no workflow {workflow_slug!r} exists in the library. Put the choice to "
                       "the user as an ask_user whose options are workflow_catalog below."}
 
 
-#: The design judgements a draft must have made before it is presented as decided. They are
-#: the operator's standing intake rules, and they live HERE because this observation is the
-#: only live copy of the intake contract — the `clarify-instruction` pattern that once held a
-#: second copy was never executed, so its copy silently went stale (it still described conduct
-#: as per-routine "traits" long after rules became one shared library doc).
+#: The design judgements a draft must have made — the operator's standing intake rules. This is
+#: their only live copy; do not duplicate it elsewhere.
 _DESIGN_CHECKS = (
     ("SHAPE — if the task BOTH ingests/processes signal (reads sources, updates state, "
      "computes) AND sends outbound communication (mail, messages, publishing), offer the user "
@@ -193,17 +160,15 @@ def _settings_patterns(server, workflow: str) -> list[dict]:
 
 def _preview_obs(draft: dict, catalog: list[dict], *, updated: bool,
                  patterns: list[dict], blocked_same_leg: bool = False) -> dict:
-    """The draft/preview observation: what WILL be created, the catalog the choice was made
-    against, the design judgements the draft must have made, and the exact next step. The
-    teaching copy is the contract — a same-leg confirm attempt gets told why it was held.
+    """The preview observation: what WILL be created, the catalog, the design checks and the
+    exact next step; a same-leg confirm attempt is told why it was held.
     """
     instruction = draft["instruction"]
     obs = {"kind": "create_routine", "slug": draft["slug"], "name": draft["name"],
            "workflow": draft["workflow"], "draft": True, "updated": updated,
            "instruction_chars": len(instruction),
            "instruction_preview": instruction[:600],
-           # F383: the pattern catalog rides the observation so the relay compares against
-           # what the library actually holds — the choice stops being an unexamined default.
+           # the choice is made against what the library actually holds
            "workflow_catalog": catalog,
            "settings_patterns": patterns, **draftlint.preview_keys(draft),
            "design_checks": list(_DESIGN_CHECKS),
@@ -271,9 +236,7 @@ def _materialize(ctx: RunContext, *, slug: str, name: str, instruction: str,  # 
         workflow_slug = drafted
     from ..workflows.suggest import generate_description
     try:
-        # A COMPREHENSIVE generated description (purpose / requirements / side effects /
-        # inter-routine dependencies) replaces the old `description = name`; it falls back to
-        # the name itself when no endpoint answers, so this never fails the creation.
+        # A generated description; falls back to the name when no endpoint answers.
         description = generate_description(ctx.server, name=name, instruction=instruction,
                                            workflow_slug=workflow_slug)
         routine_dir = scaffold(ctx.server, slug=slug, name=name, instruction=instruction,
@@ -286,10 +249,8 @@ def _materialize(ctx: RunContext, *, slug: str, name: str, instruction: str,  # 
         # corrected by the model, never a crash
         return {"kind": "create_routine", "slug": slug, "error": str(exc)}
     except OSError as exc:
-        # the filesystem shifted under the build (R478: the user deleted the half-made dir
-        # while the slow workflow decompose ran; the write that followed hit FileNotFoundError
-        # and, uncaught, orphaned the whole conversation run rc=1) — surface it as an
-        # actionable error observation instead of crashing the engine
+        # the filesystem shifted under the build (e.g. the half-made dir was deleted) — an
+        # actionable error observation instead of a crashed engine
         return {"kind": "create_routine", "slug": slug,
                 "error": f"materialization failed mid-build ({exc}); nothing usable was "
                          "created — check the routines home and try again"}
@@ -307,9 +268,8 @@ def _materialize(ctx: RunContext, *, slug: str, name: str, instruction: str,  # 
 
 
 def routine_page_url(server, slug: str) -> str:
-    """Where the user can open the routine. An absolute URL when the instance knows its own
-    (`public_url`), else the in-app route — a link the reader can act on either way, which is
-    the point: "it exists" without "here it is" makes the user go looking for it.
+    """Where the user can open the routine: absolute when `public_url` is set, else the in-app
+    route.
     """
     base = str(server.public_url or "").rstrip("/")
     return f"{base}/#/routine/{slug}" if base else f"#/routine/{slug}"
@@ -318,10 +278,8 @@ def routine_page_url(server, slug: str) -> str:
 def _for_non_conversation(ctx: RunContext, fields: dict) -> dict | None:
     """What happens when the caller is not a root conversation — None when it IS one.
 
-    Two different answers, and the difference is whether a user could ever have been in the
-    loop. A CHILD run is refused outright: a sub-workflow must not create routines as a side
-    effect, and a proposal from one traces back to nothing the user reasoned about. A
-    top-level SCHEDULED run gets a queue (F328) — it has a user, just not right now.
+    A CHILD run is refused (a sub-workflow must not create routines as a side effect); a
+    top-level SCHEDULED run queues a proposal — it has a user, just not right now.
     """
     if ctx.depth > 0:
         return {"kind": "create_routine", "rejected": True,
@@ -329,8 +287,7 @@ def _for_non_conversation(ctx: RunContext, fields: dict) -> dict | None:
                           "must not create routines as a side effect. Hand the design back in "
                           "your finish summary and let the run that started you decide."}
     if not is_root_conversation(ctx):
-        # D229: judged against the live vocabulary FIRST (`pendingvocab`), so a proposal the
-        # accept click would refuse is refused to THIS run instead of to the operator.
+        # judged against the live vocabulary first, so a bad proposal is refused to THIS run
         from ..pendingvocab import queued_routine_obs
         return queued_routine_obs(ctx, fields)
     return None
@@ -338,17 +295,15 @@ def _for_non_conversation(ctx: RunContext, fields: dict) -> dict | None:
 
 def handle_create_routine(ctx: RunContext, action: dict) -> dict:
     """Store/refresh the draft (first step) or materialize it (confirmed second step) in a
-    root conversation; QUEUE the proposal for the operator anywhere else (F328). Returns the
-    observation dict the loop records and renders.
+    root conversation; QUEUE the proposal for the operator anywhere else. Returns the
+    observation dict.
 
-    The fields are the schema's (`actionschema`, kind copy in `kindsurface`); `replaces`
-    creates a REPLACEMENT CANDIDATE instead (engine/candidate.py), and `produces` is required
-    before anything is created or queued (engine/outcome_words.py).
-    Every field is part of the draft's identity, so changing one restarts the confirmation.
+    `replaces` creates a REPLACEMENT CANDIDATE (engine/candidate.py); `produces` is required
+    before anything is created or queued. Every field is part of the draft's identity.
     """
-    # `replaces` creates a REPLACEMENT CANDIDATE (its swap the one decision); D198's `revises`
-    if act := (candidate.create if action.get("replaces") else    # revises an EXISTING recipe
-               reviseroutine.revise if action.get("revises") else None):  # behind ITS own dial
+    # `replaces` creates a candidate; `revises` revises an EXISTING recipe behind its own dial
+    if act := (candidate.create if action.get("replaces") else
+               reviseroutine.revise if action.get("revises") else None):
         return act(ctx, action)                    # both act at once; neither is ever drafted
     slug = str(action.get("target") or "").strip()
     name = str(action.get("name") or "").strip()
@@ -362,8 +317,7 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
     if (server.routines_home / slug).exists():
         return {"kind": "create_routine", "slug": slug, "already_exists": True}
 
-    # F387: the pattern is checked against the LIVE library at draft time. The old flow
-    # stored any string and only failed inside scaffold — after the user had confirmed.
+    # the pattern is checked against the LIVE library at draft time, not after confirmation
     catalog = _catalog(server)   # library patterns + the always-present `generate` choice
     if workflow_slug not in {w["slug"] for w in catalog}:
         return _unknown_workflow_obs(slug, workflow_slug, catalog)
@@ -376,10 +330,8 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
     # malformed: refused anywhere; absent: refused before a proposal is queued (and at confirm)
     if isinstance(declared, str) and (outcome or not (ctx.depth or is_root_conversation(ctx))):
         return outcome_words.refusal(slug, declared)
-    # A run with no user in the loop QUEUES instead of creating (F328). It is the same D92
-    # draft, with a longer gap before the confirmation: the operator sees it on the Decisions
-    # page and one click materializes it through this very scaffold path. Nothing is created
-    # here, and the engine still never writes routine.yaml.
+    # A run with no user in the loop QUEUES the same draft; one click on the Decisions page
+    # materializes it through this scaffold path.
     if (elsewhere := _for_non_conversation(ctx, fields)) is not None:
         return elsewhere
 
@@ -392,13 +344,11 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
         return _preview_obs(record, catalog, updated=draft is not None,
                             patterns=_settings_patterns(server, workflow_slug))
     if draft.get("pid") == os.getpid() and ctx.user_replies <= draft["user_replies"]:
-        # Same reply that drafted it, and nobody has spoken since — no user has seen the
-        # preview yet. Hold, teach.
+        # Same reply that drafted it, and nobody has spoken since. Hold, teach.
         return _preview_obs(draft, catalog, updated=False, blocked_same_leg=True,
                             patterns=_settings_patterns(server, workflow_slug))
 
-    # Confirmed: identical fields, and the user has spoken since the preview — a later leg,
-    # or a blocking ask answered inside this one (R1310).
+    # Confirmed: identical fields, and the user has spoken since the preview.
     return _materialize(ctx, slug=slug, name=name, instruction=instruction,
                         workflow_slug=workflow_slug, pattern=pattern, setup=setup,
                         done_when=done_when, finish_line=finish_line, never=never,

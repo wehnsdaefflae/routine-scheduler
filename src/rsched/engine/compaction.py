@@ -1,8 +1,5 @@
 """COMPACTION — keeping a long run inside its window without losing what it learned.
 
-Split out of `history.py` (F393): deriving facts from a finished transcript (which stayed) and
-shrinking a LIVE message list are different jobs on different data.
-
 Two mechanisms, in order of preference: elide the middle behind the engine's one-line-per-turn
 digest while a model reorganizes that same middle into `history/` files the run can read back
 on demand (so nothing is silently dropped), and failing that clamp oversized message bodies in
@@ -64,12 +61,9 @@ def window_ceiling_tokens(context_tokens: int, max_output_tokens: int) -> int:
 def turn_record(turn: int, action: dict) -> dict:
     """One turn as the digest below remembers it once its messages are elided.
 
-    ONE builder for the two writers of `turn_records` — the live loop, as each action lands,
-    and `history.replay_messages`, as a resume rebuilds them — so a resumed run's digest reads
-    exactly like the live one. The brief is stored WHOLE: the assist predicates read a written
-    path off it (`assist_predicates._file_writes` — its extension, whether it is under
-    state/), and a brief cut to the digest's width lost the extension of every long path. The
-    digest cuts its own copy when it renders one (`_digest_line`).
+    ONE builder for both writers (the live loop and `history.replay_messages`), so a resumed
+    digest reads like the live one. The brief is stored WHOLE because the assist predicates read
+    a written path off it; `_digest_line` cuts its own copy.
     """
     return {"turn": turn, "kind": action.get("kind", "?"), "brief": brief_value(action),
             "say": action.get("say", "")}
@@ -88,12 +82,8 @@ def maybe_compact(messages: list[dict], turn_records: list[dict], cap_tokens: fl
     """Deterministic compaction against the cap the CALLER decided. Returns
     (messages, compaction_info|None).
 
-    The cap is an argument, not a constant re-derived here. It used to re-test
-    `COMPACT_AT_FRACTION * context_tokens` — a second, stricter gate behind the caller's own —
-    so every pass the caller triggered below 60% of the window returned None: a stage
-    boundary's pass and the ">10% of the remaining token budget" gate both spent the
-    eviction-warning turn and then archived nothing. `boundary.assess` relies on the same
-    property the other way: a cap of 0 is a dry run that says what a pass would leave.
+    The cap is an argument, never re-derived here: a second, stricter gate would make passes the
+    caller triggered do nothing. `boundary.assess` uses a cap of 0 as a dry run.
     """
     if estimate_input_tokens(messages) <= cap_tokens:
         return messages, None
@@ -119,35 +109,19 @@ def clamp_to_cap(messages: list[dict], context_tokens: int, max_output_tokens: i
     """LAST RESORT: bring estimated input below the available token ceiling by truncating
     the largest message bodies in place until the estimate clears the ceiling.
 
-    Compaction (`maybe_compact`, plus the background `archive_middle`) shrinks the prompt by
-    ELIDING the middle, but the retained head + tail are an incompressible floor — and a short
-    conversation (≤ KEEP_HEAD_MSGS + KEEP_TAIL_MSGS messages) has no middle at all. When that
-    floor's own observation bodies exceed the window minus the output reservation, EVERY
-    compaction path returns unchanged and the very next completion 400s with
-    context_length_exceeded and DIES
-    (non-retryable EndpointError). F265 recurred three times this way despite two margin fixes.
+    Eliding the middle cannot shrink the retained head + tail, and a short conversation has no
+    middle; when that floor alone exceeds the window, the next completion would fail
+    non-retryably. This trims bodies (never message count) with a visible marker; the full text
+    stays in the transcript. Returns a clamp-info dict when it trimmed anything, else None.
 
-    This trims bodies (never message COUNT — structure and roles are preserved) with a visible
-    marker; the full text is always on disk in the transcript, so nothing is lost, and the
-    marker makes the truncation fail LOUD in the prompt rather than silently. Returns a
-    clamp-info dict (for a transcript event) when it trimmed anything, else None.
-
-    Message 0 — the COMPOSED SYSTEM PROMPT — is never a candidate. It is the largest body in
-    every run (~90 KB against the 8 KB observation cap), so ordering by size cut it FIRST and
-    cut it EVERY pass: token-lab:20260910-073700 clamped one message 90,982 → 30,097 chars on
-    turn 1 and re-cut the same message 34 more times. That took the recipe's own contract,
-    CAPABILITIES and the STATE DIGEST out of the prompt while the marker pointed at a
-    transcript that never carried them (nothing writes the composed prompt to transcript.jsonl),
-    and it rewrote the cached prefix from byte zero on every single turn. The kickoff at index 1
-    stays clampable: a conversation's pasted document lives there and is legitimately the
-    biggest thing in the run.
+    Message 0 — the composed system prompt, the largest body in every run — is never a
+    candidate: cutting it removes the recipe's contract and rewrites the cached prefix from byte
+    zero, and the transcript does not hold it. The kickoff at index 1 stays clampable.
     """
     ceiling = window_ceiling_tokens(context_tokens, max_output_tokens)
     if ceiling <= 0:
-        # Degenerate: the output reservation alone fills the window, so there is no positive
-        # input budget to clamp TO — trimming to 0 would just destroy all context. Decline and
-        # let the (misconfigured) request fail loudly at the endpoint. Real models never hit
-        # this; it only arises in artificial tiny-window unit fixtures.
+        # The output reservation alone fills the window: trimming to 0 would destroy all
+        # context, so let the misconfigured request fail loudly at the endpoint.
         return None
     before = estimate_input_tokens(messages)
     if before <= ceiling:
@@ -190,15 +164,9 @@ def clamp_to_cap(messages: list[dict], context_tokens: int, max_output_tokens: i
             "after_estimated_tokens": after,
             "ceiling_tokens": int(ceiling)}
 
-# The model supplies the CONTENT and a one-line description per file; the ENGINE supplies
-# the filenames and therefore writes INDEX.md. That split is not tidiness — it is the fix for
-# a defect measured on the live instance. The model used to hand back a free-text index it had
-# written against its OWN names, and `_swap_in_history` then renamed every file to
-# `t<turn>-<slug>.md`: the index was a map to files that did not exist. One archive cited 102
-# filenames of which ZERO resolved; 36% of all history reads across the instance returned
-# ENOENT, and runs paid a stereotyped three-turn recovery (read INDEX, read the bare names and
-# fail, read the prefixed names) over and over. `.memory/INDEX.md` has always worked this way —
-# each write supplies `about`, the engine maintains the index — and for exactly this reason.
+# The model supplies the CONTENT and a one-line `about` per file; the ENGINE supplies the
+# filenames and therefore writes INDEX.md — a model-written index names files the engine then
+# renames, so it would point at files that do not exist. Same split as `.memory/INDEX.md`.
 _HISTORY_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["files"],
     "properties": {
@@ -216,9 +184,8 @@ _HISTORY_SCHEMA = {
     },
 }
 
-#: An INDEX.md line, and the parser for reading one back. The engine writes every line, so the
-#: shape is guaranteed rather than hoped for — which is what makes carrying entries forward
-#: across compaction passes deterministic instead of a request the model silently drops.
+#: An INDEX.md line's shape is engine-written, so carrying entries forward across passes is
+#: deterministic.
 _INDEX_HEAD = ("# History index — the archived middle of this run, one file per topic.\n"
                "# Read the file whose line matches what you need; the `t<turn>-` prefix is "
                "the turn it was archived at.\n")
@@ -246,11 +213,8 @@ def parse_index(text: str) -> dict[str, str]:
 def _build_index(hist_dir: Path, prior: str, new: dict[str, str]) -> str:
     """INDEX.md for every file in the archive — carried entries plus this pass's.
 
-    The invariant is that EVERY file on disk has exactly one line. The old design asked the
-    model to "KEEP its entries and add the new files"; it silently dropped them (one live
-    archive lists 13 of its 23 files, an entire generation gone), and re-feeding a growing
-    index through the model each pass cost a 20 KB prompt by the 23rd. Carrying them here is
-    deterministic and costs nothing.
+    Invariant: EVERY file on disk has exactly one line. Prior entries are carried here, never
+    re-fed to the model, which would drop them and pay for a growing prompt.
     """
     known = parse_index(prior)
     lines = []
@@ -324,10 +288,8 @@ def _swap_in_history(hist_dir: Path, files: list[dict], turn: int) -> list[str]:
     shutil.rmtree(displaced, ignore_errors=True)
     return written
 
-#: The `purpose` every archival completion carries. Named here, once, because TWO parties must
-#: agree on it: `archive_middle` stamps it on the call, and `archival.settle()` terminates open
-#: calls BY it when it abandons the thread (F572). A literal in both places is a drift waiting
-#: to happen, and the failure mode is silent — the abandon would simply match nothing.
+#: The `purpose` every archival completion carries — one constant because `archive_middle`
+#: stamps it and `archival.settle()` terminates open calls by it; drift would fail silently.
 ARCHIVAL_PURPOSE = "Compaction · archival"
 
 
@@ -349,18 +311,13 @@ def archive_middle(middle: list[dict], endpoint, ref,
                    run_dir: Path, turn: int) -> dict | None:
     """Reorganize `middle` into the navigable on-disk history, and return the info dict.
 
-    Touches no message list, only the model and the filesystem — which is exactly what makes
-    it safe to run in a thread, and it always does: `engine/archival.py` is the ONLY caller.
-    (There was a synchronous sibling that elided and archived in one blocking call. It was
-    the whole path until 0.308.0 moved archival off the hot path, and then it was reachable
-    only from its own tests — deleted, and the tests repointed here.) Returns None when the
-    model gives back nothing usable; raises when it gives back non-JSON, so the caller can
-    report the reason.
+    Touches no message list, only the model and the filesystem, so it is safe in a thread;
+    `engine/archival.py` is the ONLY caller. Returns None when the model gives back nothing
+    usable; raises on non-JSON so the caller can report the reason.
     """
     messages = archival_messages(middle)
-    # Archival time scales with the middle being read: a fixed 180s died on a 1.25M-char
-    # middle (F376) while the digest fallback took the pass every time. 180s base + 60s
-    # per 200k chars, capped at the endpoint default (600s) so a hung CLI still dies.
+    # Timeout scales with the middle: 180s base + 60s per 200k chars, capped at the endpoint
+    # default (600s) so a hung CLI still dies.
     timeout = min(600, 180 + 60 * (len(messages[0]["content"]) // 200_000))
     comp = endpoint.complete(messages,
                              model=ref.model, schema=_HISTORY_SCHEMA, effort=ref.effort,
@@ -373,10 +330,8 @@ def archive_middle(middle: list[dict], endpoint, ref,
         try:
             data = json.loads(comp.text)
         except ValueError:
-            # A weak archival model answering prose (or nothing) instead of the schema
-            # used to surface as a bare "Expecting value: line 1 column 1" error event
-            # (c-20260810-213335, every message) — name the model and the reply so the
-            # event teaches, and let the caller's deterministic fallback take the pass.
+            # Name the model and the reply so the event teaches; the caller's deterministic
+            # fallback takes the pass.
             raise RuntimeError(
                 f"archival model {ref.endpoint}/{ref.model} returned non-JSON "
                 f"({len(comp.text or '')} chars: {(comp.text or '')[:80]!r}) — "
@@ -389,5 +344,4 @@ def archive_middle(middle: list[dict], endpoint, ref,
     return {"elided_messages": len(middle), "history_files": len(written),
             "mode": "llm-history", "model": f"{ref.endpoint}/{ref.model}",
             # the compaction call's own spend — the caller folds it into the run's usage
-            # (this was invisible before: full-context calls that never hit the books)
             "usage": dict(comp.usage)}

@@ -1,29 +1,19 @@
 """What CLASS of question a decision record is — blocking or closing (D212).
 
-Measured over the 282 question records the instance had filed: `mode: "blocking"` was used 0
-times, 0% of answers arrived within an hour and the median answer latency was 2.97 h. So the
-class can never mean "the run's process waits" — that is `mode`, and the two are ORTHOGONAL:
+The class is ORTHOGONAL to `mode` (answers take hours, so "the process waits" is rare):
 
   mode   — does THIS run's process sit and wait for the answer (with the ask timeout)?
   class  — can the run do the work it was fired to do without the answer at all?
 
-A run files a BLOCKING question and carries on exactly as it files a closing one; what the
-class says is whether the asking run was stopped by the gap. Every surface that renders the
-record (the Decisions page, the run view) can therefore sort the operator's queue by what is
-actually holding work up, instead of by when each card happened to be filed.
+The class lets every surface rendering the record sort the operator's queue by what is actually
+holding work up. The rule:
 
-The rule is the operator's own, verbatim — *"Both axes: subject decides the default, the run
-may override it when the work is genuinely blocked"*:
+* the SUBJECT sets the default — a typed access `request` (the run cannot reach the entity at
+  all) defaults to `blocking`, a plain question to `closing`;
+* the RUN may override per question with `blocks_work: true` — *without this answer the run
+  cannot do the work it was fired to do*.
 
-* the SUBJECT sets the default — a question carrying a typed access `request` (a grant,
-  secret or machine entity: the run cannot reach the thing at all) defaults to `blocking`,
-  and a plain question defaults to `closing`;
-* the RUN may override per question with `blocks_work: true`, whose test is his: *without
-  this answer the run cannot do the work it was fired to do*.
-
-The override only ever goes one way. A run cannot declare an access request `closing`: it
-asked for the entity because something it meant to do needs it, and a run talking itself out
-of its own blocker is the failure the subject default exists to prevent.
+The override only goes one way: a run cannot talk itself out of its own access blocker.
 """
 
 from __future__ import annotations

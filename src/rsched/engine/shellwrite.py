@@ -1,34 +1,18 @@
 """Which shell commands may have WRITTEN, and the record that says one did (D158, R2654).
 
-Every write protection the engine has lives in the FILE-action gate (`engine/fileops._write_gate`):
-the `.memory/` seal, the engine-ownership of `runs/`, `.util_outputs/` and `.doc_cache/`, the
-`routine.yaml` config refusal, the recipe-authoring boundary and `_removal_gate`. A `bash -c`
-redirect calls none of them. Inside the routine's OWN dir the KERNEL refuses those writes anyway
-since D179 (`ownseal` withholds exactly those paths from the jail), so what remains ungated is
-every path outside it — which is the POINT of an escape hatch, and is why the capability is
-granted sparingly rather than gated per path. Where the jail cannot engage (`sandbox: off`, or a
-kernel without Landlock) the marker below is again the whole mechanism.
+Every write protection the engine has lives in the FILE-action gate (`engine/fileops._write_gate`);
+a `bash -c` redirect calls none of it. Inside the routine's OWN dir the kernel refuses those writes
+anyway (`ownseal`, D179), so what remains ungated is every path outside it — the point of an
+escape hatch. Where the jail cannot engage (`sandbox: off`, no Landlock) the marker below is again
+the whole mechanism. Which writes a shell line performs is undecidable, so nothing here refuses.
 
-Deciding WHICH writes a shell line performs is undecidable in general (a command can
-write through a script, a heredoc, an editor, a compiler), so nothing here tries to refuse one.
+D158 replaced prevention with ACCOUNTABILITY: a write-shaped command carries an `ungated_write`
+marker on its observation AND files an `ungated_write` HEALTH EVENT, the durable stream an audit
+reads. ONE ROW PER RUN, not per command: the audit needs WHICH RUN to open, and the per-call
+detail is already in that run's transcript.
 
-D158 replaced prevention with ACCOUNTABILITY, and R2654 is the half that was never connected:
-the observation carried an `ungated_write` marker and the whole product had no reader for it — two
-lines in `src/rsched`, both the writer, no read model, no endpoint, no console case. A compensating
-control nothing reads is not one. So a write-shaped command now also files a `ungated_write`
-HEALTH EVENT, which puts the run in the one durable, machine-checked stream an audit reads
-(`.control/health-events.jsonl`) instead of only in the transcript nobody greps.
-
-ONE ROW PER RUN, not per command. A run that works in a repo makes dozens of write-shaped calls,
-and `health_cooldown`'s docstring records what per-occurrence filing did to this stream once: one
-resumed run wrote 26 rows of 1,289 for a condition 80 runs had produced, and an operator reading
-"173 cost events" saw a fleet problem that was not there. What the audit needs from this event is
-WHICH RUN to open — the per-call detail is already in that run's transcript, on every observation
-the marker rode. So the first write-shaped command of a run files the row, naming the turn and the
-command, and the rest of that run's writes are found by reading it.
-
-The marker is deliberately conservative in one direction only: a hit claims "this may have
-written", never "this did not".
+The marker is conservative in one direction only: a hit claims "this may have written", never
+"this did not".
 """
 
 from __future__ import annotations
@@ -40,62 +24,32 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:                                  # pragma: no cover - typing only
     from .run_context import RunContext
 
-#: Command shapes that may WRITE. Conservative by design (D158): a hit means "this command may
-#: have written, and no file-action gate saw it", never "this command did write". Missing a write
-#: costs an audit trail entry; flagging a read would make the marker noise, so the list stays at
-#: the shapes that write in their ordinary use.
+#: Command shapes that may WRITE. Conservative by design (D158): a hit means "may have written,
+#: and no file-action gate saw it". Flagging reads would make the marker noise, so the list
+#: stays at the shapes that write in their ordinary use.
 _WRITE_SHAPES = (
     r">",                                   # redirect + append (also catches >>)
     r"\b(?:tee|dd|truncate|install)\b",
-    # A write COMMAND, and only in command position. `\b<tok>\b` anywhere matched the token
-    # wherever it appeared — in an inline program's identifiers and in an `echo` of English —
-    # and `ln` is Python's commonest loop variable: `for ln in open(f)` read as the symlink
-    # command. Measured 2026-11-10 over 3,922 fleet shell commands: 64 flagged on an `ln`
-    # loop variable, 20 more on the word "touch" inside narration. That is not mere noise,
-    # because the health row is LATCHED one-per-run: in 6 of the 29 runs that flagged at all,
-    # the row named a read-only command and the run's 21-85 real write-shaped commands were
-    # named NOWHERE — the audit trail pointed at the wrong turn for exactly the two routines
-    # that write the most.
-    # Command position = the start, or after a separator / a line break / a RUNNER that takes
-    # the command as its argument (`sudo`, `time`, `env`, `nohup`, `xargs`, `find -exec`) or a
-    # shell keyword (`then`, `do`, `else`). The runner's OWN flags may sit in between, which is
-    # not a detail: `find … -print0 | xargs -0 -r rm -f` is how the fleet deletes in bulk, and
-    # a pattern demanding the verb immediately after `xargs` loses exactly that real delete
-    # (caught by diffing this change's verdicts against the old shape's over 3,930 commands).
-    # An `ssh host <<EOF` body still flags, because its commands begin their own lines.
-    # `tok=` is excluded: in shell AND in the inline Python this guards, `ln=ln.strip()` is an
-    # ASSIGNMENT, never an invocation.
-    # `-exec` is written WITHOUT a leading `\b`: a word boundary needs a word character on one
-    # side and both ` ` and `-` are non-word, so `\b-exec` can never match — the exact anchor
-    # bug that made the interpreter clause dead code for its whole life (F730). Pinned by the
-    # `find-exec-rm` case, which failed on the first draft of this very line.
+    # A write COMMAND, only in command position — a bare `\bln\b` matched Python's `for ln in`
+    # and narration's "touch", and the one-per-run latch then named a read. Command position =
+    # the start, after a separator / line break, after a RUNNER (`sudo`, `time`, `env`,
+    # `nohup`, `xargs`, `find -exec`) or a shell keyword, with the runner's own flags allowed
+    # in between (`xargs -0 -r rm -f`). `tok=` is an assignment, never an invocation.
+    # `-exec` has no leading `\b`: both ` ` and `-` are non-word, so `\b-exec` never matches
+    # (F730; pinned by the `find-exec-rm` case).
     (r"(?:^|[\n;&|(`{]|\b(?:sudo|time|env|nohup|xargs|then|do|else)\s|-exec\s)"
      r"(?:\s*-{1,2}[\w-]+)*\s*"
      r"(?:cp|mv|rm|rmdir|mkdir|ln|touch|chmod|chown)(?:\s|$)(?!=)"),
-    # The scan of a multi-token shape stops at every SEPARATOR, `&` included: `&&` ends a
-    # command as surely as `|` or `;` does, and a scan that reads past it joins two commands
-    # into one that was never run. Measured 2026-11-07: a pure read ending
-    # `… && git worktree list && echo "=== STASH ===" && git stash list` matched the git shape
-    # as one apparent `git … stash` and filed an `ungated_write` event, 1 of the 5 in that
-    # window. The same hole sat in the sed shape (`sed -n … && grep -i …`, where the `-i` is
-    # grep's) and in the interpreter clause below.
+    # A multi-token shape's scan stops at every SEPARATOR, `&` included: reading past `&&`
+    # joins two commands into one that was never run.
     r"\bsed\b[^|;&]*\s-i",                  # in-place sed only; a filtering sed is a read
-    # `stash` is the one verb in this set with READ-ONLY subcommands of its own: `git stash
-    # list` and `git stash show` inspect the stack and change nothing, while bare `git stash`
-    # and `git stash push` write. Measured 2026-11-07 on the same false positive as the `&`
-    # hole above: the specimen's last subcommand WAS `git stash list`, so bounding the scan
-    # alone did not clear it. Every other verb here writes in every form it takes.
+    # `git stash list|show` are read-only; every other verb here writes in every form.
     (r"\b(?:patch|git)\b[^|;&]*"
      r"\b(?:apply|checkout|reset|commit|add|restore"
      r"|stash(?!@)(?!\s+(?:list|show)\b))\b"),
-    # An interpreter running an INLINE program that writes. The program arrives three ways —
-    # `-c`/`-e`, stdin (`python3 -`) or a heredoc — and a routine's state edits use all three,
-    # so all three are matched; the needle is then a WRITE verb, not merely `open`, because
-    # `json.load(open(p))` is how every routine READS its own state.
-    # `&` bounds the span up to the FLAG only. The `.*?` after it is the inline program's own
-    # body, which may legitimately contain `&&` (`python3 -c "a() and b() && …"`), so bounding
-    # THAT would lose real writes — the separator rule is about which COMMAND the flag belongs
-    # to, not about what the program may say.
+    # An interpreter running an INLINE program (`-c`/`-e`, stdin `-`, or a heredoc) that
+    # writes; the needle is a WRITE verb, not merely `open`, since `json.load(open(p))` reads.
+    # `&` bounds the span up to the FLAG only — the program body after it may contain `&&`.
     (r"\b(?:python3?|perl|ruby|node)\b[^|;&]*?(?:(?<![\w-])-[ce]\b|(?<![\w-])-\s|<<).*?"
      r"(?:\b(?:write\w*|unlink|rmtree|makedirs|mkdir|rename|replace|dump)\b"
      r"|open\([^),]*,\s*['\"][^'\"]*[wax])"),
@@ -106,35 +60,24 @@ _WRITE_RE = re.compile("|".join(_WRITE_SHAPES), re.DOTALL)
 #: blanked, never the span's words: `python -c "open('x','w')"` must still flag on `open`.
 _QUOTED = re.compile(r"'[^'\n]*'|\"[^\"\n]*\"")
 
-#: `>=`, `->` and `=>` are COMPARISONS and arrows, never redirects. Inline Python is how a routine
-#: edits its own state, and `if ts >= '2026-10-19'` is its commonest line — blanked before the
-#: shape test so a date filter does not read as a write (F730).
+#: `>=`, `->` and `=>` are COMPARISONS and arrows, never redirects — blanked before the shape
+#: test (F730).
 _COMPARISON = re.compile(r"->|=>|>=")
 
 
 def marks_a_write(command: str) -> bool:
     """Whether this shell command's SHAPE suggests it wrote something (D158).
 
-    Two things are stream plumbing or text rather than a write to a file the run owns, and both
-    are neutralised before the test — otherwise nearly every defensive command would flag and the
-    marker would stop being worth reading:
+    Stream plumbing and text are neutralised before the test, or nearly every defensive command
+    would flag:
 
-    * `>/dev/null`, `2>/dev/null` and `2>&1` — stripped whole. The fd is optional: discarding
-      STDOUT (`ls "$d" >/dev/null && echo ok`) is a probe idiom, not a write.
-    * `>=`, `->` and `=>` — blanked. Inline Python is how a routine edits its own state and
-      `if ts >= '2026-10-19'` is its commonest line; read as a redirect it made the marker fire
-      on pure reads.
-    * a `>` INSIDE a quoted string (`grep -n "a > b"`, `echo 'x > y'`) — blanked in place. This
-      is what the first three `ungated_write` health events caught: two of them were read-only
-      commands whose grep pattern or echo text contained a `>`, so the stream's very first signal
-      was 1-in-3 false. A new detector a reader learns to discount is worse than none. Only the
-      `>` is blanked, never the quoted span's words: a redirect outside the quotes still flags
-      (`echo hi > "state/x"`), and `python3 -c "open('x','w')"` flags on the write-mode open.
+    * `>/dev/null`, `2>/dev/null` and `2>&1` — stripped whole (the fd is optional).
+    * `>=`, `->` and `=>` — blanked (comparisons in inline Python).
+    * a `>` INSIDE a quoted string (`grep -n "a > b"`) — blanked in place. Only the `>`, never
+      the span's words: `python3 -c "open('x','w')"` still flags on the write-mode open.
 
-    What is NOT neutralised, deliberately: a bare `>` used as "greater than" OUTSIDE a quoted
-    span — a multi-line `-c` program comparing with `>` rather than `>=` still flags. Widening
-    the strip that far would need to parse the shell line, and the marker's one promise is to be
-    conservative in the FLAGGING direction.
+    NOT neutralised, deliberately: a bare `>` as "greater than" outside quotes still flags —
+    stripping it would need a shell parser, and the marker errs toward flagging.
     """
     stripped = re.sub(r"\d?>&\d|\d?>\s*/dev/null", " ", command)
     stripped = _COMPARISON.sub(" ", stripped)
@@ -145,13 +88,9 @@ def marks_a_write(command: str) -> bool:
 def already_filed(routines_home: Path, run_id: str) -> bool:
     """Whether this RUN already has its `ungated_write` row on the stream.
 
-    The latch is read back out of the stream rather than held in memory — `health_cooldown`'s
-    idiom, and for its reason: a writer inside one turn has no long-lived object to latch on,
-    and a resumed leg is a new process that must not file the row again. The parse is the
-    stream's ONE memoized reader, so a run making dozens of write-shaped calls costs one read.
-
-    Fails OPEN: trouble reading the stream files the event. A suppressor that cannot read its
-    own history must not become the thing that silences the log.
+    The latch is read back out of the stream (memoized), not held in memory, so a resumed leg
+    — a new process — does not file the row again. Fails OPEN: trouble reading the stream files
+    the event rather than silencing it.
     """
     if not run_id:
         return False

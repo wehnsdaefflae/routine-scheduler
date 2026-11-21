@@ -1,6 +1,6 @@
 """Observation wording for CHILD RUNS — every scheduling mode of the one concept.
 
-Split out of `observations.py` (F393). One vocabulary across the modes (engine/child.py): a
+One vocabulary across the modes (engine/child.py): a
 child has its own dir, its own budget and its own context; it hands work back by writing into
 its own `artifacts/`. The wording says so at the point the parent starts one, which is where a
 run would otherwise assume it shares the parent's working directory.
@@ -29,10 +29,8 @@ def _salvaged(row: dict) -> str:
 def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — one flat renderer per module, by design: observation wording is PROMPT SURFACE (docs/prompt-anatomy.md) and every branch is a distinct string for a distinct kind. Collapsing them would scatter a kind's wording, which is exactly what this shape exists to prevent.
     """Wording for this module's kinds; None when `kind` is not one of them."""
     if kind == "child":
-        # D241: ONE kind, so ONE branch — the MODE chooses the wording, because what differs
-        # between a parallel and a sequential child is what the caller does next, not what the
-        # child is. The old two branches said "sub-workflow" and "sequential child" for the
-        # same thing, which is the vocabulary this decision exists to end.
+        # ONE kind, ONE branch (D241): the MODE chooses the wording, because what differs is
+        # what the caller does next, not what the child is.
         if obs.get("rejected"):
             return f"OBSERVATION (child REJECTED): {obs['reason']}"
         note = f" [{obs['note']}]" if obs.get("note") else ""
@@ -58,11 +56,8 @@ def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — on
     if kind == "children":
         bg_rows = background_status.lines(obs.get("background") or [])
         if not obs.get("rows"):
-            # Never "none spawned" (F732): the registry is in-memory, so a RESUMED leg knows
-            # only about this leg's children — and the sentence it used to print was a claim
-            # about the whole run that a fresh leg has no standing to make. It is also a claim
-            # about BACKGROUND work it has no standing to make (R3600): the operator met it
-            # with a `bg1` script in flight, so it only speaks when nothing is running either.
+            # Never "none spawned": the registry is in-memory, so a RESUMED leg knows only this
+            # leg's children; and background work in flight is named, not denied.
             if not bg_rows:
                 return ("OBSERVATION (children): no record of a child in THIS leg — and none on "
                         "disk either, so none was started.")
@@ -78,19 +73,16 @@ def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — on
         if obs.get("error"):
             return f"OBSERVATION (kill FAILED): {obs['error']}"
         if obs.get("handle"):
-            # A BACKGROUND call's cancellation (D176 option (a)) — it carries a string handle
-            # and no `n`, so this branch comes before every line below that reads `obs['n']`.
-            # Rendering it there would raise `KeyError: 'n'` and kill the turn AND every later
-            # resume, which re-renders each stored observation: the exact failure the capacity
-            # refusal already paid for once.
+            # A BACKGROUND call's cancellation carries a string handle and no `n`, so this
+            # branch precedes every line reading `obs['n']` (a KeyError would break every resume,
+            # which re-renders stored observations).
             return (f"OBSERVATION (kill): background call `{obs['handle']}` cancelled. "
                     + str(obs.get("note") or ""))
         if obs.get("already_finished"):
             return (f"OBSERVATION (kill): sub-workflow {obs['n']} had already finished "
                     f"({obs['status']}).")
         if obs.get("status") == "stopping":
-            # It was told to stop and has not yet (a model call no abort interrupts) — saying
-            # "terminated" here claimed an exit that had not happened.
+            # Told to stop and not yet exited (a model call no abort interrupts).
             return (f"OBSERVATION (kill): sub-workflow {obs['n']} was told to stop and is "
                     "still winding down — its exit is announced like any other when it lands.")
         return f"OBSERVATION (kill): sub-workflow {obs['n']} terminated ({obs.get('status')})."
@@ -99,12 +91,8 @@ def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — on
             return f"OBSERVATION (wait FAILED): {obs['error']}"
         parts = []
         for f in obs.get("finished", []):
-            # F338: name the deliverables the engine copied up. The WAIT is one of the two
-            # paths that report a child's exit (the turn-boundary announcement is the other),
-            # and which one wins is a timing race — so both say where the files landed, in
-            # the ONE spelling, or a parent reads two wordings of one hand-back. D246: the
-            # HEADLINE is shared for the same reason, and for a second one — this path used to
-            # render it off `MODE_SHOUT`, a mode vocabulary that existed only here.
+            # The WAIT and the turn-boundary announcement both report a child's exit (which
+            # wins is a timing race), so both use `child`'s ONE headline and hand-back wording.
             got = child.handback_paths_line(tuple(f.get("collected") or ()))
             parts.append(child.finished_headline(
                 mode=str(f.get("mode") or ""), n=f["n"], label=f["label"],

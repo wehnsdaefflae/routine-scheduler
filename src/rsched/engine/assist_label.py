@@ -1,30 +1,20 @@
 """The outcome label for a RULE ASSIST's hold — `remind_feedback` routed by the shape of its id.
 
-One side field carries both layers' labels, and that is deliberate: the two are the authorship
-faces of one relevance-trigger layer (`engine/hold.py`), a label rides any action at no turn
-cost, and a second field would mean teaching the model which of two spellings to use for the
-same act. So the ROUTING is a property of the id, not of a new field: a reminder id cannot
-contain `/` (`reminders.ID_RE`) and an assist key always does — it is `<rule>/<assist id>`
-(`assists.Assist.key`). An id of neither shape keeps the reminder layer's refusal, which names
-the ids the hold offered.
+One side field carries both layers' labels (D239) — they are two faces of one relevance-trigger
+layer (`engine/hold.py`), and a second field would mean two spellings for the same act. So the
+ROUTING is a property of the id: a reminder id cannot contain `/` (`reminders.ID_RE`) and an
+assist key always does (`<rule>/<assist id>`, `assists.Assist.key`). An id of neither shape
+keeps the reminder layer's refusal.
 
-Before this, `remind._apply_feedback` answered an assist key with "no reminder … is live for
-this run": the label had nowhere to go, and the one `hold`-payload assist in the library had
-bought 72 turns across three routines with no way to tell a useful hold from a false positive
-(D239).
+The reminder layer's two rules about EVIDENCE are mirrored here:
 
-The reminder layer's two rules are mirrored here rather than reinvented, because they are
-about EVIDENCE and not about reminders:
+- **a label answers one hold, once.** `loop.assist_owed` counts the holds not yet labelled, as
+  `loop.reminder_owed` does — a label with no hold behind it is evidence about nothing.
+- **the tally is disk-owned.** `assist_stats.record` is the one writer, off disk, so a fire and
+  a later label cannot overwrite each other.
 
-- **a label answers one hold, once.** `loop.assist_owed` counts the holds of each assist this
-  run has not yet labelled, the way `loop.reminder_owed` does — a label with no hold behind it
-  is evidence about nothing (one run once labelled a single reminder 75 times against 5 fires).
-- **the tally is disk-owned.** `assist_stats.record` is the one writer, off disk, so a fire
-  counted at the hold and a label recorded two turns later cannot overwrite each other.
-
-The ledger is this layer's own run state, carried across a resume beside the hold ledger it
-pairs with (`engine/assist.py` seeds it, its `rebuild` re-seeds it from the holds the
-transcript recorded) — a label for a hold from before a restart lands.
+The ledger is carried across a resume beside the hold ledger it pairs with (`rebuild_owed`),
+so a label for a hold from before a restart lands.
 """
 
 from __future__ import annotations
@@ -43,11 +33,9 @@ def is_assist_key(rid: object) -> bool:
 def rebuild_owed(loop, events: list[dict]) -> None:
     """Re-seed `loop.assist_owed` from the events inside the guard scope (engine/guardscope.py).
 
-    Nothing extra is recorded for either half: a hold IS its observation (which names the
-    assists it spent) and a label rides its action. An assist fires at most once per run
-    (`assist._fire`), so one key is owed at most one label and the live turn's inner order —
-    the hold seam, then `remind.apply_ops` for the same action — cannot change the count the
-    way it can for a reminder, whose holds repeat (engine/remind_ledger).
+    A hold IS its observation (naming the assists it spent) and a label rides its action. An
+    assist fires at most once per run, so — unlike a reminder (engine/remind_ledger) — the live
+    turn's inner order cannot change the count.
     """
     loop.assist_owed = {}
     for ev in events:

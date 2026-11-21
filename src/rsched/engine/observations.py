@@ -19,14 +19,11 @@ OBS_CAP_CHARS = 8_000
 
 def truncate(text: str, cap: int = OBS_CAP_CHARS, keep: str = "head+tail") -> tuple[str, bool]:
     """Cap a large output for its observation. `keep`:
-    - "head+tail" (default): keep both ends, elide the MIDDLE — for failure stderr, where
-      the traceback's END is the repair material and must survive (test_utils
-      keeps_trace_tail pins it).
-    - "head": keep the HEAD only, drop the TAIL — for ordered STDOUT that is spilled in
-      full to `.util_outputs/`, so a reader continues IN SEQUENCE from the spill file at
-      the char the preview stopped (operator AUDIT note R45: mid-truncation breaks
-      sequential paging). The marker names that resume point as the `read_file` arguments
-      that reach it (`resume_at`): a bare char offset named an argument read_file never had.
+    - "head+tail" (default): elide the MIDDLE — for failure stderr, whose traceback END is
+      the repair material.
+    - "head": drop the TAIL — for ordered STDOUT spilled in full to `.util_outputs/`, so a
+      reader continues IN SEQUENCE; the marker names the resume point as `read_file`
+      arguments (`resume_at`).
     """
     if len(text) <= cap:
         return text, False
@@ -45,10 +42,8 @@ def resume_at(text: str, offset: int) -> str:
     """The `read_file` arguments that land on char `offset` of `text` once it is a file:
     `start_line=L` plus `start_char=C` when the offset falls inside a line.
 
-    Counted with read_file's own line semantics — Python's universal newlines, where a
-    carriage return and CR-LF end a line as well as a newline — because tool output is full
-    of lone carriage returns (progress bars) that counting newlines alone would not see as
-    the line breaks read_file then splits on.
+    Counted with read_file's universal-newline semantics, because tool output is full of lone
+    carriage returns (progress bars) that read_file splits on.
     """
     head = text[:offset].replace("\r\n", "\n").replace("\r", "\n")
     line = head.count("\n") + 1
@@ -56,9 +51,8 @@ def resume_at(text: str, offset: int) -> str:
     return f"start_line={line}" + (f" start_char={col}" if col else "")
 
 
-#: Keys whose mere PRESENCE means the action did not do what it was asked. Failure is
-#: spelled differently per kind — an exit code here, a message there, a refusal somewhere
-#: else — and before this every reader of an observation had to know all of them.
+#: Keys whose mere PRESENCE means the action did not do what it was asked (failure is spelled
+#: differently per kind).
 _FAILURE_KEYS = ("error", "missing", "rejected", "declined", "declined_secrets",
                  "pending_secrets", "edit_failed", "callers")
 
@@ -67,17 +61,12 @@ def is_failure(obs: dict) -> bool:
     """Did this observation report a failure? The one classifier for a question every
     consumer of an observation eventually asks.
 
-    Deliberately conservative about `exit`: a non-zero exit IS the failure signal for the
-    three callable kinds, but `shell` documents a non-zero exit as often being the answer
-    rather than a mistake (a grep that found nothing), so it counts here too only because a
-    caller asking "did that fail" wants the same answer a reader would give. `lint_ok: False`
-    and an empty `problems` list are distinguished: a present-but-empty list is a pass.
+    A non-zero `exit` counts for every kind, `shell` included (whose non-zero exit is often
+    the answer), because "did that fail" wants the reader's answer. A present-but-empty
+    `problems` list is a pass.
 
-    The `*_ok: False` flags are read TOGETHER because they are one shape — a gate that refused
-    before the work started. `header_ok` was missing here until 2026-10-27, found by a
-    rule-performed `write_util` whose doc-standard refusal read to the run as "it completed":
-    every consumer took that refusal for a success (the chain stopper, the exit gate, the
-    `turn:error` trigger). A new `*_ok` flag joins the tuple the day it is written.
+    The `*_ok: False` flags are one shape — a gate that refused before the work started — so a
+    new `*_ok` flag joins the tuple the day it is written, or its refusal reads as success.
     """
     if int(obs.get("exit") or 0) != 0:
         return True
@@ -93,12 +82,9 @@ def is_failure(obs: dict) -> bool:
     return any(isinstance(f, dict) and f.get("error") for f in obs.get("files") or [])
 
 
-#: The kinds whose own renderer words a REFUSAL — the action never reached the executor, so its
-#: observation carries a `reason` instead of a result. Every other kind's renderer reads the
-#: fields of a dispatch RESULT (`exit`, `bytes`, `path`, `qid` …), which a refused action never
-#: produced: the reserved finish turn's refusal of a non-finish action (`loop.py`) raised
-#: KeyError in fifteen of them, and since a resume re-renders every stored observation, that
-#: left the run unresumable — a conversation could not take its next message.
+#: The kinds whose own renderer words a REFUSAL (a `reason` instead of a result). Every other
+#: kind's refusal is worded generically, because its renderer reads result fields a refused
+#: action never produced — and a raise there breaks every resume, which re-renders it.
 _OWN_REFUSALS = frozenset({"child", "detach", "create_routine", "manage_lane"})
 
 
@@ -108,35 +94,28 @@ def _not_executed(obs: dict, kind: str) -> str | None:
     result, which the per-kind renderers below word.
     """
     if kind in obs_hold.RENDERERS:
-        # The family a hold belongs to: the action was intercepted BEFORE execution, which is
-        # the entire point. Two sources word it differently and both live in obs_hold;
-        # engine/hold.py owns the mechanism.
+        # a hold, intercepted BEFORE execution (wording in obs_hold, mechanism in hold.py)
         return obs_hold.RENDERERS[kind](obs)
     if kind == "finish" and obs.get("rejected") and obs.get("message"):
-        # A finish the gate set aside (engine/finishgate.py): the deferral message IS what the
-        # model read, stored beside the rung's own keys so a resumed leg replays it.
+        # a finish the gate set aside: the stored deferral message is what the model read
         return str(obs["message"])
     if obs.get("rejected") and obs.get("reason") and kind not in _OWN_REFUSALS:
         return f"OBSERVATION ({kind} REJECTED): {obs['reason']}"
     if obs.get("engine_error"):
-        # A handler that RAISED (actionroute.dispatch_action) — worded here, never by the
-        # kind's own renderer, which reads keys (an exit code, a name) a crash never set.
+        # a handler that RAISED — never the kind's renderer, which reads keys a crash never set
         return f"OBSERVATION ({kind} FAILED — engine error): {obs['error']}"
     return None
 
 
 def _run_body(obs: dict) -> str:
-    """The body every EXECUTED command shares — util, script and shell alike: what it printed,
-    plus the pointer to whatever the observation could not carry. One copy, so the three
-    callable kinds cannot start describing their output differently. Per-kind tails (a util's
-    usage line and repair route, its withheld optional secrets) stay with their kind.
+    """The body every EXECUTED util, script and shell shares: what it printed, plus the
+    pointer to what the observation could not carry. Per-kind tails stay with their kind.
     """
     body = obs.get("stdout") or "(no stdout)"
     if obs.get("stderr"):
         body += f"\n[stderr]\n{obs['stderr']}"
     if full := obs.get("full_output"):
-        # The pointer rides the observation that lost the middle — the moment of need,
-        # so the store needs no index and costs nothing on an untruncated call.
+        # the spill pointer rides the truncated observation, so the store needs no index
         body += "\n[full output] " + outputs.pointer_line(full)
     return body
 
@@ -144,15 +123,8 @@ def _run_body(obs: dict) -> str:
 def _killed_note(obs: dict) -> str:
     """The tail that turns `exit: -9` into a diagnosis with a next move (F622).
 
-    A negative exit is a SIGNAL, and the engine already knew which one and — for a SIGKILL
-    whose peak supports it — that the cgroup OOM killer took the child. All of it went to the
-    health stream, i.e. the OPERATOR's surface, while the author got an exit code with empty
-    output: indistinguishable from an ordinary crashed command, and a run told that RETRIES
-    (c-20261002-194128 re-ran one script at turns 93 and 95 with an identical 5,103,384 kB
-    high-water mark). The next move is the point of saying it — an author told the work was
-    too big for the memory ceiling chunks it; one told "it crashed" runs it again.
-
-    Empty for every ordinary exit, so nothing is added to the 99% of observations that ran.
+    A negative exit is a SIGNAL; the run is told which one and whether the OOM killer took the
+    child, because a run told only "it crashed" retries unchanged. Empty for an ordinary exit.
     """
     if not obs.get("killed_by"):
         return ""
@@ -173,12 +145,9 @@ def _secret_gate(obs: dict, kind: str) -> str:
     """D39's secret-exposure gate stopped a util or script call: it was NOT run — say why and
     what to do next.
 
-    A DECLINE never enumerates the names it refused (R17): the refusal must not read as a
-    consolation listing of exactly what the user just protected — the model gets a count; the
-    transcript dict keeps the names for the user's own surfaces. A PENDING request still names
-    them: it is the run's open ask, not a refusal, and the names are the run's working knowledge
-    (the util's own `secrets:` declarations). An ask-back on that request is worded the one way
-    every blocking decision's is (`obs_admin.dialog_reply`): calling again re-submits it.
+    A DECLINE gives the model only a count, never the names the user just protected (R17); a
+    PENDING request names them, being the run's own open ask. An ask-back is worded by
+    `obs_admin.dialog_reply`: calling again re-submits it.
     """
     if declined := obs.get("declined_secrets"):
         why = (f"secret exposure declined for {len(declined)} "
@@ -207,9 +176,8 @@ def format_observation(obs: dict) -> str:
 def render_observation(obs: dict) -> tuple[str, str | None]:
     """`format_observation`, plus the DEFECT when the kind's renderer raised (None otherwise).
 
-    A raise here used to end the engine mid-turn and every resume after it, since a resumed leg
-    re-renders the stored observation (obs_floor's docstring counts four). The run now reads the
-    raw result instead; `live_observation` is how a live turn records that it happened.
+    On a raise the run reads the raw result instead (a resume re-renders stored observations);
+    `live_observation` records the defect on a live turn.
     """
     try:
         if stub := samestub.render(obs):   # an unchanged repeat result (engine/loopshape.py)
@@ -239,21 +207,9 @@ def _observation_body(obs: dict) -> str:  # noqa: PLR0911
         return not_run
     if obs.get("background") and (obs.get("started") or obs.get("abandoned")
                                   or obs.get("cancelled")):
-        # D118 phase 1: the call was HANDED to a background thread, so it has produced nothing
-        # yet — no exit code, no stdout, none of the fields its kind's own renderer reads. It
-        # must be rendered here, ABOVE the per-kind chain, for the same reason `_not_executed`
-        # is: a renderer that assumes its kind's output shape raises on an observation that
-        # has no output yet, and a KeyError in here kills the engine mid-turn (and every later
-        # resume, which re-renders the stored observation). The real observation arrives later
-        # and is rendered by its kind's own branch, in the ordinary way.
-        #
-        # The SAME is true of the two background ends that never produce a result, and they
-        # reached the per-kind chain for a year: `background.settle`'s abandoned payload and
-        # `background.kill`'s cancelled one carry `kind`/`handle`/`started_turn`/`note` and no
-        # `name`, no `exit`. A backgrounded `script` or `util` is in `obs_floor.OWN_ERRORS`, so
-        # floor 1 declines it too, and line 305's `obs['name']` raised — measured live in
-        # c-20261026-095411 (R2970), whose resumed leg re-rendered the stored payload and read
-        # a raw dict instead of the sentence naming what it lost.
+        # A background call started, abandoned or cancelled has produced no result fields, so
+        # it is worded here, ABOVE the per-kind chain whose renderers would raise on it. The
+        # real result arrives later and is rendered by its kind's own branch.
         if obs.get("started"):
             return (f"OBSERVATION ({kind} STARTED IN THE BACKGROUND as "
                     f"`{obs.get('handle')}`): {obs.get('note') or ''}").rstrip()
@@ -263,9 +219,7 @@ def _observation_body(obs: dict) -> str:  # noqa: PLR0911
     if (failed := obs_floor.failed(obs, str(kind or ""))) is not None:
         return failed   # an error result, for a kind whose own renderer words none
     if kind == "do_nothing":
-        # D186. The reasoning is echoed back so the run reads what it recorded, and the
-        # wording says the one thing the run must not mistake: this turn established nothing,
-        # so an `ok` finish still needs an action behind it (engine/donothing.py).
+        # D186: echo the reasoning; this turn established nothing (engine/donothing.py)
         return (f"OBSERVATION (do_nothing — recorded, nothing was done): "
                 f"{obs.get('reasoning') or ''}\nThis statement grounds no claim: a top-level "
                 f"finish(ok) still needs an action that actually established something.")
@@ -298,9 +252,8 @@ def _observation_body(obs: dict) -> str:  # noqa: PLR0911
                         "'<name> — <summary>', 'net:', 'secrets:' — then call it again. "
                         "Script names are lowercase letters/digits with '-' or '_'.")
             if obs.get("script_match"):
-                # R367: a routine-local script, which the util action never runs — the EXACT
-                # call that does, args included, first. `script` is a BASE kind, so the one way
-                # it is absent from a schema is the recipe's `tools:` list leaving it out.
+                # a routine-local script: give the EXACT `script` call (absent from a schema
+                # only when the recipe's `tools:` list leaves it out)
                 call = json.dumps({"kind": "script", "name": obs["name"],
                                    "args": obs.get("args") or []}, ensure_ascii=False)
                 return (f"OBSERVATION (util {obs['name']!r} does not exist — it is a ROUTINE-"
@@ -313,20 +266,14 @@ def _observation_body(obs: dict) -> str:  # noqa: PLR0911
         if obs.get("declined_secrets") or obs.get("pending_secrets"):
             return _secret_gate(obs, str(kind))
         if err := obs.get("error"):
-            # The DECLARATION gates (executor.do_script): the call was refused before
-            # anything ran, so there is no exit code to report — the message IS the repair
-            # route. Rendered like the secret gate above rather than as a run with a
-            # failure, because that is what happened. Without this branch the `exit`
-            # lookup below raised, killing the engine mid-turn AND every later resume,
-            # since replay re-renders the same stored observation — an unresumable run
-            # with an unauthored summary (voice-model-trainer:20260910-030348).
+            # a DECLARATION gate refused it before anything ran: no `exit` to report, the
+            # message is the repair route
             return f"OBSERVATION ({kind} {obs.get('name')} NOT run): {err}"
         head = f"OBSERVATION ({kind} {obs['name']}, exit {obs['exit']})"
         body = _run_body(obs)
         if obs.get("usage"):
             body += f"\n[usage] {obs['usage']}"
-        # Both narrowings of the declared-only rule, said out loud (obs_secrets): F290's
-        # consent axis and R2622's verb axis.
+        # withheld secrets, by consent and by verb, said out loud (obs_secrets)
         body += obs_secrets.withheld_notes(obs)
         if obs.get("hint"):
             body += f"\n[hint] {obs['hint']}"

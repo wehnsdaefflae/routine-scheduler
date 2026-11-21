@@ -5,11 +5,8 @@ repeat-streak schema shedding, refusal referral to the `uncensored` model,
 image→vision-util fallback, the prompt-size compaction gate, and usage folding. Every
 function takes the live EngineLoop; the turn ORDER stays in loop.run().
 
-A turn REJECTED here also files a `wrong_turn_detected` health event (R2652,
-`engine/wrongturn.py`): every net this module walks answers a turn that failed to ARRIVE, while
-a reply that arrives whole and is WRONG recovers silently on the next attempt. The event is a
-MEASUREMENT — it changes no effort, no model and no attempt budget — and the rate it accumulates
-is what the later effort-ladder increment has to be justified by.
+A turn REJECTED here also files a `wrong_turn_detected` health event (`engine/wrongturn.py`). It
+is a MEASUREMENT only: it changes no effort, model or attempt budget.
 """
 
 from __future__ import annotations
@@ -37,13 +34,9 @@ from .window import _override_window, compact_if_needed, note_prompt_size
 
 MAX_SCHEMA_ATTEMPTS = 3   # 1 initial + 2 retries per turn
 
-# Refusal-shaped stop reasons across provider vocabularies: the anthropic API (and the
-# subscription proxy that speaks it) reports a safety-classifier decline as stop_reason
-# "refusal" (HTTP 200, content usually empty, stop_details carrying {category, explanation});
-# openai-compatible providers mark the same class of decline with finish_reason
-# "content_filter" (or the adapter promotes the spec's `message.refusal` field to "refusal").
-# Handled BEFORE the empty-completion branch: re-sending a refused prompt to the same model
-# usually earns another refusal, so a refusal is never blind-retried — see _handle_refusal (R5).
+# Refusal-shaped stop reasons: anthropic's "refusal", openai-compatible "content_filter" (or a
+# promoted `message.refusal`). Checked BEFORE the empty branch, and never retried same-model —
+# see _handle_refusal.
 REFUSAL_STOPS = frozenset({"refusal", "content_filter"})
 
 
@@ -58,12 +51,9 @@ def diagnose(obj: dict, loop=None) -> str:
 
 
 def fold_usage(usage_sum: dict, completion) -> None:
-    """Fold one completion's usage into this turn's running sum: in/out, prompt-cache
-    traffic (kept out of `in` so token budgets keep their meaning), metered cost, and the
-    serving provider — aggregators route per request, and attribution is what lets an
-    audit correlate malformed actions with the provider, not the model. The serving MODEL
-    itself is stamped by the caller (`usage["model"]`) once an action is accepted, so a
-    failed-over or referred turn stays attributable to the model that actually produced it.
+    """Fold one completion's usage into this turn's running sum: in/out, cache traffic (kept
+    out of `in`), cost, and the serving provider (aggregators route per request). The serving
+    MODEL is stamped by the caller once an action is accepted.
     """
     base_fold(usage_sum, completion.usage)
     if completion.provider:
@@ -73,9 +63,8 @@ def fold_usage(usage_sum: dict, completion) -> None:
 def _is_prose_reply(text: str) -> bool:
     """Whether the reply carries no JSON object at all.
 
-    A refusal is PROSE. An action that merely failed VALIDATION is a malformed action, and
-    sending one to the refusal classifier bought a serial model round-trip per malformed
-    reply for nothing — 784 `refusal · classify reply` calls in 21 days against 8 refusals.
+    A refusal is PROSE; an action that merely failed VALIDATION is malformed and must not cost
+    a refusal-classifier round-trip.
     """
     try:
         extract_json(text or "")
@@ -88,11 +77,8 @@ def _adopt_model(loop, pair) -> tuple:
     """Take up a (endpoint, ref) the failover/refusal path switched to: re-apply this run's
     window correction, stamp it on the run, and RE-FIT the prompt to ITS window.
 
-    The re-fit is the load-bearing half. The prompt was compacted once, at the top of the turn,
-    under the window of the model that then failed — so a chain step down to a smaller member
-    used to post the same oversize prompt, burn one of its two oversize retries proving it
-    could not fit, and only then shrink. On 2026-09-22 llmsectest-weekday:20260922-060001 handed
-    a 156,656-token prompt to a 32,768-token fallback and died on the second attempt.
+    The re-fit is load-bearing: the prompt was compacted under the FAILED model's window, and a
+    smaller fallback must not be handed it oversize.
     """
     endpoint, ref = pair
     ref = _override_window(loop, ref)
@@ -104,11 +90,8 @@ def _adopt_model(loop, pair) -> tuple:
 def _turn_schema(loop) -> dict | None:
     """The schema THIS turn posts — the loop's action schema, or none at all.
 
-    Two things shed it, both decided elsewhere: `_schema_off` (repeat-streak shedding rescued
-    the run twice, so the provider grammar stays off for the rest of it) and
-    `_shed_schema_turns` (the next reply alone runs schema-free). The per-turn counter is spent
-    HERE, whichever of the two ends up shedding — so a turn that was already schema-free still
-    consumes its allowance, exactly as before this was a function.
+    Shed by `_schema_off` (off for the rest of the run) or `_shed_schema_turns` (the next
+    reply only). The per-turn counter is spent HERE whichever of the two sheds.
     """
     shed = loop._shed_schema_turns > 0
     if shed:
@@ -120,13 +103,10 @@ def _record_rejection(loop, exc, completion, *, attempt: int, repeated: bool,
                       raw: str) -> str:
     """File this rejection everywhere it is recorded, and return what the run already knew.
 
-    Three records, one per reader: the transcript `error` event, the per-run counter, and the
-    `wrong_turn_detected` health event the FLEET rate is read off (`engine/wrongturn.py`, which
-    holds why a RECALLED rejection carries the `repeat_invalid` reason).
-
-    The return value is F736's: `schemamemo.recall` records the rejection MESSAGE against this
-    run and returns the sentence naming the turn it was FIRST earned at ("" the first time).
-    Consulted BEFORE the records are written, so the transcript can say so.
+    Three records: the transcript `error` event, the per-run counter, and the
+    `wrong_turn_detected` health event. Returns `schemamemo.recall`'s sentence naming the turn
+    this rejection was FIRST earned at ("" the first time) — consulted before the records are
+    written, so the transcript can say so.
     """
     ctx = loop.ctx
     recalled = schemamemo.recall(loop, exc.problems, turn=ctx.turn + 1)
@@ -143,22 +123,15 @@ def _record_rejection(loop, exc, completion, *, attempt: int, repeated: bool,
 
 def next_action(loop) -> tuple[dict | None, dict]:
     ctx = loop.ctx
-    # The uncensored TAKEOVER window (engine/refusal.py, operator 2026-10-16): while
-    # a back-off window is open the uncensored model serves THIS turn, consuming one
-    # turn of it; the regular chain serves again the turn after it closes (the
-    # hand-back). A window that cannot resolve its target here is closed by
-    # refusal.takeover_turn itself.
+    # While an uncensored TAKEOVER window is open (engine/refusal.py) that model serves THIS
+    # turn; the regular chain serves again once it closes.
     chain, endpoint, ref, on_takeover = turntakeover.serve_turn_head(loop)
     usage_sum: dict = {"in": 0, "out": 0}   # + "model"/"role"/"provider" attribution on success
     schema = _turn_schema(loop)
     prev_raw: str | None = None
-    # Shared across attempts: one refusal-clarification pass per turn (free-text OR
-    # classifier-refusal path), and the consecutive-empty streak from the CURRENT model.
-    # …and (D188) the ROLE serving this turn, so the accepted action can be stamped with the
-    # slot the run asked for as well as the concrete model that answered. Seeded from the
-    # resolution head and moved to "uncensored" by whichever seam actually hands the turn over
-    # — never from `on_takeover` alone, which is also raised when a refusal-shaped finish is
-    # re-driven on the REGULAR chain (that turn is a main-model turn and must read as one).
+    # Shared across attempts: one refusal-clarification pass per turn, the consecutive-empty
+    # streak, and (D188) the ROLE serving this turn — moved to "uncensored" only by the seam
+    # that actually hands the turn over, never from `on_takeover` alone.
     refstate = {"takeover_tried": False, "empty": 0,
                 "role": "uncensored" if on_takeover else "main"}
     overflow.new_turn(loop)         # the oversize-shrink allowance is per TURN, like these
@@ -176,17 +149,13 @@ def next_action(loop) -> tuple[dict | None, dict]:
             attempt -= 1
             continue
         fold_usage(usage_sum, completion)
-        # The prompt this call posted has now been counted by the provider — the one
-        # measurement of our own estimate that costs nothing (window.note_prompt_size).
-        # loop.messages is still exactly what was sent: nothing appends until below.
+        # The provider's count of the prompt just posted calibrates our estimate; loop.messages
+        # is still exactly what was sent.
         note_prompt_size(loop, ref, completion.usage)
         switched = None
         if completion.stop_reason in REFUSAL_STOPS:
-            # BEFORE the empty check: a mid-stream classifier cut can leave partial text
-            # (and openai_compat's promoted refusal carries its prose), but a refused turn is
-            # never a usable action and never a same-model retry — flag + clarify
-            # (engine/refusal.py), then advance the fallback chain (_handle_refusal
-            # raises when the chain is exhausted).
+            # A refused turn is never a usable action nor a same-model retry, even with partial
+            # text: clarify, then advance the chain (raises when it is exhausted).
             switched, tk = _handle_refusal(loop, completion, chain, ref, attempt, refstate)
             on_takeover = turntakeover.note_takeover(refstate, on_takeover, tk)
         elif completion.parsed is None and not completion.text.strip():
@@ -194,8 +163,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
             if switched is None:
                 if attempt == MAX_SCHEMA_ATTEMPTS - 1:
                     schema = None
-                # Same knob as endpoints.base.with_retries, read through the one reader:
-                # the retry LOGIC always runs, the clock is zeroed in the suite.
+                # Same knob as endpoints.base.with_retries (zeroed in the suite).
                 time.sleep(1.5 * attempt * retry_base_delay())
                 continue
         if switched is not None:
@@ -210,11 +178,8 @@ def next_action(loop) -> tuple[dict | None, dict]:
                 kind_hint = candidate["kind"]
             if problems:
                 raise SchemaViolation(problems)
-            # A refusal also arrives as a SCHEMA-VALID action — a finish(status=failed)
-            # whose summary IS the decline prose (live specimen c-20260822-085029: opus
-            # declined a darknet-sourcing task with exactly such a finish, and the whole
-            # clarification pipeline stayed dark — referrals 0, no `refusal` event,
-            # because the action parsed cleanly). Intercept it, clarify, and re-drive.
+            # A refusal can also arrive SCHEMA-VALID — a finish(status=failed) whose summary
+            # is the decline prose. Intercept it, clarify, and re-drive.
             if not refstate["takeover_tried"]:
                 intercepted, target = _intercept_refusal_finish(
                     loop, candidate, ref, refstate)
@@ -229,26 +194,17 @@ def next_action(loop) -> tuple[dict | None, dict]:
             usage_sum["model"] = f"{ref.endpoint}/{ref.model}"   # per-turn attribution
             usage_sum["role"] = refstate["role"]   # …and the ROLE that resolved to it (D188)
             if not on_takeover:
-                # A turn the REGULAR chain completed cleanly RESETS the back-off
-                # episode (engine/refusal.py): the hand-back proved the regular
-                # model can serve again, so the next refusal starts at window 1.
+                # A clean regular-chain turn RESETS the refusal back-off episode.
                 ctx.refusal_level = 0
             return candidate, usage_sum
         except SchemaViolation as exc:
             raw = completion.text or json.dumps(completion.parsed or {})
             repeated = prev_raw is not None and raw.strip() == prev_raw.strip()
             prev_raw = raw
-            # Every record this rejection earns — transcript event, per-run counter, health
-            # event — plus what the run ALREADY knew about it (F736): `_record_rejection`
-            # returns the recall sentence, which is "" unless this exact rejection message was
-            # earned at an earlier turn of this run.
             recalled = _record_rejection(loop, exc, completion, attempt=attempt,
                                          repeated=repeated, raw=raw)
-            # Refusal takeover (engine/refusal.py, operator 2026-10-16): a free-text
-            # reply the classification judges a content REFUSAL arms the back-off
-            # episode and hands the refused TURN to the routine's uncensored model
-            # whole - its output IS this turn's action (the honeypot
-            # essence-excision is retired with its premise).
+            # A free-text reply judged a content REFUSAL hands the whole turn to the routine's
+            # uncensored model (engine/refusal.py); its output IS this turn's action.
             if not refstate["takeover_tried"]:
                 adopted = turntakeover.engage_turn_takeover(loop, ref, completion, refstate)
                 if adopted is not None:
@@ -268,10 +224,8 @@ def next_action(loop) -> tuple[dict | None, dict]:
                     help_text=schemamemo.field_help(exc.problems),
                     recalled=recalled)})
             if recalled:
-                # The ask itself stops being identical (F736): the lever the line below spends
-                # on the attempt NUMBER is spent here on the evidence that this ask does not
-                # work. Same model, same effort, same attempt budget — `engine/schemamemo.py`
-                # holds why a constrained decoder is the likeliest author of the repeat.
+                # A recalled rejection drops the grammar now (F736): a constrained decoder is
+                # the likeliest author of the repeat (`engine/schemamemo.py`).
                 schema = None
             if attempt == MAX_SCHEMA_ATTEMPTS - 1:
                 # Persistent violations under a provider-enforced grammar are often the
@@ -279,9 +233,8 @@ def next_action(loop) -> tuple[dict | None, dict]:
                 # the final attempt free-form JSON; the contract still demands one object.
                 schema = None
     ctx.note_schema_forcefail()
-    # The hard end of the same seam (R2652): every attempt spent and no action accepted, so the
-    # turn that was due produced nothing. Filed for the rate, not acted on — the run ends on
-    # `loopend.no_action_verdict` exactly as before.
+    # Every attempt spent, no action accepted: filed for the rate only; the run ends on
+    # `loopend.no_action_verdict`.
     wrongturn.record(ctx, "attempts_exhausted", turn=ctx.turn + 1,
                      detail=f"no action accepted in {MAX_SCHEMA_ATTEMPTS} schema attempts")
     return None, usage_sum
@@ -305,18 +258,15 @@ def judge(loop, action: dict) -> tuple[dict, list]:
     """Repair, normalize and CHECK one action the model wrote: `(candidate, problems)`.
 
     The four checks every action meets — the schema, the per-kind/capability/grant validator, a
-    denied authoring recreate, a denied access request — plus the parameter salvage that must
-    happen before any of them judges the model's intent. Split out of `action_candidate` for
-    engine/chain.py: a chained action is checked HERE, by this same function, or the chain
-    would be a hole in the permission model (R2823).
+    denied authoring recreate, a denied access request — after parameter salvage. A chained
+    action (engine/chain.py) is checked by this same function, or the chain would be a hole in
+    the permission model.
     """
     from ..grantpolicy import REQUEST_ROUTE_MARK
     from .authoring import recreate_denial  # function-level: authoring pulls in the ask stack
     from .availability import request_denial
 
-    # A parameter the transport glued onto its neighbour is put back BEFORE the validator
-    # judges the model's intent — the same seam `normalize_action` strips grammar debris at,
-    # one layer earlier (engine/paramsalvage.py says what it cost when it was not).
+    # A parameter the transport glued onto its neighbour is put back BEFORE validation.
     repaired, salvaged = paramsalvage.repair(action)
     if salvaged:
         paramsalvage.record(loop.ctx, action, salvaged)

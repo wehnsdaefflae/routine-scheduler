@@ -1,38 +1,18 @@
 """The escalation ladder's TRIGGER: when a rung fires, who it runs as, and what comes back.
 
-`oversight.py` is the ladder's pure half (what travels up, what may come down). This module is
-the impure half that the pure one deliberately excludes: it decides the MOMENT, starts the
-supervisor as an ordinary child run, and files the directive. Step 4 of the ladder design
-(docs/designs.md § The escalation ladder).
+`oversight.py` is the ladder's pure half (what travels up, what may come down); this is the
+impure half: it decides the MOMENT, starts the supervisor as an ordinary child run, and files
+the directive.
 
-WHY A SEPARATE MODULE AND NOT `control.py`. The turn boundary already carries the pause gate,
-five switch appliers, the inbox drain and the child announcements in 272 lines; the repo's
-one-responsibility rule puts a mechanism with its own vocabulary, its own cost contract and its
-own failure modes in its own file. `control._turn_boundary`'s caller gains one line.
+The worker is HELD while the rung runs (a late directive is advice about a run that no longer
+exists), and its turn counter does not move: the rung's turns are its own (`oversight_turns`).
+Everything is best-effort: a rung that fails or cannot start leaves the worker as it was and
+writes one transcript event — a run never fails because its supervision did. `continue`
+injects nothing, decided once, at the one place a message is filed.
 
-WHY THE WORKER IS HELD WHILE THE RUNG RUNS. A directive about turn 40 that arrives at turn 46 is
-advice about a run that no longer exists. The escalation therefore happens AT the boundary — the
-worker's thread blocks on the supervisor's thread — and the worker's own turn counter does not
-move, which is also what makes the cost arithmetic in the design honest: the rung's turns are
-the rung's, pinned by `oversight_turns`, and never silently taken out of the worker's budget.
-
-WHY A FAILED RUNG IS A NON-EVENT. Everything here is best-effort by construction: a supervisor
-that crashes, times out, returns prose that is not a directive, or cannot be started at all
-leaves the worker exactly as it was and writes one transcript event saying so. The ladder is an
-oversight mechanism, not a dependency — a run must never fail because its supervision did.
-A rung that cannot be STARTED (the tree's child budget is spent, the depth ceiling is reached)
-is the ordinary case on a deep tree, not an error.
-
-WHAT IS NOT HERE. `continue` injects nothing (constraint 1 of the design, and
-`oversight.render_directive` already renders it to the empty string): this module asks that
-question once, at the one place a message would be filed, so no future injection site can lose
-the guarantee.
-
-THE KNOBS AND WHO OWNS THEM (step 5). `ladder.enabled` and `ladder.rung_height` (the ladder's
-height in rungs — the recursion limit) are the USER's and live in `routine.yaml`
-(`config.base.DEFAULT_LADDER`); `ladder_turn_interval` (`n`) and the rung's own `oversight_turns`
-are machine-tunable, in `tuning.yaml`, so a meta-routine can raise `n`. `enabled` is FALSE, so no
-live routine changes behaviour at the release and the fleet is opted in one routine at a time.
+Knobs: `ladder.enabled` (default off) and `ladder.rung_height` (the recursion limit) are the
+USER's, in `routine.yaml`; `ladder_turn_interval` (`n`) and `oversight_turns` are
+machine-tunable, in `tuning.yaml`.
 """
 
 from __future__ import annotations
@@ -44,30 +24,19 @@ from . import child, inbox, laddergoal, oversight, switches
 
 log = logging.getLogger("rsched.engine.ladder")
 
-#: Re-exports, so a name has ONE spelling for its callers wherever it is defined: the rung's
-#: turn-cap arithmetic lives in `oversight.py` (the ladder's PURE half, documented there) and
-#: eight callers already import both names from here; `REQUESTED_BY_PERSON` lives in `switches`,
-#: which owns the control.json read a person's ask arrives on (F750).
+#: Re-exports, so a name has ONE spelling for its callers wherever it is defined.
 MIN_OVERSIGHT_TURNS = oversight.MIN_OVERSIGHT_TURNS
 oversight_turns_for = oversight.oversight_turns_for
 REQUESTED_BY_PERSON = switches.REQUESTED_BY_PERSON
 
-#: The two defaults the CONFIG layer owns, read from it rather than restated here: a routine's
-#: `ladder:` block already merges over `DEFAULT_LADDER`, and a second copy of `rung_height` in
-#: the engine is how a knob comes to mean two things. `n` likewise lives in `config.base` beside
-#: the tuning vocabulary that validates it.
+#: Read from the CONFIG layer that owns it, never restated here.
 DEFAULT_RUNG_HEIGHT = int(DEFAULT_LADDER["rung_height"])
 
-#: The workflow pattern a supervisor rung runs on. NOT `general-task`: a run whose output BINDS
-#: another run must be instructed in what a dispatch is, what the four verdicts mean and that it
-#: answers with a directive and nothing else. `childrun.materialize_to_disk` degrades an unknown
-#: slug to the builtin fallback recipe, so if this pattern is absent the rung is SKIPPED rather
-#: than run on a recipe that never mentions supervision — a generic child given authority over a
-#: run is worse than no supervision at all.
+#: The workflow pattern a supervisor rung runs on: a run whose output BINDS another run must be
+#: instructed in supervision. Absent, the rung is SKIPPED (`supervisor_pattern_missing`).
 SUPERVISOR_WORKFLOW = "supervise-a-run"
 
-#: The three events that pull an escalation forward (the design: `n` is a ceiling on the
-#: interval, not a metronome). Each is a fact the engine already has at the boundary.
+#: The three events that pull an escalation forward (`n` is a ceiling, not a metronome).
 PULL_FORWARD = ("repeat_failure", "outcome_claimed_met", "worker_requested")
 
 
@@ -75,17 +44,9 @@ def supervisor_pattern_missing(server) -> str:
     """An empty string if the supervisor's workflow pattern resolves in the library, else why
     it does not.
 
-    THE HARD SKIP (operator, 2026-10-02: option 1 + 3 together). `childrun.materialize_to_disk`
-    catches every failure and degrades an unknown slug to the builtin fallback recipe — which
-    for an ordinary child is the right trade and for a rung is the worst outcome in the design:
-    a generic child, instructed to "orient, do the work, record", holding authority over a run.
-    So the rung is SKIPPED when the pattern is absent and the skip is countable
-    (`oversight_skipped`), rather than run on a recipe that never mentions supervision.
-
-    This repo's standing contract is that the RECIPE is the truth of what a run is. Instructing
-    the rung from `_supervisor_prompt` alone was rejected for that reason: it puts the recipe
-    and the instruction in deliberate disagreement for the most authority-bearing run type in
-    the system.
+    THE HARD SKIP: `childrun.materialize_to_disk` would degrade an unknown slug to the generic
+    fallback recipe — a generic child holding authority over a run. So the rung is SKIPPED,
+    countably (`oversight_skipped`); the RECIPE stays the truth of what a run is.
     """
     try:
         from ..workflows.library import workflows_dir
@@ -102,12 +63,8 @@ def supervisor_pattern_missing(server) -> str:
 
 def ladder_settings(ctx) -> dict:
     """The ladder's knobs for this run: `enabled`, `turn_interval` (n), `rung_height` (m, the
-    recursion limit) and the rung's own turn cap. Config (`routine.yaml`) is the user's and holds
-    `enabled`/`rung_height`; `tuning.yaml` holds the machine-tunable `n`, so a meta-routine can
-    raise it for a routine whose supervisor keeps answering `continue`.
-
-    Reads both leniently and falls back to the defaults, because this runs at every turn
-    boundary of every run: a malformed knob must leave the ladder off, never end a run.
+    recursion limit) and the rung's own turn cap. Read leniently with default fallbacks: a
+    malformed knob must leave the ladder off, never end a run.
     """
     cfg = getattr(ctx.routine, "ladder", None) or {}
     tuning = getattr(ctx.routine, "tuning", None) or {}
@@ -134,11 +91,8 @@ def _positive(value: object, fallback: int) -> int:
 def pull_forward_reason(loop) -> str | None:
     """Which of the three pull-forward events has fired since the last rung, or None.
 
-    `repeat_failure` is the one the engine can see without asking anyone: the same action
-    string failing identically twice is the shape of a loop, and `oversight.repetition_signals`
-    already names it off the transcript. The other two are claims the worker makes — a
-    finish-line outcome reported `met`, and an explicit request to escalate — and they are read
-    off the run's own flags rather than inferred here.
+    `repeat_failure` the engine sees itself; the other two are the worker's own claims, read
+    off the run's flags.
     """
     repeat, claimed, requested = PULL_FORWARD
     if getattr(loop.ctx, "escalation_requested", False):
@@ -154,7 +108,7 @@ def rung_is_due(loop, settings: dict) -> str | None:
 
     Counted from the LAST rung, not the run's start, so a pulled-forward escalation resets the
     clock too: two rungs must never judge the same turns. A pull-forward fires whatever the
-    interval says — never over an empty window (R2958/R2960, `oversight.worth_a_rung`).
+    interval says — never over an empty window (`oversight.worth_a_rung`).
     """
     if not settings["enabled"]:
         return None
@@ -172,9 +126,8 @@ def _supervisor_prompt(dispatch: dict, *, rung: int) -> str:
     """The brief the supervisor run is started with: the dispatch as data, the three verdicts
     and dispositions it may answer with, and the one thing it must not do.
 
-    The dispatch is handed over as JSON rather than as prose on purpose — the supervisor's value
-    is the discrepancy between the worker's own words and the engine's counts, and prose about
-    the counts would let a summary stand in for them.
+    The dispatch is JSON on purpose: prose about the counts would let a summary stand in for
+    them.
     """
     import json
     return (
@@ -208,11 +161,8 @@ def _supervisor_prompt(dispatch: dict, *, rung: int) -> str:
 def _worker_answers(loop) -> list[str]:
     """The worker's THREE MOST RECENT `say` lines — its newest account, nothing more.
 
-    These are not answers: nobody asked the worker anything (R3320/R3325, `fau` — the dispatch
-    once presented this tail as its replies to `WORKER_QUESTIONS`, which made one witness
-    quoted twice look like two, `build_dispatch`'s `says` already carrying the whole interval).
-    What it is for is RECENCY: the newest intent is the one a verdict turns on, and
-    `WORKER_QUESTIONS` is the RUNG's checklist, answered from the evidence.
+    Not answers — nobody asked the worker anything; `WORKER_QUESTIONS` is the RUNG's
+    checklist. This is for RECENCY: the newest intent is the one a verdict turns on.
     """
     says = [str(r.get("say") or "") for r in getattr(loop, "turn_records", [])[-3:]]
     return [s for s in says if s]
@@ -221,11 +171,8 @@ def _worker_answers(loop) -> list[str]:
 def _directive_from(sub, *, cap: int) -> dict | None:
     """The validated directive a finished rung handed back, or None if it handed back none.
 
-    A rung's finish summary IS its directive (a directive cannot revise a recipe, so it needs
-    no channel of its own). Prose that is not a directive, a malformed one, and a rung that
-    failed are all the same thing here: no directive. `validate_directive` is the only judge —
-    this module never repairs one, because a repaired directive is this module's opinion
-    wearing a supervisor's authority.
+    A rung's finish summary IS its directive. Non-directive prose, a malformed one and a failed
+    rung are all no directive. `validate_directive` is the only judge — never repaired here.
     """
     import json
     raw = (getattr(sub, "summary", "") or "").strip()
@@ -253,9 +200,7 @@ def escalate(loop, reason: str, settings: dict) -> None:
     ctx = loop.ctx
     rung = ctx.depth + 1
     if missing := supervisor_pattern_missing(ctx.server):
-        # Checked BEFORE the dispatch is built and before the interval is closed: a rung that
-        # cannot legitimately run must cost the worker nothing and must not make the next rung
-        # re-judge turns this one never read.
+        # Checked BEFORE the interval is closed: a rung that cannot run costs nothing.
         ctx.transcript.event("oversight_skipped", {"rung": rung, "reason": missing})
         return
     since = int(getattr(ctx, "last_rung_turn", 0))
@@ -264,9 +209,7 @@ def escalate(loop, reason: str, settings: dict) -> None:
         stopping=laddergoal.stopping(loop), budget=_meter(ctx))
     # The newest three say lines, beside the counts and never merged into them.
     dispatch["worker_says"] = _worker_answers(loop)
-    # The interval is closed before the rung runs, so a rung that fails cannot make the next
-    # one re-judge the same turns — two rungs judging one interval is how a ladder becomes m
-    # copies of one audit.
+    # The interval is closed before the rung runs, so a failed rung's turns are not re-judged.
     ctx.last_rung_turn = ctx.turn
     ctx.escalation_requested = False
     ctx.outcome_claimed_met = False
@@ -304,24 +247,18 @@ def escalate(loop, reason: str, settings: dict) -> None:
 def at_boundary(loop) -> None:
     """The ladder's whole footprint on the turn boundary: fire a rung if one is due.
 
-    Wrapped so nothing in the ladder can end a run. An oversight mechanism that takes the run
-    down with it when it breaks is worse than no oversight: the run was doing real work.
+    Wrapped so nothing in the ladder can end a run.
     """
     try:
         settings = ladder_settings(loop.ctx)
-        # A PERSON's ask comes first and is not gated on `enabled` (F750, switches.person_asked):
-        # the knob is off by default, so gating it would shut the door on the very run he is
-        # watching. Everything after it is the mechanism judging for itself.
+        # A PERSON's ask comes first and is not gated on `enabled` (off by default).
         if (reason := switches.person_asked(loop)) is None:
             reason = rung_is_due(loop, settings)
         if reason is not None:
             escalate(loop, reason, settings)
     except Exception as exc:
-        # The mechanism RAISED — not a rung declining to run. These were one event until
-        # R2348/R2352: `ladder.py` dispatched through `loop.subs`, an attribute that has never
-        # existed, so every rung on every run died here and was recorded as an ordinary skip.
-        # A reader could not tell total failure from a healthy decline on any surface, which is
-        # exactly why it survived unnoticed. `oversight_failed` is its own record.
+        # The mechanism RAISED — not a rung declining to run, so its own record, distinct from
+        # a skip: total failure must never read as a healthy decline.
         log.warning("oversight rung FAILED: %s", exc)
         try:
             loop.ctx.transcript.event("oversight_failed",
@@ -331,9 +268,8 @@ def at_boundary(loop) -> None:
 
 
 def _rung_deadline(settings: dict) -> float:
-    """How long the worker waits for its supervisor. Generous against the rung's turn cap and
-    bounded all the same: a supervisor wedged on a model call must not hold a run forever, and
-    losing one directive is far cheaper than losing the rest of the worker's budget.
+    """How long the worker waits for its supervisor: generous, but bounded — losing one
+    directive is cheaper than a wedged supervisor holding the run.
     """
     return float(min(60 * settings["oversight_turns"], 900))
 

@@ -6,43 +6,31 @@ sends a name to, `routes`); this module decides what the answers mean and keeps 
 
 ## The route, never the model
 
-A figure belongs to the ROUTE a call takes, not to the model's name: the Codex Plus login serves
-`gpt-5.6-luna` at 372,000 tokens where the API serves 1,050,000, and the Claude subscription
-serves `claude-sonnet-4-6` at 200,000 where the API serves 1,000,000. So an endpoint behind a
-gateway (`EndpointConfig.gateway`) is sized by the route each name resolves to; any other
-endpoint by its own listing; and the static Claude table answers for Anthropic's own API alone.
-Nothing falls back to the model's PUBLIC figure (the OpenRouter reference catalog did until
-0.564.0): a route that publishes nothing stays UNKNOWN, the model drops to the next tier of
-`resolve`, and the Settings card names the miss.
+A figure belongs to the ROUTE a call takes, not to the model's name (a subscription may serve an
+id on a smaller window than the API). An endpoint behind a gateway (`EndpointConfig.gateway`) is
+sized by the route each name resolves to; any other endpoint by its own listing; the static
+Claude table answers for Anthropic's own API alone. Nothing falls back to a PUBLIC figure: a
+route that publishes nothing stays UNKNOWN and the Settings card names the miss.
 
-## Both knobs at the route's maximum (operator, 2026-11-20)
+## Both knobs at the route's maximum
 
-The window is adopted verbatim, and so is the output maximum the route PUBLISHES — "not below".
-`compaction.window_ceiling_tokens` subtracts the output reservation from the input budget, so a
-large reservation compacts earlier rather than overflowing. One guard remains, because one kind
-of published figure is not a maximum at all: OpenRouter fills `max_completion_tokens` with
-⌊0.9 × window⌋ where it lacks the real one (and a few rows restate the window itself). Asking for
-that leaves the prompt a tenth of the window — providers validate
-`input + requested_output <= window` — so such a figure (`routecatalogs.is_placeholder`) is
-replaced by the real maximum the other catalogs agree on, or left unknown. A row that publishes a
-window and no maximum carries no output figure either: the model takes the endpoint's or the
-engine's default, and the Settings card says so.
+The window and the PUBLISHED output maximum are adopted verbatim
+(`compaction.window_ceiling_tokens` subtracts the reservation, so a large one compacts earlier).
+One guard: a published output figure that restates the window (OpenRouter's ⌊0.9 × window⌋
+placeholder, or the window itself; `routecatalogs.is_placeholder`) is not a maximum — providers
+validate `input + requested_output <= window` — so it is replaced by the figure the other
+catalogs agree on, or left unknown. A row with a window and no maximum carries no output figure.
 
-## Precedence, and why config still wins
+## Precedence
 
-`per-MODEL config` → `discovered` → `endpoint default` → `engine floor` (the chain
-`EndpointRegistry.resolve` walks). An operator who types a number on a model is sizing it
-deliberately, and `engine/window.py` already promises to honour that; discovery must not overrule
-it. What discovery replaces is the endpoint's value, which was only ever a default a model
-inherits when it says nothing.
+`per-MODEL config` → `discovered` → `endpoint default` → `engine floor`
+(`EndpointRegistry.resolve`). A number typed on a model is deliberate; discovery replaces only
+the endpoint's default.
 
 ## Derived state, never config
 
-The cache lives at `<routines_home>/.control/model-limits.json` — the pattern
-`daemon/library_watch.py` sets for daemon-owned derived state, explicitly "never config". Nothing
-here writes `config.yaml`: the web layer remains the only config writer, a run still writes no
-config, and deleting this file costs one refresh. Resolution READS it and never fetches: `resolve`
-is on the per-turn path and must not make a network call, so a miss is simply the next tier down.
+The cache is `<routines_home>/.control/model-limits.json`; deleting it costs one refresh.
+`resolve` is on the per-turn path and only READS it — a miss is simply the next tier down.
 """
 
 from __future__ import annotations
@@ -57,25 +45,17 @@ from . import catalogs, prices, routecatalogs, routes
 log = logging.getLogger("rsched.limits")
 
 LIMITS_FILE = Path(".control") / "model-limits.json"
-#: How long a discovered figure is trusted before the daemon re-asks. Provider windows change on
-#: the order of model releases, not hours. A gateway's routing file edited since the last refresh
-#: makes the cache stale at once (`_routes_changed`).
+#: How long a discovered figure is trusted before the daemon re-asks. An edited gateway routing
+#: file makes the cache stale at once (`_routes_changed`).
 TTL = timedelta(hours=24)
 
 #: Claude WINDOWS on ANTHROPIC'S OWN API — a direct `kind: anthropic` endpoint, or a gateway's
-#: `anthropic` route — whose listing (`max_input_tokens`/`max_tokens` since 2026-03) needs a key
-#: only the gateway holds. Never a proxy's figure: a subscription route may serve the same id on a
-#: smaller window (CLIProxyAPI's `claude` plan: `claude-sonnet-4-6` at 200,000). A static table is
-#: a guess with a longer half-life than the guess it replaces, so it is kept HERE beside the
-#: refresh that reads it and its staleness is visible in Settings as `source: table`. It carries
-#: no output maxima, so a row from it has none.
+#: `anthropic` route — whose listing needs a key only the gateway holds. Never a proxy's figure.
+#: Shown in Settings as `source: table`; it carries no output maxima.
 STATIC_WINDOWS: dict[str, int] = {
-    # https://platform.claude.com/docs/en/about-claude/models/overview and the model
-    # deprecations page (2026-10-01). A key matches every id that STARTS with it — a dated
-    # snapshot (`claude-haiku-4-5-20251001`) and a later point revision of a 5-series family
-    # (`claude-opus-5-5` under `claude-opus-5`, whose window every such revision has kept);
-    # the 4-series changed window between revisions, so each is keyed on its own. Retired
-    # models are not listed: a request to one fails whatever its window.
+    # https://platform.claude.com/docs/en/about-claude/models/overview. A key matches every id
+    # that STARTS with it (dated snapshots, 5-series point revisions); the 4-series changed
+    # window between revisions, so each is keyed on its own. Retired models are not listed.
     "claude-opus-4-6": 1_000_000, "claude-opus-4-7": 1_000_000,
     "claude-opus-4-8": 1_000_000, "claude-opus-5": 1_000_000,
     "claude-sonnet-4-6": 1_000_000, "claude-sonnet-5": 1_000_000,
@@ -201,8 +181,7 @@ class _Refresh:
         except Exception as exc:
             log.warning("limits: %s discovery failed: %s", ep_name, exc)
             table, served = {}, None
-        # An UNANSWERED listing keeps the previous set: a provider that was down for one
-        # refresh must never turn into "this endpoint does not serve your models".
+        # an UNANSWERED listing keeps the previous set — a down provider is not "not served"
         if served:
             self.served_out[ep_name] = sorted(served)
         elif kept := self.prev_served.get(ep_name):
@@ -228,8 +207,8 @@ def refresh(server, *, force: bool = False) -> dict:
     misses}`. A provider fault never raises: one that is down leaves the previous figures in
     place (only the cache write itself can fail, and the caller logs it).
 
-    Called from the daemon tick behind the TTL, never from `resolve`. A Settings save that adds
-    a model makes the cache stale at once (`_missing_models`), so the next tick asks.
+    Called from the daemon tick behind the TTL, never from `resolve`; a newly added model makes
+    the cache stale at once (`_missing_models`).
     """
     home = server.routines_home
     cache = load(home)
@@ -277,9 +256,7 @@ def stale(server) -> bool:
 
 
 def _routes_changed(server, since: datetime) -> bool:
-    """A gateway routing file modified after `since`: an alias moved to another route, whose
-    window is another one — so the next tick re-reads rather than serving the old route for a day.
-    """
+    """A gateway routing file modified after `since` — an alias may now name another route."""
     for gateway in (server.gateways or {}).values():
         try:
             mtime = expand(gateway.routes_file).stat().st_mtime if gateway.routes_file else 0.0

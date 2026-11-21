@@ -1,24 +1,17 @@
 """Normalise Claude account windows independently of the authentication transport.
 
-TWO SHAPES, ONE REPRESENTATION (D277). `/api/oauth/usage` used to carry every window as a
-top-level key, and this module read four of them by name. The API is moving model- and
-surface-scoped weekly limits into a `limits[]` array — entries
-`{kind: "weekly_scoped", percent, resets_at, scope: {model|surface: {id, display_name}}}` —
-while still sending some as legacy `seven_day_<model>` keys. So a scoped limit that exists only
-in `limits[]` reached a reader that could not see it, and the card's weekly Opus/Sonnet line
-would simply disappear: **a limit we cannot read reads as a limit that is not there**, which is
-the one-authoritative-source rule broken in the direction that reassures.
+TWO SHAPES, ONE REPRESENTATION (D277). `/api/oauth/usage` sends model- and surface-scoped
+weekly limits in a `limits[]` array — entries
+`{kind: "weekly_scoped", percent, resets_at, scope: {model|surface: {id, display_name}}}` — and
+some still as legacy `seven_day_<model>` keys. A limit we cannot read would read as a limit that
+is not there, so both shapes are read.
 
-The reconciliation is keyed by SCOPE, not by payload position, so a limit sent BOTH ways is one
-row rather than two rows disagreeing. `ROW_KEYS` is the shape every row carries whichever shape
-it arrived in, and `scoped` is where a reader finds the rows the fixed label map never had names
-for — `quota.js` renders those from their OWN names.
+The reconciliation is keyed by SCOPE, so a limit sent BOTH ways is one row. `scoped` holds the
+rows the fixed label map has no names for; `quota.js` renders them from their OWN names.
 
-An entry is validated ON ITS OWN. A malformed or newly shaped one costs THAT entry and never
-the windows already parsed: the operator's quota readout must not go blank because one row of a
-moving upstream payload grew a field. And an entry whose `kind` we do not know is REPORTED as an
-unknown limit (named, no figure) rather than dropped — the same reason `health_stream` keeps a
-vocabulary: a row nobody renders is a row nobody knows exists.
+An entry is validated ON ITS OWN: a malformed one costs THAT entry, never the windows already
+parsed. An entry whose `kind` we do not know is REPORTED as an unknown limit (named, no figure)
+rather than dropped.
 """
 
 import math
@@ -35,21 +28,16 @@ WINDOWS = ("five_hour", "seven_day")
 #: for legacy keys go with them. The date is a prompt to re-read the live payload, not a promise
 #: the upstream will be finished — if it is still dual-sending then, move the date and say so.
 #:
-#: The legacy top-level keys for what are now SCOPED weekly limits. Each is read as a scoped row
-#: keyed by its model, so the same limit arriving in `limits[]` reconciles onto it instead of
-#: producing a second row. Paseo also sees `seven_day_omelette`, so the prefix is what matters
-#: and not this list: any `seven_day_<x>` key is read as the weekly limit of model `<x>`.
+#: The legacy top-level key prefix for SCOPED weekly limits: any `seven_day_<x>` key is read as
+#: the weekly limit of model `<x>`, keyed so the same limit in `limits[]` reconciles onto it.
 LEGACY_SCOPED_PREFIX = "seven_day_"
 
 #: The `limits[]` entry kind this module understands. An entry of any other kind is reported as
 #: unknown rather than dropped.
 KIND_WEEKLY_SCOPED = "weekly_scoped"
 
-#: A SCOPED ROW carries `dimension` (`model` or `surface` — the API scopes a limit by one or the
-#: other, and a reader that assumed "model" would mislabel a surface limit as a model's), `id`,
-#: `name`, `used_pct`, `remaining`, `resets_at` and `seconds_until_reset`. Stated here as prose
-#: rather than as a tuple nothing reads: a key list with no consumer is documentation pretending
-#: to be code, and the dead-code gate says so.
+#: A SCOPED ROW carries `dimension` (`model` or `surface`), `id`, `name`, `used_pct`,
+#: `remaining`, `resets_at` and `seconds_until_reset`.
 
 
 def _used(value: object) -> float | None:
@@ -64,8 +52,7 @@ def _used(value: object) -> float | None:
 def _reset_seconds(resets_at: str, now: datetime) -> int | None:
     """Seconds until `resets_at`, or None when it names no instant.
 
-    None rather than 0: "resets now" and "carries no reset stamp" are different facts, and the
-    card renders the second as nothing instead of as an expiry that has just passed.
+    None rather than 0: "resets now" and "carries no reset stamp" are different facts.
     """
     if not resets_at:
         return None
@@ -99,8 +86,7 @@ def _from_limits(raw: dict, now: datetime) -> tuple[dict[str, dict], list[str]]:
     """The `limits[]` array as scoped rows keyed `<dimension>:<id>`, plus unknown-kind names.
 
     Each entry stands alone: a `TypeError` or a missing `scope` costs that entry. The unknown
-    list carries a NAME per entry we could not read, so the card can say "there is a limit here
-    we do not understand" instead of implying there is none.
+    list carries a NAME per entry we could not read.
     """
     rows: dict[str, dict] = {}
     unknown: list[str] = []
@@ -131,8 +117,7 @@ def _from_limits(raw: dict, now: datetime) -> tuple[dict[str, dict], list[str]]:
 def _from_legacy(raw: dict, now: datetime) -> dict[str, dict]:
     """Every `seven_day_<model>` top-level key as a scoped row keyed `model:<model>`.
 
-    By PREFIX rather than by a fixed list: the upstream adds models (Paseo sees
-    `seven_day_omelette`), and a list is a thing that silently stops covering the payload.
+    By PREFIX rather than a fixed list, because the upstream adds models.
     """
     rows: dict[str, dict] = {}
     for key, bucket in raw.items():
@@ -153,8 +138,8 @@ def normalize(raw: dict, *, now: datetime | None = None) -> dict:
     `scoped` (the weekly per-model/per-surface limits, keyed `<dimension>:<id>`) and `unknown`
     (named limits we could not read).
 
-    A limit sent in BOTH shapes is ONE row: `limits[]` wins, because that is where the upstream
-    is moving and it carries the display name and the dimension that the legacy key cannot.
+    A limit sent in BOTH shapes is ONE row: `limits[]` wins (it carries the display name and
+    the dimension).
     """
     now = now or datetime.now(UTC)
     windows: dict[str, dict] = {}

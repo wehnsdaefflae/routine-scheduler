@@ -1,30 +1,19 @@
 """The escalation ladder's pure half: the DISPATCH that travels up, the DIRECTIVE that comes down.
 
-Nothing here calls a model, opens a socket or starts a run. That is the point: the judgement is
-the expensive, model-shaped part, and it is deliberately NOT in this module, so the two things
-that carry authority — what a supervisor is shown, and what it is allowed to say back — can be
-tested against a recorded transcript and a dict.
+Nothing here calls a model, opens a socket or starts a run, so what a supervisor is shown and
+what it may say back can be tested against a recorded transcript and a dict.
 
-VOCABULARY, fixed by the design so it cannot drift the way F338's three names did: the run doing
-the work is the **worker** (rung 0), each supervisor is one **rung** up, a **dispatch** travels
-up, a **directive** comes down, `n` is the turn interval (turns between escalations) and `m` the
-rung height (the ladder's height in rungs — the recursion limit).
+VOCABULARY: the run doing the work is the **worker** (rung 0), each supervisor is one **rung**
+up, a **dispatch** travels up, a **directive** comes down, `n` is the turn interval and `m` the
+ladder's height in rungs (the recursion limit).
 
-WHY A DISPATCH CARRIES RAW `say` LINES. The party under suspicion must not be the only witness.
-A worker that has drifted writes a coherent account *against the drifted goal*, because each step
-followed plausibly from the last — so the supervisor is given the worker's own words AND the
-engine's own counts, and the discrepancy between "verifying the output" and a histogram showing
-14 `read_file` / 0 `write_file` is a finding no self-authored summary can produce. The raw lines
-are not summarized at rung 1 for that reason; compression starts at rung 2, which reads rung 1's
-verdicts rather than the worker's turns.
+A dispatch carries RAW `say` lines beside the engine's own counts: a drifted worker writes a
+coherent account against the drifted goal, so the supervisor needs both to see the discrepancy.
+Compression starts at rung 2, which reads rung 1's verdicts.
 
-WHY `continue` RENDERS TO THE EMPTY STRING. Budget warnings once rode every observation past 85%,
-which "made it a countdown, and runs converged at the ceiling whether or not their stopping
-conditions were met" (CLAUDE.md § Core contracts). A repeated signal in the prompt does not merely
-inform a run; it becomes the thing the run optimizes against. So a healthy run must never learn
-that it is being watched: `continue` writes a transcript event and injects nothing, and the
-schema below refuses a `continue` that carries instruction prose at all, so the guarantee cannot
-be lost at some future injection site.
+`continue` renders to the empty string: a repeated signal becomes what a run optimizes against,
+so a healthy run must never learn it is watched. The schema refuses a `continue` carrying
+instruction prose, so the guarantee holds at any future injection site.
 """
 
 from __future__ import annotations
@@ -34,50 +23,32 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-#: A dispatch's fixed shape. Named so a caller (and a test) can assert on the contract rather
-#: than on whichever keys today's builder happens to emit.
+#: A dispatch's fixed shape, named so callers and tests assert on the contract.
 DISPATCH_KEYS = (
     "goal", "since_turn", "turn", "says", "histogram", "repetition", "stopping", "budget",
     "worker_questions",
 )
 
-#: The three questions only the worker can answer. The engine assembles everything else; these
-#: are what the worker fills in, and they are deliberately about intent rather than about
-#: progress — a progress question invites the drifted summary this whole mechanism exists to
-#: get a second opinion on.
+#: The three questions only the worker can answer — about intent, not progress, because a
+#: progress question invites the drifted summary oversight exists to second-guess.
 WORKER_QUESTIONS = (
     "What do you believe you have achieved since the last rung?",
     "What do you intend to do next, and why that?",
     "What are you stuck on?",
 )
 
-#: The floor under a rung's own turn budget. Redundant for any `n >= 6` once the cap is derived
-#: (below), and kept anyway: it costs nothing and catches someone setting `n = 2`. A rung with
-#: one or two turns cannot read a dispatch AND answer — it spends its budget on the reading and
-#: finishes with nothing, which reads as `continue` and is the one failure mode that is invisible.
+#: The floor under a rung's own turn budget (matters only for small `n`): a rung with one or two
+#: turns reads and finishes with nothing, which reads as `continue` — an invisible failure.
 MIN_OVERSIGHT_TURNS = 4
 
 
 def oversight_turns_for(interval: int) -> int:
-    """A rung's own turn cap, derived from the interval it must read (operator, 2026-10-02).
+    """A rung's own turn cap, derived from the interval it must read.
 
-    A rung's cost has a READ term — the `say` lines of the interval, which grows with `n` — and
-    a JUDGE term — assemble one directive, fixed whatever `n` is. The design's `oversight_turns
-    = n` prices BOTH as if both scaled, which is exactly the 2×-the-worker ceiling the design
-    itself calls "the objection that decides the feature". A fixed cap prices both as fixed,
-    which starves the read at large `n` and yields `oversight_no_directive`: supervision that
-    silently does nothing.
-
-    `n // 2 + 1` is sublinear read + constant. It still grows with the interval, so a long
-    interval is never starved, while holding the per-rung worst case at a steady ~0.5× the
-    worker's turns (n=10→6, 15→8, 20→11, 30→16) and the whole `m = 3` ladder at ~1.5× rather
-    than ~6×. It is a FORMULA rather than a tuned constant because every routine that opts in
-    inherits it; `tuning.yaml`'s `oversight_turns` overrides it per routine, so a meta-routine
-    can raise it on measured evidence if real rungs are seen hitting the cap.
-
-    It lives in this PURE module (and is re-exported by `ladder`, which every existing caller
-    imports it from) because it calls nothing, opens nothing and starts nothing: it is the
-    ladder's cost contract as arithmetic, which is exactly what this half is for.
+    A rung's cost is a READ term that grows with `n` plus a fixed JUDGE term. `n // 2 + 1` grows
+    sublinearly, so a long interval is never starved (which yields `oversight_no_directive`)
+    while a rung costs ~0.5× the worker's turns. `tuning.yaml`'s `oversight_turns` overrides it
+    per routine. Re-exported by `ladder`.
     """
     return max(interval // 2 + 1, MIN_OVERSIGHT_TURNS)
 
@@ -100,20 +71,17 @@ REPETITION_AT = 3
 def _action_signature(payload: dict) -> str:
     """The stable identity of an action, for repetition detection.
 
-    `say` is deliberately EXCLUDED: a run looping on one broken call often re-words its narration
-    while re-emitting the identical call, and a signature that included the prose would read that
-    as progress. Everything else in the payload is included, key-sorted, so two actions match
-    only when the engine would do the same thing twice.
+    `say` is EXCLUDED: a looping run often re-words its narration around an identical call.
+    Everything else is included, key-sorted, so two actions match only when the engine would do
+    the same thing twice.
     """
     rest = {k: v for k, v in payload.items() if k != "say"}
     return json.dumps(rest, sort_keys=True, ensure_ascii=False, default=str)
 
 
 def _observation_failed(payload: Any) -> bool:
-    """Did this observation report a failure? Read permissively, because an observation payload
-    is not one shape: some carry `ok`, some an `exit_code`, some only prose. A missed failure
-    costs a repetition signal; a false one would cry loop on a healthy run, so `ok is False` and
-    a nonzero exit are the only positives, never the mere presence of the word error.
+    """Did this observation report a failure? Only `ok is False` or a nonzero `exit_code` count;
+    the word "error" in prose never does, since a false positive cries loop on a healthy run.
     """
     if not isinstance(payload, dict):
         return False
@@ -126,9 +94,8 @@ def _observation_failed(payload: Any) -> bool:
 def read_actions(transcript: Path, *, since_turn: int) -> tuple[list[dict], dict[int, bool]]:
     """Every `assistant_action` after `since_turn`, plus which turns' observations failed.
 
-    Fail-quiet on a malformed line by design: a transcript is appended to by a live process, so
-    the last line may be a partial write, and an oversight dispatch that raised on it would take
-    down the run it was hired to help. A line that will not parse contributes nothing.
+    Fail-quiet on a malformed line: a live transcript's last line may be a partial write, and
+    raising on it would take down the run oversight is meant to help.
     """
     actions: list[dict] = []
     failed: dict[int, bool] = {}
@@ -162,9 +129,8 @@ def repetition_signals(actions: list[dict], failed: dict[int, bool]) -> list[str
     1. the same action string emitted three or more times in the interval;
     2. an action whose observation FAILED and which was then re-emitted unchanged.
 
-    The second is not a subset of the first: two turns is not yet repetition by (1), but a call
-    that failed and was retried byte-identically is already a loop, and it is the commonest one
-    in this fleet's transcripts (a util rejected on its own usage line, re-sent verbatim).
+    The second is not a subset of the first: a failed call retried byte-identically is already a
+    loop at two turns.
     """
     signatures = [_action_signature(a["payload"]) for a in actions]
     counts = Counter(signatures)
@@ -198,22 +164,12 @@ def repetition_signals(actions: list[dict], failed: dict[int, bool]) -> list[str
 
 
 def worth_a_rung(turns_in_window: int) -> bool:
-    """Is a window of this WIDTH worth a rung at all? (R2958/R2960.)
+    """Is a window of this WIDTH worth a rung at all?
 
-    One judgement, in the ladder's pure half because that is what it is: a window with no turns
-    in it hands the rung empty `says`, an empty histogram, no repetition signals and no worker
-    answers, so every verdict it could give is uninformed — while the rung's own brief tells it
-    the engine's counts are the evidence. Two routines each spent a whole run reporting exactly
-    that, after a pull-forward fired at turn 0.
-
-    It bounds the PULL-FORWARD path alone, and bounds it as little as possible. A pull-forward
-    fires whatever the interval says — an escalation a person or a repeat failure asked for must
-    never be swallowed — and this does not swallow one either: the trigger leaves
-    `last_rung_turn` untouched, so the first boundary with a turn in it fires on the same reason.
-
-    `build_dispatch`'s rule below — "an EMPTY interval is still a dispatch" — is untouched and
-    is about something else: a STALLED worker, which is a signal precisely BECAUSE turns elapsed
-    and nothing came of them. Zero turns is not a stall; it is nothing to look at yet.
+    A zero-turn window gives the rung nothing to judge. This bounds the PULL-FORWARD path only,
+    and never swallows an escalation: the trigger leaves `last_rung_turn` untouched, so the
+    first boundary with a turn in it fires on the same reason. Distinct from a STALLED worker
+    (turns elapsed, nothing came of them), which `build_dispatch` still dispatches.
     """
     return turns_in_window > 0
 
@@ -222,15 +178,9 @@ def build_dispatch(transcript: Path, *, goal: str, since_turn: int, turn: int,
                    budget: dict | None = None, stopping: Any = None) -> dict:
     """What a rung is shown. Pure extraction from what is already on disk or in the meters.
 
-    An EMPTY interval is still a dispatch — a worker that emitted nothing since the last rung is
-    itself the signal, and a builder that returned None there would make the stalled run the one
-    case the ladder cannot supervise.
-
-    That is about a window with TURNS in it and nothing to show for them. A ZERO-WIDTH window is
-    a different thing and never reaches here: `ladder.rung_is_due` refuses to dispatch one
-    (R2958/R2960, where a pull-forward fired at turn 0 and the rung spent a run saying its
-    dispatch was empty). This builder stays total — it describes whatever window it is handed —
-    and the judgement about which windows are worth a rung belongs to the trigger.
+    An EMPTY interval is still a dispatch — a worker that emitted nothing is itself the signal.
+    A ZERO-WIDTH window never reaches here (`ladder.rung_is_due` refuses it); this builder stays
+    total and the trigger decides which windows are worth a rung.
     """
     actions, failed = read_actions(Path(transcript), since_turn=since_turn)
     payloads = [a["payload"] for a in actions]
@@ -255,12 +205,9 @@ def _require(cond: bool, msg: str) -> None:
 def validate_directive(directive: Any, *, cap: int) -> dict:
     """Accept a supervisor's reply, or refuse it NAMING THE FIELD.
 
-    Every rejection says which field and why, because a supervisor whose output is silently
-    coerced is a supervisor whose authority nobody can audit — and this object BINDS a run.
-
-    `cap` is the operator's `n`: `next_rung_in` is clamped to it rather than refused, because a
-    supervisor shortening its own next interval is sanctioned and lengthening it past `n` is the
-    one way a rung could quietly switch itself off.
+    Every rejection names the field: this object BINDS a run, so silent coercion is unauditable.
+    `cap` is the operator's `n`: `next_rung_in` is clamped to it, since lengthening past `n` is
+    how a rung could quietly switch itself off.
     """
     _require(isinstance(directive, dict), "a directive must be a JSON object")
     d = dict(directive)
@@ -283,8 +230,7 @@ def validate_directive(directive: Any, *, cap: int) -> dict:
              f"may never do")
 
     if disposition == "continue":
-        # Constraint 1 of the design, enforced HERE rather than at the injection site, so the
-        # guarantee survives a future second caller: a healthy run learns nothing.
+        # Enforced here, not at the injection site, so it survives any future caller.
         _require(not instruction,
                  "a `continue` disposition must carry no instruction: a healthy run's context "
                  "stays untouched, or the ladder becomes a countdown the run optimizes against")
@@ -309,13 +255,9 @@ def validate_directive(directive: Any, *, cap: int) -> dict:
 def render_directive(directive: dict, *, rung: int) -> str:
     """The directive as the WORKER reads it — or the empty string when it says nothing.
 
-    Returning "" for a `continue` is the contract, not an optimization: the caller injects only
-    a non-empty rendering, so there is exactly one place where "a healthy run is never told it is
-    supervised" can be true or false, and it is here.
-
-    The voice is deliberately that of an instruction arriving in the conversation, not of a
-    system notice: a directive speaks into the run the way the user does, and it may not revise
-    the recipe or rewrite the instruction.
+    "" for a `continue` is the contract: the caller injects only a non-empty rendering, so this
+    is the one place "a healthy run is never told it is supervised" holds. The voice is an
+    instruction in the conversation, not a system notice; it may not revise the recipe.
     """
     if directive.get("disposition") == "continue":
         return ""

@@ -10,15 +10,13 @@ must be met, never what a goal is or who may set one:
   from the first message and every later one, and a reply that declares itself FINAL must meet
   every goal still open (`finishgate`).
 
-**The run is the SCRIBE, never the author.** "A run may not set its own goals" is the rule that
-made routines look incompatible with this; it is kept, and it is what makes one mechanism
-possible. Every goal carries `quote` — the person's own words it came from — and the engine
-looks for those words in what the person actually wrote this run (the first message of a
-conversation, the brief, every message and answer since; never a report, a machine channel or
-the routine's own recipe). A goal whose words cannot be found is refused. Rewording or dropping
-one needs words the person wrote AFTER the words it came from: an earlier sentence can never be
-the reason a later request was withdrawn, so a goal cannot be quietly abandoned because it got
-hard. Checking one off is the run's own claim and is checked like any `met` (`verifier.py`).
+**The run is the SCRIBE, never the author.** Every goal carries `quote` — the person's own
+words it came from — and the engine looks for them in what the person actually wrote this run
+(the first message of a conversation, the brief, every message and answer since; never a
+report, a machine channel or the recipe). A goal whose words cannot be found is refused.
+Rewording or dropping one needs words the person wrote AFTER the words it came from, so a goal
+cannot be quietly abandoned because it got hard. Checking one off is the run's own claim and
+is checked like any `met` (`verifier.py`).
 
 **The transcript is the record.** Every goal action's observation carries the whole ledger after
 it (`ledger`), and so does the `stopping_update` of a finish that stamped verdicts (`goals`). The
@@ -125,8 +123,7 @@ def person_texts(events: list[dict], *, opening: str = "", brief: str = "") -> l
     runner wrote it before the engine started.
 
     An answer that is a bare numbered PICK carries the words of the choice it picked, appended
-    to it (engine/goalpicks.py): the engine renders an options question as numbered picks, so
-    the choice behind the keystroke is as much the person's as the keystroke itself (F731).
+    to it (engine/goalpicks.py): the choice behind the keystroke is the person's too.
     """
     out = [t for t in (brief, opening) if t]
     questions = goalpicks.asked(events)

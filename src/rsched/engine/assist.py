@@ -1,38 +1,18 @@
 """The assist RUNTIME — evaluating a rule's relevance triggers and delivering the line.
 
-`rsched/assists.py` says what an assist IS and reads the library's declarations;
-`assist_predicates.py` holds the checks. This file is the engine seam: four moments, one
-delivery convention, and the guards that keep a layer which is live in every routine from
-becoming rent on every turn.
+`rsched/assists.py` says what an assist IS; `assist_predicates.py` holds the checks. Moments:
 
-The four moments, and why they deliver differently:
+- **pre-action** — the action is HELD through the shared seam (`engine/hold.py`); costs a turn.
+- **observation** — the line rides the tail of the observation (no turn).
+- **boundary** — an appended ENGINE NOTE (append only: the prompt is a caching contract).
+- **pre-finish** — a finish-gate rung; costs a turn, since a line surfaced at the end is
+  otherwise unactionable.
 
-- **pre-action** — the action is HELD (`hold`), through the one interception seam a
-  consequence reminder uses too (`engine/hold.py`); it costs a turn, which is why the rung is
-  reserved for an irreversible cost to skipping.
-- **observation** — the line rides the tail of the observation the run was getting anyway,
-  the same no-turn carrier `remind.apply_ops` uses for `[REMINDERS: …]`.
-- **boundary** — an appended ENGINE NOTE at the turn boundary, exactly the shape
-  `switches.apply_rule_additions` already uses to put rule prose into a live thread. Append
-  only: the composed prompt is a caching contract.
-- **pre-finish** — a rung of the finish gate. This one COSTS a turn too, and has to: a line
-  surfaced as the run ends is a line nobody can act on, so the finish is set aside and the
-  model gets one more turn.
-
-Two guards, both borrowed rather than invented. An assist fires **at most once per run**
-(`loop.assists_fired`), the rule the hold ledger (`loop.holds`, engine/hold.py) and the claim
-verifier's `_challenged` set already apply to their own interventions — a trigger that can
-fire twice on one situation livelocks a stubborn model into a dead budget. And **at most one
-finish deferral per run across all assists**, because the finish gate already has five rungs
-that can each defer, and a sixth that can fire repeatedly would turn a run's ending into a
-negotiation.
-
-"Per run" is the GUARD SCOPE (engine/guardscope.py): every leg of a routine run, the current
-reply of a conversation. A resumed leg rebuilds both guards — and the repos found clean — from
-its transcript, so every event that carries an assist's line NAMES it (`assists`): the held
-action's observation, an observation whose tail carried one, a boundary ENGINE NOTE, a finish
-deferral. The observation-moment assists are asked before their observation is recorded for
-exactly that reason (`EngineLoop._observe`).
+Guards: an assist fires **at most once per guard scope** (`loop.assists_fired`) — twice on one
+situation livelocks a stubborn model — and **at most one finish deferral across all assists**.
+The scope is engine/guardscope.py's; a resumed leg rebuilds both guards from its transcript, so
+every event carrying an assist's line NAMES it (`assists`), which is why observation-moment
+assists are asked before their observation is recorded.
 """
 
 from __future__ import annotations
@@ -46,15 +26,12 @@ from . import assist_action, assist_label, enginenote, notes
 from . import hold as hold_seam
 from .assist_predicates import PREDICATES, Situation
 
-#: This layer's name in the shared hold ledger (engine/hold.py). Its own budget: a reminder
-#: holding an action must not spend the rule layer's only hold on the same action string.
+#: This layer's name in the shared hold ledger — its own budget, apart from the reminders'.
 SOURCE = "rule"
 
 
 def configure(loop) -> None:
-    """This layer's run state. Both guards are per guard scope (`rebuild` re-seeds them on a
-    resumed leg): one fire per assist, and at most one finish held by one, ever.
-    """
+    """This layer's run state; `rebuild` re-seeds the guards on a resumed leg."""
     loop.assists = load(loop)
     loop.assists_fired = set()
     loop.assist_finish_deferred = False
@@ -65,13 +42,10 @@ def configure(loop) -> None:
 
 
 def rebuild(loop, events: list[dict]) -> None:
-    """Re-seed both guards and the undo points from the events inside the guard scope
-    (engine/guardscope.py). Every event that carried an assist's line names it (`assists`), a
-    deferral by this layer is the finish observation marked `assist`, and a repo found clean
-    is named on the observation of the write its check let through (`undo_point`).
-
-    The user-replies watermark is NOT carried: it is the leg's arrival edge by design — what
-    the user said before a leg's first boundary is that leg's task (`at_boundary`).
+    """Re-seed both guards and the undo points from the events inside the guard scope: `assists`
+    names fired lines, a finish observation marked `assist` is this layer's deferral, and
+    `undo_point` names a repo found clean. The user-replies watermark is deliberately not
+    carried — it is the leg's arrival edge (`at_boundary`).
     """
     loop.assists_fired = set()
     loop.assist_finish_deferred = False
@@ -89,13 +63,8 @@ def rebuild(loop, events: list[dict]) -> None:
 
 
 def load(loop) -> list[Assist]:
-    """The assists this run gets: those declared by the rules the routine HOLDS.
-
-    Read ONCE at construction, like the reminder set and for the same reason — the composed
-    prompt is append-only, and the rules layer's own doctrine is that a library revision lands
-    at the next run, not mid-flight. What the user binds or unbinds WHILE the run is live is
-    another matter: that reaches the run at once (`switches.apply_rule_additions` /
-    `apply_rule_drop`), and the rule's assists go with it — `rules_bound` / `rules_unbound`.
+    """The assists declared by the rules the routine HOLDS, read ONCE: a library revision lands
+    at the next run. A mid-run bind/unbind reaches the run via `rules_bound` / `rules_unbound`.
     """
     ctx = loop.ctx
     try:
@@ -105,9 +74,7 @@ def load(loop) -> list[Assist]:
 
 
 def rules_bound(loop, slugs: list[str]) -> None:
-    """Rules the user bound to the routine mid-run bring their assists: an assist is part of
-    the rule, and the rule itself has just reached the run as a note.
-    """
+    """Rules bound mid-run bring their assists: an assist is part of the rule."""
     loaded = {a.rule for a in loop.assists}
     try:
         new = lib.for_rules(loop.ctx.server.rules_home, [s for s in slugs if s not in loaded])
@@ -117,10 +84,7 @@ def rules_bound(loop, slugs: list[str]) -> None:
 
 
 def rules_unbound(loop, slugs: list[str]) -> None:
-    """Rules the user unbound mid-run take their assists with them. The run is told the rule
-    no longer binds it; its assists firing on — holding an action, deferring the finish — would
-    be the rule still governing a routine that does not hold it.
-    """
+    """Rules unbound mid-run take their assists with them, or the rule would still govern."""
     gone = set(slugs)
     loop.assists = [a for a in loop.assists if a.rule not in gone]
 
@@ -143,14 +107,9 @@ def _fire(loop, assist: Assist, situation: Situation) -> bool:
 
 
 def _matching(loop, moment: str, situation: Situation) -> list[Assist]:
-    """The assists that fire at this moment, decided by the ONE hook-point evaluator.
-
-    Routed through `hooks/dispatch.py` rather than filtering here, because the moment IS a hook
-    point (`hooks/points.py`, which names the correspondence) and the rule layer is one of two
-    mechanisms firing at it. The seam owns what is common to both: the point's payload coupling
-    and the discipline that a predicate which raises means "did not fire" and never a failed
-    turn. What stays here is this layer's own: the once-per-run guard and the tally, which a
-    shared budget would let one layer spend on another's behalf.
+    """The assists that fire at this moment, decided by the ONE hook-point evaluator
+    (`hooks/dispatch.py` — the moment IS a hook point). The seam owns payload coupling and
+    "a raising predicate did not fire"; this layer keeps its own once-per-scope guard and tally.
     """
     point = points.for_moment(moment)
     return dispatch.at(point, [a for a in loop.assists if a.moment == moment],
@@ -158,9 +117,7 @@ def _matching(loop, moment: str, situation: Situation) -> list[Assist]:
 
 
 def rendered_line(assist: Assist) -> str:
-    """One line, one shape, every moment — so the run reads it at a glance and knows both
-    what fired and where the rest of it lives.
-    """
+    """One line, one shape, every moment: what fired and where the full rule lives."""
     describes = PREDICATES[assist.predicate].describes
     return (f"[RULE {assist.rule} — {describes}] {assist.line} "
             f"(the full rule: read_rule name={assist.rule})")
@@ -169,15 +126,9 @@ def rendered_line(assist: Assist) -> str:
 def hold(loop, action: dict, rendered: str) -> dict | None:
     """This layer's answer for the shared pre-execution seam (`engine/hold.py`).
 
-    A `pre-action` assist is always a HOLD, and the coupling is not a policy choice: the
-    action has already been emitted, so stopping it is the only way to put the rule's line in
-    front of the model while it can still matter. The cost is a turn, which is why the design
-    note reserves this rung for rules with a crisp pre-action predicate AND an irreversible
-    cost to skipping — an undo point that does not exist yet, a reply that will not thread.
-
-    Overridable by design: the same escape a reminder hold offers, re-emit the action and it
-    runs. Assistance informs; even the strictest payload is a default, not a gate. The only
-    hard gates in this system are the capability checks, which are the user's.
+    A `pre-action` assist is always a HOLD — the action is already emitted, so stopping it is
+    the only way the line can still matter. Overridable: re-emitting the action runs it;
+    assistance informs, only capability checks gate.
     """
     if not loop.assists:
         return None
@@ -195,9 +146,8 @@ def hold(loop, action: dict, rendered: str) -> dict | None:
 
 
 def at_observation(loop, action: dict, obs: dict) -> list[Assist]:
-    """The observation-moment assists that fire on this result — asked BEFORE the observation
-    is recorded, so the record can name them (`recorded`); their line rides the observation's
-    tail (`tail`). Costs no turn.
+    """The observation-moment assists that fire on this result — asked BEFORE it is recorded,
+    so the record can name them (`recorded`). Costs no turn.
     """
     if not loop.assists:
         return []
@@ -210,11 +160,9 @@ def tail(fired: list[Assist]) -> str:
 
 
 def recorded(loop, payload: dict, fired: list[Assist]) -> dict:
-    """The observation as the transcript keeps it, with what this layer decided about the
-    action named beside the result — the record a resumed leg rebuilds its guards from
-    (`rebuild`): `assists` gains the observation-moment assists that fired on it (a hold
-    already names its own), and `undo_point` names a repo the pre-action check found clean
-    before letting this very action through. The payload itself when there is nothing to name.
+    """The observation as the transcript keeps it, plus what `rebuild` needs: `assists` gains
+    the observation-moment assists that fired, `undo_point` a repo the pre-action check found
+    clean. The payload itself when there is nothing to name.
     """
     marks: dict = {}
     if fired:
@@ -228,12 +176,9 @@ def recorded(loop, payload: dict, fired: list[Assist]) -> dict:
 def at_boundary(loop) -> None:
     """Turn-boundary assists, appended as ENGINE NOTEs. Costs no turn.
 
-    The `user_replies` watermark is advanced here whatever fired, so the arrival edge a
-    predicate reads is the edge since the LAST boundary rather than since the run began. The
-    leg's FIRST boundary only seeds it: whatever the user said before that — the message that
-    opens a resumed leg, which is a conversation's every later reply, or one drained at boot —
-    is the leg's task, not an intervention in it, exactly as a fresh run's opening prose is
-    never counted at all. Counted from zero, it fired the correction line on every reply.
+    The `user_replies` watermark advances here whatever fired, so a predicate reads the edge
+    since the LAST boundary. The leg's first boundary only seeds it: what the user said before
+    that is the leg's task, not an intervention in it.
     """
     replies = int(getattr(loop.ctx, "user_replies", 0) or 0)
     if loop.assist_user_replies is None:
@@ -241,8 +186,7 @@ def at_boundary(loop) -> None:
     if loop.assists:
         for assist in _matching(loop, "boundary", Situation(loop=loop)):
             enginenote.append(loop, rendered_line(assist), assists=[assist.key])
-            # …and, for an `action`-payload assist, the rule DOES the thing its moment calls
-            # for — one authored action, no model turn (engine/assist_action.py).
+            # an `action`-payload assist performs one authored action, no model turn
             assist_action.act(loop, assist)
     loop.assist_user_replies = replies
 
@@ -253,15 +197,9 @@ def at_boundary(loop) -> None:
 def at_child_exit(loop, child_row: dict) -> None:
     """Child-exit assists, appended as ENGINE NOTEs beside the hand-back. Costs no turn.
 
-    The run-tree moment: a child this run started has exited and its hand-back has just been
-    put in front of the parent (`control.announce_finished_subruns`). Fired AFTER that message
-    is appended, so the note the rule adds reads as commentary on a hand-back the model can
-    see — the opposite order would comment on something not yet in the prompt.
-
-    Shaped exactly like `at_boundary`, including the `action` rung, and guarded by the same
-    once-per-run budget: a parent with four children would otherwise read the same line four
-    times, which is the livelock the guard exists to prevent. One child's hand-back is the
-    situation; the first one that satisfies the predicate spends the assist.
+    Fired AFTER the hand-back is appended (`control.announce_finished_subruns`), so the note
+    comments on something the model can see. Shaped like `at_boundary`; the first child that
+    satisfies the predicate spends the once-per-scope assist.
     """
     if not loop.assists:
         return
@@ -273,15 +211,9 @@ def at_child_exit(loop, child_row: dict) -> None:
 def at_spawn(loop, start_row: dict) -> None:
     """Spawn assists, appended as ENGINE NOTEs beside the start row. Costs no turn.
 
-    `child-exit`'s twin at the other end of a child's life, and the one of the pair that can
-    still change something: a child cannot be re-briefed, only killed and started again, so
-    the boundary right after a spawn is the moment a rule can usefully read the brief back.
-    Fired AFTER the start row is in the prompt (`control.announce_started_subruns`), for the
-    reason every engine_note moment is: a line about something the model cannot see yet reads
-    as a claim about an absence.
-
-    Guarded by the same once-per-run budget as every other rung — a run that spawns a batch of
-    three would otherwise read one rule's line three times.
+    `child-exit`'s twin, and the one that can still change something (a child can be killed and
+    re-briefed). Fired AFTER the start row is in the prompt (`control.announce_started_subruns`);
+    once per scope like every rung.
     """
     if not loop.assists:
         return
@@ -293,20 +225,10 @@ def at_spawn(loop, start_row: dict) -> None:
 def at_run_end(loop, ending: dict) -> None:
     """Run-end assists, appended to `state/notes.md` for the NEXT run. Costs no turn, ever.
 
-    The first rung whose line is not for the run that fires it. `engine/loopend.finish_run`
-    calls it after `result.md` is written and before the autocommit, so the note is committed
-    with the run that learned it — and `engine/rewind.py` rewrites `result.md` without going
-    through `finish_run`, so a rewind cannot re-fire it.
-
-    The carrier is the channel that already exists: `state/notes.md`, whose tail every state
-    digest renders (`engine/composer.py`). A new store would have needed a new reader in the
-    prompt; this one the next run reads whether or not it knows a hook wrote the line. The
-    stamp says a rule wrote it, not a turn — the file's other lines all carry an action's
-    name, and a reader must be able to tell a hook's line from the run's own.
-
-    Never raises: the run is already over, and an exception here would surface as a failed
-    run that had in fact succeeded. `_fire` swallows a raising predicate; this guards the
-    write (`notes.append_line` is itself best-effort).
+    Called by `loopend.finish_run` after `result.md` and before the autocommit, so the note is
+    committed with the run that learned it (a rewind bypasses `finish_run` and cannot re-fire
+    it). The carrier is `state/notes.md`, whose tail every digest renders; the stamp marks a
+    hook's line apart from the run's own. Never raises — the run is already over.
     """
     if not loop.assists:
         return
@@ -318,10 +240,8 @@ def at_finish(loop, action: dict) -> tuple[str, list[str]] | None:
     """The pre-finish rung: the deferral message and the keys of the assists behind it, or
     None to let the finish stand.
 
-    The caller (finishgate) owns the deferral SHAPE — this only decides whether one is owed
-    and what it says; the keys ride the deferral's record (`rebuild`). Guarded like every
-    other rung plus one of its own: a run may be held at its finish by an assist at most once,
-    ever — once per reply, in a conversation.
+    finishgate owns the deferral's shape; the keys ride its record (`rebuild`). At most one
+    assist deferral per guard scope.
     """
     if not loop.assists or loop.assist_finish_deferred:
         return None

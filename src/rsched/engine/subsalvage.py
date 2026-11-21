@@ -1,22 +1,15 @@
 """Children a LATER LEG cannot see in memory, salvaged from the directories they left.
 
-F732, filed at the operator's own request (2026-10-19: "maybe we can do sth to at least be
-able to salvage some of the data in the future"). `SubrunManager.subruns` is an in-memory dict
-of live `Subrun` objects — threads and completion events, which cannot be rebuilt — so a
-resumed leg starts with an EMPTY registry while `runs/<ts>/sub/<n>/` still holds every child
-the earlier leg started, one of them with a finished hand-back in `artifacts/`. The run was
-then told "no sub-workflows spawned this run".
+`SubrunManager.subruns` holds live threads, which cannot be rebuilt, so a resumed leg starts
+with an EMPTY registry while `runs/<ts>/sub/<n>/` still holds every child the earlier leg
+started (F732).
 
-SALVAGE, NOT RECOVERY, deliberately. An orphaned child cannot be waited on, killed or
-collected: its thread died with the leg that owned it. What it CAN do is say where the work is,
-so the parent reads the hand-back off disk instead of re-spawning it. That is also why the
-state is its own word (`orphaned-by-resume`) rather than a `status` value — every live status
-describes a child the engine is still in charge of.
+SALVAGE, NOT RECOVERY: an orphan cannot be waited on, killed or collected, but it can say
+where its work is so the parent reads it off disk instead of re-spawning it. Its state is its
+own word (`orphaned-by-resume`), not a live `status`.
 
-The directories are the record and they outlive the leg (`childrun._highest_child_number`
-already relies on exactly that for numbering). So nothing new is written at spawn time: this
-reads what is already on disk, which cannot drift out of sync with reality the way a
-second bookkeeping file would.
+The directories are the record (numbering relies on them too), so nothing extra is written at
+spawn time and nothing can drift.
 """
 
 from __future__ import annotations
@@ -29,18 +22,15 @@ from .observations import truncate
 
 STATE = "orphaned-by-resume"
 
-# How the `-m` of a row's identity is recovered. A child's transcript opens with its own
-# run_started event, which carries the label and workflow the parent passed — the only place
-# they survive the leg (the live Subrun held them in memory).
+# A child's transcript records the label and workflow the parent passed — the only place they
+# survive the leg.
 _IDENTITY_KEYS = ("label", "workflow")
 
 
 def _identity(child_dir: Path) -> dict:
     """The label/workflow a child recorded for itself, best-effort.
 
-    A child killed before its first write leaves an empty or missing transcript — then the
-    row still exists (the directory is the evidence that it ran) and simply carries no label,
-    because inventing one would say more than the disk knows.
+    A child killed before its first write still gets a row, just with no label.
     """
     out = {"label": "", "workflow": ""}
     try:
@@ -71,9 +61,7 @@ def _artifacts(child_dir: Path) -> list[str]:
 def orphan_rows(run_dir: Path, live: set[int]) -> list[dict]:
     """One row per `sub/<n>/` directory this leg has no live child for.
 
-    `live` is the registry's keys: a running child HAS a directory too, and its live row is
-    the better one (it carries the thread, the turn count and the summary), so the two are
-    never both reported.
+    `live` is the registry's keys: a running child has a directory too, and its live row wins.
     """
     try:
         numbered = sorted((p for p in (run_dir / "sub").iterdir() if p.name.isdecimal()),
@@ -88,8 +76,7 @@ def orphan_rows(run_dir: Path, live: set[int]) -> list[dict]:
         ident = _identity(d)
         rows.append({"n": n, "label": ident["label"], "workflow": ident["workflow"],
                      "mode": "", "state": STATE,
-                     # No turn count and no elapsed: the counters lived in the Subrun object.
-                     # A zero here is honest only because the row's state says it is unknown.
+                     # counters lived in the Subrun; the state says these zeros are unknown
                      "turns": 0, "elapsed_s": 0.0, "summary_head": "",
                      "dir": str(d), "artifacts": _artifacts(d)})
     return rows
@@ -99,13 +86,8 @@ def rows(live: dict, run_dir: Path) -> list[dict]:
     """EVERY child this run has, in number order: the live ones from the registry and the
     orphans from disk.
 
-    One function owns the row shape because there are now two sources for it, and a shape that
-    lives in two modules drifts — the salvaged rows would quietly stop carrying a field the
-    live ones gained, and the renderer would read `None` for it.
-
-    `dir` and `artifacts` are ORPHAN-ONLY, and deliberately: a live child's hand-back arrives
-    by itself (the engine copies it into the parent's `artifacts/from-sub-<n>/` on exit), so
-    the path is what a parent needs exactly when the engine can no longer hand anything back.
+    One function owns the row shape for both sources so they cannot drift. `dir` and
+    `artifacts` are ORPHAN-ONLY: a live child's hand-back is copied to the parent on exit.
     """
     now = time.monotonic()
     out = [{"n": sub.n, "label": sub.label, "workflow": sub.workflow, "mode": sub.mode,
@@ -121,12 +103,10 @@ def rows(live: dict, run_dir: Path) -> list[dict]:
 
 
 def no_such_child(run_dir: Path, n: int) -> str:
-    """Why child `n` cannot be waited on or killed — ONE answer for both, because the two
-    refusals differ only in a verb and a run acts on either the same way.
+    """Why child `n` cannot be waited on or killed — ONE answer for both.
 
-    A directory without a thread is the salvageable case and says so. "No sub-workflow N"
-    reads as "it never existed", which sends the run off to re-spawn work already done — the
-    reason this function looks at the disk before it answers.
+    A directory without a thread is the salvageable case and says so, rather than reading as
+    "it never existed" and sending the run to re-spawn finished work.
     """
     if (run_dir / "sub" / str(n)).is_dir():
         return (f"sub-workflow {n} was started by an EARLIER LEG of this run, so this leg holds "
@@ -140,9 +120,7 @@ def no_such_child(run_dir: Path, n: int) -> str:
 def turns_reached(child_dir: Path) -> int:
     """The highest turn the child's OWN transcript recorded — how much work died with it.
 
-    Zero means the transcript carries no turn stamp (a child killed before its first), never
-    that the child did nothing: the note says what the number is, and inventing one would
-    claim more than the disk knows.
+    Zero means no turn stamp was recorded, never that the child did nothing.
     """
     top = 0
     try:
@@ -163,17 +141,9 @@ def spend_reached(child_dir: Path) -> dict:
     """What a DEAD child actually spent, read from its OWN transcript — `{}` when nothing is
     recorded there.
 
-    A child is folded into its parent's counter when the parent COLLECTS it
-    (`subruns._collect`), and a child that did not survive the run's interruption is never
-    collected: the resumed leg marks it aborted with `usage: {}` and its real spend is left
-    in `sub/<n>/transcript.jsonl` alone, attributed nowhere a routine-level reader can see.
-    Measured on `scheduler-builder:20261030-140004` (R3112): sub/1 was orphaned by an abort
-    and its 193,930 output tokens appear in no total the console or the usage stream reads.
-
-    Same discipline as `turns_reached`: what the disk records, never an estimate. The turn's
-    own `usage` and the llm/decide/compaction payloads are summed exactly as
-    `history.prior_usage` sums a leg's — one definition of "what an event spent", so a child's
-    recovered total cannot mean something different from its parent's.
+    An orphan is never COLLECTED (`subruns._collect`), so its spend exists only in its own
+    transcript (R3112). What the disk records, never an estimate, summed exactly as
+    `history.prior_usage` sums a leg's so both mean the same thing.
     """
     from ..endpoints.usage import fold_usage
 
@@ -205,9 +175,8 @@ def _orphan_line(run_dir: Path, orphan: dict) -> str:
     """One dead child, as the resumed leg reads it: what it was, how far it got, where its
     work is — and whether its original brief is still on disk to carry forward.
 
-    The brief clause is CONDITIONAL on the file being there, because a re-brief the note
-    promises and the disk cannot support is worse than no offer: `childrun.materialize_to_disk`
-    writes `instruction.md` for every child, so its absence means this child never got that far.
+    The brief clause appears only when `instruction.md` exists — never promise a re-brief the
+    disk cannot support.
     """
     d = run_dir / "sub" / str(orphan["n"])
     landed = ", ".join(_artifacts(d)) or "nothing in artifacts/"
@@ -224,21 +193,10 @@ def _orphan_line(run_dir: Path, orphan: dict) -> str:
 def resume_note(run_dir: Path, orphans: list[dict]) -> str:
     """What a RESUMED leg is told about the children that died with its earlier leg (F778).
 
-    The note this replaces said the opposite of the truth — "did NOT survive the restart
-    (results lost) … Re-issue any you still need" — while every child's work sat on disk under
-    `sub/<n>/`. Measured cost, 2026-10-25: `scheduler-builder`'s run died at turn ~285 with two
-    live children holding ~1,400 s of real build work each, and the resumed parent had to find
-    that work by hand. A salvage nobody is told about is not survivability, which is why this
-    wording is part of the fix rather than a nicety on top of it.
-
-    RE-ADOPTION IS NOT ON THE LIST, and that is a fact about this engine rather than a gap
-    here: a child is an EngineLoop on a daemon THREAD inside the parent's process
-    (`subruns._start`), so it dies with the leg that owned it and there is no process to pick
-    back up. `docs/child-runs.md` § Process model records that decision and names
-    "reattach-on-resume" among the costs deliberately not paid. So the two real options are
-    READ what the dead child left, or RE-BRIEF a fresh one with the original brief plus that
-    work — and the note has to distinguish them, because re-issuing a bare copy of the brief is
-    what throws the 1,400 s away.
+    A child is a thread in the parent's process, so RE-ADOPTION is impossible
+    (docs/child-runs.md § Process model). The two real options are READ what it left or
+    RE-BRIEF a fresh child with the original brief plus that work; re-issuing the bare brief
+    throws the work away, so the note distinguishes them.
     """
     if not orphans:
         return ""

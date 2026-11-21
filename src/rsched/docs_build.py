@@ -130,7 +130,7 @@ GUIDE_ORDER = ["getting-started", "examples", "authoring", "conversations", "pla
                # designs.md holds what is DECIDED and unbuilt (an order, deleted when it ships),
                # limits.md what is KNOWN, UNDECIDED and unbuilt (R3421). A reader who finds one
                # should find the other.
-               "prompt-anatomy", "architecture", "designs", "limits"]
+               "prompt-anatomy", "architecture", "contracts", "testing", "designs", "limits"]
 
 
 def docs_out_dir() -> Path:

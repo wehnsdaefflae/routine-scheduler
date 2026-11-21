@@ -1,16 +1,10 @@
 """The `outcome-questioned` assist predicate — a person is asking about RESULTS, not process.
 
-The 2026-10-17 investigation found the operator's complaints about outcomes turned into more
-self-scrutiny every time: "do you even send out applications?", "work on your skills… you need
-to get better", "spend considerably more time on self-healing" each produced another check, a
-longer recipe, a closer audit of the routine's own process — and no more interviews. The run
-read the words as a correction of HOW it worked (`fix-the-cause`'s moment) when they were a
-statement about WHAT it produced.
-
-This predicate notices the moment so the run does not have to: a person's words reached the run
-— at boot (a message, an answer given between runs) or mid-run — and they question the results.
-It fires the `outcome-first` rule's line, which sends the run to its outcome series and to the
-routine-improver's outcome review instead of to another self-check.
+A complaint about outcomes is easily misread as a correction of HOW the routine works
+(`fix-the-cause`'s moment), producing more self-scrutiny instead of better results. This
+predicate notices when a person's words — at boot or mid-run — question the results, and fires
+the `outcome-first` rule's line, sending the run to its outcome series instead of another
+self-check.
 
 The match is a deliberately plain vocabulary (English and German, the operator's two) over the
 person's own words only — `goals.person_texts`, never a report, a machine channel or the recipe.
@@ -46,8 +40,7 @@ def questions_results(text: str) -> bool:
 def outcome_questioned(s: Any) -> bool:
     """New words of the person since the last look question the results (module docstring).
     Watermarked on the loop by the person's utterance count, so each message is read once —
-    including the ones the run's boot delivered, which are exactly where a complaint between
-    runs lands.
+    including those delivered at boot.
     """
     from . import goals
 

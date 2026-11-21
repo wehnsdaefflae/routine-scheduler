@@ -1,12 +1,8 @@
 """A message's `media` list → OpenAI-compatible content PARTS, one part shape per modality.
 
-Split out of `openai_compat.py` (D192), which was at the house size bar and may only shrink.
-It is also a cleaner seam: turning files into content parts is a pure mapping from the one
-modality-tagged allowlist (`media_types.MEDIA_MODALITIES`) to the four part shapes this wire
-knows, with no transport, no auth and no retry around it.
-
-The shapes, each the one OpenAI publishes (or, where it publishes none, the one the
-OpenAI-compatible servers that take the modality agree on):
+A pure mapping from the modality allowlist (`media_types.MEDIA_MODALITIES`) to the four part
+shapes this wire knows — OpenAI's published shape, or where none exists the one
+OpenAI-compatible servers agree on:
 
 * image → `image_url` with a base64 data URI
 * pdf   → `file` / `file_data` with a base64 data URI
@@ -14,8 +10,7 @@ OpenAI-compatible servers that take the modality agree on):
   only part here that does NOT take a data URI, which is why format is derived separately
 * video → `video_url` with a base64 data URI, mirroring `image_url`
 
-Nothing reaches a provider because a shape exists for it: `supports_media` decides that, per
-model and per adapter, before a file is ever put in a message.
+Whether a file reaches a provider at all is `supports_media`'s decision, made earlier.
 """
 
 from __future__ import annotations
@@ -25,9 +20,8 @@ from pathlib import Path
 from .base import Message
 from .media_types import modality_of, read_media_b64
 
-#: mime → the bare `format` word OpenAI's `input_audio` part wants. It is NOT the mime subtype
-#: in every case (audio/mpeg is "mp3"), and the API rejects an unknown word, so the mapping is
-#: explicit rather than derived by string-splitting.
+#: mime → the bare `format` word OpenAI's `input_audio` part wants — explicit, because it is not
+#: always the subtype (audio/mpeg is "mp3") and the API rejects an unknown word.
 AUDIO_FORMATS: dict[str, str] = {
     "audio/wav": "wav",
     "audio/x-wav": "wav",
@@ -69,10 +63,8 @@ def content_parts(content: str, media: list[dict]) -> list[dict]:
     parts: list[dict] = [{"type": "text", "text": content}] if content else []
     for item in media:
         try:
-            # R1493: prefer bytes the engine captured when it verified the file — see the same
-            # comment in anthropic_messages.content_blocks. Re-reading the path on every send
-            # lets a later overwrite or cleanup invalidate an attachment already promised to
-            # the model.
+            # Prefer bytes the engine captured when it verified the file: a later overwrite or
+            # cleanup must not invalidate an attachment already promised to the model.
             b64 = item.get("b64") or read_media_b64(item["path"])
         except OSError as exc:
             parts.append({"type": "text", "text":

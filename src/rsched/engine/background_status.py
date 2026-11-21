@@ -1,26 +1,14 @@
 """What is RUNNING in the background, as `subruns` rows (R3600).
 
-The operator caught this mid-run in `tv-show-tracker-seedbox-manager`: a `background: true`
-script was in flight as `bg1`, the run asked `subruns` to see what it was waiting for, and the
-answer was *"no record of a child in THIS leg — and none on disk either, so none was started"*.
-Work the run had started was running, and the one action whose job is to say what is running
-denied it existed.
+A child run and a backgrounded call are different mechanisms (a process with its own budget vs.
+a thread here) but the same THING to a run reading its own state: work it started whose result
+arrives at a later turn boundary. So `subruns` reports both — `kill` already takes both.
 
-**Why the two belong in one table.** `spawn`/`subtask` and a backgrounded call are different
-mechanisms — a child run is a process with its own budget, a background call is a thread inside
-this interpreter — but they are the same THING to a run reading its own state: work it started,
-not yet in hand, whose result arrives at a later turn boundary tagged with an identifier. `kill`
-already took both namespaces (`n` for a child, `handle` for a background call) for exactly that
-reason; the status table was the only surface that knew one and not the other.
+The two namespaces stay separate: these rows go under their own `background` key, so `count`
+keeps meaning children and nobody aims `kill n=1` at a `bg1`.
 
-**Two namespaces stay two namespaces**, so these rows are a separate `background` key rather
-than more `rows`: a row with an `n` is a sub-workflow and a row with a `handle` is a thread, and
-`subruns`' own count has always meant children. Folding them into one list would make `count`
-mean two things and invite `kill n=1` at a `bg1`.
-
-`state` distinguishes `running` from `landed` because a call that FINISHED mid-turn is still in
-the live list — `collect` drops a Pending only at the next turn boundary, when it delivers it.
-Reporting that as `running` would replace one false claim with another.
+`state` distinguishes `running` from `landed`: a call that finished mid-turn stays in the live
+list until `collect` delivers it at the next turn boundary.
 """
 
 from __future__ import annotations

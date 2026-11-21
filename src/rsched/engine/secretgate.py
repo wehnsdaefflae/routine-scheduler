@@ -1,35 +1,22 @@
 """The SECRET-EXPOSURE gate — the approval a util or script needs before it sees a
 credential.
 
-Split out of `interact.py` (F393): the ask/answer protocol, this gate and library authoring
-were three responsibilities in one file. This one owns a single question — may THIS call see
-THESE secrets — answered from the routine's four-state grant standing (`grants:` rows are the
-forever states, the run overlay the once states) and, when undecided, by asking the user
-through the same decision record every other ask uses.
+One question — may THIS call see THESE secrets — answered from the routine's four-state grant
+standing (`grants:` rows are the forever states, the run overlay the once states) and, when
+undecided, by asking the user through the ordinary decision record.
 
-An OPTIONAL secret a util declares with `?` is never worth blocking a run for: it is withheld
-silently and the run is told what it lost, so a degraded call beats a stalled one.
+An OPTIONAL (`?`-declared) secret never blocks: it is withheld and the run is told what it lost.
 
-A DECLINED REQUIRED secret is withheld the same way and the call proceeds (F756): a decline
-protects the credential, not the util — forbidding a util is a `util:` grant's job. That holds
-for every call THIS GATE sees, because this gate only sees calls the RUN chose: `util`, a
-`/util` slash command, and the routine's own `scripts/<name>.py`. The engine's own util calls
-never reach here (the run chose neither the util nor its arguments), and the one that needs a
-credential — `mediaops.vision_describe`, the vision fallback behind `view_image` — REFUSES on a
-declined secret instead. That asymmetry is deliberate and is the operator's recorded answer to
-D213 (2026-10-25): the engine refuses for calls IT chose to make and withholds for calls the RUN
-chose. Read from the run's side it is one rule — a decline never silently degrades work the run
-did not ask for: a call the run wrote comes back degraded and judgeable, a call the engine made
-on its behalf comes back refused with the reason, rather than failing inside a util the run never
-invoked. Before F756 both sites refused, and one declined name disabled every call of a util,
-including calls needing none of it.
+A DECLINED REQUIRED secret is withheld the same way and the call proceeds: a decline protects
+the credential, not the util — forbidding a util is a `util:` grant's job. This gate only sees
+calls the RUN chose (`util`, a `/util` slash command, a routine script). The engine's own
+credentialed call — the `view_image` vision fallback — REFUSES on a decline instead. That
+asymmetry is deliberate (D213): the engine refuses for calls IT chose to make and withholds
+for calls the RUN chose, so a decline never silently degrades work the run did not ask for.
 
-`secret_state` answers about ROWS and nothing else — never about an adjacent `util:` grant that
-happens to declare the name. That is deliberate (F562): a granted util used to leave its own
-declared secrets undecided, so the first call filed a SECOND blocking request for the same
-capability, and the fix widened the REQUEST rather than this interpretation
-(`engine/grantsecrets.py`, called where the decision record is written). Inferring exposure here
-would be fewer lines and would make a util grant silently carry credentials.
+`secret_state` answers about ROWS only, never about an adjacent `util:` grant declaring the
+name; a util grant's secrets are carried by widening the REQUEST (`engine/grantsecrets.py`),
+so a util grant never silently carries credentials.
 """
 
 from __future__ import annotations
@@ -84,11 +71,8 @@ def _exposable(ctx, needed: set[str], optional: set[str]) -> list[str]:
 def declined_secrets(ctx, name: str) -> list[str]:
     """The exposable secrets util `name` declares that the user DECLINED for this routine.
 
-    For a call the ENGINE makes on the run's behalf — the view_image vision fallback — which
-    no exposure gate precedes. Such a call asks nothing (the run did not choose the util or
-    its arguments, and an ask from inside a view would block it on a fallback it never asked
-    for), but a decline is the user's answer already given, and handing the util the secret
-    anyway overruled it.
+    For a call the ENGINE makes on the run's behalf (the view_image vision fallback): it asks
+    nothing, but must still honour a decline already given.
     """
     needs = utils_run.util_needs(ctx.server.libraries_home, name)
     return [s for s in _exposable(ctx, needs.secrets, needs.optional)
@@ -96,10 +80,9 @@ def declined_secrets(ctx, name: str) -> list[str]:
 
 
 def withheld_optional(ctx, optional: set[str]) -> list[str]:
-    """The OPTIONAL (`?`-declared, F290) secrets present in the store that this run may NOT
-    see — not granted to the routine. They never block a call or file an ask: the executor
-    withholds them from the child env and the observation says so, so a public call runs
-    prompt-free and an auth-needing one learns to request exposure explicitly.
+    """The OPTIONAL (`?`-declared) secrets present in the store that this run may NOT see.
+    They never block or ask: the executor withholds them from the child env and the
+    observation says so.
     """
     from ..secrets import load_secrets
     own = _own_secrets(ctx)
@@ -111,11 +94,10 @@ class Withheld(NamedTuple):
     """What a call that RUNS does not get of the secrets it declares, by the two reasons a
     declared credential may be absent while the call still proceeds:
 
-    * `optional` — F290/D51: a `?`-declared name the routine may not see. Never blocks, never
-      asks; undecided ones are requestable, so they may be named.
-    * `declined` — F756: a REQUIRED name the user DECLINED. A decline protects the credential,
-      not the util, so it is withheld and the call runs without it. A count only in anything
-      the model reads: a denial enumerates nothing (R17).
+    * `optional` — a `?`-declared name the routine may not see. Never blocks, never asks;
+      undecided ones are requestable, so they may be named.
+    * `declined` — a REQUIRED name the user DECLINED; withheld and the call runs without it.
+      Only a count reaches the model: a denial enumerates nothing (R17).
     """
 
     optional: tuple[str, ...] = ()
@@ -139,10 +121,8 @@ class Withheld(NamedTuple):
 
 
 def withheld_for_call(ctx, needed: set[str], optional: set[str]) -> Withheld:
-    """Both withholdings for one call's transitive declarations. The declined half is the
-    same `secret_state` the gate reads, so a decline recorded in `grants:` and one given at
-    the exposure ask (`requests._seed` writes `ctx.denied_now` before the gate resumes) mean
-    the same thing here — one word, one meaning.
+    """Both withholdings for one call's transitive declarations. The declined half reads the
+    same `secret_state` as the gate, so a `grants:` decline and one given at the ask agree.
     """
     return Withheld(tuple(withheld_optional(ctx, optional)),
                     tuple(s for s in _exposable(ctx, needed, optional)
@@ -159,16 +139,12 @@ def withheld_for_util(ctx, name: str) -> Withheld:
 
 
 def withheld_verb_scoped(ctx, name: str, args: list) -> dict:
-    """R2622: what a VERB-SCOPED declaration withheld from THIS call, as the observation
-    field — `{"verb": <the verb that ran, or None>, "secrets": [names]}`, empty when the
-    call tree binds no secret to a verb.
+    """What a VERB-SCOPED declaration withheld from THIS call, as the observation field —
+    `{"verb": <the verb that ran, or None>, "secrets": [names]}`, empty when the call tree
+    binds no secret to a verb.
 
-    It is reported rather than merely decided because the two are indistinguishable from
-    inside the util: a verb-bound secret the engine withheld arrives exactly as a secret
-    nobody provisioned, and the next move on that reading is provisioning a credential that
-    is already provisioned (R2621). A call that names NO verb — the util's default path, or
-    `--selftest` — withholds every bound name, so this is also how a default-path call learns
-    that a credential exists for a verb it did not invoke.
+    Reported because, inside the util, a withheld secret looks exactly like an unprovisioned
+    one. A call naming NO verb (default path, `--selftest`) withholds every bound name.
     """
     from ..utils_verbs import withheld_for_verb
     home = ctx.server.libraries_home
@@ -188,18 +164,11 @@ def withheld_optional_secrets(ctx, name: str) -> list[str]:
 
 
 def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
-    """D39: per-routine secret exposure, decided at CALL time through the FOUR-STATE grant
-    model. A util call whose transitive `secrets:` declarations name secrets PRESENT in
-    the store runs only once this routine may see them: `grants:` rows (`secret:<NAME>`
-    true/false) are the forever states, the run overlay the once states, and an undecided
-    name files ONE blocking access request covering every undecided secret (the D38 hold
-    semantics apply; the web persists a forever-decision, an allow-now covers this run).
-    Returns None to let the call proceed, or the refusing/pending observation.
-
-    OPTIONAL secrets (`?`-declared, D51/F290) never reach this gate's ask or refusal: an
-    optional secret the routine may not see is silently WITHHELD from the child env
-    instead (withheld_optional_secrets), so a call that does not need it — a public
-    page fetch — runs without prompting anyone.
+    """Per-routine secret exposure (D39), decided at CALL time through the four-state grant
+    model. A util call whose transitive `secrets:` name secrets PRESENT in the store runs
+    only once this routine may see them; undecided names file ONE blocking access request
+    covering all of them. Returns None to let the call proceed, or the refusing/pending
+    observation. OPTIONAL secrets never reach the ask: they are withheld instead.
     """
     ctx = loop.ctx
     name = str(action.get("name") or "")
@@ -237,17 +206,9 @@ def _gate_secrets(loop, *, kind: str, name: str, needed: set, optional: set,
     present = _exposable(ctx, needed, optional)
     if not present:
         return None   # nothing exposable — a declared-but-unset secret fails visibly inside
-    # F756: a DECLINE withholds the CREDENTIAL; it does not refuse the util. Until this, one
-    # declined name refused EVERY call of the util — including a call needing none of it
-    # (measured live: the GMAIL_* secrets granted and the FAU_* ones declined on `gu mail`,
-    # after which even `--account default` was refused, so the grant UI offered a per-secret
-    # decline the enforcement could not keep). A declined required name is now scrubbed from
-    # the child env exactly as a `?`-declared optional one is (`withheld_from_call`, applied
-    # in executor) and the call proceeds; a util that truly cannot work without it fails
-    # INSIDE, visibly, with its own message — already the accepted outcome for a
-    # declared-but-unset secret (`_exposable`). To forbid a UTIL, withhold its `util:` grant
-    # or reserve it: a secret row is not that lever, and reading it as one overruled the user
-    # in the one direction he cannot see.
+    # A DECLINE withholds the CREDENTIAL, not the util: a declined required name is scrubbed
+    # from the child env (executor) and the call proceeds; a util that cannot work without it
+    # fails INSIDE, visibly. Forbidding a UTIL is its `util:` grant's job.
     undecided = [s for s in present if secret_state(ctx, s) == "undecided"]
     if not undecided:
         return None
@@ -262,10 +223,8 @@ def _gate_secrets(loop, *, kind: str, name: str, needed: set, optional: set,
                     f"call '{name}' declares them.",
         "mode": "blocking",
         "request": [f"secret:{s}" for s in undecided],
-        # F756: the prose must match the enforcement, or the question offers a decline the
-        # engine cannot keep. A TIMEOUT still refuses the call (nobody decided); DECLINING
-        # withholds just those credentials and lets the call run without them — it does not
-        # disable the util, which is a `util:` grant's job.
+        # the prose must match the enforcement: a TIMEOUT refuses the call, a DECLINE only
+        # withholds the credentials
         "default": f"the {kind} is NOT run and the secrets stay unexposed until decided "
                    f"(declining withholds just these credentials and lets the {kind} run "
                    "without them; it does not disable it)"},
@@ -279,9 +238,6 @@ def _gate_secrets(loop, *, kind: str, name: str, needed: set, optional: set,
         return {"kind": kind, "name": name, "pending_secrets": undecided, **still_pending(ask),
                 "reason": "the secret-exposure request is still open — do other work and "
                           f"retry the {kind} once it is settled."}
-    # F756: a decline given AT THE ASK is the same user intent as a `grants:` false row, so it
-    # takes the same path — `requests.apply_decision` has already put the entity in
-    # `ctx.denied_now`, which makes `secret_state` read "denied" for the executor's
-    # `withheld_from_call`. Two different meanings for one word is the defect, not the fix:
-    # whichever way he says no, the credential is withheld and the call proceeds without it.
+    # a decline given AT THE ASK is already in `ctx.denied_now` (requests.apply_decision), so
+    # the executor withholds it exactly like a `grants:` false row and the call proceeds
     return None

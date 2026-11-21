@@ -3,8 +3,6 @@
 The event vocabulary is a CONTRACT consumed by the web renderer and the meta routine — every
 type in `EVENT_TYPES` below and no other. An unknown type reads as corruption to both, so the
 tuple and both readers are extended together, never one alone, and no type is repurposed.
-(This line used to state the count in words. It said "fourteen" while the tuple held 18, which
-is what a written-out count does: `EVENT_TYPES` is the number, and `len()` is how to ask.)
 """
 
 from __future__ import annotations
@@ -27,25 +25,16 @@ EVENT_TYPES = (
     # A finish that STOOD while declared stages went unentered (F521/R1681) — a notice,
     # never a refusal: skipping is sometimes right, going unnoticed never is.
     "stages_skipped", "finish",
-    # The escalation ladder's five records (engine/ladder.py). A rung is oversight: it must
-    # leave a trace whether it fired, ruled, ruled nothing, never ran, or BROKE — an oversight
-    # mechanism nobody can audit is not oversight. `oversight_dispatch` is the rung STARTING
-    # (why it fired, over which interval, on what budget); `oversight_skipped` the reason it
-    # DECLINED to run (no supervisor pattern, the tree's ceiling, a spent budget) — a decision
-    # the ladder took on purpose. `oversight_failed` is the mechanism RAISING, which is not a
-    # decision at all: for most of the ladder's life an AttributeError was filed as a skip
-    # (`loop.subs` for `loop.subruns`, ladder.py:297, R2348/R2352), so every rung on every run
-    # died and read exactly like a healthy decline on every surface. The two must never share an
-    # event again. The directive's TEXT reaches the worker as a `user_injection` on the
-    # `oversight` channel, so `oversight_directive` records the VERDICT, not the prose.
+    # The escalation ladder's records (engine/ladder.py): a rung leaves a trace whether it
+    # fired, ruled, ruled nothing, never ran, or BROKE. `oversight_skipped` is a deliberate
+    # decline; `oversight_failed` is the mechanism RAISING — the two must never share an event,
+    # or a broken rung reads as a healthy decline. The directive's TEXT reaches the worker as a
+    # `user_injection`, so `oversight_directive` records the VERDICT, not the prose.
     "oversight_dispatch", "oversight_directive", "oversight_skipped", "oversight_no_directive",
     "oversight_failed",
-    # A PERSON stopped the call of one turn (F586, decided as D160-C: "B plus a transcript
-    # event, so an audit of the run afterwards SEES the human intervention instead of inferring
-    # it from a gap"). The observation already carries `cancelled`, but an observation says what
-    # the RUN was told; this says that somebody outside the run reached in, which is the thing
-    # an audit cannot reconstruct afterwards — a cancelled call and a call that failed fast look
-    # the same in a transcript that records only outcomes.
+    # A PERSON stopped the call of one turn (D160-C). The observation says what the RUN was
+    # told; this records that somebody outside reached in, which an audit cannot otherwise
+    # tell from a call that failed fast.
     "action_cancelled",
 )
 
@@ -125,13 +114,9 @@ def read_events(path: Path, offset: int = 0) -> tuple[list[dict], int]:
     concurrent reader never sees broken JSON. A rotated (.gz) transcript reads the same way:
     it never grows, so a reader that has reached its end is simply told nothing is new.
 
-    BYTES, split at the newline byte alone, and only a COMPLETE line is decoded (json.loads
-    takes bytes).
-    Reading text got two things wrong. `str.splitlines()` also breaks at U+2028, U+2029 and
-    U+0085, which `json.dumps(ensure_ascii=False)` leaves raw inside a line — so a rotated
-    transcript lost every event that quoted one. And decoding a line the writer had not
-    finished could stop inside a multi-byte character, raising UnicodeDecodeError out of a
-    polling reader instead of holding the line back.
+    BYTES, split at the newline byte alone, and only a COMPLETE line is decoded: text
+    `splitlines()` also breaks at U+2028/U+2029/U+0085 (kept raw inside a line), and decoding an
+    unfinished line can stop mid-character.
     """
     events: list[dict] = []
     try:
@@ -151,9 +136,8 @@ def read_events(path: Path, offset: int = 0) -> tuple[list[dict], int]:
                 ev = json.loads(raw)
             except ValueError:   # JSONDecodeError, or a complete line that is not UTF-8
                 ev = None
-            # Valid JSON that is not an OBJECT (a list, a string, a number) is as malformed as
-            # broken JSON here: every reader does `ev.get(...)`, and one such line crashed
-            # subruntree, fileactivity and statemap for the whole transcript.
+            # Valid JSON that is not an OBJECT is as malformed as broken JSON: every reader
+            # does `ev.get(...)`.
             if isinstance(ev, dict):
                 events.append(ev)
             else:

@@ -1,36 +1,20 @@
 """The consequence-reminder LAYER: pre-execution interception, and the turn-free authoring ops.
 
-A reminder is a caution the model left itself the moment it noticed an action had an
-unintended effect (`rsched/reminders.py` owns the store). This file is the runtime half:
+A reminder is a caution the model left itself about an action's unintended effect
+(`rsched/reminders.py` owns the store). This file is the runtime half:
 
 - **interception** — before an action executes, its canonical string (`actionschema.canon`) is
-  tested against the live set; on a match the action is HELD, not run, and the caution is put
-  in front of the model so it decides again. PRE-execution is the whole point: a caution that
-  arrives with the observation arrives after the consequence, when nothing can be avoided.
-- **the ops** — `remind` (add/revise/delete) and `remind_feedback` (the four-way outcome
-  label) ride ANY action as no-turn side fields, exactly like `note`: the moment of realisation
-  and the moment of recording are the same turn, or the realisation is lost.
+  tested against the live set; on a match the action is HELD and the caution shown, because a
+  caution that arrives with the observation arrives after the consequence.
+- **the ops** — `remind` and `remind_feedback` ride ANY action as no-turn side fields, like
+  `note`, so the realisation is recorded on the turn it happens.
 
-Two rules keep the layer from eating the run:
+One hold per REMINDER per guard scope (engine/guardscope.py; rebuilt on resume by
+`remind_ledger`) — re-emitting the held action is the confirmation, and a gate that never
+yields livelocks — and one hold per action however many reminders match.
 
-- **one hold per REMINDER per run.** Once a caution has held, it is in the run's context, so
-  neither the SAME action re-emitted (the confirmation to proceed) nor a reworded one is held by
-  it again — keyed on the string, changing a command re-held it (~39 re-emits in 4 runs). The
-  claim VERIFIER's one challenge per line, for the same reason: a gate that never yields livelocks.
-- **one hold per action, however many reminders match.** Precedence never multiplies turns.
-
-"Per run" is the GUARD SCOPE (engine/guardscope.py) — every leg of a routine run, the current
-reply of a conversation — and this layer's own ledgers follow the hold ledger across a resume
-(`remind_ledger`): a hold from before a restart is still owed its one label after it.
-
-The turn cost is paid on the INPUT side — selective creation, a precise regex, and the four-way
-tally that shows which reminders earn their turns; no cheaper passive tier exists.
-
-A reminder is ONE CONFIGURATION OF A HOOK (D152): trigger `match` over an action, a result,
-the turn's prose or a turn moment; addressee this routine's own future runs or another
-routine; delivery `hold_before_action` for the holding kind and `turn_boundary` for the rest.
-Each write is mirrored into the one hook store (`engine/hookmirror`, `rsched/hooks`), which
-owns that vocabulary; this layer stays the mechanism.
+A reminder is one configuration of a hook (D152); each write is mirrored into the hook store
+(`engine/hookmirror`).
 """
 
 from __future__ import annotations
@@ -60,17 +44,12 @@ def configure(loop) -> None:
     loop.reminder_pending = []       # fires still owed a label — what the nudge names
     loop.reminder_owed = {}          # id → holds this run not yet labelled; one label per hold
     loop.reminder_nudge = 0
-    # the `turn:answer` watermark: how many user replies had arrived when this layer last
-    # looked, so the moment is the ARRIVAL EDGE rather than "a reply exists" (the same shape
-    # `assist.at_boundary` uses for its own arrival edge)
+    # `turn:answer` watermark, so the moment is the ARRIVAL EDGE rather than "a reply exists"
     loop.reminder_user_replies = int(getattr(loop.ctx, "user_replies", 0) or 0)
 
 
 def replay_key(field: str, payload: object) -> str:
-    """One side field's payload as the replay ledger stores it — what a re-driven finish is
-    deduplicated by, field by field (`apply_ops`, its resume rebuild in `remind_ledger`, and the
-    ask-back's withdrawal in `_approve_global`).
-    """
+    """One side field's payload as the replay ledger stores it (a re-driven finish dedups on it)."""
     return json.dumps([field, payload], sort_keys=True)
 
 
@@ -82,10 +61,8 @@ def level_of(grants) -> str:
 def load(loop) -> list[Reminder]:
     """The live set for this run, read ONCE at construction.
 
-    Once, not per turn: the composed prompt is an append-only caching contract, and a store
-    that changes between runs never rewrites a within-run prefix. The in-memory list keeps step
-    with every op this run applies, so it is never stale about its own writes. D152: its local
-    half is served from the hook stream (`hooks/reminderread.active`).
+    Once, not per turn: the composed prompt is an append-only caching contract. The in-memory
+    list keeps step with every op this run applies.
     """
     ctx = loop.ctx
     try:
@@ -99,16 +76,9 @@ def load(loop) -> list[Reminder]:
 def refresh(loop) -> None:
     """Re-read the set if the capability LEVEL has moved since it was read.
 
-    The read-once rule above has one hole: at level `none` the store is not read at all, so a
-    `reminders:*` grant landing mid-run leaves the in-memory set EMPTY while the store is full
-    — and that set is what a definition write is rebuilt from, so the run's first `remind` op
-    would rewrite the file down to its own row, dropping what earlier runs accumulated.
-
-    Comparing the LEVEL rather than the policy object is the point: this is the one thing the
-    reload depends on, and `rebuild_policy` (the caller) is the writer of `loop.grants`, so
-    reading its own output back as an input would be the wrong dependency.
-
-    A re-read can only ADD: what this run applied is on disk by the time any op returns.
+    At level `none` the store is not read, so a grant landing mid-run would leave the set empty
+    — and a definition write rebuilt from it would drop every earlier row. A re-read can only
+    ADD: what this run applied is on disk by the time any op returns.
     """
     level = level_of(loop.ctx.grants)
     if level != loop.reminders_level:
@@ -120,10 +90,8 @@ def hold(loop, action: dict, rendered: str) -> dict | None:  # noqa: ARG001 — 
     """This layer's answer for the shared pre-execution seam (`engine/hold.py`): the
     observation the model reads instead of the action's result, or None to let it execute.
 
-    `rendered` is the canonical action string, computed ONCE by the seam and shared with
-    the other source, so the two can never disagree about what the action was. Only a
-    reminder that has NOT held yet in this guard scope holds (its caution is already in the
-    context otherwise), and each one that does records a `fires` — one hold, one label owed.
+    `rendered` is the canonical string, computed once by the seam. Only a reminder that has not
+    held yet in this guard scope holds; each that does records a `fires` and owes one label.
     """
     if not loop.reminders:
         return None
@@ -134,8 +102,7 @@ def hold(loop, action: dict, rendered: str) -> dict | None:  # noqa: ARG001 — 
     for hit in hits:
         hold_seam.mark_held(loop, SOURCE, hit.id)
     _count_fires(loop, hits)
-    # the tally rides the observation: `store.looks_too_broad` is what turns a hold into the
-    # moment its own evidence is readable, and obs_hold renders the line
+    # the tally rides the observation (obs_hold renders `store.looks_too_broad` from it)
     live = {h.id: h for h in loop.reminders}
     return {"kind": "reminder_hold", "action": rendered,
             "reminders": [{"id": h.id, "scope": h.scope, "description": h.description,
@@ -147,16 +114,14 @@ def hold(loop, action: dict, rendered: str) -> dict | None:  # noqa: ARG001 — 
 def _count_fires(loop, hits: list[Reminder]) -> None:
     """Record a fire on every reminder that just matched, and arm the label it is owed.
 
-    Shared by every fire point so the tally means one thing whatever the trigger kind was: the
-    denominator the four-way labels are read against. The tally is disk-owned
-    (`store.record`); the result is mirrored back into the in-memory set, which is what a later
-    definition write is rebuilt from, so it never carries a stale count.
+    Shared by every fire point so `fires` is one denominator for the labels. The tally is
+    disk-owned (`store.record`) and mirrored into the in-memory set.
     """
     for hit in hits:
         _replace(loop, hit, stats=store.record(loop.ctx.routine.dir, hit, "fires"))
         loop.reminder_owed[hit.id] = loop.reminder_owed.get(hit.id, 0) + 1
-    # the label this fire is owed, and how long the model has to volunteer it before the
-    # engine asks once (a `did`/`didnt` can only be known a turn AFTER the action ran)
+    # turns the model has to volunteer the label before the engine asks once
+    # (a `did`/`didnt` is only known a turn AFTER the action ran)
     loop.reminder_pending = [h.id for h in hits]
     loop.reminder_nudge = 2
 
@@ -164,8 +129,7 @@ def _count_fires(loop, hits: list[Reminder]) -> None:
 def _fired_line(hit: Reminder, target_name: str) -> str:
     """One line, one shape, for every non-holding kind — what fired, on what, and the caution.
 
-    A FOREIGN hook says so and names its owner, because the disposition choice (keep / mute /
-    remove) is only the target's to make if the target can tell the hook is not its own.
+    A FOREIGN hook names its owner so the target can tell it may dispose of it.
     """
     whose = f"set by `{hit.owner}`" if hit.foreign else "your own caution"
     tail = (f" ({hit.owner} set this: carry remind_feedback with disposition keep/mute/remove to "
@@ -176,21 +140,11 @@ def _fired_line(hit: Reminder, target_name: str) -> str:
 
 def at_observation(loop, action: dict, obs: dict) -> str:
     """The tail appended to an observation for the kinds that CANNOT hold — "" when nothing
-    fired. Costs no turn.
+    fired. Costs no turn: these kinds describe what already happened, so nothing can be held.
 
-    `result`, `prose` and the `turn:*` moments all describe something that has already
-    happened, so there is nothing to prevent and no reason to spend a turn; they ride the
-    observation exactly as an observation-moment rule assist does (`engine/assist`), which is
-    the shape this codebase already uses for "what just came back".
-
-    The targets, each a plain string so one regex engine serves every kind:
-    - `result` — the observation as the model is shown it (`format_observation` is applied by
-      the caller for display; the match target is the same text, so a pattern can name an exit
-      code or an error the model will read);
-    - `prose` — the turn's own `say`;
-    - `turn:finish` / `turn:question` / `turn:error` / `turn:first` — the moment's own name plus
-      that same observation text, so a pattern may anchor on the moment alone (`^turn:finish`)
-      or on something inside it.
+    Targets (plain strings, one regex engine): `result` — the observation as the model reads
+    it; `prose` — the turn's `say`; `turn:<moment>` — the moment's name plus the observation
+    text, so a pattern may anchor on `^turn:finish`.
     """
     if not loop.reminders:
         return ""
@@ -256,21 +210,12 @@ def apply_ops(loop, action: dict, poll_s: float, *, replayable: bool = False) ->
     """Apply this action's `remind` / `remind_feedback` fields and return the ENGINE NOTE the
     observation carries — "" when the action had neither.
 
-    Applied AFTER the interception check, never before: a reminder authored on the same turn as
-    an action must not be able to hold that very action.
+    Applied AFTER the interception check, so a reminder cannot hold the action it rode in on.
 
-    `replayable` marks a call site the ENGINE itself can re-drive with the same fields — the
-    finish path, where every rung of the finish gate hands the SAME finish back for revision
-    and the model re-emits it with its side fields intact. Each field's payload is then applied
-    at most once per run (per guard scope, and across a resume: `remind_ledger`), which is the
-    rule this codebase already applies to its own
-    re-emissions (`loop.holds`, engine/hold.py: re-emitting a held action is the confirmation,
-    not a second hold; the claim verifier's one challenge per claimed line). Without it a
-    finish deferred three times records one hold's label three times, and the tally the whole
-    layer is justified by — `fires` minus the labels — goes negative. Keyed per FIELD, because
-    an op the operator asked back on was not applied (`_approve_global` withdraws its key): the
-    finish that carries it again is the re-submission they are owed, and the label beside it
-    must still not count twice.
+    `replayable` marks a call site the engine re-drives with the same fields (the finish gate
+    hands the same finish back): each field's payload is then applied at most once per guard
+    scope, or a deferred finish would label one hold several times. Keyed per FIELD because an
+    asked-back op was not applied (`_approve_global` withdraws its key) and must apply on re-send.
     """
     loop.reminder_asked_back = False     # set by `_approve_global`, read by the finish gate
     fields = [f for f in ("remind_feedback", "remind") if action.get(f)]
@@ -292,12 +237,8 @@ def apply_ops(loop, action: dict, poll_s: float, *, replayable: bool = False) ->
 def _label_nudge(loop, action: dict) -> str:
     """Ask ONCE for a label a fire is still owed.
 
-    Not a hard requirement: `remind_feedback` rides every kind, so rejecting an action that
-    omits it would put a bookkeeping field in the way of the work — and the schema-storm guard
-    fails a run whose turns keep needing retries. So the hold demands the label, and this asks
-    a second time, two turns later, once the `did`/`didnt` case has had the turn it needs to
-    know its own outcome. What stays unlabelled after that is visible in the tally as
-    `fires` minus the labels, which is itself the signal that a reminder is not being read.
+    Never a hard requirement (rejecting an action for a bookkeeping field would block the work):
+    asked once, two turns after the fire. What stays unlabelled shows as `fires` minus labels.
     """
     if not loop.reminder_pending:
         return ""
@@ -317,8 +258,7 @@ def _label_nudge(loop, action: dict) -> str:
 
 def _apply_feedback(loop, fb: dict) -> str:
     """Record one label — for a hold of this reminder, in this run, not labelled yet. A label
-    with no hold behind it is evidence about nothing: before this, one run labelled a single
-    reminder 75 times and its tally read 5 fires and 77 `would_have`.
+    with no hold behind it is evidence about nothing.
     """
     rid = str(fb.get("id") or "")
     label = str(fb.get("label") or "")
@@ -338,15 +278,10 @@ def _apply_feedback(loop, fb: dict) -> str:
 
 
 def _apply_disposition(loop, target: Reminder, disposition: object) -> str:
-    """The TARGET's say over a hook ANOTHER routine set on it (D152-C step 2).
+    """The TARGET's say over a hook ANOTHER routine set on it, applied at the fire.
 
-    Applied at the fire, on the same field as the label, because that is the one moment the
-    hook's usefulness is observable. It outranks its owner: `remove` also records the refusal,
-    so the owner's next run cannot simply set the same pattern again.
-
-    A disposition on a hook the routine wrote ITSELF is refused rather than silently applied —
-    its own reminder is revised or deleted with a `remind` op, and conflating the two would make
-    `mute` a second, undocumented way to disable one.
+    `remove` also records the refusal so the owner cannot set the pattern again. A disposition
+    on the routine's OWN reminder is refused — that is a `remind` op's job.
     """
     if disposition is None:
         return ""
@@ -368,31 +303,18 @@ def _apply_disposition(loop, target: Reminder, disposition: object) -> str:
 
 
 def _remove_from_set(loop, target: Reminder) -> None:
-    """Drop a disposed-of hook from this run's live set. The STORE write is `store.dispose`'s;
-    this only keeps the in-memory set — which a later definition write is rebuilt from — in step
-    with it, the same split `_save_local` documents.
-    """
+    """Drop a disposed-of hook from this run's live set (the store write is `store.dispose`'s)."""
     loop.reminders = [r for r in loop.reminders if r.id != target.id]
 
 
 def _resolve_target(loop, op: dict, rid: str) -> Reminder | str:
     """The reminder a `revise` or `delete` names — the live set first, the SHARED STORE second.
 
-    The live set alone could not answer for a curated row this routine does not hold (D186,
-    R2530). A `reach: listed` global reminder is in NO non-listing routine's live set by
-    construction, so a curator that does not list it could never name an id `delete` would
-    accept: the refusal was structural, not a lookup miss, and the row was permanent unless the
-    operator removed the file by hand. The reach gate decides when a row FIRES, not who may
-    curate it — so an op that says `scope: global` resolves against the library.
+    A `reach: listed` global row is in no non-listing routine's live set, yet a curator must be
+    able to name it: reach decides when a row FIRES, not who may curate it. The fallback runs
+    only when the op NAMES `scope: global`; every authority check still runs on the result.
 
-    The fallback is deliberately narrow: only when the op NAMES global (`scope` is not left to
-    default), and only for a row the library actually holds. Everything about AUTHORITY stays
-    where it was — the scope-mismatch guard, `grants.reminder_denial`, the global approval step
-    and the commit all run on the returned target exactly as before.
-
-    Returns the reminder, or the refusal note. The two misses stay textually distinguishable so
-    a caller can tell a typo from a reach gate: "is not in the shared store" names the library,
-    "is live for this run" names this run's set.
+    Returns the reminder, or the refusal note; the two misses stay textually distinct.
     """
     verb = str(op.get("op") or "")
     if (target := store.find(loop.reminders, rid)) is not None:
@@ -427,10 +349,8 @@ def _apply_op(loop, op: dict, poll_s: float) -> str:
         return (f"{rid} is a {target.scope} reminder and a {verb} cannot move it — to promote a "
                 "proven local reminder, `add` it with scope global (its evidence is per-routine "
                 "and starts fresh there), then delete the local one")
-    # The write gate asked the dial about the scope the op NAMED, and a revise or delete need
-    # not name one (it defaults to local) — while the store it writes is the TARGET's. Without
-    # asking again here, a routine at `local` could rewrite or remove a curated reminder in
-    # the library every routine reads, which is the curator's setting alone.
+    # Ask the dial again about the TARGET's scope: the write gate asked about the op's (default
+    # local), so a `local` routine could otherwise rewrite a curated reminder.
     if (grants := loop.ctx.grants) is not None and (
             denial := grants.reminder_denial(target.scope)):
         return f"{rid} is a {target.scope} reminder, so nothing was {verb}d — {denial}"
@@ -455,16 +375,11 @@ def _apply_op(loop, op: dict, poll_s: float) -> str:
 
 
 def _set_for_other(loop, op: dict, target: str) -> str:
-    """Set a hook in ANOTHER routine's store (D152-C step 2) — the note the run reads back.
+    """Set a hook in ANOTHER routine's store — the note the run reads back.
 
-    The authority a `report` has, with the target's say added: the hook lands in the target's own
-    local store, its runs meet it from the next one on, and the TARGET disposes of it on a fire
-    (`reminders.dispose`). The sender does not hold it, so it is not added to this run's live set
-    and never fires here — a caution about someone else's actions could not fire here anyway.
-
-    Every refusal is the target's: its cap, a pattern it already holds, or one it removed before.
-    They come back as the note rather than as an exception, because a refused hook is not a
-    failed turn — the run reads why and carries on.
+    It lands in the target's local store and the TARGET disposes of it on a fire; it never
+    joins this run's live set. A refusal (the target's cap, a held or removed pattern) comes
+    back as the note, not an exception — a refused hook is not a failed turn.
     """
     ctx = loop.ctx
     if ctx.depth > 0:
@@ -494,18 +409,13 @@ def _add(loop, op: dict, scope: str, poll_s: float) -> str:
     if scope == "local" and len(local) >= store.MAX_LOCAL:
         return (f"this routine already holds {store.MAX_LOCAL} local reminders, the cap — "
                 "delete one that its tally shows is not earning its turns before adding another")
-    # The store this reminder joins, as (id, pattern) pairs. For the curated store that is every
-    # record in the library, not only the ones that reach THIS routine: a `listed` reminder it
-    # does not list still owns its id and its pattern there — and an id picked against the live
-    # set alone could be that one's, which `write_global` then overwrote.
+    # The store this reminder joins as (id, pattern) pairs — for global, EVERY library record,
+    # so a new id cannot collide with a `listed` row this routine does not hold.
     joined = ([(rec["id"], rec["regex"]) for rec in store.records(ctx.server.reminders_home)]
               if scope == "global" else [(r.id, r.regex) for r in local])
-    # Scoped to the SAME store on purpose: a local reminder shadowing a global one is the
-    # union's designed precedence, and PROMOTION is that overlap for one turn — checking across
-    # both stores made the engine's own promotion instructions impossible to follow.
     kind = store.read_kind(op.get("kind"))
-    # the duplicate test is per (pattern, KIND) — the same pattern on a different trigger is a
-    # different consequence class — and stays over the SAME store's live set (`joined`).
+    # Duplicates are per (pattern, KIND) within the SAME store: a local shadowing a global is
+    # designed precedence, and promotion needs that overlap for one turn.
     if any(r.regex == op.get("regex") and r.kind == kind and r.scope == scope
            for r in loop.reminders):
         return (f"a {scope} {kind} reminder with that exact pattern is already live — revise it "
@@ -527,17 +437,10 @@ def _add(loop, op: dict, scope: str, poll_s: float) -> str:
 
 
 def _approve_global(loop, verb: str, target: Reminder, op: dict, poll_s: float) -> str:
-    """The blast-radius gate: a global reminder taxes EVERY capable routine at its next run,
-    silently, so the user approves the write unless the dial says otherwise. Returns "" when
-    the write may proceed, or the note explaining why it did not.
-
-    `creations` splits the ladder where the blast radius does: a NEW global reminder starts
-    holding actions in routines that never asked for it; revising or deleting one only changes
-    something the user already approved.
-
-    An ASK-BACK on the approval comes back as the note itself: the operator's words, and the
-    instruction to carry the same op again — the decision's subject is the reminder id the
-    question names, so that re-submission replaces the open record.
+    """The blast-radius gate: a global reminder taxes every capable routine, so the user approves
+    the write unless the dial says otherwise (an `add` and a revise/delete are dialled apart).
+    Returns "" when the write may proceed, else the note why not — an ASK-BACK returns the
+    operator's words and asks for the same op again.
     """
     from .askback import still_pending
     from .interact import handle_ask, is_approval
@@ -563,11 +466,9 @@ def _approve_global(loop, verb: str, target: Reminder, op: dict, poll_s: float) 
         "default": "the global reminder store is NOT changed"}, poll_s,
         qtype="reminder-approval", subject=target.id)
     if ask.get("dialog"):
-        # Nothing was applied, so carrying the same op again is the re-submission the operator
-        # is owed — never a replay the finish path may skip (`apply_ops`).
+        # nothing applied: the re-sent op is not a skippable replay, and a finish carrying it
+        # must not END over the operator's question (`finishgate.check_finish`)
         loop.reminder_replayed.discard(replay_key("remind", op))
-        # …and a finish that carried it must not END over the operator's question: the note
-        # rides an observation, and a finish that stands has none (`finishgate.check_finish`)
         loop.reminder_asked_back = True
         return f"{verb} of global reminder {target.id}: " + dialog_reply(
             still_pending(ask), "approval", "carry the same `remind` op again (as it was, or "
@@ -588,11 +489,7 @@ def _replace(loop, target: Reminder, **changes) -> None:
     loop.reminders = [updated if r.id == target.id else r for r in loop.reminders]
 
 
-#: The write path lives in `remind_write` — `persist` (which store a definition goes to, plus
-#: the hook mirror), `remove` (the same act in reverse: the live set, the store, and the hook row
-#: recording the deletion), `save_local` (the definitions-from-memory / tallies-from-disk
-#: rewrite) and `commit` (the library write). Aliased under the names this module's ops already
-#: call, so the extraction moved code and nothing else.
+#: The write path lives in `remind_write`, aliased under the names this module's ops call.
 _persist = remind_write.persist
 _remove = remind_write.remove
 _save_local = remind_write.save_local

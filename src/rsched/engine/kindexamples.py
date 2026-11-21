@@ -1,23 +1,17 @@
 """One minimal VALID action per kind — what a weak model is SHOWN when its reply fails.
 
-Moved out of `engine/actions.py` whole (that file is at its size ceiling and the contract it
-holds kept growing). Pure data with no imports: the table a reader wants to scan is not the
-checker they want to read, and the checker is what changes.
-
-Weak models merge payload keys into the action object — file bodies, finish fields at top level
-— and an abstract error alone often does not correct them. A concrete shape does, which is why
-`completion` quotes the example for the kind the model was reaching for.
+Pure data with no imports, kept apart from the checker in `engine/actions.py`. Weak models merge
+payload keys into the action object — file bodies, finish fields at top level — and an abstract
+error alone often does not correct them. A concrete shape does, which is why `completion` quotes
+the example for the kind the model was reaching for.
 """
 
 from __future__ import annotations
 
-# kind → a minimal VALID action, shown when a reply fails validation (engine/kindexamples.py):
-# models merge payload keys into the action object (file bodies, finish fields at top
-# level); an abstract error alone often doesn't correct them — a concrete shape does.
+# kind → a minimal VALID action, shown when a reply fails validation (see module docstring).
 KIND_EXAMPLES: dict[str, dict] = {
     "util": {"say": "<why this util now>", "kind": "util", "name": "list"},
-    # D290: the two SPELLINGS of a util call (engine/kindaliases.py). Each example shows the
-    # one thing the measurement found callers getting wrong — the payload goes in `args`.
+    # the two SPELLINGS of a util call (engine/kindaliases.py): the payload goes in `args`.
     "websearch": {"say": "<what you need to find out>", "kind": "websearch",
                   "args": ["<your 3 most distinctive terms>"]},
     "code_search": {"say": "<what you are looking for in the tree>", "kind": "code_search",

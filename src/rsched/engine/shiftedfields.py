@@ -1,17 +1,14 @@
 """What a REJECTED action was, when the schema's own problem lines cannot say.
 
-Split out of `engine/actions.py` (D185 step 1), which sits at its size ceiling: one subject —
-reading a malformed action for what it really is — in one file. Two readers of one signature:
+Two readers of one signature:
 
-* `util_rejection_outcome` attributes a rejected util call for per-util telemetry (F546), and
-  refuses to attribute one whose `name` could not be a util name at all, because `count_util`
-  would write that string into the durable usage stream and the Stats tab would carry it as a
-  permanent phantom util.
+* `util_rejection_outcome` attributes a rejected util call for per-util telemetry, and refuses
+  one whose `name` could not be a util name at all — it would become a permanent phantom util
+  in the durable usage stream and on the Stats tab.
 * `field_shift_diagnosis` names the whole-object FIELD SHIFT (D146-C) that the validator's
   per-field problem lines describe only as a symptom.
 
-They share `could_be_util` deliberately: the guard and the diagnosis must not drift, or the
-engine would count a value it refuses to explain, or explain one it still counts.
+They share `could_be_util` deliberately, so the guard and the diagnosis cannot drift.
 """
 
 from __future__ import annotations
@@ -26,31 +23,26 @@ from .actionschema import ACTION_SCHEMA, KINDS, PSEUDO_UTILS
 def _catalog_home(loop) -> Path | None:
     """The library home whose `utils/` is this instance's REAL util catalog, or None.
 
-    Best-effort by construction: this runs inside a schema REJECTION, the one path that must
-    never raise, and the loop is optional so every caller that has no live run (the tests, a
-    diagnosis composed off-engine) still gets the heuristic below it.
+    Best-effort: this runs inside a schema REJECTION, which must never raise, and the loop is
+    optional, so a caller with no live run still gets the heuristic.
     """
     try:
         return Path(loop.ctx.server.libraries_home)
     except Exception:
         return None
 
-#: How much of a field's own contract description the correction quotes. Same bound and same
-#: reason as `schemamemo.HELP_CHARS`: a correction that pastes a paragraph buries the one line
-#: it exists to explain. Both read `ACTION_SCHEMA` at CALL time, so neither can drift from the
-#: contract — that, not a shared constant, is what keeps the two corrections honest.
+#: How much of a field's own contract description the correction quotes (as
+#: `schemamemo.HELP_CHARS`): a pasted paragraph buries the one line it exists to explain.
 UNKIND_HELP_CHARS = 200
 
-#: A name that could BE a util: the library's kebab-case rule, narrowed by the one thing
-#: `ids.is_slug` does not require — at least one LETTER. Every util in the catalog satisfies
-#: it; a bare timeout number, a path, a quoted JSON fragment and a paragraph of prose do not.
+#: A name that could BE a util: kebab-case with at least one LETTER (which `ids.is_slug` does
+#: not require). A bare timeout number, a path or a paragraph of prose does not match.
 _NAMEABLE_UTIL_RE = re.compile(r"^(?=[a-z0-9-]*[a-z])[a-z0-9][a-z0-9-]*$")
 
 
 def could_be_util(name: str) -> bool:
-    """Could `name` name a util at all? The F546 test every per-util telemetry tick passes —
-    a value that cannot is a field shift, and attributing it invents a permanent phantom row
-    on the Stats tab — and the signature `field_shift_diagnosis` names.
+    """Could `name` name a util at all? A value that cannot is a field shift: never counted
+    in per-util telemetry, and named by `field_shift_diagnosis`.
     """
     return bool(_NAMEABLE_UTIL_RE.match(name))
 
@@ -60,29 +52,16 @@ def util_rejection_outcome(obj: dict, allowed_kinds: set[str] | None = None,
     """Classify a REJECTED util action for per-util telemetry (RunContext.count_util):
     returns (util name, "denied" | "rejected") or None when the rejection is not
     attributable to a util. "denied" = a permission refusal (a reserved util switched
-    off, the util kind excluded by the workflow's tools:) — Mark's "permission problem";
-    "rejected" = a malformed call (schema/field problems). A denial never reaches the
-    executor — it is corrected inside the schema-retry cycle and never becomes a turn —
-    so it MUST be counted here at the validation seam or it would never be counted at
-    all. The catalog pseudo-utils (PSEUDO_UTILS) are discovery, not execution: skipped.
+    off, the util kind excluded by the workflow's tools:); "rejected" = a malformed call.
+    A denial never reaches the executor, so it MUST be counted here at the validation
+    seam. The catalog pseudo-utils (PSEUDO_UTILS) are discovery, not execution: skipped.
     """
     name = str(obj.get("name") or "").strip()
     if obj.get("kind") != "util" or not name or name in PSEUDO_UTILS:
         return None
-    # …and the name must be able to BE a util. A malformed action is by definition one whose
-    # fields cannot be trusted, and the commonest malformation is a FIELD SHIFT — values
-    # sliding into the wrong keys, so `name` holds prose, a timeout number or a path. That
-    # string is not merely wrong here: count_util writes it to status.json, the DURABLE
-    # workflow-usage stream carries it, and readmodels/util_stats builds its rows from
-    # `set(catalog) | set(merged)` — so it becomes a permanent phantom util on the Stats tab
-    # (~25 by 2026-09-24, incl. a paragraph of prose and a bare `300`; the specimen is
-    # weightloss:20260923-220004, served by a fallback model after a 503 and a 402).
-    #
-    # The test is the util NAMING rule, not the slug rule: `ids.is_slug` admits `300` and
-    # `c-20260821-060305` (digits and run ids are legal slugs), and the policy carries no
-    # catalog of util names (write_util's create-vs-revise split asks the library per call),
-    # so neither separates a name from a shifted value. What every real util name has and no
-    # shifted value did: kebab-case with a LETTER in it. Unattributable IS what None means.
+    # …and the name must be able to BE a util: a FIELD SHIFT puts prose, a timeout number or
+    # a path in `name`, and counting it would write a permanent phantom util into the durable
+    # usage stream. The util NAMING rule, not the slug rule (`ids.is_slug` admits `300`).
     if not could_be_util(name):
         return None
     denied = ((allowed_kinds is not None and "util" not in allowed_kinds)
@@ -95,17 +74,11 @@ def field_shift_diagnosis(obj: dict) -> str:
 
     A field shift is a degraded model's characteristic failure — values sliding one key over —
     and most of a shifted action stays schema-VALID, so the validator reports whichever field
-    happened to carry a constraint. weightloss:20260923-220004 was told
-    `timeout_s: 0 is less than the minimum of 1` eight times while the actual candidates were
-    `kind='util'` with `name='300'`, `name='180'` and a whole sentence of prose in `name`. The
-    correction described the symptom; the fault went unnamed, and the run concluded the failure
-    was its own inability to hold the schema.
+    happened to carry a constraint: the symptom, not the fault.
 
-    The detectable signature is the same one F546's telemetry guard uses — `could_be_util`,
-    the util naming rule — so the two cannot drift: a `kind: "util"` whose `name` could not be
-    a util name at all is not a wrong util, it is a misplaced value. Returns "" when there is
-    nothing specific to say, because a diagnosis that fires on ordinary mistakes would teach
-    the model to ignore it.
+    The signature is `could_be_util`, shared with the telemetry guard: a `kind: "util"` whose
+    `name` could not be a util name is a misplaced value. Returns "" when there is nothing
+    specific to say — a diagnosis that fires on ordinary mistakes teaches the model to ignore it.
     """
     if str(obj.get("kind") or "") != "util":
         return ""
@@ -125,36 +98,21 @@ def field_shift_diagnosis(obj: dict) -> str:
 def unkind_diagnosis(obj: dict, loop=None) -> str:
     """What a `kind` that is NOT a kind really was — "" when nothing specific can be said.
 
-    `kind` is the one field whose rejection the enum cannot answer: the validator lists all 34
-    current kinds and the thing the run actually wanted is not among them, so the correction
-    has to name the OTHER place that word belongs. `renamedkinds.hint` already does this for a
-    kind that was renamed; these are the two kinds that never existed, measured on 2026-11-07
-    in one evening, one turn each:
+    `kind` is the one field whose rejection the enum cannot answer, so the correction names
+    the OTHER place that word belongs (`renamedkinds.hint` covers a renamed kind):
 
-    * a FIELD used as a kind — `tv-show-tracker-seedbox-manager:20261107-170000` turn 27 sent
-      `kind: "note"`. `note` rides any action and costs no turn, so the correction is that the
-      intent was a rider, not an action.
-    * a UTIL used as a kind — `deficit-coach:20261107-230003` turn 10 sent
-      `kind: "code-search"`. The shape is `kind="util", name="<util>"`.
+    * a FIELD used as a kind (`kind: "note"`) — the intent was a rider, not an action.
+    * a UTIL used as a kind (`kind: "code-search"`) — the shape is `kind="util", name=…`.
 
-    The util branch asks the INSTANCE'S OWN CATALOG first (`utils_lib.exists`, one stat call),
-    and only falls back to the vocabulary property its test still asserts — NO action kind
-    contains a hyphen — for a name no util carries. The hyphen alone was never enough: 34 of
-    this instance's 57 utils have no hyphen in their name, and `websearch` sent as a kind was
-    the single most frequent instance of this rejection (8 of 14 over 23 days, across 5
-    routines) while being the one shape the heuristic could not see. A live catalog read is
-    also the only branch that can say IS rather than LOOKS LIKE.
-    The field branch reads `ACTION_SCHEMA` at call time, so a field renamed
-    in the contract cannot leave this pointing at one that is gone — and a word that is both a
-    real kind and a field name (`delete`) is never diagnosed, because the first test here is
-    that the kind is unknown. Returns "" for anything else: a diagnosis that fires on ordinary
-    mistakes teaches the model to ignore it (`field_shift_diagnosis` says the same).
+    The util branch asks the INSTANCE'S OWN CATALOG first (`utils_lib.exists`), and only falls
+    back to the hyphen rule — NO action kind contains a hyphen — for a name no util carries;
+    many utils have no hyphen. The field branch reads `ACTION_SCHEMA` at call time, and a word
+    that is both a real kind and a field name (`delete`) is never diagnosed. Returns "" for
+    anything else.
 
-    WHY THE THREE DIAGNOSES CANNOT OVERLAP, which is what lets `completion.diagnose` compose
-    them in reading order rather than choosing between them: a renamed kind is in
-    `renamedkinds.RENAMED` (so it IS a known word with a replacement), an unkind is by its first
-    test NOT in `KINDS`, and a field shift requires `kind == "util"` — a valid kind. At most one
-    of the three can have anything to say about any one object.
+    The three diagnoses cannot overlap, so `completion.diagnose` composes them in reading
+    order: a renamed kind is in `renamedkinds.RENAMED`, an unkind is NOT in `KINDS`, and a
+    field shift requires `kind == "util"`.
     """
     kind = str(obj.get("kind") or "").strip()
     if not kind or kind in KINDS:

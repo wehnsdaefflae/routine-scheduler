@@ -1,23 +1,15 @@
 """The per-kind PROMPT surface: which action kinds a run may actually use, and the
 projection of ACTION_SCHEMA onto them.
 
-`actions.py` stays the single source of truth for what a turn may do — this module only
-NARROWS what the model is shown to what the engine would accept anyway. A run whose
-workflow `tools:` allowlist and capabilities permit 8 of the 35 kinds was previously sent
-all 35 in the schema (8k chars, ~36% of the fixed prompt) plus a prose bullet each: the
-model read, every turn, the full description of channels the validator would reject. The
-projection is derived from `actions.KIND_FIELDS` — the same map `validate_action` builds
-its allowed-field set from — so the shown schema and the enforced contract cannot drift.
+`actions.py` stays the source of truth; this module only NARROWS what the model is shown to
+what the engine would accept anyway (a run permitted 8 of the 35 kinds was once sent
+all 35 in the schema). Derived from `actions.KIND_FIELDS` — the map `validate_action` uses — so
+the shown schema and the enforced contract cannot drift.
 
-Two consumers, one derivation: the composed prompt (composer.build_system_prompt) and the
-endpoint's constrained-decoding schema (completion.next_action). Sending the narrowed
-schema to the transport also makes a disallowed kind UNGENERATABLE rather than generated
-and then rejected — a saved turn, not just saved tokens. Validation keeps the FULL schema
-(control.run_user_command, the retry cycle): rejecting a well-formed action the run wasn't
-allowed to take must stay a precise, teaching denial, not a schema parse error.
-
-The BULLETS the same projection selects are `engine/kindprose.py` — one responsibility each,
-split when `do_nothing` (D186) needed room in a file sitting at its size-ratchet ceiling.
+Two consumers: the composed prompt and the constrained-decoding schema
+(completion.next_action), where a disallowed kind becomes UNGENERATABLE. Validation keeps the
+FULL schema, so a disallowed action gets a teaching denial, not a parse error. The matching
+prose bullets are `engine/kindprose.py`.
 """
 
 from __future__ import annotations
@@ -31,9 +23,8 @@ from .kindaliases import ALIAS_KINDS
 
 # Fields every kind carries (actions.validate_action allows `note` on any kind, like `say`).
 _UNIVERSAL_FIELDS = ("say", "note", "kind", "role_swap")
-# …and the two that ride every kind only while the reminders capability is on. They are
-# projected like a KIND rather than described-then-refused: a run whose capability is off
-# cannot generate them at all (kindsurface's whole premise).
+# …and the two that ride every kind only while the reminders capability is on (projected out,
+# not described-then-refused).
 _REMINDER_FIELDS = ("remind", "remind_feedback")
 
 _CLAUSE_SEP = " · "
@@ -43,9 +34,7 @@ def effective_kinds(allowed_kinds: set[str] | None = None, grants=None) -> list[
     """The kinds this run may actually emit: workflow `tools:` ∩ (base ∪ capabilities),
     plus ALWAYS_KINDS. In KINDS order, so every surface lists them the same way.
 
-    The one owner of this computation — capabilities.py, the composer's prose bullets and
-    the schema projection all read it here, so the CAPABILITIES section can never advertise
-    a kind the schema omits (or vice versa).
+    The one owner: CAPABILITIES, the prose bullets and the schema all read it here.
     """
     return [k for k in KINDS
             if (allowed_kinds is None or _permitted(k) & (allowed_kinds | set(ALWAYS_KINDS)))
@@ -55,11 +44,8 @@ def effective_kinds(allowed_kinds: set[str] | None = None, grants=None) -> list[
 def _permitted(kind: str) -> set[str]:
     """The allowlist entries that make `kind` available — itself, or what it is a SPELLING of.
 
-    D290's alias kinds (`websearch`, `code_search`) are rewritten into a util call before any
-    gate, so what a workflow must permit is `util`: a separate entry per alias would mean
-    editing 31 routines' `tools:` to keep exactly the capability they already have. The reverse
-    direction is the one that must not fail open, and it does not — a run that may not call a
-    util cannot reach one under another spelling either, because the set below is {"util"}.
+    D290's alias kinds are rewritten into a util call before any gate, so permitting `util`
+    permits them; it never fails open — without `util` no alias is reachable.
     """
     return {kind, "util"} if kind in ALIAS_KINDS else {kind}
 
@@ -67,10 +53,8 @@ def _permitted(kind: str) -> set[str]:
 def _clause_kinds(clause: str) -> set[str]:
     """The action kinds a description clause is about, from its `kind1/kind2: …` lead.
 
-    Tolerant by design: a lead may carry extra words ("write_util edit mode: …"), so each
-    slash-separated part contributes its FIRST token. An unrecognized lead yields the empty
-    set, which `_project_description` treats as "keep" — trimming never drops prose it did
-    not positively understand.
+    Each slash-separated part contributes its FIRST token; an unrecognized lead yields the
+    empty set, which means "keep" — trimming never drops prose it did not understand.
     """
     head, sep, _ = clause.partition(": ")
     if not sep:
@@ -83,8 +67,7 @@ def _project_description(description: str, kinds: set[str]) -> str:
     """Drop the ` · `-separated clauses that speak only to kinds this run cannot use."""
     clauses = description.split(_CLAUSE_SEP)
     kept = [c for c in clauses if not (found := _clause_kinds(c)) or (found & kinds)]
-    # All clauses were kind-specific and none matched: the property is being kept for a
-    # reason the lead didn't express — keep the text rather than ship an empty description.
+    # nothing matched: keep the text rather than ship an empty description
     return _CLAUSE_SEP.join(kept) if kept else description
 
 
@@ -92,12 +75,8 @@ def schema_for_kinds(kinds: list[str] | set[str] | None, *,
                      reminders: bool = False) -> dict:
     """ACTION_SCHEMA narrowed to `kinds`: the `kind` enum, the properties those kinds use
     (per `KIND_FIELDS`), and each surviving description trimmed to its relevant clauses.
-    `reminders` keeps the two consequence-reminder side fields, which are capability-gated
-    and therefore not universal the way `say`/`note` are.
-
-    `None` (or the full set) WITH reminders on returns the schema unchanged — a run with
-    everything enabled pays nothing for the machinery, and the prompt-caching contract sees
-    the same bytes.
+    `reminders` keeps the two capability-gated reminder side fields. The full set WITH
+    reminders returns ACTION_SCHEMA itself (same bytes for the prompt cache).
     """
     keep = (set(KINDS) if kinds is None
             else {k for k in kinds if k in KIND_FIELDS} | set(ALWAYS_KINDS))
@@ -113,11 +92,8 @@ def schema_for_kinds(kinds: list[str] | set[str] | None, *,
         # the run may call scripts at all (engine/thenscript.py)
         fields.discard(thenscript.FIELD)
     out = copy.deepcopy(ACTION_SCHEMA)
-    # filter the DEEPCOPY's specs, never the original's: taking them from ACTION_SCHEMA
-    # here handed the description-trimming loop below references into the shared global,
-    # so every projection permanently trimmed the full schema for the whole process
-    # (cross-run contamination in the daemon; surfaced by test_projection_is_materially_
-    # smaller going order-dependent).
+    # filter the DEEPCOPY's specs, never the original's: the trimming below would otherwise
+    # mutate the shared global for the whole process
     out["properties"] = {
         name: spec for name, spec in out["properties"].items() if name in fields
     }

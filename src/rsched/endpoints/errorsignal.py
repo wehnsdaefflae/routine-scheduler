@@ -1,41 +1,22 @@
 """What a failed call DECLARED about itself — the one structural reading of a provider error.
 
-R3108, increment two, decided by the operator on 2026-10-17: *"Good idea! I want you to replace
-the prose checks completely"*. Three places decided retry, failover and prompt-window policy by
-matching ENGLISH SENTENCES in a provider's error body — `endpoints/base.py`'s `transient_402`,
-`engine/overflow.py`'s `_OVERFLOW_HINTS`/`_NEVER_OVERFLOW_STATUS`, `engine/degrade.py`'s
-`_FAILOVER_REASONS`. All three now ask this module instead, and the phrase lists are gone.
+Retry, failover and prompt-window policy (`base.py`, `engine/overflow.py`, `engine/degrade.py`)
+all ask this module instead of matching English sentences in an error body (R3108).
 
-THE DISTINCTION THIS MODULE RESTS ON. A provider's `error.code` / `error.type` / `error.param` /
-`error.metadata.limit_source` are a DECLARED ENUM: the provider commits to the token, documents
-it, and does not reword it per locale or per release. Its `message` is prose for a human. Reading
-the enum is structural; reading the sentence is guessing, and the guess failed in both directions:
+A provider's `error.code` / `type` / `param` / `metadata.limit_source` are a DECLARED ENUM the
+provider commits to; its `message` is prose for a human. Reading the enum is structural; reading
+the sentence is guessing, and a phrase list is silently disarmed for any vendor whose wording
+nobody added.
 
-* 2026-09-21 — the Anthropic overflow shape matched none of the four openai-flavoured hints, so
-  `self-audit:20260921-000321` 400'd four times with its prompt growing 1,017,305 → 1,045,385
-  while the engine read every rejection as a broken provider and failed over. A phrase list is
-  disarmed for every vendor whose wording nobody has added yet, and a miss produces no failure —
-  only a wrong answer.
-* 2026-10-16 — conversation `c-20261016-075101` died twice in 30 s at `model_chain_exhausted …
-  after 0 rungs`, because a 402 whose body did not carry the one sentence the rule looked for was
-  read as fatal while the condition cleared itself.
+The tables carry what is KNOWN; the fallback under them is structural, not prose: a structured
+400/413 stating a token figure is an overflow whatever enum it names (`is_overflow`), and a
+class falls back to the HTTP status (`failover_class`). A new enum token is an improvement,
+never the difference between armed and disarmed.
 
-WHY THE ENUM TABLES ARE NOT THE OLD PROBLEM IN NEW CLOTHES. A phrase list had to carry every
-vendor's wording or the guard was off. These tables carry what is KNOWN, and the fallback under
-them is structural, not prose: a 400/413 that is structured and states a token figure with an
-exceeds relation is an overflow whatever enum it names (`is_overflow`), and a failure's class
-falls back to its HTTP status (`failover_class`). A vendor nobody has met is therefore covered by
-the shape of its answer, and a new enum token is an improvement, never the difference between
-armed and disarmed.
-
-WHAT IS STRUCTURAL ABOUT A BODY WITH NO JSON. Proxies in this instance's chain (CLIProxy /
-OpenRouter-style) sometimes relay an upstream failure as a bare body — the reason
-`endpoints/failure_hints.py` exists. Two readings survive that: the HTTP status, and a DECLARED
-ENUM TOKEN appearing bare in the text (`auth_unavailable` on a proxy 503). `_declared_token`
-accepts a snake_case token only when it is in one of the tables below — it matches the providers'
-own vocabulary, never an English sentence — and `structured` stays False so a caller can tell the
-difference. Where that leaves a decision genuinely undecidable, each site states which way it
-fails and why; `engine/errorclass.py` counts those rows.
+A body with NO JSON (a proxy relaying an upstream failure bare) keeps two structural readings:
+the HTTP status, and a known enum token appearing bare (`_declared_token`), with
+`structured=False` so a caller can tell. Each undecidable site states which way it fails;
+`engine/errorclass.py` counts those rows.
 """
 
 from __future__ import annotations
@@ -55,11 +36,9 @@ OVERFLOW_CODES = frozenset({
     "input_length_exceeded",
 })
 
-#: Declared enum tokens that are NEVER a context fault, however their message is worded. A rate
-#: limit, a credit balance and an auth failure all quote token counts, and reading one as an
-#: overflow is worse than missing an overflow: it pins the run's window to a number that was
-#: never a context size — a per-minute budget, a plan ceiling — for every remaining turn, while
-#: suppressing the failover the real fault needed.
+#: Declared enum tokens that are NEVER a context fault, however their message is worded. Reading
+#: one as an overflow is worse than missing one: it pins the run's window to a figure that was
+#: never a context size and suppresses the failover the real fault needed.
 RATE_LIMIT_CODES = frozenset({
     "rate_limit_exceeded", "rate_limit_error", "rate_limited", "insufficient_quota",
     "quota_exceeded", "usage_limit_reached", "tokens_per_minute_exceeded",
@@ -80,10 +59,8 @@ NEVER_OVERFLOW_STATUSES = frozenset({401, 402, 403, 429})
 #: …and the two a provider answers when the input itself was too big.
 OVERFLOW_STATUSES = frozenset({400, 413})
 
-#: What the ENGINE itself found, declared on the error at the raise instead of written into a
-#: sentence and read back out of it. `_FAILOVER_REASONS` matched the engine's own vocabulary
-#: ("refused the turn", "empty completion") in whatever prose arrived, so a provider quoting
-#: those words was filed as a classifier refusal.
+#: What the ENGINE itself found, declared on the error at the raise rather than written into a
+#: sentence (a provider quoting the same words must not be filed as a refusal).
 ENGINE_CLASSES = {"refusal": "refusal", "empty": "empty", "transport": "server"}
 
 _STATUS_RE = re.compile(r"HTTP\s+(\d{3})")
@@ -160,10 +137,8 @@ def _tokens_stated(text: str) -> tuple[int | None, int | None]:
 def from_body(status: int | None, text: str, *, engine: str = "") -> ErrorSignal:
     """The signal for a response, read from the WHOLE body at the raise.
 
-    This is where the structured data has to be taken: `base.py`'s `raise_for_status` renders only
-    `resp.text[:300]` into the message it raises, so a provider that puts its error object after
-    300 characters of prose reaches no decision point through the text at all (increment one's
-    `error_keys_in_excerpt` field was measuring exactly that loss).
+    It must be taken here: the raised message carries only `resp.text[:300]`, which can miss
+    an error object that comes after the prose.
     """
     body: Any = None
     opens = _JSON_RE.search(text or "")
@@ -184,8 +159,7 @@ def from_body(status: int | None, text: str, *, engine: str = "") -> ErrorSignal
 
 def from_text(text: str) -> ErrorSignal:
     """The signal recoverable from an error's rendered TEXT — the fallback for an EndpointError
-    that carries no signal (a hand-built one, or one from a path that predates this module).
-    Weaker than `from_body` by construction: the text may be a 300-character excerpt.
+    that carries no signal. Weaker than `from_body`: the text may be a 300-character excerpt.
     """
     found = _STATUS_RE.search(text or "")
     return from_body(int(found.group(1)) if found else None, text or "")
@@ -206,11 +180,9 @@ def is_overflow(signal: ErrorSignal) -> bool:
     1. an enum token that is never a context fault (a quota, a balance, a credential) → no;
     2. a status that is never a context fault → no;
     3. an enum token that names a context fault → yes, whatever the message says;
-    4. otherwise: a structured 400/413 that STATES a token figure → yes. This is the vendor
-       nobody has met yet, covered by the shape of its answer rather than by its wording.
-    An unstructured body stops at step 4 and is declined: the false positive pins the run's
-    window to a figure that was never a context size, which `overflow.py` records as the worse
-    of the two errors. `engine/errorclass.py` counts those declines.
+    4. otherwise: a structured 400/413 that STATES a token figure → yes (an unknown vendor,
+       covered by the shape of its answer).
+    An unstructured body is declined at step 4: a false positive is the worse error.
     """
     declared = signal.declared
     if any(t in NEVER_OVERFLOW_CODES for t in declared) or signal.limit_source:
@@ -224,10 +196,9 @@ def is_overflow(signal: ErrorSignal) -> bool:
 
 
 def overflow_decline_reason(signal: ErrorSignal) -> str:
-    """WHY a context-fault reading was declined, for the measurement increment one shipped:
-    `never_overflow_status` (a declared non-context fault — the guard working as designed),
-    `no_structured_error` (nothing declared anything — the operator's reportable path), or
-    `no_hint_match` (declared, but nothing in it says the input did not fit).
+    """WHY a context-fault reading was declined: `never_overflow_status` (a declared non-context
+    fault), `no_structured_error` (nothing declared anything), or `no_hint_match` (declared, but
+    nothing says the input did not fit).
     """
     if (any(t in NEVER_OVERFLOW_CODES for t in signal.declared) or signal.limit_source
             or signal.status in NEVER_OVERFLOW_STATUSES):
@@ -237,9 +208,7 @@ def overflow_decline_reason(signal: ErrorSignal) -> str:
 
 def failover_class(signal: ErrorSignal) -> str:
     """The failure's class for the health stream: `rate_limit`, `auth`, `refusal`, `empty`,
-    `server`, or `other` when nothing declared enough to say. The vocabulary is unchanged — only
-    the basis is. `other` stays an honest bucket: a guess that makes a new failure mode look like
-    a known one is what this replaces.
+    `server`, or `other` when nothing declared enough to say — an honest bucket, never a guess.
     """
     if signal.engine:
         return ENGINE_CLASSES.get(signal.engine, "other")
@@ -258,21 +227,15 @@ def failover_class(signal: ErrorSignal) -> str:
     return "other"
 
 
-#: Statuses that mean "the request never got a verdict", so sending it again can work: 408
-#: request timeout — a proxy answers it when its own upstream stream drops, and calling that
-#: fatal spent a MODEL SWITCH on a transient — 409 conflict, 429 rate limit. Every 5xx joins
-#: them in `retryable` (529 rides that branch). Moved here from `base.py` with R3108: which
-#: failures never got a verdict is the same classification question as the rest of this module,
-#: and that file is at the house size bar.
+#: Statuses that mean "the request never got a verdict", so sending it again can work: 408 (a
+#: proxy's dropped upstream stream — a transient, not worth a model switch), 409, 429. Every 5xx
+#: joins them in `retryable`.
 RETRYABLE_STATUSES = frozenset({408, 409, 429})
 
 
 def retry_after_seconds(headers: Any) -> float | None:
-    """The server's Retry-After hint in SECONDS, or None (F220). Honors the numeric-seconds form
-    (what OpenAI-compatible providers send on a 429, e.g. `Retry-After: 20`); an HTTP-date form is
-    ignored — rare here, and clock skew makes it unreliable — so the generic backoff applies
-    instead. A non-positive or unparseable value → None. Moved from `base.py` with R3108: it is
-    one more thing the failure STATED, and that file is at the house size bar.
+    """The server's Retry-After hint in SECONDS, or None. Only the numeric-seconds form is
+    honoured; an HTTP-date (rare, skew-prone) or a non-positive/unparseable value → None.
     """
     raw = headers.get("retry-after") if hasattr(headers, "get") else None
     if not raw:
@@ -293,14 +256,9 @@ def retryable(signal: ErrorSignal) -> bool:
 def retryable_402(signal: ErrorSignal) -> bool:
     """Whether a 402 never got a verdict, so sending it again can work.
 
-    A provider answers 402 for two conditions. Credit the account HAS, reserved against requests
-    already in the air, is declared by `error.metadata.limit_source` (OpenRouter) or by a declared
-    rate-limit token: waiting clears it. An account that cannot pay declares a billing token or
-    nothing but its own message, and waiting changes nothing.
-
-    With NOTHING structured the honest answer is retryable, and the asymmetry is measured: fatal
-    cost conversation `c-20261016-075101` two deaths in 30 s at 0 rungs while the condition
-    cleared itself, where retryable costs two backoff sleeps before it fails exactly as before.
+    Credit reserved against in-flight requests (declared by `limit_source` or a rate-limit
+    token) clears by waiting; a billing token means the account cannot pay. With NOTHING
+    structured, retryable: a wrong retry costs two backoff sleeps, a wrong fatal kills the run.
     """
     if signal.status != 402:
         return False

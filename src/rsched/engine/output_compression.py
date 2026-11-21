@@ -1,14 +1,12 @@
 """One-shot LOSSLESS compression of command stdout; never a conversation transform.
 
-Plain engine behaviour, not a setting: an encoding is used only when its exact inverse gives back
-the captured output and the result is smaller, so there is nothing to decide per routine — the
-evidence that retired the per-routine switch was a fleet that never changed it.
+Plain engine behaviour, not a setting: an encoding is used only when it is smaller and its exact
+inverse gives back the captured output, so there is nothing to decide per routine.
 
-LOSSLESS encodings only (`engine/lossless.py`), each kept only when its exact inverse gives
-back the captured output — byte for byte for text, value for value for JSON — so nothing a
-run could need is ever dropped: grep-shaped hits grouped under their file, path listings
-grouped under their folder, JSON minified with uniform arrays written as tables. Anything
-else keeps the existing capped head plus its spill pointer. Stdlib only, no dependency.
+LOSSLESS encodings only (`engine/lossless.py`) — byte for byte for text, value for value for
+JSON: grep-shaped hits grouped under their file, path listings under their folder, JSON minified
+with uniform arrays as tables. Anything else keeps the capped head plus its spill pointer.
+Stdlib only.
 An applied encoding's original is saved first, under the run's own `runs/<ts>/outputs/`; the
 transcript keeps the preview the model read, so a replay re-reads it and never compresses.
 """
@@ -76,13 +74,10 @@ def _compress(text: str) -> tuple[str, str] | None:
 def command_output(ctx: RunContext, name: str, out: str, err: str, code: int) -> dict:
     """Build the existing capped output, then replace only eligible stdout.
 
-    Compression is used only if its complete preview,
-    label and recovery pointer beat the existing capped observation. Originals belong to
-    this run's retention, not the five-run spill cache, so another run cannot prune them.
-
-    Every outcome is tallied on the run here, at the ONE seam that produces it: the
-    per-observation metadata is the evidence for a single call, the tally is what the
-    durable usage record carries to the Stats tab's per-routine roll-up.
+    Compression is used only if its complete preview, label and recovery pointer beat the
+    capped observation. Originals belong to this run's retention, not the five-run spill cache.
+    Every outcome is tallied on the run here, at the ONE seam that produces it, for the usage
+    record's per-routine roll-up.
     """
     obs = _observation(ctx, name, out, err, code)
     if isinstance(obs.get("compression"), dict):

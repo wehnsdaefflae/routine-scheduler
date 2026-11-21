@@ -4,72 +4,35 @@ Schema enforcement via tool use: one tool named "action" whose input_schema is t
 schema, offered on plain `auto` (`_AUTO`), so a reply may chain CALLS. Without one it is a plain
 messages call.
 
-**Why not forced.** A forced `tool_choice` makes a configured EFFORT meaningless: the Messages
-API allows thinking only on `auto`, so CLIProxyAPI — the subscription proxy every `anthropic`
-endpoint here runs through — strips `thinking` and `output_config.effort` from every forced call,
-and the newest Claude models on the direct API refuse forcing outright. Measured through the
-proxy on 2026-10-08: forced, Opus 5 at effort `low` and `max` answered with 467 and 551 output
-tokens and no thinking block — the setting reached nothing; on `auto` the same calls thought and
-answered with the action under its own name, on Opus 5, Sonnet 5 and Fable 5, on a first turn and
-a third, with the composer's real 33k-character system prompt and the full action schema.
-0.370.2–0.372.2 forced the tool for every call, so for a week every "Opus high" or "Sonnet max"
-in the catalog ran at the proxy's default.
-
-**Why it stays safe.** 0.372.0 had offered `auto` once before and Opus then answered `stop_reason:
-tool_use` with nothing the adapter could read; that shape was never reproduced, but it cannot cost
-a run again: an `auto` reply no action can be read from is RE-ASKED once, forced
-(`_reask_forced`), inside the same call — that one turn runs at the proxy's default, the
-completion says so in `stop_details["forced_reask"]` (with what the unread reply carried), its
-usage is the sum of both requests, and a warning is logged. An endpoint whose models were
-validated on the forced route (the Codex models the proxy serves on this wire) keeps it with
+**Why not forced.** The Messages API allows thinking only on `auto`, so a forced `tool_choice`
+makes a configured EFFORT meaningless (the subscription proxy strips it), and the newest Claude
+models refuse forcing outright. An `auto` reply no action can be read from is RE-ASKED once,
+forced (`_reask_forced`), inside the same call; the completion marks it in
+`stop_details["forced_reask"]`. An endpoint validated on the forced route keeps it with
 `tool_choice: forced` on its config.
 
 Every optional field a model may refuse — the forced `tool_choice`, `output_config` (effort),
 `temperature`, the `cache_control` markers — rides the body, and a 400 that NAMES one degrades
-it for a retry (`_degrade`). This adapter's KIND is a WIRE, not a provider: a subscription
-proxy speaks it while serving `gpt-*` ids, Haiku 4.5 still honours temperature, and the newest
-Claude models on the direct API (Fable 5.1, Opus 5.5, Sonnet 5.5) refuse forced tool use — on
-those the tool is still offered, on plain `auto` (`_AUTO`), which lets a reply carry SEVERAL
-calls: they are READ in reply order — text blocks then the calls, `parsed` + `parsed_rest`
-(F754) — and `engine/chain.py` runs them in that order, stopping at the first failure, which is
-the chaining the operator ordered; and the engine reads a text reply too. So no
-field is sent blindly or dropped blindly: the model that rejects one says so, and pays a round
-trip per refused field.
+it for a retry (`_degrade`). This adapter's KIND is a WIRE, not a provider. On `auto` a reply may
+carry SEVERAL calls: they are READ in reply order (`parsed` + `parsed_rest`) and
+`engine/chain.py` runs them in that order.
 
-**Past actions are sent as CALLS** (`anthropic_messages.native_turns`, 0.407.0). On `auto`, a
-thinking Opus 5 that reads its own history as JSON text writes its next action as text too —
-which ends nothing — thinks on as though it had run, and makes the call for the one after: two
-actions in one reply, the second narrating the first as done. A schema'd call on `auto` therefore
-renders each past action as a `tool_use` of the action tool and the message after it as that
-call's `tool_result`, and a reply ends at its one call. `text`, `parsed` and `parsed_rest` all
-reach the engine, which runs a reply's actions in the order it wrote them (engine/replyactions.py
-for the order, engine/chain.py for the run) — the safety net under the rendering. Before 0.406.0
-the engine read only `parsed`: the first action vanished and the second, narrating it, ran — and
-a reply chaining as several CALLS lost all but the first the same way until F754.
+**Past actions are sent as CALLS** (`anthropic_messages.native_turns`): a model reading its own
+history as JSON text writes its next action as text too, which ends nothing. So each past action
+renders as a `tool_use` of the action tool and the message after it as that call's
+`tool_result`.
 
-A reply no action can be read from — no `action` call with an object input, and no text — says
-what it DID carry: `stop_details["unread"]` lists its content blocks (each type, a tool call's
-name and its input's type, never a value), and the engine's empty-completion error prints it.
-The regression above was diagnosed blind because that error said only that nothing came back.
+A reply no action can be read from says what it DID carry: `stop_details["unread"]` lists its
+content blocks (types and a call's input type, never a value).
 
-Prompt caching is on for CONVERSATIONS: cache_control breakpoints on the tools block and
-the system prompt (static per run) plus a moving breakpoint on the last message — each turn
-re-reads the whole prefix at ~0.1x price instead of full price. The engine's message list is
-append-only, which is exactly what prefix caching needs. A ONE-SHOT call (`cacheable=False`,
-derived from the task kind in instrument.CACHEABLE_KINDS) must not be written: its prefix is
-never sent again, so a write would cost 1.25x for a read that never comes. It does NOT do
-that by sending no marker — the subscription proxy places its own breakpoints on any request
-that carries none — but by sending ONE on the smallest prefix it has: the tool definition, else
-a 1,000-char leading slice of its first text (`anthropic_messages.claim_placement`). Cache
-traffic is reported as usage "cached_in" / "cache_write" (kept out of "in"); a billed figure
-the wire reports (an Otari gateway's `cost_usd`) as usage "cost". A 400 naming
-cache_control gets one degraded retry without the markers.
+Prompt caching: cache_control breakpoints on the tools block and the system prompt plus a moving
+breakpoint on the last message. A ONE-SHOT call (`cacheable=False`) must not write a cache it
+will never read; since the proxy places its own breakpoints on a request carrying none, it sends
+ONE on its smallest prefix (`anthropic_messages.claim_placement`). Cache traffic is reported as
+usage "cached_in" / "cache_write" (kept out of "in"); a billed figure the wire reports as "cost".
 
-Multimodal: a message may carry a `media` list ([{path, media_type}]); this API takes
-images and PDFs natively, so those files become base64 image/document content blocks. Image
-blocks are cache-eligible like text, so a viewed image re-reads at cache-read weight too.
-Every message-level rendering — merging, media, native calls, cache markers — lives in
-`anthropic_messages.py`; this module is the transport.
+Multimodal: images and PDFs in a message's `media` list become base64 content blocks. Every
+message-level rendering lives in `anthropic_messages.py`; this module is the transport.
 """
 
 from __future__ import annotations
@@ -106,18 +69,13 @@ log = logging.getLogger("rsched.endpoints.anthropic")
 
 API_VERSION = "2023-06-01"
 
-#: What THIS WIRE carries, independent of any model (D192). The Messages API publishes image
-#: and document blocks and nothing for the two time-based modalities, so both are off here and
-#: a catalog model's own `audio`/`video` bit cannot turn them on over this transport.
+#: What THIS WIRE carries, independent of any model (D192): no audio or video blocks exist.
 WIRE_AUDIO = False
 WIRE_VIDEO = False
 
-#: Optional top-level fields and the words in a 400's body that name each. Current Claude
-#: models REMOVED the sampling parameters and the newest refuse a forced tool_choice; the 400
-#: is non-retryable, so without the degrade one filled Settings box — or the adapter's own
-#: forced tool — failed a model over on every turn of every run, while the same wire still
-#: serves models that accept the field. `cache_control` (nested) and `tool_choice` (replaced
-#: before it is dropped) are handled in `_degrade` itself.
+#: Optional top-level fields and the words in a 400's body that name each (the 400 is
+#: non-retryable, the same wire serves models that accept them). `cache_control` and
+#: `tool_choice` are handled in `_degrade` itself.
 _DROPPABLE = (
     ("output_config", ("effort", "output_config")),
     ("temperature", ("temperature",)),
@@ -127,11 +85,8 @@ _DROPPABLE = (
 #: one re-ask of an unreadable `auto` reply.
 _FORCED = {"type": "tool", "name": "action"}
 
-#: The tool_choice every schema'd call sends by default (the module docstring says why): the API
-#: default, which lets a reply carry SEVERAL calls. Until 0.550.0 it also sent
-#: `disable_parallel_tool_use: True`, written 2026-10-01 "so a reply cannot carry two actions" —
-#: three weeks before the operator ordered chaining (0.446.0) and F754 made a multi-call reply
-#: reach the engine whole, after which it only forbade at the wire what the engine runs.
+#: The tool_choice every schema'd call sends by default: the API default, which lets a reply
+#: carry SEVERAL calls (the engine chains them).
 _AUTO = {"type": "auto"}
 
 
@@ -209,10 +164,7 @@ class AnthropicEndpoint:
         """The Messages API takes images AND PDFs (document blocks) natively when the resolved
         model is multimodal.
 
-        It takes NEITHER audio nor video (D192): the Messages API publishes no content block
-        for either, so both are False here however the catalog model is configured — the same
-        split `pdf` has always had, with the two wires reversed. A run's audio file therefore
-        keeps its fallback on this endpoint and rides natively on an OpenAI-compatible one.
+        It takes NEITHER audio nor video (D192), however the catalog model is configured.
         """
         return supports_media_type(media_type, multimodal=multimodal, pdf=True,
                                    audio=audio and WIRE_AUDIO, video=video and WIRE_VIDEO)
@@ -248,9 +200,7 @@ class AnthropicEndpoint:
                                 "cache_control": {"type": "ephemeral"}}] if cacheable
                               else system)
         if effort:
-            # The role's effort maps to the Messages API `output_config.effort` knob
-            # (low/medium/high/xhigh/max — controls thinking depth and token spend).
-            # A model that rejects it gets a degraded retry below.
+            # the role's effort → `output_config.effort`; a refusal degrades below
             body["output_config"] = {"effort": effort}
         if schema is not None:
             tool: dict = {"name": "action",
@@ -267,10 +217,8 @@ class AnthropicEndpoint:
         sent = body
 
         def call() -> Completion:
-            # A 400 names ONE field and a model may refuse several (a current Claude model
-            # refuses a forced tool_choice AND a sampling parameter), so degrade until the
-            # 400 names nothing still sent. `sent` outlives the attempt: a retry after a
-            # transient failure resends what is left instead of re-earning every 400.
+            # A 400 names ONE field and a model may refuse several, so degrade until it names
+            # nothing still sent. `sent` outlives the attempt, so a retry keeps the degrades.
             nonlocal sent
             resp = self._post(sent, headers, timeout)
             while resp.status_code == 400 and (smaller := _degrade(sent, resp.text)) is not None:
@@ -286,11 +234,9 @@ class AnthropicEndpoint:
 
     def _reask_forced(self, sent: dict, headers: dict, timeout: int,
                       unread: Completion) -> Completion:
-        """An `auto` reply no action could be read from, asked ONCE more with the tool forced —
-        the shape 0.372.0 met through the proxy (module docstring). The forced answer runs at
-        the proxy's default effort, so it is marked, not passed off as the configured one; when
-        the re-ask fails or is unreadable too, the first reply is returned as it was and the
-        engine's empty-completion handling takes over, exactly as without the re-ask.
+        """An `auto` reply no action could be read from, asked ONCE more with the tool forced.
+        The forced answer runs at the proxy's default effort, so it is marked; when the re-ask
+        fails or is unreadable too, the first reply is returned as it was.
         """
         what = unread.stop_details["unread"]
         log.warning("%s: an auto reply carried no readable action (%s) — re-asking forced",
@@ -320,10 +266,8 @@ class AnthropicEndpoint:
         calls = [b.get("input") for b in blocks
                  if b.get("type") == "tool_use" and b.get("name") == "action"]
         texts = [b.get("text", "") for b in blocks if b.get("type") == "text"]
-        # Plain `auto` lets a reply carry several calls — the chaining the engine runs.
-        # Every readable one is kept — `parsed` the first, `parsed_rest` the rest, folded by
-        # `replyactions.reply_actions` after the text actions. Dropping the tail here (with a
-        # server-log warning no run reads) left the false-claim guard blind on this channel: F754.
+        # Every readable call is kept — `parsed` the first, `parsed_rest` the rest — never
+        # dropped, or the false-claim guard goes blind on this channel.
         objects = [c for c in calls if isinstance(c, dict)]
         parsed = objects[0] if calls and isinstance(calls[0], dict) else None
         rest = objects[1:] if parsed is not None else []
@@ -331,10 +275,8 @@ class AnthropicEndpoint:
             log.info("%s: a reply chained %d action calls despite the one-call choice — all of "
                      "them run, in wire order (F754)", self.name, len(objects))
         stop = str(data.get("stop_reason") or "")
-        # stop_details is populated by the API only on stop_reason "refusal" — a dict
-        # like {"type": "refusal", "category": "cyber"|…|null, "explanation": …} — and is
-        # null on every other stop; surfaced verbatim so the transcript can name WHY a
-        # classifier declined (R5). A refusal is an HTTP 200, so it reaches this parse.
+        # stop_details is populated only on a "refusal" (an HTTP 200); surfaced verbatim so
+        # the transcript can name WHY a classifier declined.
         raw = data.get("stop_details")
         details = raw if isinstance(raw, dict) else {}
         if parsed is None and not "".join(texts).strip() and stop != "refusal":

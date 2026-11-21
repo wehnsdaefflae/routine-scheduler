@@ -3,18 +3,15 @@
 The decision counterpart of `ChatEndpoint` (docs/decision-models.md). A decision model answers
 only what it was asked, over only the answers it was offered: a yes/no as P(yes), a choice as a
 distribution over the declared options, a score as a probability-weighted position on declared
-levels. There is no text to parse, so there is no empty reply, no refusal hiding in prose and no
-malformed JSON — the failure modes `engine/llmaction.py` spends most of its length on.
+levels. There is no text to parse, so no empty reply, prose refusal or malformed JSON.
 
 Two wire protocols, one adapter each, both normalised to the dataclasses below so nothing above
 this layer knows which one answered: `openai` (decisions_openai.py — OpenAI's Decisions API) and
-`systemone` (decisions_systemone.py — TypeSafe's Jev, direct, through OpenRouter or through an
-Otari gateway). Both carry images, and github.com/wehnsdaefflae/local-model-server serves both
-over a local vision model; whether a MODEL is sent images is its catalog `multimodal` flag.
+`systemone` (decisions_systemone.py — TypeSafe's Jev, direct or via a gateway). Whether a MODEL
+is sent images is its catalog `multimodal` flag.
 
 Transports, never a harness: one stateless request per call, no retries beyond the shared
-`with_retries`, and the call recorded through the same instrumentation seam every chat
-completion passes (so it shows in the LLM activity dock while it runs).
+`with_retries`, recorded through the same instrumentation seam as every chat completion.
 """
 
 from __future__ import annotations
@@ -35,9 +32,8 @@ ANSWER_TYPES = ("yes_no", "choice", "score")
 #: Where a protocol is served when `base_url` is blank — each vendor's own API root.
 DEFAULT_BASE_URLS = {"openai": "https://api.openai.com/v1",
                      "systemone": "https://api.typesafe.ai/v1"}
-#: Prefix announcing structured evidence as text, so no protocol's evidence field can read as a
-#: message list or be refused as a raw JSON document. BOTH protocols send it (see
-#: `evidence_text`): the refusal it works around is the gateway's, not one wire shape's.
+#: Prefix announcing structured evidence as text, so no evidence field is refused as a raw JSON
+#: document. BOTH protocols send it (see `evidence_text`).
 EVIDENCE_HEADER = "EVIDENCE (JSON):\n"
 
 
@@ -57,17 +53,9 @@ def _is_bare_json_document(text: str) -> bool:
 def evidence_text(evidence: str | dict | list) -> str:
     """Structured evidence as announced text — what every decision protocol sends.
 
-    Measured against `otari-decisions`, which serves ALL THREE of this instance's decision
-    models over the `systemone` protocol: a dict was refused with `HTTP 400 {"detail":"The
-    provider rejected the request as invalid"}` five times, while the byte-exact string this
-    function builds from that same dict was answered by all three (`gemini-decision` 0.068,
-    `jev` 0.050, `local-qwen-vl8b` 0.000). So the refusal is not about `input`'s string-or-list
-    ambiguity, which is why announcing only in the `openai` adapter (0.535.2) fixed nothing on
-    this instance — `systemone` put the object raw into `state` and every structured-evidence
-    call went on failing on the default model.
-
-    A caller's own string gets the same treatment when it is itself a bare JSON document — a run
-    that passes the text of a JSON file it read meets the identical refusal.
+    The gateway refuses a raw JSON object as evidence (HTTP 400) on every protocol but answers
+    the same content announced as text. A caller's own string that is itself a bare JSON
+    document gets the same treatment.
     """
     text = evidence if isinstance(evidence, str) else json.dumps(evidence, ensure_ascii=False,
                                                                  indent=1)
@@ -188,8 +176,7 @@ def default_decision_model(server, roles: dict | None, *, images: bool) -> str:
     that can CARRY the call wins: a text call asks the routine's `decision`, then the instance
     `decision_model`; a call with images asks the routine's `decision_media`, then its
     `decision` if that one takes images, then the instance `decision_media_model`, then
-    `decision_model`. A text-only choice is passed over for an image call rather than refused,
-    so a routine that picked Jev for its text still has its photos judged.
+    `decision_model`. A text-only choice is passed over for an image call rather than refused.
     """
     roles = roles or {}
     if not images:

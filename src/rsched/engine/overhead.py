@@ -1,41 +1,28 @@
 """How much of a run went to its TASK, and how much to its own PROCESS — counted, every run.
 
-The operator's standard (2026-11-06): a routine whose runs are mostly about bookkeeping — its
-own ledger, state, records, reconciliation — rather than its task is a CRITICAL failure, and it
-must never again happen unnoticed. A hand classification of ~10,500 turns that day found 12 of
-24 routines bookkeeping-dominated, and nothing on the instance had said so. This is the
-detector: a deterministic reading of the run's LANDED actions and the observations the
-transcript records for them, so it runs the same over a live run and over a kept transcript.
+A routine whose runs are mostly its own bookkeeping is a critical failure (P4). This is the
+detector: a deterministic reading of the run's LANDED actions and their observations, so it
+measures a live run and a kept transcript the same.
 
 Every landed action is one of three:
 
-- FRICTION — a turn the harness took: a HELD action (`hold.is_hold`), a deferred finish, an
-  action refused or failed in the engine (an `error` observation — an anchor miss, the memory
-  cap, a gate), a `script`/`util` that exited non-zero (a `shell`'s non-zero is grep saying "no
-  match", as engine/frictions.py rules), plus every schema-rejected reply and every chain
-  element reported NOT EXECUTED.
-- PROCESS — the run working on itself: `memory_*`, `read_rule`, `goal`, `job`, the finish; a
-  file action whose every target is a process artefact (its recipe — `main.md`, `stages/`, at
-  any depth so a job's recipe counts — its notebook, inbox, past runs, `.util_outputs/`, the
-  engine's own `state/` files, and anything NAMED as a record — a whole WORD of its name, so
-  `mail-log.jsonl` is one and a publisher called "journalhub" is not: ledger, backlog, journal,
-  worklog, changelog, tracker, `log`); the outcome script; a script or util whose every named
-  path is such an artefact, or whose PROGRAM is one (`bin/ledger.py add …`); and a `shell` —
-  the one-off action — over nothing but such artefacts and the routine's own `state/`, which is
-  the run hand-keeping its records field by field. Outside the own dir only a
-  ledger/backlog/journal/worklog counts: a project's CHANGELOG there is its product.
-- TASK — everything else. The CURRENT run's children's work — `runs/<its ts>/sub/…`, and a
-  hand-back in `artifacts/from-sub-…` — is its task's delegated product, whatever it is named.
-  Product data under `state/` is the task's when a file action or a script writes it; `report`
-  and `ask_user` are the task's too, because for some routines a report or a question IS the
-  product and nothing here can tell which.
+- FRICTION — a turn the harness took: a HELD action, a deferred finish, an `error`
+  observation, a `script`/`util` exiting non-zero (a `shell`'s non-zero may be grep's "no
+  match"), every schema-rejected reply and every chain element NOT EXECUTED.
+- PROCESS — the run working on itself: `memory_*`, `read_rule`, `goal`, `job`, the finish, the
+  outcome script; a file action whose every target is a process artefact (recipe at any depth,
+  notebook, inbox, past runs, `.util_outputs/`, the engine's `state/` files, anything NAMED as
+  a record by a whole word); a script/util whose every named path, or whose PROGRAM, is one;
+  and a `shell` over nothing but such artefacts and the own `state/` (hand-keeping records).
+  Outside the own dir only a ledger/backlog/journal/worklog counts.
+- TASK — everything else, including the current run's children's work (`runs/<ts>/sub/`,
+  `artifacts/from-…`), product data a file action or script writes under `state/`, and
+  `report`/`ask_user` (for some routines they ARE the product).
 
 `process_share` is (process + friction) / all — the share NOT spent on the task.
 
-**Calibration** (2026-11-06, against the hand classification of the same runs — the last ≤4
-runs since 2026-10-23 of each routine; median of the per-run shares, as the invariant reads it;
-re-measured 2026-11-19 over the same kept runs after word-matched record names and the run's
-children's work as task — two figures moved, by 0.002 and 0.003):
+**Calibration** against a hand classification of the same runs (median of per-run shares, as
+the invariant reads it):
 
     judged bookkeeping-dominated (hand task %)   median   |  judged healthy (hand task %)  median
     library-sync (25)                             0.583   |  voice-model-trainer (66)       0.263
@@ -51,35 +38,16 @@ children's work as task — two figures moved, by 0.002 and 0.003):
     tv-show-tracker-seedbox-manager (39)          0.277   |  doppelcheck 0.267, freelance 0.263,
     self-audit (45)                               0.206   |  grant-hunter 0.244, website 0.223
 
-The `library-sync (25) 0.583` row of that table measured a DEFECT THAT NO LONGER EXISTS: an
-unsatisfiable Done-when line made every clean run finish twice, and `routine-improver` fixed it
-at source (commit 0cd3baa). Its runs now land FOUR actions — two task utils, the outcome script
-and the finish — and read 0.5 for doing everything right, which is what `MIN_ACTIONS` is for.
-Read that row as the calibration of a routine that has since been repaired, not as a standing
-verdict on it.
+(library-sync's row predates a fix; its runs now land four actions — see `MIN_ACTIONS`.)
 
 `THRESHOLD` = 0.27, the midpoint of the gap between the highest healthy median (0.263) and the
-lowest flagged one (0.277): 11 of 12 flagged, 0 of 8 healthy. The miss is self-audit, whose
-bookkeeping is its item ledger (`audit/report.json`, named as nothing) maintained through its
-own scripts and 31 reports — both TASK by the rules above, which stay conservative rather than
-learn one routine's file names. That is a LIMIT, not a verdict: bookkeeping kept on a DOMAIN
-ledger — a store named for what it tracks rather than as a ledger, worked through the routine's
-own tooling, or reports filed as work — is outside what this classifier sees, and a routine doing
-only that reads healthy here. The complementary net is routine-improver's outcome review, which
-reads each routine's OUTCOME series (readmodels/outcome_series.py) before any health claim: a
-routine whose measures stay flat while its runs keep finishing `ok` is caught there, whatever
-its turns were spent on. Four rules were MEASURED and rejected: counting `report` /
-`ask_user` as process (one healthy routine over the bar — scheduler-improvement-research files
-reports as its product), counting every read of `state/` (deficit-coach's product reads tie the
-lowest flagged routine), not counting the finish (3 healthy routines over at any bar that flags
-the 12), and `changelog` outside the own dir (scheduler-improvement-research reads the
-scheduler's CHANGELOG as its input). A fifth is measured and HELD BACK (2026-11-19): reading
-the run's own spilled output (`.util_outputs/`) as the purpose of the call that produced it
-drops uncensored-model-radar to 0.268 and tv-show-tracker to 0.255, the highest healthy median
-— the flagged side of this table leans on those reads, so it waits for a fresh hand
-calibration rather than a moved bar. The two scales differ — the hand's bar is task < 50%, this
-one's is 27% — because the hand also judged ORIENT reads of product state and reports as
-bookkeeping, which a deterministic rule cannot.
+lowest flagged one (0.277): 11 of 12 flagged, 0 of 8 healthy. Never move it without re-running
+the calibration. The miss (self-audit) is a known LIMIT: bookkeeping on a DOMAIN-named store,
+through the routine's own tooling or as reports, reads as task here; the outcome series
+(readmodels/outcome_series.py) is the complementary net. Measured and rejected: counting
+`report`/`ask_user` as process, counting every `state/` read, not counting the finish, and
+`changelog` outside the own dir — each put a healthy routine over the bar. Treating
+`.util_outputs/` reads as the producing call's purpose is held back pending re-calibration.
 """
 
 from __future__ import annotations
@@ -103,17 +71,10 @@ THRESHOLD = 0.27
 WINDOW = 5
 MIN_RUNS = 3
 #: How many LANDED ACTIONS a run needs before its share is evidence of anything. Two actions of
-#: a correct run are process BY RULE in every routine — the outcome script and the finish — so
-#: the floor under `process_share` is 2/total, and the bar is unreachable from below only once
-#: total ≥ 8 (2/8 = 0.25 < 0.27 ≤ 2/7). Derived, not chosen: a smaller floor still flags a run
-#: that did everything right, a larger one stops judging real runs.
-#: MEASURED 2026-11-14 over all 797 measured depth-0 runs (`library-sync`'s R3390, via
-#: scheduler-builder's R3404): 756 land 16+ actions, 35 land 8-15, SIX land fewer. The two
-#: routines over the bar were `freelance-hunter` (41-55 actions, median 0.356 — a true reading)
-#: and `library-sync` (4-5 actions, median 0.500), the cheapest routine on the instance, whose
-#: four landed actions are two task utils, the outcome script and the finish. The alarm fired
-#: for it on 2026-11-13 while `syncs_pushed` went 58 → 83: the denominator shrank when
-#: `routine-improver` removed its real waste (commit 0cd3baa), so the metric penalised the fix.
+#: a correct run are process BY RULE (the outcome script and the finish), so the floor under
+#: `process_share` is 2/total, and the bar is unreachable from below only once total ≥ 8
+#: (2/8 = 0.25 < 0.27 ≤ 2/7). Derived, not chosen: smaller flags a correct short run, larger
+#: stops judging real runs.
 MIN_ACTIONS = 8
 
 #: Kinds that ARE the run working on its own process, whatever they name: its notebook, the
@@ -137,10 +98,9 @@ _PROCESS_DIRS = frozenset({"inbox", "questions", "runs", ".util_outputs"})
 #: Engine- and recipe-owned process files in a `state/` dir — everything else there is product.
 _PROCESS_STATE = frozenset({"phase.json", "plan.md", "notes.md", "obligations.json",
                             "finish-line.json", "jobs.json", "reminders.json"})
-#: Words that NAME a record of the process — matched as whole WORDS of a path component or a
-#: program name (`LEDGER.md`, `state/backlog.md`, `journal/`, `mail-log.jsonl`, `reviewLedger`),
-#: never as a substring: a publisher called "journalhub" is a product's name. `log` has
-#: no plural, as before: a `logs/` folder is usually a product's.
+#: Words that NAME a record of the process — matched as whole WORDS of a path component or
+#: program name (`mail-log.jsonl`, `reviewLedger`), never as a substring ("journalhub" is a
+#: product). `log` takes no plural: a `logs/` folder is usually a product's.
 _RECORD_WORDS = frozenset({"ledger", "backlog", "journal", "worklog", "changelog", "tracker",
                            "log"})
 #: Outside the own dir a CHANGELOG is a project's product and a "tracker" a product's name; a
@@ -260,10 +220,8 @@ def _call_is_process(action: dict, routine_dir: str, run_ts: str) -> bool:
 def classify(action: dict, obs: dict | None, routine_dir: str, run_ts: str = "") -> str:
     """One landed action, with the observation it came back with: TASK, PROCESS or FRICTION.
 
-    FRICTION first — a held action, a deferred finish and a refused or failed action are turns
-    the harness took, whatever they were aimed at. `report` and `ask_user` are the TASK's: for
-    some routines a report or a question IS the product, and a classifier cannot tell which.
-    `run_ts` names the run whose children's work under `runs/<run_ts>/sub/` is its task's.
+    FRICTION first, whatever the action was aimed at. `run_ts` names the run whose children's
+    work under `runs/<run_ts>/sub/` is its task's.
     """
     kind = str(action.get("kind") or "")
     if obs is not None and (hold.is_hold(obs) or obs.get("rejected") or obs.get("error")):

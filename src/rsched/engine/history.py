@@ -5,8 +5,7 @@ than from a live loop.
 the rest recover what a fresh RunContext would otherwise forget: children that died with the
 process, earlier legs' spend and counters, the paths a run has seen, and the stage modules it
 has entered. Where a rewind, a branch or the refusal flag may CUT a transcript is `rewind.py`.
-Shrinking a LIVE message list is a different job on different data and lives in
-`compaction.py` / `window.py` (F393).
+Shrinking a LIVE message list lives in `compaction.py` / `window.py`.
 """
 
 from __future__ import annotations
@@ -32,11 +31,8 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
     and blocking-ask answers are NOT replayed from `answer` events — the answer text
     already lives inside the ask_user observation, so replaying both would duplicate it.
 
-    Every message this rebuilds comes from the SAME renderer the live path used
-    (`control.injected_message`, `control.command_message`, `enginenote.message`,
-    `format_observation`). It is not tidiness: a resumed leg whose prefix differs by one
-    label or one newline is re-WRITTEN to the provider at 1.25x instead of re-read at 0.1x,
-    and the token count falls while the bill rises.
+    Every message comes from the SAME renderer the live path used, so the resumed prefix is
+    byte-identical and stays a provider cache hit.
     """
     from .control import child_finished_message, command_message, injected_message
 
@@ -84,10 +80,7 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
                 # the replay rebuilds TEXT-only messages, so the media is not re-attached:
                 # say so instead of replaying "attached below for you to see" over nothing
                 p = {k: v for k, v in p.items() if k != "media"} | {"media_replayed": True}
-            # …plus whatever RODE that message (engine/obstails.py): the reminder note, the
-            # rule-assist line, the history pointer, the spent once-grant, the budget
-            # remainder. Rendered live and recorded verbatim, so this is byte-identical to
-            # what the model read instead of a second rendering that could differ.
+            # …plus whatever RODE that message (engine/obstails.py), recorded verbatim live
             messages.append({"role": "user",
                              "content": format_observation(p) + obstails.of(p)})
         elif kind_ev == "user_injection":
@@ -95,11 +88,7 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
                 pending_command = str(p.get("text", ""))
                 continue
             if p.get("source") == "engine":
-                # An ENGINE NOTE, not the user. Replaying it as "USER MESSAGE (injected
-                # mid-run)" both mislabelled it — the harness contract tells the model an
-                # injected message IS the user talking — and lost the note's actual text,
-                # because the writers recorded a stub beside the prose. `enginenote.append`
-                # now records the note verbatim, so the replay reproduces what the model read.
+                # an ENGINE NOTE, not the user: replay it as the note, never as a user message
                 if p.get("replay") is False:
                     continue        # boot re-authors this note on every leg; see enginenote
                 messages.append({"role": "user",
@@ -143,21 +132,11 @@ def orphaned_children(events: list[dict]) -> list[dict]:
 
 
 def prior_usage(events: list[dict]) -> dict:
-    """Token spend recorded across ALL prior legs of a run's transcript. A resume starts a
-    fresh budget window (ctx.usage), so without this base status.json under-reports resumed
-    runs by however much the earlier legs spent. Sums every event that carries usage:
+    """Token spend recorded across ALL prior legs of a run's transcript — the resume base, since
+    a resume starts a fresh budget window (ctx.usage). Sums every event that carries usage:
     assistant actions, llm-subcall and decide observations, compaction calls, and the exit of
-    every CHILD RUN an earlier leg collected.
-
-    A CHILD's spend is the one that was missing, and it is the largest single omission a
-    resumed run could have (R3112, measured on `scheduler-builder:20261029-140004`): its two
-    children's exits landed at 16:03 and 16:08 carrying 420,211 output tokens between them,
-    both BEFORE the leg's finish at 16:15; the run resumed, this function rebuilt `usage_base`
-    without them, and the final `status.json` reported 343,918 output for a tree that had cost
-    about a million. A child is folded into the parent's live counter at its collection
-    (`engine/subruns._collect` → `ctx.add_usage`), so inside a leg the accounting is right —
-    which is why the loss is invisible until a run is resumed, and why `token-lab` could
-    measure a 40 % understatement without finding a missing fold.
+    every CHILD RUN an earlier leg collected — a child's spend is folded live at collection
+    (`subruns._collect`), so omitting `subrun_end` here understates a resumed tree (R3112).
     """
     total: dict = {"in": 0, "out": 0}
     for ev in events:
@@ -180,11 +159,7 @@ def rehydrate_seen_paths(ctx, events: list[dict]) -> None:
     """Rebuild `write_file`'s grounding set on RESUME — the paths earlier legs read stay
     overwritable, and deletable, after an interruption.
 
-    Lives here rather than in `boot` because it is one more fact derived from the transcript,
-    like every other function in this module, and because `boot.py` sits at its size-ratchet
-    ceiling: the move is what paid for D278's call there. A root revoked between legs simply
-    drops out of the set (`resolve_rel` raises and the path is skipped), which is the intended
-    behaviour and not an error worth recording.
+    A root revoked between legs simply drops out of the set (`resolve_rel` raises).
     """
     roots = [*ctx.routine.fs_read_roots, *ctx.routine.fs_write_roots]
     for rel in seen_paths(events):
@@ -198,9 +173,7 @@ def seen_paths(events: list[dict]) -> list[str]:
     """Path strings (as the actions gave them) that earlier legs read, viewed, or wrote —
     successful read_file / view_image / write_file / edit_file observations, plus a
     read_file refusal that carries `size` (a binary file, or one over the read cap): that
-    is a STAT the run has seen, and fileops._refusal grounds it live. Rebuilds the
-    grounding set on resume, so a file read before an interruption stays overwritable —
-    and deletable — after it.
+    is a STAT the run has seen, and fileops._refusal grounds it live.
     """
     out: list[str] = []
     for ev in events:
@@ -217,12 +190,8 @@ def seen_paths(events: list[dict]) -> list[str]:
     return out
 
 
-# Cumulative per-run telemetry counters mirrored to status.json (RunContext.write_status) and
-# the finish/workflow-usage record. Tokens and turns already carry a resume base (usage_base /
-# budget_base_turn); these did NOT, so a resumed leg reset them to its own tally — a
-# finish→reopen showed utils:{} + asks_deferred:0 despite the pre-finish leg's real activity
-# (F131/F132). The GLOBAL util-stats snapshot is transcript-derived and was always correct;
-# this only repairs the per-run status.json + finish event.
+# Cumulative per-run telemetry counters mirrored to status.json and the finish/usage record,
+# reseeded on resume so a leg does not reset them to its own tally (as usage_base does tokens).
 _RESUME_COUNTER_FIELDS = ("asks_deferred", "schema_retries", "schema_forcefails", "referrals",
                           "claims_challenged", "claims_disputed", "holds", "interventions",
                           "refusal_level", "takeover_left")
@@ -230,11 +199,8 @@ _RESUME_COUNTER_FIELDS = ("asks_deferred", "schema_retries", "schema_forcefails"
 
 def prior_counters(status: dict) -> dict:
     """Cumulative telemetry counters to reseed onto the RunContext on RESUME, read from the
-    prior leg's status.json (the run dir is reused across legs). Keeps status.json and the
-    finish event cumulative across legs — like usage_base for tokens — instead of resetting
-    the util histogram and the integer counters to the resumed leg's own tally. Returns a
-    dict of {RunContext attribute: value}; missing or malformed fields are skipped, and the
-    util cells are deep-copied so mutating the live ctx never writes back into the read dict.
+    prior leg's status.json (the run dir is reused across legs). Returns {RunContext
+    attribute: value}; malformed fields are skipped, util cells are deep-copied.
     """
     out: dict = {}
     utils = status.get("utils")
@@ -242,15 +208,11 @@ def prior_counters(status: dict) -> dict:
         cells = {k: dict(v) for k, v in utils.items() if isinstance(v, dict)}
         if cells:
             out["util_stats"] = cells
-    # Not a counter but the same problem: a run held at its finish owes its senders a reply,
-    # and a resumed leg that forgot which reports it received would finish owing them silently.
+    # not a counter, same problem: a resumed leg must still know which reports it owes replies
     owed = status.get("reports_open")
     if isinstance(owed, list):
         out["reports_open"] = [str(r) for r in owed]
-    # …and the stages the run has ENTERED (F521/R1681) are the run's, not the leg's. A fresh
-    # leg used to start from none, so it reported every stage an earlier leg had worked as
-    # skipped, and the finish's claim check challenged a `met` earned a leg before. The
-    # prior leg's `entered` already merges both evidence sources (reads and its own cursor).
+    # …and the stages ENTERED are the run's, not the leg's (else earlier work reads as skipped)
     stages = status.get("stages")
     entered = stages.get("entered") if isinstance(stages, dict) else None
     if isinstance(entered, list):
@@ -264,31 +226,17 @@ def prior_counters(status: dict) -> dict:
     return out
 
 
-#: How many prior legs' windows status.json keeps. A resume chain is bounded at three windows
-#: (`turnwindow.TOTAL_TURN_MULTIPLE`), so four is the whole chain plus the one that re-armed it;
-#: a record that grew without bound would be the next thing to go wrong in this file.
+#: How many prior legs' windows status.json keeps: a resume chain is bounded at three windows
+#: (`turnwindow.TOTAL_TURN_MULTIPLE`), plus the one that re-armed it.
 MAX_PRIOR_LEGS = 4
 
 
 def prior_legs(status: dict) -> list[dict]:
     """The windows of every leg BEFORE the one about to boot, oldest first.
 
-    A leg's own `write_status` replaces the whole `budgets` block, so the leg that follows a
-    finish erases the ceiling and the remainder the previous leg ran under. The narrow revise
-    leg (`engine/reviseleg.py`) makes that routine: it resumes with `max_turns = 12`, and the
-    task leg's `max_turns`, `window_turns` and `turns_left` are then gone from the only file
-    that held them — leaving `base_turn`, which happens to carry the task leg's final
-    cumulative turn, as the sole trace. Measured on 2026-11-13 (`config-optimizer`'s R3393, via
-    `scheduler-builder`'s R3404): 20 leg-overwritten run dirs across 8 routines, with
-    `drawerrr-irreversible-actions` 6 of 6 — a consumer that filters legs out samples nothing,
-    and one that does not read a 12-turn leg as a ceiling hit (that routine's
-    `20261110-140149` was reported as "154/150", a ceiling hit that never happened).
-
-    So the window is CARRIED instead of recomputed: each leg's block is appended as it is
-    displaced, the way `prior_counters` keeps the util histogram. A status file written before
-    this existed carries no legs and gets none — the loss is not reconstructable from the
-    file, only from `base_turn`, which is why it is recorded going forward rather than
-    back-filled.
+    A leg's own `write_status` replaces the whole `budgets` block, so without this the window a
+    previous leg ran under (e.g. a task leg before a 12-turn revise leg) is lost. Each leg's
+    block is appended as it is displaced; nothing is back-filled.
     """
     block = status.get("budgets")
     if not isinstance(block, dict):

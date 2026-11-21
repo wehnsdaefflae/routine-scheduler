@@ -1,76 +1,33 @@
 """THE PROMPT FLOOR AT BOOT — fit the composed prompt into the window, and state what that cost.
 
-The second half of F539, decided by the operator as D223. The first half shipped in 0.474.0: a
-run served by a smaller model is TOLD its window, durably (`engine/substitution.py`). What
-stayed open was what to do about a run whose incompressible floor exceeds the resolved window
-before it has completed a single turn.
+D223 (second half of F539): a run whose incompressible prompt already exceeds the resolved
+window before turn one is STARTED, but the engine's first act is a hard compaction that drops
+the middle to whatever fits, and the loss is stated. A thread that answers from a smaller
+context is worth more than one that cannot be continued at all.
 
-The first answer (2026-10-30) was a count and nothing else: file a health event, start the run
-unchanged. That bought the evidence it was asked for. `prompt_floor_over_window` then fired NINE
-times for ONE conversation, `c-20261014-134208` — three times on 2026-11-08 (1,063,175 →
-1,073,520 → 1,085,503 estimated tokens) and six more on 2026-11-10 (1,089,162 → 1,138,237),
-every attempt measuring bigger than the one before, against a 1,000,000-token window. The same
-thread had fired `prompt_oversize_shrunk` seven times on 2026-11-02: a week of successful
-shrinking, and then the floor crossed the window and shrinking stopped being possible. 1,333
-turns sit on disk and read normally; what was gone was the ability to ADD to them.
+The window compared is the CATALOG window; a run-local calibration may later make the real
+clamp smaller. Acting on an estimate is acceptable here because compaction is not a veto —
+acting early costs context still readable on disk.
 
-HIS SECOND ANSWER (2026-11-10), verbatim: *"start it, but have the engine's FIRST act be a hard
-compaction that drops the middle to whatever fits, so the thread continues with a stated loss"*.
+Eliding the middle is `compaction.maybe_compact`'s and trimming bodies `compaction.clamp_to_cap`'s,
+called in that order and not reimplemented. The archival model pass is deliberately NOT run
+(no model call before turn one). The elided middle survives in `transcript.jsonl` (and a
+resumed thread's replayed events), so nothing is destroyed. Rewriting the message list here
+breaks no cache: it happens before the first request.
 
-He was offered the refusal — decline the start and tell him the thread is full — and chose
-against it. A thread that answers from a smaller context is worth more than one that cannot be
-continued at all. So this module no longer records and steps aside; it SHRINKS the prompt and
-says what it dropped.
+THE LOSS IS STATED: an ENGINE NOTE (`enginenote.append`) reaches the live prompt and renders as
+a `user_injection` on both pages; the health event carries the same facts as fields.
 
-WHY COMPACTING MAY ACT ON A FIGURE A REFUSAL COULD NOT. The window compared here is the CATALOG
-window, and an F278 run-local correction can make the real clamp smaller than it
-(`window._calibrated_window` derives that ratio from a completion's reported usage, and at boot
-no completion has happened). That approximation is exactly why refusing was the wrong call: a
-veto resting on an estimate turns a degraded run into no run. Compaction is not a veto. Acting a
-little early costs context the run can still read off disk; acting too late costs the turn.
-
-WHAT IT DOES, AND WHAT IT DOES NOT OWN. Eliding the middle belongs to `compaction.maybe_compact`
-(head 6, a one-line-per-turn digest, tail 24) and trimming oversized bodies to
-`compaction.clamp_to_cap`; both are called here, in that order, and neither is reimplemented.
-The archival model pass (`window._archive_if_needed` → `archival.start`) is deliberately NOT
-run: it is a model call, and the engine's first act before turn one is not the place for one.
-The elided middle therefore survives in this run's `transcript.jsonl` — and, for a resumed
-thread, in the events the next leg replays (`history.replay_messages` rebuilds from events and
-ignores compaction) — so nothing is destroyed, only taken out of the context. Rewriting the
-message list is what `window.py`'s header calls a break in the prompt-caching contract; here it
-happens BEFORE the first request, so there is no cached prefix to invalidate — the first thing
-the provider ever sees is the compacted prompt.
-
-THE LOSS IS STATED, which is the load-bearing half of his answer. A conversation whose middle is
-discarded in silence answers from a context it no longer has, and sounds exactly as certain as
-one that can see everything. So the compaction writes an ENGINE NOTE (`enginenote.append`),
-which lands in the live prompt where the next turn's model reads it AND is recorded as a
-`user_injection` that both pages render — the conversation page as a system line
-(`static/components/chat.js`) and the run transcript (`static/components/transcript.js`). The
-health event carries the same facts as fields, for counting rather than for reading.
-
-WHEN IT CANNOT BE MADE TO FIT. The head, the tail and the composed system prompt are
-incompressible: `maybe_compact` returns unchanged below 30 messages (a fresh boot has two), and
-`clamp_to_cap` never touches message 0, the largest body in every run. A 32,768-token
-substitute under a 200k-class prompt — the F539 specimen `llmsectest-weekday:20260922-060001`,
-dead at turn 106 having spent $1.03 — cannot be fitted by any amount of eliding. That case is
-recorded (`fits: false`), and SAID in the note, once. It does not loop and it does not raise:
-the run starts, as he asked, and the first completion then fails at the provider the way it
-would have anyway.
-
-BEST-EFFORT, BUT NO LONGER SILENT. Nothing here may be the reason a boot fails, so every failure
-path returns instead of raising. What changed is that silence is no longer an outcome: a
-compaction that cannot be performed leaves the run in the exact state it could not survive, so
-the event is filed with what was attempted rather than nothing at all.
+When it cannot fit (head, tail and the system prompt are incompressible), that is recorded
+(`fits: false`) and said once; it neither loops nor raises, and the first completion fails at
+the provider as it would have anyway. Nothing here may fail a boot: every failure returns.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-#: The event name. Registered in `health_vocab.EVENTS` in the same change — an event at a
-#: call site and absent from that enum is invisible to every documented filter, which is the
-#: `prompt_oversize_shrunk` failure `tests/test_health_events.py` exists to catch.
+#: The event name; must also be registered in `health_vocab.EVENTS` or no filter sees it.
 EVENT = "prompt_floor_over_window"
 
 
@@ -100,11 +57,8 @@ def check(loop: Any) -> dict | None:
         _file_event(ctx, info)
         return info
     except Exception:
-        # The measurement and the compaction are both best-effort: an unresolvable model, a
-        # stand-in loop, a malformed message list are not fitted, and the run starts exactly as
-        # it did before this module existed. A layer that can stop a boot is worse than a layer
-        # that occasionally does nothing — but see `fits: false`: when the compaction RUNS and
-        # still cannot clear the window, that is recorded rather than swallowed.
+        # Best-effort: an unresolvable model or malformed message list is not fitted and the run
+        # starts unchanged. (A compaction that RUNS and still cannot fit records `fits: false`.)
         return None
 
 
@@ -116,9 +70,7 @@ def _resolved_ref(ctx):
 
 def _reserved_tokens(loop, ref) -> int:
     """Output plus the separately transmitted action schema — `window._reserved_tokens`'s pair.
-
-    Read defensively: this runs before the first turn, so a field the loop sets later is simply
-    not counted, and the ceiling is then the window itself.
+    Read defensively: before turn one a field the loop sets later is simply not counted.
     """
     from .promptsegments import schema_tokens
 
@@ -129,10 +81,8 @@ def _model_name(ref) -> str:
     return str(getattr(ref, "name", None) or getattr(ref, "model", None) or "?")
 
 
-#: Room kept for the note this module is about to append. Compacting to the exact ceiling and
-#: THEN stating the loss would put the prompt back over it — the statement is part of the
-#: prompt, so it is part of the budget. Generous: the note is bounded prose, a few hundred
-#: tokens at its longest, and over-reserving costs context the run can still read off disk.
+#: Room kept for the note this module appends — the statement is part of the prompt, so part
+#: of the budget. Generous on purpose: the note is a few hundred tokens at most.
 _NOTE_TOKENS = 400
 
 
@@ -161,10 +111,8 @@ def _fit(loop, window: int, reserved: int) -> dict:
 
 
 def _state_the_loss(loop, info: dict) -> None:
-    """Say what the compaction cost, where it is actually read.
-
-    One engine note carries both surfaces his answer requires: the live prompt (the next turn's
-    model) and the rendered `user_injection` (the person reading the conversation or the run).
+    """Say what the compaction cost, where it is actually read: one engine note reaches both the
+    live prompt and the rendered `user_injection`.
     """
     from . import enginenote
     from .compaction import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS
@@ -197,9 +145,7 @@ def _state_the_loss(loop, info: dict) -> None:
 
 
 def _file_event(ctx, info: dict) -> None:
-    """The count. Same event name as the recording-only version, so the stream stays one series
-    — with the fields that now say what was DONE about it, not only that it happened.
-    """
+    """The count, with fields saying what was DONE about it."""
     from ..health_events import log_health_event
 
     verdict = (f"compacted to ~{info['after_tokens']:,} estimated tokens" if info["fits"]
@@ -212,9 +158,7 @@ def _file_event(ctx, info: dict) -> None:
                 f"and its middle hard-compacted first (D223) — {info['elided_messages']} "
                 f"messages elided, {info['clamped_messages']} bodies trimmed, {verdict}. The "
                 f"loss is stated in the run's own prompt and transcript."),
-        # FIELDS, not only prose: "how often, and by how much" is the question this surface
-        # exists to answer, and `fits` is the one row a sweep must be able to find — a run the
-        # compaction could not rescue.
+        # FIELDS, not only prose: `fits: false` is the row a sweep must be able to find.
         floor_tokens=info["floor_tokens"], window_tokens=info["window_tokens"],
         ceiling_tokens=info["ceiling_tokens"], after_tokens=info["after_tokens"],
         elided_messages=info["elided_messages"], clamped_messages=info["clamped_messages"],

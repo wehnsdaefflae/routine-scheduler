@@ -9,10 +9,8 @@ placeholder. Four catalogs, one answer shape (`(context window, output maximum |
   subscription route's figures are its plan's, and the plan comes from config, never a guess.
   Rows carry `context_length`/`max_completion_tokens`, or Gemini's own
   `inputTokenLimit`/`outputTokenLimit`.
-- **OpenRouter's public `/models`**, by EXACT id, sized by `top_provider` — the provider
-  OpenRouter actually routes to, whose window can be smaller than the row's headline
-  (`xiaomi/mimo-v2.6-pro`: 1,050,000 headline, 1,048,576 served). The same listing is the price
-  source (`prices.refresh`), so it is fetched once for both.
+- **OpenRouter's public `/models`**, by EXACT id, sized by `top_provider` (the provider it
+  routes to, whose window can be smaller than the headline). Also the price source, fetched once.
 - **Nano-GPT's detailed listing** (`/api/v1/models?detailed=true`), by exact id.
 - **Anthropic's own API**: the static window table in `limits` (its listing needs a key only the
   gateway holds).
@@ -34,10 +32,8 @@ Figures = tuple[int, int | None]
 
 #: CLIProxyAPI's model catalog, by plan group — what each subscription login is served.
 CLIPROXY_CATALOG_URL = "https://raw.githubusercontent.com/router-for-me/models/HEAD/models.json"
-#: OpenRouter fills `max_completion_tokens` with ⌊0.9 × context_length⌋ for models whose real
-#: output maximum it does not carry (z-ai/glm-5.3 and google/gemini-4-argon both read 943,718 on a
-#: 1,048,576 window, where Nano-GPT publishes 131,072 and Google 65,536). One token either way
-#: covers the rounding seen live (Together's 943,717 on a 1,048,575 window).
+#: OpenRouter fills `max_completion_tokens` with ⌊0.9 × context_length⌋ when it does not carry a
+#: model's real output maximum; one token of slack covers the rounding seen live.
 _PLACEHOLDER_SHARE = 0.9
 _PLACEHOLDER_SLACK = 1
 

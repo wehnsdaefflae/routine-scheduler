@@ -1,6 +1,6 @@
 """When a turn comes back WRONG — transport failure, model refusal, or an empty reply.
 
-Split out of `completion.py` (F393). The happy path is one call and one parsed action; these
+The happy path is one call and one parsed action; these
 are the three ways it does not arrive, and each degrades rather than killing the run: a
 transport error walks the failover chain, a refusal is classified and referred (endpoints are
 model TRANSPORTS, so a refusal is a transport fact, not the run's verdict), and an empty reply
@@ -22,18 +22,12 @@ from .window import apply_media_fallback
 
 def _failover_reason(exc: EndpointError) -> str:
     """Classify a hard failure for the health stream: rate_limit · auth · refusal · empty ·
-    server · other. The vocabulary a `model_failover` event carries is unchanged — a sweep
-    asking "why is the fleet off its primary today" wants the CLASS, not 300 characters of
-    provider prose, which is what `detail` carries.
+    server · other — the CLASS a `model_failover` event carries, not the provider prose.
 
-    R3108: the basis is what the failure DECLARED — its status and its own error.code /
-    error.type (`endpoints/errorsignal.py`), or, for the two classes that are the ENGINE's own
-    findings, the `engine=` it declared at the raise. This replaces ~20 phrase needles across
-    five reasons, three of which matched the ENGINE's OWN vocabulary ("refused the turn",
-    "empty completion", "cooling down") in whatever prose arrived — so a provider 500 that
-    happened to quote those words was filed as a classifier refusal. `other` stays an honest
-    bucket: a guess that makes a new failure mode look like a known one is what this replaces,
-    and `engine/errorclass.py` counts how often it is reached.
+    The basis is what the failure DECLARED (R3108): its status and error.code / error.type
+    (`endpoints/errorsignal.py`), or for the engine's own findings the `engine=` set at the
+    raise — never phrases matched in the body. `other` stays an honest bucket;
+    `engine/errorclass.py` counts how often it is reached.
     """
     return errorsignal.failover_class(errorsignal.of(exc))
 
@@ -50,27 +44,17 @@ def _turn_needs(loop) -> dict:
 def _recover_transport(loop, chain, endpoint, ref, exc: EndpointError) -> tuple:
     """The completion call failed with a hard EndpointError — the runtime nets, in order.
 
-    They are ordered by ONE question: *would another model, given this exact request,
-    succeed?* Only when the answer is yes does failing over help. A fault of the ENDPOINT
-    (5xx, timeout, 429, exhausted credentials, a classifier refusal, repeated empties) is a
-    property of that provider and the chain is the right answer. A fault of the REQUEST (a
-    prompt over the window, a body the API rejects) travels with the request: the next model
-    receives it unchanged and fails identically — or, with a smaller window, silently answers
-    from a truncated context. Nets 0 and 0b exist so a request fault is repaired HERE.
+    Ordered by one question: would another model, given this exact request, succeed? A fault
+    of the ENDPOINT (5xx, timeout, 429, credentials, refusal, repeated empties) is the chain's
+    to absorb; a fault of the REQUEST travels with it to the next model, so it is repaired here.
 
-    Net 0: a context-overflow whose stated maximum is smaller than the configured
-    window is a lying catalog entry, not a provider failure — shrink the run-local window,
-    re-clamp, and retry the SAME model (once; see _shrink_window_to_provider, F278).
-    Net 0b: an overflow whose stated maximum CONFIRMS the configured window — the catalog is
-    honest and the prompt is simply too big — re-runs the whole shrink path under the
-    provider's own numbers and retries the same model, never marking it failed
-    (_recover_oversize_prompt; self-audit:20260921-000321 died in the loop this closes).
-    Net 1: a turn whose tail carries an image the endpoint couldn't show is
-    converted to vision-util text (media fallback) and retried text-only on the SAME
-    model — the cooldown the instrumentation just started is lifted, since the image, not
-    the provider, was the problem. Net 2: a genuine hard provider failure advances down
-    the role's fallback chain (the failed model is already cooling); chain exhausted →
-    re-raise, failing the run exactly as before fallbacks existed. Returns the
+    Net 0: an overflow whose stated maximum is below the configured window is a lying catalog
+    entry — shrink the run-local window and retry the SAME model once
+    (_shrink_window_to_provider). Net 0b: an overflow that CONFIRMS the window re-runs the
+    shrink path under the provider's numbers and retries the same model, never marking it
+    failed (_recover_oversize_prompt). Net 1: an image the endpoint couldn't show becomes
+    vision-util text and the SAME model retries, its cooldown lifted. Net 2: a genuine hard
+    failure advances down the fallback chain; chain exhausted → re-raise. Returns the
     (endpoint, ref) to retry on.
     """
     shrunk = _shrink_window_to_provider(loop, endpoint, ref, exc)
@@ -91,21 +75,14 @@ def _recover_transport(loop, chain, endpoint, ref, exc: EndpointError) -> tuple:
 
 def _handle_refusal(loop, completion, chain, ref, attempt: int,
                     refstate: dict) -> tuple[tuple | None, bool]:
-    """A classifier refusal (stop_reason in REFUSAL_STOPS — an HTTP 200, so error-rate
-    monitoring never sees it; content usually empty, stop_details naming the category).
-    Never blind-retried against the same model: re-sending a refused prompt usually earns
-    another refusal, so the pre-R5 path — 3 same-model retries, then a "failed to produce
-    a valid action" death — burned the run while hiding the cause. Instead: a distinct
-    refusal-marked transcript error first, then ONE takeover engage (engine/refusal.py:
-    flag → arm the back-off episode): the refused TURN is re-driven on the routine's
-    uncensored model and its output IS this turn's action (operator, 2026-10-16 — the
-    honeypot premise is retired). Only when no takeover can serve — no uncensored role
-    configured, or the uncensored model itself refused (an honest dead end, never a
-    back-off rung) — does the fallback chain advance, cooling the refused model like a
-    hard failure, which is RUN-scoped (the failover registry is process-local), so the
-    rest of this run stops re-asking while other runs, with other prompts, still probe it
-    fresh. Chain exhausted (or no fallbacks): raises, failing the run HONESTLY with the
-    category named — never "empty completion". Returns the pair to serve the turn on.
+    """A classifier refusal (stop_reason in REFUSAL_STOPS — an HTTP 200, content usually
+    empty, stop_details naming the category). Never blind-retried on the same model.
+
+    A refusal-marked transcript error, then ONE takeover engage (engine/refusal.py): the
+    refused TURN is re-driven on the routine's uncensored model and its output IS this turn's
+    action. Only when no takeover can serve does the fallback chain advance, cooling the
+    refused model for this run only (the failover registry is process-local). Chain
+    exhausted: raises with the category named. Returns the pair to serve the turn on.
     """
     details = completion.stop_details or {}
     category = str(details.get("category") or "") or "unreported"
@@ -124,13 +101,10 @@ def _handle_refusal(loop, completion, chain, ref, attempt: int,
             model=ref.name or ref.model,
             refusing=(ref.endpoint, ref.model))
         if target is not None:
-            # The uncensored model takes THIS refused turn - its output is the
-            # turn's action (operator, 2026-10-16). NOT cooling the refused model:
-            # the back-off's hand-back must return to the REGULAR model as soon
-            # as the window closes, not skip on to its fallbacks.
+            # NOT cooling the refused model: the back-off's hand-back must return to the
+            # REGULAR model when the window closes, not skip on to its fallbacks.
             return target, True
-    # R3108: the refusal class is DECLARED, not written into `what` for _failover_reason to
-    # match back out of it — a provider quoting "refused the turn" is not a refusal.
+    # The refusal class is DECLARED, never matched back out of `what`.
     switched = _switch_to_fallback(
         loop, chain, ref,
         EndpointError(what, signal=errorsignal.ErrorSignal(engine="refusal")))
@@ -149,13 +123,9 @@ def _intercept_refusal_finish(loop, candidate, ref, refstate: dict) -> tuple[boo
     (False, None) and is accepted normally. Latched via refstate so a model that keeps
     refusing eventually lands its finish honestly.
 
-    What `status` decides is how hard we LOOK, never whether we look at all. A refusal
-    also arrives as finish(status=ok) - "I'm not going to do this one", live specimen
-    c-20260822-091412, logged as a SUCCESS - so judging the summary is unconditional. But
-    only a DECLARED failure is worth a classification round trip: testing every finish
-    that way put each of the fleet's honest endings through a `refusal - classify reply`
-    subcall on their way out. An `ok`/`partial` finish is judged by the marker fast-path
-    alone, which is what caught that specimen in the first place.
+    `status` decides how hard we LOOK, never whether: a refusal also arrives as
+    finish(status=ok), so the summary is always judged — but only a declared `failed` earns a
+    classification subcall; `ok`/`partial` use the marker fast-path alone.
     """
     ctx = loop.ctx
     if not (isinstance(candidate, dict) and candidate.get("kind") == "finish"):
@@ -191,8 +161,7 @@ def _handle_empty(loop, completion, chain, ref,
     None = plain same-model retry.
     """
     stop = completion.stop_reason
-    # stop_details rides along VERBATIM so the transcript shows WHY the reply was
-    # empty (F164) — e.g. a reasoning model that spent its whole budget thinking.
+    # stop_details rides along VERBATIM so the transcript shows WHY the reply was empty.
     details = completion.stop_details or {}
     loop.ctx.transcript.event("error", {
         "where": "endpoint", "attempt": attempt,
@@ -203,7 +172,7 @@ def _handle_empty(loop, completion, chain, ref,
     if refstate["empty"] >= 2:
         failure = EndpointError(
             f"empty completion x{refstate['empty']} (stop_reason={stop or 'unreported'})",
-            signal=errorsignal.ErrorSignal(engine="empty"))   # R3108: declared, not re-parsed
+            signal=errorsignal.ErrorSignal(engine="empty"))   # declared, not re-parsed
         switched = _switch_to_fallback(loop, chain, ref, failure)
         if switched is not None:
             refstate["empty"] = 0
@@ -213,24 +182,11 @@ def _handle_empty(loop, completion, chain, ref,
     return None
 
 def _log_chain_exhausted(loop, chain, failed_ref, exc: EndpointError) -> None:
-    """A role's WHOLE chain is gone — every member failed hard or is cooling (F491).
+    """A role's WHOLE chain is gone — every member failed hard or is cooling.
 
-    The run itself already records this: the turn raises and the finish names the endpoint
-    failure. What nothing records is the FLEET fact. A cooling primary is survivable per
-    run — the chain absorbs it and the run finishes `ok` — so the tax is paid in wall-clock
-    and tokens and shows up in no health signal at all. On 2026-09-16, 11 of 13 fleet runs
-    opened with "All credentials for model gpt-6-astra are cooling down"; every one finished
-    `ok` and the health stream was empty. That is the same reason `cache_read_degraded` and
-    `model_window_corrected` exist: an engine-side fact emitted precisely because nothing
-    else shows it.
-
-    The chain HEAD is the interesting key, not the member that happened to fail last: it is
-    what a sweep groups by to answer "which model is burning the fleet's time, and since
-    when". Both ride as structured fields rather than prose, per the F422 lesson — a
-    question that has to be answerable by a filter must not live in `detail`.
-
-    Best-effort by construction: health logging never blocks a run, and this seam is already
-    handling a failure.
+    The run records its own failure; this files the FLEET fact to the health stream, which
+    nothing else shows. Keyed by the chain HEAD (what a sweep groups by), with the models as
+    structured fields, not prose in `detail`. Best-effort: health logging never blocks a run.
     """
     head = chain[0][1] if chain else failed_ref
     ctx = loop.ctx
@@ -250,28 +206,20 @@ def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
     exhausted, or it kept returning empty completions). Advance to the next chain member
     not in cooldown and log the switch VISIBLY: a transcript `error` event whose
     `failover` payload names both models — so the run records which model serves from here
-    (status.json follows via ctx.main_model). None = chain exhausted.
+    (status.json follows via ctx.main_model). None = chain exhausted. What the SUBSTITUTED
+    model is told about its situation is `engine/substitution.py`, hence `chain` travels there.
 
-    Those records are for readers AFTER the fact; what the SUBSTITUTED model is told about its
-    own situation — that it is the fallback, and what context window it has lost — is
-    `engine/substitution.py` (F539/D146-B), which is also why `chain` travels there: the bound
-    model's window is the chain HEAD's.
-
-    The abandoned model is marked cooling HERE — the engine's own judgment that it failed
-    a real turn. (InstrumentedEndpoint only cools retryable-class transport failures; a
-    deterministic error or an empty-reply pattern is visible only at this seam.)
+    The abandoned model is marked cooling HERE: InstrumentedEndpoint only cools
+    retryable-class transport failures, and a deterministic error or empty-reply pattern is
+    visible only at this seam.
     """
     failover.mark_failed(failed_ref.endpoint, failed_ref.model,
                          cooldown_s=failover.cooldown_for(exc))
-    # R3108: COUNT the failures whose class the needle list could not decide. Hooked where the
-    # class is computed rather than where it is logged, because the chain-exhausted branch below
-    # never reaches `_log_failover` — and `after 0 rungs` is the specimen that motivated it
-    # (c-20261016-075101). Measurement only: every decision in this function is unchanged.
+    # Counted where the class is computed, not where it is logged: the chain-exhausted branch
+    # never reaches `_log_failover`. Measurement only.
     errorclass.note_failover_class(loop, exc, _failover_reason(exc))
-    # F566: remember what started the collapse. This seam sees the FIRST failure before any
-    # other, and if the whole chain dies the run otherwise reports only the last rung's error —
-    # the least actionable one. Recorded once and never overwritten, so later rungs cannot
-    # bury the cause.
+    # The FIRST failure, kept once and never overwritten: if the whole chain dies, the last
+    # rung's error is the least actionable one.
     if not loop.ctx.first_failover_cause:
         loop.ctx.first_failover_cause = (
             f"{failed_ref.endpoint}/{failed_ref.model}: {str(exc)[:200]}")
@@ -295,20 +243,10 @@ def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
 def _log_failover(loop, chain, failed_ref, new_ref, exc: EndpointError) -> None:
     """A switch reached the FLEET stream, not only this run's transcript.
 
-    A run that fails over finishes `ok`: the chain absorbed it, so nothing downstream ever
-    said the primary stopped serving. Between 2026-09-12 and 09-22 that happened 123 times
-    across 28 runs — a weekly quota on `gpt-6-astra` and a dead proxy refresh token pushing
-    the fleet onto metered models at `effort: max` — and the operator found it by reading
-    transcripts, days later, because `model_chain_exhausted` only fires when the LAST rung
-    dies too (one event in the same window). The same argument as `cache_read_degraded`:
-    a cost nothing else reports must be emitted where it happens.
-
-    The chain HEAD is the grouping key (which model stopped serving the fleet, and since
-    when); `from_model`/`to_model`/`reason` ride as structured fields, per F422 — a
-    question answerable by a filter must not live in `detail`.
-
-    Best-effort by construction: health logging never blocks a run, and this seam is
-    already handling a failure.
+    A run that fails over finishes `ok`, so nothing downstream would say the primary stopped
+    serving; `model_chain_exhausted` fires only when the last rung dies too. Keyed by the
+    chain HEAD; `from_model`/`to_model`/`reason` are structured fields, not prose in `detail`.
+    Best-effort: health logging never blocks a run.
     """
     head = chain[0][1] if chain else failed_ref
     ctx = loop.ctx

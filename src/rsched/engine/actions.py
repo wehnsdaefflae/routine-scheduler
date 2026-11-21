@@ -28,31 +28,20 @@ from .sidefields import problems as side_field_problems
 # rather than an argument to the action. One written INSIDE `say` is corrected: engine/sayfields.
 SIDE_FIELDS = ("note", "remind", "remind_feedback", "role_swap")
 
-# Kinds available on EVERY turn regardless of the workflow's `tools:` allowlist: `finish`
-# so a run can always end, and `report` so any routine can always raise work that is not its
-# own task — unaddressed for triage, or addressed to the routine that owns it. Neither is a
-# GATED_KIND, so both also pass the capability layer for every routine. Routing only works if
-# the channel is present at the moment the run notices the problem. `list_models` rides along
-# because the per-call `model` override is only usable where the run can SEE the catalog —
-# read-only discovery of user config, never a mutation, so gating it would only cost turns.
+# Kinds available on EVERY turn regardless of the workflow's `tools:` allowlist and the
+# capability layer: `finish` so a run can always end, `report` so work that is not the run's
+# task can always be routed when noticed, and `list_models` (read-only) so the per-call
+# `model` override is usable.
 ALWAYS_KINDS = ("finish", "report", "list_models")
 
 
-# The kinds a run may mark `background: true` (D118 phases 1 and 3). The reads and fetches defer
-# because their only effect IS the observation. The three MUTATIONS defer because each declares
-# the one target it writes (`path`, or `name` in the memory namespace) and
-# `engine/background_order.py` holds any later action that touches it until that write has
-# landed — phase 3's dependency barrier, which makes the old refusal ("a later action would read
-# state this one has not written yet") impossible rather than merely unlikely. NOT here:
-#   · delete, move, mkdir — not slow enough to be worth deferring, and `move`'s two ends are not
-#     the one target a barrier keys on;
-#   · write_util, write_rule — no `executor.DISPATCH` entry (the capability gate is in
-#     `actionroute._route`), so a backgrounded one would raise KeyError in the thread;
-#     `background_order.TARGET_FIELD` says what admitting them needs;
-#   · the control kinds — finish, ask_user, report, spawn, subtask, wait, kill, detach,
-#     create_routine, manage_lane, schedule_run — which either steer the run (so they must be
-#     synchronous) or are already asynchronous in their own right (the children).
-# `shell` declares no target, so a WRITING shell command stays the caller's own ordering hazard.
+# The kinds a run may mark `background: true` (D118). Reads and fetches defer because their only
+# effect IS the observation; the three MUTATIONS each declare the one target they write, and
+# `engine/background_order.py` holds any later action touching it until the write lands. NOT here:
+#   · delete, move, mkdir — not worth deferring, and `move` has two ends;
+#   · write_util, write_rule — gated in `actionroute._route`, no `executor.DISPATCH` entry;
+#   · the control kinds, which steer the run or are already asynchronous (children).
+# `shell` declares no target, so a WRITING shell command stays the caller's ordering hazard.
 BACKGROUNDABLE_KINDS = ("util", "websearch", "code_search", "script", "shell", "llm", "decide",
                         "read_file", "view_image", "memory_read", "read_rule",
                         "write_file", "edit_file", "memory_write")
@@ -60,11 +49,8 @@ BACKGROUNDABLE_KINDS = ("util", "websearch", "code_search", "script", "shell", "
 # kind → (required fields, allowed extra fields beyond say/kind)
 KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "util": (("name",), ("args", "timeout_s", "background")),
-    # D290: a SPELLING of the util call above, rewritten into it by `normalize_action` before
-    # any gate (engine/kindaliases.py) — so these two take the util kind's own fields and
-    # nothing of their own. `args` is REQUIRED here where `name` is required there: an alias
-    # that names no query is refused in the schema-retry cycle (no turn) rather than run empty
-    # (one turn), which is the whole reason the rewrite may be generous about where it reads it.
+    # D290: SPELLINGS of the util call, rewritten into it before any gate (kindaliases.py).
+    # `args` is REQUIRED so an alias naming no query is refused without spending a turn.
     "websearch": (("args",), ("timeout_s", "background")),
     "code_search": (("args",), ("timeout_s", "background")),
     "script": (("name",), ("args", "timeout_s", "background")),
@@ -99,25 +85,16 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "detach": (("prompt",), ("workflow", "label")),
     "list_models": ((), ()),
     "children": ((), ()),
-    # `n` is no longer REQUIRED because a kill now addresses either namespace: `n` a
-    # sub-workflow, `handle` a background call (D176 option (a) — two namespaces stay two
-    # namespaces). Exactly one of them is demanded by `validate_action`, which can say which
-    # it got and which it needs; requiredness here could only ever demand `n`.
+    # `n` (a sub-workflow) OR `handle` (a background call, D176); validate_action demands one
     "kill": ((), ("n", "handle")),
     "wait": ((), ("n", "all", "timeout_s")),
-    # D212: `question` is no longer REQUIRED here because a `questions` batch carries none at
-    # the top level — one of the two is demanded by `askfields.field_problems`, which can say
-    # which it got and which it needs; requiredness here could only ever demand `question`.
+    # D212: `question` OR a `questions` batch; askfields.field_problems demands one
     "ask_user": ((), ("question", "questions", "mode", "options", "default", "config_patch",
                       "request", "blocks_work")),
-    # F621: `options` makes a report a DECISION FOR THE OPERATOR as well as work for its
-    # target — the handler files it on his Decisions page beside delivering it. Same cap as
-    # ask_user's pick-list, for the same reason: a longer list is a question to rephrase.
+    # `options` also files the report as a decision on the operator's Decisions page (F621)
     "report": (("title",), ("detail", "target", "answers", "closes", "supersedes", "settles",
                             "options")),
-    # D186: no fields of its own — the reasoning IS `say`, which rides every kind already and
-    # which every surface (transcript, console, compaction) renders without a new event type.
-    # Its non-emptiness is checked below, where this kind's whole content depends on it.
+    # D186: no fields of its own — the reasoning IS `say` (its non-emptiness checked below)
     "do_nothing": ((), ()),
     "finish": (("status", "summary"), ("accounting", "reply_to", "final")),
 }
@@ -129,20 +106,17 @@ def normalize_action(obj: dict) -> dict:
     are not required for this kind carry no information — drop them so the semantic
     validator sees the model's intent, not the grammar's debris.
 
-    An ALIAS KIND is rewritten FIRST, into the util action it spells (D290,
-    engine/kindaliases.py). First because the payload a caller puts it in is often a field
-    ACTION_SCHEMA does not declare (`query`, `pattern`), and the stripping below would delete
-    it — a rewrite any later would run the util with an empty query. Before every gate too:
-    the rewritten action meets the capability layer, the secret gate and the telemetry seam as
-    the ordinary util call it is, so an alias cannot become a second front door.
+    An ALIAS KIND is rewritten FIRST into the util action it spells (D290): its payload often
+    sits in an undeclared field the stripping below would delete, and every gate then meets
+    it as the ordinary util call it is.
     """
     if (aliased := alias_rewrite(obj)) is not None:
         obj = aliased
     # weak models sometimes wrap the action in a generic tool-call envelope — unwrap it
     if "kind" not in obj and isinstance(obj.get("action"), dict):   # {"action": {...}}
         obj = obj["action"]
-    # …and only an object STILL without a kind is a tool-call envelope: reading an unwrapped
-    # action's own `name` as the tool turned `util name=report` into a `report` action
+    # …and only an object STILL without a kind is a tool-call envelope (else `util name=report`
+    # would read as a `report` action)
     if "kind" not in obj:
         inner = (obj.get("parameters") or obj.get("arguments")
                  or obj.get("tool_input") or obj.get("input"))
@@ -167,9 +141,7 @@ def normalize_action(obj: dict) -> dict:
         if key in ("say", "kind") or key in required:
             out[key] = val
         elif key == "final" and kind == "finish" and isinstance(val, bool):
-            # the one boolean whose `false` is a DECLARATION — a reply that is not final — and
-            # never padding: dropped, a deliberate false read as undeclared, and the finish
-            # gate asked for the declaration the model had just made, round after round
+            # the one boolean whose `false` is a DECLARATION (not final), never padding
             out[key] = val
         elif val in ("", None, [], {}) or val is False:
             continue
@@ -186,12 +158,9 @@ def normalize_action(obj: dict) -> dict:
                        for f in req)
         if complete:
             allowed = {"say", "kind", *SIDE_FIELDS, *req, *opt}   # side fields ride ANY kind
-            # …except `background` on a kind that may not defer (D118 phase 1). Dropping it
-            # here is the one silent failure this field must never have: the action would run
-            # SYNCHRONOUSLY while the model believes it was deferred, and nothing would say
-            # so — measured on this very path, where `write_file` + background validated
-            # clean. Keeping it makes `validate_action` refuse it with the reason, inside the
-            # schema-retry cycle, so the turn is corrected rather than quietly reinterpreted.
+            # …except `background` on a kind that may not defer: dropped, the action would run
+            # synchronously while the model believes it deferred; kept, validate_action refuses
+            # it with the reason.
             if obj.get("background") is not None and kind not in BACKGROUNDABLE_KINDS:
                 allowed.add("background")
             out = {k: v for k, v in out.items() if k in allowed}
@@ -265,22 +234,16 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
                                 "unless cancel: true")
     if kind == "decide":
         problems += decide_field_problems(obj)
-    # D212: one question or a `questions` batch, each entry carrying its own options/default/
-    # request/config_patch/blocks_work — the whole shape lives in `askfields`.
-    if kind == "ask_user":
+    if kind == "ask_user":   # D212: the whole shape lives in `askfields`
         problems += ask_field_problems(obj)
-    # The schema's `options` cap is decide's (26); a pick-list the OPERATOR reads stays a
-    # short one — on an ask_user (askfields, per question), and on a report that carries
-    # options (F621: those are the same thing, a decision for him, same page).
+    # the schema's `options` cap is decide's; a pick-list the OPERATOR reads stays short
     if kind == "report" and len(obj.get("options") or []) > ASK_OPTIONS_MAX:
         problems.append(f"kind={kind}: at most {ASK_OPTIONS_MAX} 'options' — a longer list "
                         "is a question to rephrase, not a menu")
     if kind == "create_routine" and not is_slug(str(obj.get("target") or "")):
         problems.append("kind=create_routine requires 'target' to be a kebab-case slug for the "
                         "new routine")
-    # A `model` override (llm/spawn/subtask) is validated at DISPATCH, not here: it may
-    # name a role OR a catalog model, and only the executor sees the catalog — its
-    # teaching rejection lists the real alternatives (list_models shows the same).
+    # A `model` override is validated at DISPATCH: only the executor sees the catalog.
     if kind == "manage_lane":
         verb = str(obj.get("verb") or "").strip()
         verbs = ("list", "create", "update", "delete", "set-default", "run")
@@ -297,11 +260,7 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
         problems += job_field_problems(obj)
     if kind == "goal":
         problems += goal_field_problems(obj)
-    # D186: `do_nothing` IS its reasoning, and `say` is where that reasoning rides — so this
-    # is the one kind that checks `say` is non-empty. Nothing else does: ACTION_SCHEMA sets no
-    # minLength on it and no kind lists it among its required fields, so a blank narration is
-    # merely unhelpful elsewhere and is the whole action missing here. Refused inside the
-    # schema-retry cycle, so the run re-emits with the reason and spends no turn.
+    # D186: `do_nothing` IS its reasoning, so it is the one kind that checks `say` non-empty.
     if kind == "do_nothing" and not str(obj.get("say") or "").strip():
         problems.append("kind=do_nothing requires a non-empty 'say' — it IS the action: what "
                         "you checked, and why nothing is due. A do_nothing with no reasoning "
@@ -309,10 +268,7 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     if kind == "finish" and "final" in obj and not isinstance(obj["final"], bool):
         problems.append("kind=finish: 'final' is true or false — is this reply final?")
     if kind == "kill":
-        # One kill, two namespaces (D176 option (a)): a sub-workflow NUMBER or a background
-        # call's string HANDLE. Neither is required on its own, so the pair is checked here
-        # where the message can name what it got — `KIND_FIELDS` could only ever demand `n`
-        # and would reject every handle-addressed kill before it reached the route.
+        # One kill, two namespaces (D176): a sub-workflow NUMBER or a background HANDLE.
         has_n = obj.get("n") is not None
         has_handle = bool(str(obj.get("handle") or "").strip())
         if has_n and has_handle:
@@ -324,8 +280,7 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
                             "lists them) or 'handle' (a background call's handle, bg1/bg2 …, "
                             "from the started observation that named it)")
     if kind in ("read_file", "view_image"):
-        # The schema already holds `paths` to a list of at most READ_PATHS_MAX strings; what it
-        # cannot say is that none of them is blank.
+        # the schema bounds `paths`; it cannot say none of them is blank
         paths = obj.get("paths")
         if paths is not None and not all(p.strip() for p in paths):
             problems.append(f"kind={kind}: 'paths' must be a list of non-empty path strings")
@@ -352,8 +307,8 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
                 problems.append(f"kind={kind} may not touch .memory/ — use memory_read / "
                                 "memory_write (the engine maintains .memory/INDEX.md for you)")
                 break
-    # A rule is read by its catalog SLUG. The name is joined onto the library dir, so a path
-    # here read any .md file on the host past the run's fs jail (memops.do_read_rule).
+    # A rule is read by its catalog SLUG: the name is joined onto the library dir, so a path
+    # would read past the run's fs jail.
     if kind == "read_rule" and (name := str(obj.get("name") or "")) and not is_slug(name):
         problems.append(f"kind=read_rule: 'name' must be a rule's kebab-case slug as the "
                         f'catalog lists it, or "list" for the catalog — got {name!r}')
@@ -367,9 +322,8 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
             problems.append("memory_write: 'index' is reserved — the engine maintains "
                             ".memory/INDEX.md from each note's 'about' line")
         if kind == "memory_write" and not obj.get("delete"):
-            # THREE modes, each with its own required fields: delete (above), EDIT MODE
-            # (`anchor` + optional `replacement`, in place — R2432/R2456), and the whole note
-            # (`content` + `about`). Mixing edit mode with `content` is refused, not preferred.
+            # THREE modes: delete (above), EDIT MODE (`anchor` + optional `replacement`), and
+            # the whole note (`content` + `about`). Mixing edit mode with `content` is refused.
             if obj.get("anchor") is not None:
                 if obj.get("content") is not None:
                     problems.append("memory_write: pass EITHER 'content' (the whole note) OR "
@@ -393,15 +347,11 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     # `tools:` list and the capability layer judge it exactly as they would judge it alone.
     if kind in thenscript.HOSTS:
         problems += thenscript.problems(obj, allowed_kinds, grants)
-    # The side fields are gated on their own terms (the capability rides the FIELD, not the
-    # kind), so this runs outside the ALWAYS_KINDS exemption above: a `remind` on a `report`
-    # must meet the same bar as one on a `util`.
+    # The side fields are gated on their own terms (the capability rides the FIELD), so this
+    # runs outside the ALWAYS_KINDS exemption above.
     problems += side_field_problems(obj, grants)   # the fields riding ANY kind (engine/sidefields)
-    # `background` is refused on the kinds that may not defer, with the REASON and the list
-    # (D118 phase 1). The stray-field check below would already reject it — but as one name
-    # inside "fields [...] do not belong to kind=write_file (allowed: [thirty names])", which
-    # teaches the model nothing about why deferring a write is unsafe, and a retry that does
-    # not know the rule spends the same turn again.
+    # `background` on a kind that may not defer is refused with the REASON, which the generic
+    # stray-field message below would not teach.
     if obj.get("background") is not None and kind not in BACKGROUNDABLE_KINDS:
         problems.append(
             f"kind={kind} cannot run in the background: only a read, a fetch, or a mutation "

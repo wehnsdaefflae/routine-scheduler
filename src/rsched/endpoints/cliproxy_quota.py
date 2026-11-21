@@ -25,10 +25,8 @@ MANAGE_URL = "https://claude.ai/settings/usage"
 #: The one status that means "stop asking", as opposed to "something is wrong".
 _TOO_MANY_REQUESTS = 429
 
-#: The longest `Retry-After` worth carrying out as a countdown (24 h). Beyond it the header is
-#: almost certainly not about this read — a clock skew, a date in the wrong year, a proxy
-#: inventing a value — and a card promising to read again in three weeks is less honest than
-#: one saying only that the account is rate limited.
+#: The longest `Retry-After` carried as a countdown (24 h); beyond it the value is almost
+#: certainly skew or invention, and "rate limited" alone is more honest.
 _RETRY_AFTER_CAP_S = 86_400
 
 
@@ -46,16 +44,9 @@ def _account(files: list[dict], selected: str) -> str:
 def retry_after_seconds(raw: object) -> int | None:
     """`Retry-After` as whole seconds, or None when it says nothing usable.
 
-    RFC 9110 allows BOTH forms and Anthropic has sent both: a delta in seconds, or an HTTP
-    date. The conversion happens here, once, server-side — a date the console cannot turn into
-    a countdown is the same as no answer at all, and doing it in each renderer would be two
-    places for the clock arithmetic to differ.
-
-    None for anything unusable: a blank, a word, a negative or zero delta, an absurd figure, a
-    date already past. That is deliberate and is the whole point of the function — a wrong
-    countdown is worse than none, because "reads again in 0s" invites exactly the immediate
-    re-ask this exists to stop, and a caller must back off on the 429 itself rather than only
-    when a number came with it.
+    Both RFC 9110 forms (delta seconds or an HTTP date), converted once, server-side. None for
+    anything unusable (blank, word, non-positive, absurd, past): a wrong countdown is worse than
+    none, and a caller must back off on the 429 itself.
     """
     if not isinstance(raw, str) or not (text := raw.strip()):
         return None
@@ -66,8 +57,7 @@ def retry_after_seconds(raw: object) -> int | None:
         when = parsedate_to_datetime(text)
     except (TypeError, ValueError):
         return None
-    # A date with no zone is GMT by RFC 9110; without this the subtraction below raises on a
-    # naive/aware pair, which would turn a readable header into an exception in a soft path.
+    # a zoneless date is GMT by RFC 9110 (and naive minus aware would raise)
     if when.tzinfo is None:
         when = when.replace(tzinfo=UTC)
     secs = round((when - datetime.now(tz=UTC)).total_seconds())
@@ -89,12 +79,8 @@ def _rate_limited(retry_after: object) -> dict:
 def read_quota(cfg: EndpointConfig, *, timeout: int = 15) -> dict:
     """Return real account windows or a soft, credential-free error for the console.
 
-    A 429 is reported APART from every other failure (`rate_limited`, with `retry_after_s`
-    when the upstream said when), because the two call for opposite behaviour: an ordinary
-    error should be re-read as soon as the operator has fixed something, while a rate-limited
-    account must be left alone — before this, any non-200 became one soft error string and the
-    console simply re-asked on its own cadence, which hammers the account and tells the
-    operator nothing about when a figure will exist again.
+    A 429 is reported APART (`rate_limited`, `retry_after_s` when known): an ordinary error is
+    re-read once fixed, a rate-limited account must be left alone.
     """
     base = {"supported": True, "manage_url": MANAGE_URL}
     try:
@@ -116,8 +102,7 @@ def read_quota(cfg: EndpointConfig, *, timeout: int = 15) -> dict:
             if not isinstance(envelope, dict):
                 raise EndpointError("Proxy quota response has an unrecognised format.")
             status = envelope.get("status_code")
-            # …and the usual shape: the proxy answers 200 and carries Claude's own status and
-            # headers INSIDE, so the envelope is where a rate limit from Claude really arrives.
+            # …and the usual shape: Claude's own status and headers ride INSIDE the envelope
             if status == _TOO_MANY_REQUESTS:
                 head = envelope.get("headers")
                 head = head if isinstance(head, dict) else {}
@@ -129,9 +114,8 @@ def read_quota(cfg: EndpointConfig, *, timeout: int = 15) -> dict:
             raw = envelope.get("body")
             if isinstance(raw, str):
                 raw = json.loads(raw)
-            # D277: `scoped` carries the weekly per-model/per-surface limits, which the API is
-            # moving out of top-level keys into `limits[]`; `unknown` names a limit we could
-            # not read, so "we cannot see it" never renders as "it is not there".
+            # D277: `scoped` = weekly per-model/per-surface limits; `unknown` names an unreadable
+            # limit, so "cannot see it" never renders as "not there"
             quota = normalize(raw if isinstance(raw, dict) else {})
             if not quota["windows"] and not quota["scoped"]:
                 raise EndpointError("Claude returned no recognisable quota windows.")

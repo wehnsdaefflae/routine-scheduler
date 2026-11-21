@@ -3,9 +3,7 @@
 refusal.py owns the episode arithmetic - detection, flagging, the back-off windows,
 the `llm` seam's re-issue. This module owns what only the TURN loop needs: resolving
 which model serves THIS turn (the open-window check, the regular chain head bookkeeping)
-and the free-text prose-refusal seam inside next_action's schema-retry loop. Split out
-when refusal.py crossed the 350-line house bar (the bar's rule: a file that crossed is
-a file to split).
+and the free-text prose-refusal seam inside next_action's schema-retry loop.
 
 net: fs: none
 """
@@ -29,16 +27,13 @@ def serve_turn_head(loop):
     if takeover is not None:
         chain = [takeover]
         endpoint, ref = _adopt_model(loop, takeover)
-        # the branch this matters most on: the uncensored model is the one an operator binds
-        # to an endpoint that refuses `response_format` (here `otari-openai-plain`), so a
-        # takeover turn is the likeliest to arrive with no grammar at all
+        # the uncensored model is often bound to an endpoint that refuses `response_format`,
+        # so a takeover turn is the likeliest to arrive with no grammar at all
         _contract_if_unenforced(loop, endpoint)
         return chain, endpoint, ref, True
     chain = ctx.registry.for_model_chain("main", ctx.routine.models, ctx.routine.efforts)
-    # The chain HEAD is what the routine was configured with, whatever is serving now.
-    # Recorded once so a failure verdict can name the model the operator chose as well
-    # as the one that failed (F547/D146) - `main_model` below cannot, because it
-    # follows every switch.
+    # The chain HEAD is what the routine was configured with, recorded once so a failure
+    # verdict can name it (D146) — `main_model` below follows every switch.
     if not ctx.configured_model and chain:
         head = chain[0][1]
         ctx.configured_model = f"{head.endpoint}/{head.model}"
@@ -55,9 +50,8 @@ def _contract_if_unenforced(loop, endpoint) -> None:
     ENGINE NOTE the first turn nothing else states it — an unenforced wire serving the turn
     (the uncensored takeover among them) or the grammar shed by the repeat-streak escape.
 
-    Here rather than in `completion.next_action` because this is the one function that knows
-    which endpoint is about to serve, and because that file sits at its size-ratchet ceiling.
-    The decision and the note are `engine/schemaindex.py`'s; this is the call site.
+    Here because this is the one function that knows which endpoint is about to serve. The
+    decision and the note are `engine/schemaindex.py`'s; this is the call site.
     """
     from . import schemaindex
     if schemaindex.turn_needs_the_contract(loop, endpoint):
@@ -68,12 +62,10 @@ def note_takeover(refstate: dict, on_takeover: bool, served: bool) -> bool:
     """Record that the uncensored model is serving this turn, and return the turn's
     takeover flag — one call where next_action had a bare `on_takeover = …` assignment.
 
-    The two facts are NOT the same and D188 is where that stopped being harmless. A turn is
-    flagged `on_takeover` whenever a refusal was handled, INCLUDING the case where no
-    uncensored model could serve it and the refused turn is re-driven on the regular chain:
-    attributing that turn to `uncensored` would print a role beside a `usage["model"]` naming
-    the main model. So `served` — did a takeover target actually take the turn — is what moves
-    the role, and the flag keeps its own meaning (never reset the back-off episode).
+    The two facts differ (D188): a turn is flagged `on_takeover` whenever a refusal was
+    handled, even when no uncensored model could serve and the turn re-ran on the regular chain.
+    Only `served` — a takeover target actually took the turn — moves the role; the flag keeps
+    its own meaning (never reset the back-off episode).
     """
     if served:
         refstate["role"] = "uncensored"
@@ -99,7 +91,7 @@ def engage_turn_takeover(loop, ref, completion, refstate: dict | None = None) ->
     if target is None:
         return None
     # The refused TURN is re-driven whole on the uncensored model - its output IS this
-    # turn's action (operator, 2026-10-16; the honeypot essence-excision is retired).
+    # turn's action.
     if refstate is not None:
         refstate["role"] = "uncensored"   # D188: the turn is attributed to what serves it
     return _adopt_model(loop, target)

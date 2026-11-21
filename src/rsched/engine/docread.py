@@ -1,48 +1,30 @@
 """READING a document — the PDF or Office file read_file meets is converted, not refused.
 
-A PDF, a Word document, a PowerPoint deck or an Excel workbook is not text, so read_file once
-refused it like any binary, and a run that had to read a contract or a handout either looked
-at it page by page as a picture or guessed at a util. `read_file` now hands such a file to the
-library's `doc-read` util (DOC_UTIL — ONE engine-owned name, the precedent `mediaops.VISION_UTIL`
-set) and pages the Markdown it produced exactly like a text file: `start_line`, `max_lines` and
-`start_char` address the CONVERTED text, the observation says it is a conversion (a layout
-rendered as Markdown is approximate) and names the PDF pages that carry no text layer, which a
-conversion reports and never silently OCRs.
+`read_file` hands a PDF, Word, PowerPoint or Excel file to the library's `doc-read` util
+(DOC_UTIL, one engine-owned name like `mediaops.VISION_UTIL`) and pages the Markdown it produced
+like a text file: `start_line`, `max_lines` and `start_char` address the CONVERTED text, and the
+observation says it is a conversion and names PDF pages with no text layer (reported, never
+silently OCR'd).
 
-What makes a file a document is its MAGIC BYTES (`document_kind`): `%PDF-` at byte 0, or a zip
-whose central directory holds `[Content_Types].xml` plus a `word/`, `ppt/` or `xl/` part —
-never its name. Anything else keeps read_file's text path and its two refusals.
+A file is a document by its MAGIC BYTES (`document_kind`), never its name: `%PDF-` at byte 0,
+or a zip holding `[Content_Types].xml` plus a `word/`, `ppt/` or `xl/` part.
 
-THE CONVERSION IS THE ENGINE'S CALL, made on the run's behalf inside the run's own jail: the
-run's fs roots, the util's `fs: roots`, no secret at all (the call never OCRs, so the vision
-key the util's tree declares is withheld), and `offline` — TCP denied although the util's
-`calls: vision` makes its tree `net: outbound`. The util writes the Markdown to a file and
-prints only a summary, so the engine never holds the document, nor its conversion, as one
-string: read_file streams the cache file line by line like any text.
+The conversion is the ENGINE's call, inside the run's own jail: the run's fs roots, no secret,
+and `offline`. The util writes Markdown to a file and prints only a summary, so the engine never
+holds the document or its conversion as one string.
 
-WHERE IT WRITES IS NOT THE CACHE, and cannot be. The cache lives inside the routine dir, and
-`ownseal.SEALED_DIRS` withholds `.doc_cache/` from every jailed subprocess (D179) — so the
-engine's own cache directory is invisible to the process it asks to fill it, and Landlock has
-no deny rule to carve an exception with. Creating the file engine-side first does not help:
-the util atomic-writes a temp file BESIDE its `--out` target, which needs CREATE in the
-target's PARENT. So the util is handed a private directory in the system temp dir — which
-`sandbox._toolchain` mounts read-write for every util on every run — and the engine moves the
-result into the cache afterwards (`_store`), where its own write was legal all along. The
-failure was silent for as long as it was because a cache HIT returns before the util is
-reached: only a document never converted in that routine bit.
+The util writes into a private DROP DIRECTORY in the system temp dir, not the cache: `.doc_cache/`
+is sealed against jailed subprocesses (`ownseal.SEALED_DIRS`, D179), and the util atomic-writes
+BESIDE its `--out` target, so it needs CREATE in the parent. The engine moves the result into
+the cache afterwards (`_store`).
 
-A DOCUMENT OVER `fileops.READ_MAX_BYTES` IS STILL CONVERTED. That cap exists because a read
-decoded the file it read; here what is read is the converted text, streamed from disk, and
-the source is hashed in 1 MiB chunks. The conversion bounds itself instead: at most MAX_PAGES
-pages per conversion (the observation names the rest and how to reach them), the util's own
-cap on an Office file (its converter holds the whole document), and CONVERT_TIMEOUT_S.
+A document over `fileops.READ_MAX_BYTES` is still converted — what is read is the streamed
+conversion — bounded instead by MAX_PAGES, the util's own Office cap, and CONVERT_TIMEOUT_S.
 
-THE CACHE (`CACHE_DIR`, beside `.util_outputs/`) is keyed by the sha256 of the file's BYTES,
-so a re-read — the next window, the next run — converts nothing, and a changed file is a new
-key. Engine-owned and read-only for the run (`fileops._engine_owned`), gitignored on first
-use, never search-indexed, pruned to the KEEP_DOCS most recently read. A failed conversion is
-never cached: the util missing, failing or timing out leaves read_file's binary refusal with
-the failure appended (`fileops._read_one`), and the next read tries again.
+THE CACHE (`CACHE_DIR`) is keyed by the sha256 of the file's BYTES; engine-owned, read-only
+for the run, gitignored, never search-indexed, pruned to KEEP_DOCS most recently read. A failed
+conversion is never cached: read_file's binary refusal carries the failure and the next read
+tries again.
 """
 
 from __future__ import annotations
@@ -67,10 +49,9 @@ if TYPE_CHECKING:
 
 DOC_UTIL = "doc-read"
 CACHE_DIR = ".doc_cache"
-#: Prefix of the per-conversion DROP DIRECTORY the util writes into — in the system temp dir,
-#: the one tree `sandbox._toolchain` mounts read-write for every util on every run, because
-#: the cache itself is sealed against jailed subprocesses (`ownseal.SEALED_DIRS`). Named, not
-#: anonymous, so `_prune` can recognise and remove one a killed conversion left behind.
+#: Prefix of the per-conversion DROP DIRECTORY in the system temp dir (which
+#: `sandbox._toolchain` mounts read-write for every util); named so `_prune` can remove one a
+#: killed conversion left behind.
 DROP_PREFIX = "rsched-docread-"
 MAX_PAGES = 200
 CONVERT_TIMEOUT_S = 300
@@ -84,9 +65,8 @@ _HASH_CHUNK = 1024 * 1024
 
 def document_kind(path: Path, head: bytes) -> str | None:
     """`pdf` / `docx` / `pptx` / `xlsx` from the file's first bytes (`head`), or None. A zip
-    is opened only to list its central directory, which decompresses nothing — so a 1.5 GB
-    archive costs one seek to its end. The util carries its own copy (it cannot import the
-    engine), held to this one by tests/test_docread.py.
+    is opened only to list its central directory, which decompresses nothing. The util carries
+    its own copy, held to this one by tests/test_docread.py.
     """
     if head.startswith(b"%PDF-"):
         return "pdf"
@@ -133,12 +113,9 @@ def _store(part: Path, text: Path) -> None:
     """Move the util's Markdown from its drop directory into the cache — the half of the
     conversion the ENGINE performs, because only the engine may write there.
 
-    Not `part.replace(text)`: the drop dir is in the system temp dir and the cache inside the
-    routine dir, normally different filesystems (`/tmp` is a tmpfs), and a rename across them
-    is `EXDEV`. So the bytes are copied into the cache under a dot-name first and renamed
-    INSIDE it, which keeps what the content-hash key promises — a reader sees the whole
-    conversion or no file at all, never a half-written one. The dot-name is also what
-    `_prune` sweeps if this is interrupted.
+    Copied under a dot-name then renamed INSIDE the cache (a rename across filesystems is
+    `EXDEV`), so a reader sees the whole conversion or no file; `_prune` sweeps the dot-name
+    if interrupted.
     """
     fd, tmp_name = tempfile.mkstemp(dir=text.parent, prefix=f".{text.name}.", suffix=".part")
     os.close(fd)
@@ -162,11 +139,8 @@ def _summary(out: str) -> dict | None:
 
 def _prune(base: Path) -> None:
     """Keep the KEEP_DOCS most recently READ conversions (a hit refreshes its mtime), and drop
-    what a conversion ended mid-write left behind (older than two conversion deadlines — a
-    live one is younger): a half-written dotfile in the cache, and the util's own DROP
-    DIRECTORY in the system temp dir, which `converted` removes in its `finally` but a killed
-    process cannot. Best effort: two runs pruning one routine's cache at once may each find a
-    file already gone.
+    what a killed conversion left behind (older than two conversion deadlines): a half-written
+    dotfile in the cache and a stale DROP DIRECTORY. Best effort.
     """
     stale = time.time() - 2 * CONVERT_TIMEOUT_S
     try:

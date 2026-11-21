@@ -5,12 +5,10 @@ Every verb answers with the whole ledger after it, and the observation carries i
 (`ledger`): that snapshot is what a resumed leg, a rewind and a branch read the goals back from
 (`goals.replay`). A refusal changes nothing and carries no ledger.
 
-The grounding rule is the module's reason to exist (goals.py says why): `set`/`add` need words
-the person wrote this run, `change`/`drop` need words they wrote AFTER the goal's own. `check`
-is the run's claim, so it meets the same judge a finish's `met` meets (`verifier.refuted`): a
-refuted check leaves the goal open ONCE and says why; checking it again with the challenge spent
-stands, and the objection is recorded beside the evidence. The challenge spends the same
-once-per-line budget as the finish's (`loop._challenged`), so a goal is never argued twice.
+Grounding (goals.py says why): `set`/`add` need words the person wrote this run,
+`change`/`drop` need words they wrote AFTER the goal's own. `check` meets the finish's judge
+(`verifier.refuted`): a refuted check leaves the goal open ONCE; a repeat stands with the
+objection recorded. It spends the finish's once-per-line budget (`loop._challenged`).
 """
 
 from __future__ import annotations
@@ -20,20 +18,16 @@ from pathlib import Path
 
 from . import goalpicks, goals, inbox, runkind, verifier
 
-# `runkind` and `verifier` are imported at module scope deliberately (F658): `goal check` runs
-# the SAME claim verification a finish does, so a lazy import here has the same failure as the
-# one that cost a run its summary on 2026-10-09 — the engine's in-memory caller meeting a
-# freshly-edited module from disk. Neither imports this module back.
+# `runkind` and `verifier` are imported at module scope deliberately (F658): a lazy import can
+# meet a freshly-edited module from disk mid-run (build skew). Neither imports this back.
 
 VERBS = ("list", "set", "add", "change", "check", "drop")
 _ID_RE = re.compile(r"^b\d+$")
 
 
 def field_problems(obj: dict) -> list[str]:
-    """The shape a `goal` action must have. Whether the goal EXISTS, is open, or the quote is
-    the person's is the handler's to judge against the ledger and the transcript — this is only
-    the grammar, so a malformed call is corrected inside the schema-retry cycle and costs no
-    turn.
+    """The shape a `goal` action must have — grammar only, so a malformed call is corrected
+    inside the schema-retry cycle; existence and grounding are the handler's to judge.
     """
     verb = str(obj.get("verb") or "")
     if verb not in VERBS:
@@ -65,9 +59,8 @@ def field_problems(obj: dict) -> list[str]:
 
 
 def _person(loop) -> tuple[list[dict], list[str]]:
-    """The transcript's events, and everything the person wrote to this run in order. Both,
-    from one read: grounding a numbered PICK needs the questions the events carry, not only
-    the words (engine/goalpicks.py).
+    """The transcript's events, and everything the person wrote to this run in order — one
+    read, since grounding a numbered PICK needs the events too (engine/goalpicks.py).
     """
     ctx = loop.ctx
     opening = str(loop.instruction or "") if runkind.is_conversation(ctx) else ""
@@ -79,17 +72,11 @@ def answered_texts(routine_dir, *, since: str = "") -> list[str]:
     """Every settled ANSWER this routine's runs received, oldest first — the person's words
     that are not in any one run's transcript (F911).
 
-    An operator answer is the person speaking, and `goals._person_spoke` already counts an
-    `answer` event as such; but an answer given to an EARLIER run was consumed by that run, so
-    it is in `questions/answered/` and in no transcript this run can read. Without this, a goal
-    the operator withdrew could not be retired by the words that withdrew it — reported by
-    folder-reorg (R3513/R3569) with a settled "Yes, drop b19 — it is withdrawn" whose drop was
-    refused as "not later user words".
+    An answer given to an EARLIER run lives in `questions/answered/`, in no transcript this
+    run can read — yet it may be what withdraws a carried goal.
 
-    `since` (a YYYY-MM-DD date, what `obligations.save` stamps on a carried goal) bounds the
-    read the way `heard_at(after=…)` bounds the transcript: an answer the person gave BEFORE a
-    goal was taken on cannot be the reason it changed. Same-day counts — `since` is a date and
-    the answer carries a time, so a goal taken on and withdrawn the same day is withdrawn.
+    `since` (the YYYY-MM-DD `obligations.save` stamps on a carried goal) bounds the read like
+    `heard_at(after=…)`: an earlier answer cannot be the reason a goal changed. Same-day counts.
     """
     rows = inbox.answered_questions(Path(routine_dir))
     out = []
@@ -103,9 +90,7 @@ def answered_texts(routine_dir, *, since: str = "") -> list[str]:
 
 def _heard_later(loop, goal: dict, quote: str) -> bool:
     """Did the person write `quote` after the words this goal came from? The transcript first,
-    and for a CARRIED goal the answered-questions store as well — its grounding lies in an
-    earlier run (`heard == -1`, what `obligations.carried` stamps), and so may the words that
-    withdraw it.
+    and for a CARRIED goal (`heard == -1`) the answered-questions store as well.
     """
     if goals.heard_at(quote, _person(loop)[1], after=goal["heard"]) is not None:
         return True
@@ -135,9 +120,8 @@ def _not_found(quote: str, *, later: bool, carried: bool = False) -> str:
     where = ("in anything the person wrote AFTER the words this goal came from — an earlier "
              "sentence cannot be the reason a later request changed" if later else
              "in anything the person wrote to this run")
-    # A carried goal's words may be in an answer an EARLIER run consumed, so that store was
-    # read too (F911): the refusal names every surface searched, or the next run cannot tell
-    # a missing quote from an unread store.
+    # The refusal names every surface searched, so a missing quote reads apart from an
+    # unread store (F911).
     searched = (" Both this run's transcript and the answers this routine has already "
                 "received (questions/answered/) were searched." if carried else "")
     return (f"the words {quote!r} are not {where}.{searched} Quote them verbatim (an excerpt "
@@ -173,11 +157,8 @@ def _add(loop, action: dict, verb: str) -> dict:
         if (at := goals.heard_at(quote, texts)) is not None:
             heard.append((quote, at))
             continue
-        # A bare numbered PICK ("1.", "2", "3)") is what the person's whole reply is when he
-        # answers the numbered choices the engine itself rendered, so the WORDS of the choice
-        # he picked are what ground the goal — and what it is recorded as (F731). A number no
-        # choice he picked carries resolves to nothing and is refused below, like any other
-        # words he never wrote.
+        # A bare numbered PICK ("1.", "2") answering engine-rendered choices: the WORDS of the
+        # picked choice ground the goal and are recorded (F731); an unmatched number refuses.
         chosen = goalpicks.quoted_choice(quote, events)
         at = goals.heard_at(chosen, texts) if chosen else None
         if at is None:

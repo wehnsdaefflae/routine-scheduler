@@ -1,9 +1,6 @@
 """The `manage_lane` action handler — a CONVERSATION manages routine LANES from chat (D61).
 
-The operator's rule (D61, option A): lane management must be fully reachable via an ACTION,
-not only the web surface (the routines page's lane rows). One compact action kind carries
-every operation through a `verb` field, mirroring the `/api/lanes` surface the routines page
-uses:
+One compact kind carries every operation through a `verb` field, mirroring `/api/lanes`:
 
     verb=list                                    → the whole store (default + every lane)
     verb=create   name=… [members=…] [on_failure=…] [cron=…]
@@ -11,46 +8,25 @@ uses:
                   [paused=…]
     verb=delete   target=<lane id>
     verb=set-default  on_failure=<stop|continue>
-    verb=run      target=<lane id>               → arm a sequential fire (Phase B)
+    verb=run      target=<lane id>               → arm a sequential fire
 
-**This kind covers the TEMPORAL axis and nothing else.** A lane decides when its members fire
-and in what order (`rsched.lanes`). What a routine may reach — its settings, its fs roots, the
-shared stores among them — lives in that routine's own routine.yaml, which no run writes. So
-there is deliberately no verb here that touches any of it: a conversation that wants a routine
-to share a store (or stop sharing one) proposes it as a config patch (`ask_user` with
-`config_patch`), which the user approves and the WEB writes. The split is the point: reordering
-when routines fire must never be able to change what a routine can reach (docs/lanes-tags.md).
+**This kind covers the TEMPORAL axis and nothing else** (`rsched.lanes`). What a routine may
+reach — settings, fs roots, shared stores — lives in its own routine.yaml, which no run writes;
+a change there is a `config_patch` the user approves (docs/lanes-tags.md).
 
-`cron` is the LANE schedule (D71, R312): the chain fires on it, member crons are
-suppressed while it is set. The server tz is recorded beside it, exactly as the web layer
-writes it; an empty string clears the schedule. This is how a user's scheduling request is
-completed by the conversation itself, with no operator round-trip to the web. `paused`
-(update only) gates the cron without touching it — nothing in a paused lane auto-fires, an
-explicit run still works.
+`cron` is the LANE schedule (D71): member crons are suppressed while it is set; the server tz is
+recorded beside it; an empty string clears it. `paused` (update only) gates the cron without
+touching it — an explicit run still works.
 
-Members are flat ordered slugs (weak-model-friendly schema); the handler wraps them into
-the store's member records. A chain fires each member ONCE, so a flow with an inbound and an
-outbound end BRACKETS the lane (D90): an inbound-router member placed first, an outbound-sender
-member placed last — two single-purpose members, never one member run twice.
+Members are flat ordered slugs, wrapped into the store's member records and validated against
+the live registry as `api_lanes._validate_members` does. A chain fires each member ONCE, so a
+flow with an inbound and an outbound end BRACKETS the lane with two members (D90). Same
+`rsched.lanes` / `rsched.lane_runs` store as the web, so the two are identical.
 
-It reuses the SAME `rsched.lanes` store + `rsched.lane_runs` the endpoints call — one source
-of truth, so a lane created from chat and one created from the page are identical. Member
-validation against the live registry (a lane can never name a routine that does not exist)
-matches `api_lanes._validate_members`.
-
-Structural rule (mirrors `create_routine`): the kind is conversation-INITIATED, not
-conversation-only (F328). Every depth-0 run is offered it — `loopsetup` injects it for all of
-them — because a scheduled run holding a finished design had no way to hand it over except back
-to the operator by hand (R353). What varies is what a verb DOES. From a root conversation it
-applies; from any other depth-0 run it writes a PROPOSAL to the Decisions page, which the user
-materializes through this same store with one click. `list` answers directly either way: it
-writes nothing; a run that cannot read the lane store cannot propose a correct change to it.
-
-A within-reply CHILD (depth > 0) is refused outright and never sees the kind. The queue is for a
-run that HAS a user, just not right now; a child run is a side effect of one turn and reorganizing
-what fires other routines is not something it may do on the way past.
+Conversation-INITIATED, not conversation-only (F328): every depth-0 run is offered it. From a
+root conversation a verb applies; from any other depth-0 run a mutating verb becomes a PROPOSAL
+on the Decisions page. `list` answers directly. A CHILD (depth > 0) is refused outright.
 """
-
 from __future__ import annotations
 
 from .. import lane_runs, lanes, registry, schedule
@@ -103,10 +79,8 @@ def _members_or_error(ctx: RunContext, action: dict):
 
 def _proposal_line(ctx: RunContext, action: dict, verb: str) -> str:
     """What this proposal would DO, in one line, with the target lane named as the operator
-    will see it. Resolved here rather than in the renderer because this is where the store is:
-    a run told only "queued" cannot name the pending change in its own finish summary (R1183,
-    R1200). A `run` proposal that does not say how many members it would fire is
-    indistinguishable from one that would fire none.
+    will see it, so the run can name the pending change in its finish summary. Resolved here
+    because this is where the store is.
     """
     lane_id = str(action.get("target") or "").strip()
     lane = lanes.get(ctx.server.routines_home, lane_id) if lane_id else None
@@ -137,12 +111,8 @@ def _proposal_line(ctx: RunContext, action: dict, verb: str) -> str:
 
 def _queued_obs(ctx: RunContext, action: dict, verb: str) -> dict:
     """A scheduled run's lane proposal, JUDGED against the live vocabulary and then filed for
-    the operator (F328/D229) — the twin of create_routine's. R353 needed BOTH: a routine plus
-    the lane it belongs in; D229 added the gate at the front, so a value the accept click would
-    refuse (an unknown member, a cron croniter cannot parse, an on_failure outside
-    `lanes.ON_FAILURE`) is refused to THIS run, which can still fix it, instead of to the
-    operator, who cannot. The one-line reading of the change stays here, where the lane store
-    is.
+    the operator (D229) — the twin of create_routine's. A value the accept would refuse is
+    refused to THIS run, which can still fix it.
     """
     from ..pendingvocab import queued_lane_obs
 
@@ -171,20 +141,15 @@ def handle_manage_lane(ctx: RunContext, action: dict) -> dict:  # noqa: PLR0911 
     home = ctx.server.routines_home
     lane_id = str(action.get("target") or "").strip()
 
-    # No user in the loop → a MUTATING verb becomes a proposal on the Decisions page (F328),
-    # not a refusal. `list` still answers directly: it writes nothing; a run that cannot
-    # read the lane store cannot propose a correct change to it.
+    # no user in the loop → a MUTATING verb becomes a proposal; `list` still answers directly
     if ctx.depth > 0 and verb not in READ_ONLY_VERBS:
         return _reject(
             "manage_lane cannot CHANGE anything from inside a child run — a sub-workflow must "
             "not reshape the fire order of other routines as a side effect. Report what you "
             "would change in your finish summary and let the run that started you decide.")
     if not is_root_conversation(ctx) and verb not in READ_ONLY_VERBS:
-        # `run` is NOT proposable. It arms an ephemeral lane fire — it writes no config and the
-        # materializer (web/api_pending._materialize_lane) cannot build it, so a queued `run`
-        # is a dead "create it" card the operator can only discard. Fire is time-sensitive too:
-        # an approval hours later fires a stale chain. So it fails LOUDLY here (R1200's ask:
-        # fire, or fail with the reason), never a queue.
+        # `run` is NOT proposable: an ephemeral fire the materializer cannot build, and an
+        # approval hours later would fire a stale chain — so it fails loudly, never queues
         if verb == "run":
             return _reject(
                 "manage_lane run cannot fire a lane from a run with no user in the loop. "

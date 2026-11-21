@@ -44,15 +44,12 @@ def rebuild_dialogs(loop, events: list[dict]) -> None:
     """Re-key, on a resumed leg, every record an ask-back left OPEN — so the re-submission
     supersedes it whatever leg it lands in.
 
-    `loop.dialog_qids` is built by the leg that took the ask-back, and a leg that resumed
-    after it (a restart between the ask-back and the re-submission, a conversation whose next
-    reply re-submits) started it empty: the re-submission filed a SECOND record and the first
-    stayed open beside it — two cards on the Decisions page for one decision. Read from the
-    WHOLE transcript, not the guard scope (engine/guardscope.py): a record is open until the
-    operator settles it or its re-submission supersedes it, whichever reply that falls in.
-    A question event names the record's type and subject; an `intermediate` answer to it is
-    the ask-back; the newest per `(type, subject)` wins, and only a record still pending on
-    disk is kept — a settled or superseded one is gone from there.
+    Without it a resumed leg starts `loop.dialog_qids` empty and the re-submission files a
+    SECOND record beside the open one. Read from the WHOLE transcript, not the guard scope
+    (engine/guardscope.py): a record is open until settled or superseded, in whatever reply.
+    A question event names the record's type and subject; an `intermediate` answer to it is the
+    ask-back; the newest per `(type, subject)` wins, and only a record still pending on disk is
+    kept.
     """
     asked: dict[str, tuple[str, str]] = {}
     for ev in events:

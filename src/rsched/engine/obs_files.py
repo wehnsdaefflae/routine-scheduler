@@ -1,18 +1,17 @@
 """Observation wording for the FILE and curated-store kinds.
 
-Split out of `observations.py` (F393). These are the run's ordinary senses, so their wording
-carries the things a model gets wrong without them: which paths a batched read actually
-returned, that a write was grounded (or why it was refused), the anchor that failed to match on
-an edit, and — for `.memory/` and the rule library — that the engine owns the index.
+These are the run's ordinary senses, so their wording carries the things a model gets wrong
+without them: which paths a batched read actually returned, that a write was grounded (or why
+it was refused), the anchor that failed to match on an edit, and — for `.memory/` and the rule
+library — that the engine owns the index.
 """
 
 from __future__ import annotations
 
 from . import docread, notemeta, readwindow, runsearch, thenscript
 
-#: What every landed memory_write ends on (Hermes Agent's memory tool, measured there: a write
-#: answered with the note's state invited the model to "find more to fix" in the next turn).
-#: The note's lines are deliberately NOT echoed for the same reason.
+#: What every landed memory_write ends on: a write answered with the note's state invites the
+#: model to "find more to fix" next turn, so the note's lines are deliberately NOT echoed.
 _SAVED = " Saved — this write is complete; do not repeat it."
 
 
@@ -66,21 +65,14 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
         parts = []
         for f in obs.get("files", []):
             if f.get("error"):
-                # R1493: a failed view must read as a failure and invite nothing. The report's
-                # author described a rendered page twice on the strength of a line that opened
-                # with "look at it now" and appended the failure at its end.
-                #
-                # F623: a file that was TOO LARGE to show natively and then also failed to be
-                # described keeps its measurement. Without it the run is told only "cannot be
-                # described" — the same dead end F623 exists to end — when the actionable fact
-                # is that the file is over the limit and downscaling it would work.
+                # A failed view must read as a failure and invite nothing. An oversize file
+                # keeps its measurement: downscaling it is the actionable fact.
                 why = f" It was also {f['oversize']}." if f.get("oversize") else ""
                 parts.append(f"--- {f['path']} NOT SHOWN — {f['error']}. You have not seen this "
                              f"file: describe nothing from it.{why}")
             elif f.get("native") and obs.get("media_replayed"):
-                # On RESUME the image is not re-attached (the replay rebuilds text-only
-                # messages), so "look at it now" would tell the model to look at what is not
-                # there — the very shape R1493 was filed for, on the resume path.
+                # On RESUME the image is not re-attached (the replay is text-only), so "look at
+                # it now" would point at what is not there.
                 parts.append(f"--- {f['path']} ({f['media_type']}) — was shown to an EARLIER "
                              "leg of this run and is NOT in this prompt; view_image it again "
                              "if you need to see it.")
@@ -88,9 +80,8 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                 parts.append(f"--- {f['path']} ({f['media_type']}) — shown to you below; "
                              "look at it now.")
             elif f.get("via") == "vision-util" and f.get("oversize"):
-                # F623: the model CAN see images — this one was too big to send, and saying
-                # "can't view it directly" would be false and unactionable. The measured size and
-                # the limit are what let the run downscale and look properly.
+                # The model CAN see images — this one was too big to send; the size and limit
+                # let the run downscale and look properly.
                 parts.append(f"--- {f['path']} (described by the vision util — TOO LARGE to show "
                              f"you directly: {f['oversize']}):\n{f.get('text', '')}")
             elif f.get("via") == "vision-util":
@@ -109,18 +100,16 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
         if err := obs.get("error"):
             return f"OBSERVATION (write_file {obs.get('path')} FAILED): {err}"
         base = f"OBSERVATION (write_file): wrote {obs['bytes']} bytes to {obs['path']}"
-        # F588: `bytes` is the payload's length, and for a local write that IS the number of
-        # bytes written — so the numbers are blind to a body the generation stopped inside.
-        # The BODY is not: a format that should parse and does not is named here, on the turn
-        # the run wrote it, instead of surfacing as a parse error in whatever reads it next.
+        # Byte counts are blind to a body the generation stopped inside; a format that should
+        # parse and does not is named here, on the turn it was written.
         warn = (f"\nWARNING — the body just written {obs['unparsed']}. A reply cut off "
                 "mid-generation lands exactly like this: treat the file as possibly incomplete "
                 "and write it again whole rather than reading this as a finished file."
                 if obs.get("unparsed") else "")
         if obs.get("append"):
             size = obs.get("size")
-            # a record-per-line file's separator was missing and the engine added it (R2452) —
-            # said plainly, because the next append would otherwise merge into this record
+            # a record-per-line file's missing separator was added — said, because the next
+            # append would otherwise merge into this record
             fixed = (" — a trailing newline was added, since this file is one record per line"
                      if obs.get("terminated") else "")
             # show the resulting total so a silent overwrite (size == bytes) is visible
@@ -159,10 +148,8 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                 f"{obs['content']}")
     if kind == "memory_write":
         if err := obs.get("error"):
-            # edit mode's refusals (memops: no such note, an anchor that does not match — size
-            # is never one: `over` below). The note is untouched, and the existing topics ride along
-            # when the note to edit does not exist. Read before any success field: the first
-            # live refusal reached the `lines` read below and ended the run (0.415.0).
+            # edit mode's refusals (no such note, an anchor that does not match — size is
+            # never one). The note is untouched. Checked before any success field is read.
             topics = (f" Existing topics: {', '.join(obs['topics']) or '(none yet)'}."
                       if "topics" in obs else "")
             return f"OBSERVATION (memory_write {obs.get('name')}.md NOT written): {err}{topics}"
@@ -175,15 +162,15 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                 "next changes, split part of it into a new note." if obs.get("over_advised")
                 else "")
         if meta := obs.get("meta"):
-            # D268: what notemeta RECORDED — a value it could not render was left out rather
-            # than refused, so naming the kept set is how a run learns one was dropped
+            # what notemeta RECORDED — an unrenderable value is left out, so naming the kept
+            # set is how a run learns one was dropped (D268)
             over += " INDEX line records " + ", ".join(
                 f"stale after {meta['stale_after']}" if key == "stale_after"
                 else notemeta.verified_mark(meta[key]) for key in notemeta.FIELDS
                 if key in meta) + "."
         if obs.get("edited"):
-            # edit mode: say what was replaced and where the note now stands, so the next
-            # edit's anchor can be chosen without re-reading the whole note (R2456)
+            # edit mode: say where the note now stands, so the next anchor can be chosen
+            # without re-reading the whole note
             return (f"OBSERVATION (memory_write {obs['name']}.md, edit mode): replaced "
                     f"{obs['replacements']} occurrence(s); the note is now {obs['lines']} "
                     f"lines.{over}{_SAVED}")

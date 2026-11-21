@@ -18,12 +18,10 @@ What admin does NOT lift — the STRUCTURAL / ownership gates stay in force, by 
 The two are separable on purpose: admin means "the operator is driving this conversation
 by hand and wants the full toolset", not "structural invariants are suspended".
 
-The token NEVER reaches the engine — the web layer is the only place it is compared, and
-the engine sees only the boolean marker. The marker is never persisted to routine.yaml and
-never inherited by sub-workflows (a child builds its own policy with capabilities off), so
-a later non-admin request to the same conversation is an ordinary run again. Every action a
-run takes under admin appends one line to <routines_home>/.control/admin-audit.jsonl so the
-bypass is auditable and never silent.
+The token NEVER reaches the engine, which sees only the boolean marker. The marker is
+one-shot, never persisted to routine.yaml and never inherited by sub-workflows. Every action
+under admin appends a line to <routines_home>/.control/admin-audit.jsonl, so the bypass is
+never silent.
 """
 
 from __future__ import annotations

@@ -275,7 +275,7 @@ def test_a_hand_broken_assist_tally_reads_as_nothing_instead_of_breaking_the_pag
     d = server.routines_home / "r"
     (d / "state").mkdir(parents=True)
     (d / "state" / "assists.json").write_text(
-        json.dumps({"x:pre-action": "lots", "y:observation": 2}), encoding="utf-8")
+        json.dumps({"x:pre-action": "lots", "y:observation": {"fires": 2}}), encoding="utf-8")
     rows = [(r["key"], r["fires"]) for r in cautions(server, d)["assists"]]
     assert rows == [("y:observation", 2), ("x:pre-action", 0)]
 

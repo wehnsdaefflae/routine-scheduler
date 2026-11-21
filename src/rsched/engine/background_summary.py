@@ -7,24 +7,12 @@ after the last turn boundary, whose result exists and sits in the transcript unr
 line `engine/loopend.finish_run` appends to the summary — the one surface the operator and the
 next run actually read.
 
-**Why the landed case speaks now.** It used to be silent: `settle` returned a line only for the
-abandoned set, on the argument that a call landing a moment too late is "the ordinary end of a
-short run that backgrounded something". That argument weighs the engine's tidiness, not the
-reader's position: the run finished having based its conclusions on evidence it was never shown,
-and the only place anyone looks said nothing about it. D195 (arXiv 2609.36139) is the
-authorization to change it — an explicit honesty instruction lifts a model's flaw-flagging by
-33–55 pp WHERE THE MODEL CAN SEE THE FLAW, and the paper's single non-improving scenario is the
-hidden pending tool call, which is exactly this one. A run cannot flag what it was never shown,
-so the engine has to; the fix is mechanical, not a prompt.
+**The landed case speaks too**: the run concluded without evidence it was never shown, and a
+run cannot flag what it never saw (D195), so the engine has to.
 
-**Two sentences, never one.** The losses differ in the only way a reader acts on: the abandoned
-call's answer is GONE, so re-running is the only way to have it, while the landed one's answer
-EXISTS in a transcript row and can simply be read. Folding them into one line would delete that
-difference and send a reader to repeat work the engine already holds.
-
-Its own module, and that is the size ratchet rather than taste: `engine/background.py` sits at
-its ceiling in `tests/size_ratchet.json`, and a file over the house bar may only shrink. The
-wording is the part with no state and no threads, so the wording is the part that moves out.
+**Two sentences, never one.** The abandoned call's answer is GONE (re-run to have it); the
+landed one's EXISTS in a transcript row and can simply be read. One line would erase the
+difference a reader acts on.
 """
 
 from __future__ import annotations
@@ -44,9 +32,8 @@ class SettledCall(Protocol):
 def brief_list(calls: Sequence[SettledCall]) -> str:
     """One phrase per background call — the handle, its kind and what it was doing.
 
-    The single source for this phrasing: a run meets it while a call is in flight (the `kill`
-    refusal naming the live handles), and again at run end in the summary. Two renderings would
-    drift, and a handle written two ways reads as two different calls.
+    The single source for this phrasing (the `kill` refusal and the run-end summary): a handle
+    written two ways reads as two different calls.
     """
     return "; ".join(f"`{c.handle}` ({c.kind}: {c.brief})" for c in calls)
 
@@ -55,12 +42,9 @@ def settle_note(*, unread: Sequence[SettledCall],
                 abandoned: Sequence[SettledCall]) -> str:
     """The summary's account of what this run never read — "" when it read everything.
 
-    Empty is the ordinary case and has to stay empty: a bracket on every run's summary is a
-    bracket every reader learns to skip, and then the one run that lost something says it in a
-    place nobody looks any more.
-
-    Both halves can be true of the same run, and then both lines appear. The LANDED set goes
-    first because it is the one a reader can act on without re-running anything.
+    Empty is the ordinary case and must stay empty — a bracket on every summary is one readers
+    learn to skip. Both halves may appear; the LANDED set goes first, being actionable without a
+    re-run.
     """
     lines: list[str] = []
     if unread:

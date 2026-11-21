@@ -1,29 +1,18 @@
 """The routine's OUTCOME — what it exists to produce for its principal — measured each run.
 
-Every judge the instance had read the routine's own account: a run finished `ok`, its Done-when
-lines were met, its self-checks exited 0. freelance-radar sent 89 applications in four months,
-won zero interviews, and every one of those judges said it was healthy; grants-radar found no
-new programme in 14 runs on the same verdict. What none of them asked is whether the routine
-produced what it exists for. This module is where that question gets a NUMBER, every run, that
-the routine cannot talk its way around.
+Every other judge reads the routine's own account (run `ok`, Done-when met); this one gives a
+NUMBER, every run, that the routine cannot talk its way around. Two halves, owned apart:
 
-The contract has two halves, owned apart:
+- **The declaration is config** — `outcome:` in routine.yaml (`config/outcome.py`): the
+  `principal` and each measure (`id`, `label`, `kind` — `count` running total or `level`
+  current reading — and which way is `better`). No run can redefine its own success.
+- **The computation is the routine's** — `scripts/outcome.py` reads the routine's OWN state and
+  prints `{<measure id>: <number>, …}` on its last line. The engine runs it after the last
+  turn, in the run's jail, with no secret (the util model, `rsched/scripts.py`).
 
-- **The declaration is config** — `outcome:` in routine.yaml (`config/outcome.py`): who the
-  results are for (`principal`) and each measure (`id`, a `label` a person reads, its `kind` —
-  a `count` is a running total, a `level` a current reading — and which way is `better`). The
-  operator owns what the routine is FOR; no run can redefine its own success.
-- **The computation is the routine's** — `scripts/outcome.py`, an ordinary routine script that
-  reads the routine's OWN state and prints one JSON object `{<measure id>: <number>, …}` on its
-  last line. The engine runs it after the run's last turn, in the run's jail, with no secret and
-  no network beyond what its header declares (the util model, `rsched/scripts.py`).
-
-What the engine records is exactly what the script printed, checked only for SHAPE: every
-declared measure present as a number. A script that fails, prints something else or omits a
-measure records `{"error": …}` — a run whose outcome could not be read, never a zero. The
-reading lands in status.json and in the run's usage row (`outcome_measures`), so outcome and
-cost form ONE time series (`readmodels/outcome_series.py`) — the evidence the routine-improver's
-outcome review reads first, before anything the routine says about itself.
+The engine records what was printed, checked only for SHAPE; a failure records `{"error": …}`,
+never a zero. The reading lands in status.json and the usage row (`outcome_measures`), so
+outcome and cost form ONE series (`readmodels/outcome_series.py`).
 """
 
 from __future__ import annotations

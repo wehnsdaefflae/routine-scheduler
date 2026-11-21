@@ -1,15 +1,14 @@
 """A routine's configured CEILINGS, and the memory high-water mark recorded beside them.
 
-Split out of `run_context.py` (F393): `RunContext` is live run state; this is the static
-configuration it was started with, plus the one process fact worth sampling next to it.
+`RunContext` is live run state; this is the static configuration it was started with, plus
+the one process fact worth sampling next to it.
 
 `Budgets` holds the numbers exactly as `routine.yaml` writes them and turns them into the
 unified stop-condition primitive on demand (`ledger()` -> `BudgetLedger`). Budgets are a runaway
 BACKSTOP, never a pace — what a run is FOR is its recipe's `## Done when` (`engine/donewhen.py`).
 
-`_vm_hwm_kb` exists because an OOM kill used to leave no trace: rc=-9 with nothing to say how
-close to host RAM the engine got (F348). Every status write samples it, so the last one before
-a kill is the evidence.
+`_vm_hwm_kb` is sampled by every status write, so the last one before an OOM kill (rc=-9)
+says how close to host RAM the engine got.
 """
 
 from __future__ import annotations
@@ -24,11 +23,9 @@ from .turnwindow import DERIVE, total_turn_cap
 def _vm_hwm_kb() -> int | None:
     """Peak resident memory (VmHWM, kB) of THIS engine process, from /proc/self/status.
 
-    F348: rc=-9 post-mortems were blind — a run the kernel OOM-killed left no memory
-    trace. write_status samples this every update, so the run's LAST status write tells
-    the daemon's close-out (and D99's auto-resume note) how close to host RAM the engine
-    got before it died. None on non-Linux or a degraded /proc — absence is a platform
-    fact, never an error.
+    write_status samples this every update, so the LAST status write tells the daemon's
+    close-out how close to host RAM a killed engine got. None on non-Linux or a degraded
+    /proc — absence is a platform fact, never an error.
     """
     try:
         for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
@@ -50,9 +47,8 @@ class Budgets:
     max_child_runs: int
     max_child_depth: int
     ask_timeout_min: int
-    max_cost: int = -1        # -1 = unlimited: whole-$ ceiling on NOTIONAL spend (F758) —
-                              # endpoints/usage.dollars_spent, which is the billed figure
-                              # wherever a provider reports one and list price everywhere else
+    max_cost: int = -1        # -1 = unlimited: whole-$ ceiling on NOTIONAL spend
+                              # (endpoints/usage.dollars_spent)
     max_total_turns: int = -1  # the RESOLVED cumulative cap across ALL resume windows
                                # (max_turns bounds ONE window). -1 = unlimited; the config's
                                # `0` means DERIVE and is resolved in from_config, never here —
@@ -63,9 +59,8 @@ class Budgets:
         """A routine's configured numbers as this run's ceilings.
 
         The ONE place the run-spanning cap is resolved (`engine/turnwindow`): `max_total_turns`
-        defaults to 3x `max_turns` instead of unlimited, because `max_turns` bounds a resume
-        WINDOW and a re-based window bounds no chain of them (F564/D155). An explicit value
-        wins, -1 included.
+        defaults to 3x `max_turns`, because `max_turns` bounds only one resume WINDOW. An
+        explicit value wins, -1 included.
         """
         resolved = dict(budgets)
         resolved["max_total_turns"] = total_turn_cap(

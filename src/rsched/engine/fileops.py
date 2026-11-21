@@ -1,15 +1,10 @@
 """File-shaped effect handlers: read_file / write_file / edit_file — plus the path gates every
 file-shaped action shares (the runs/ read depth, the write-grounding rule, the seals on what
-the engine and the operator own). Split from executor.py, which keeps dispatch and the util
-runner; delete / move / mkdir live in fsops.py, `view_image` in mediaops.py, the conversion a
-read_file of a PDF or Office document pages through in docread.py, and the name-addressed
-stores (`.memory/`, the rule library) in memops.py.
+the engine and the operator own). delete / move / mkdir live in fsops.py, `view_image` in
+mediaops.py, document conversion in docread.py, the name-addressed stores in memops.py.
 
-Every gate compares RESOLVED paths. `resolve_rel` hands back a fully resolved path, so the
-dirs a seal is anchored on are resolved too (`reach.routine_dirs`) — and they are every routine
-dir the run can REACH, not only its own: a child's own dir is a workspace under
-`runs/<ts>/sub/<n>/`, but its roots extend the parent's tree (F185), so a seal anchored on
-the workspace alone sealed nothing the child could actually write.
+Every gate compares RESOLVED paths, anchored on every routine dir the run can REACH
+(`reach.routine_dirs`), not only its own: a child's workspace roots extend the parent's tree.
 """
 
 from __future__ import annotations
@@ -33,12 +28,7 @@ from .run_context import RunContext, resolve_action_path
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-# The largest file read_file will OPEN. The read used to materialise the whole file before
-# windowing it — `read_text(errors="replace")` on a 1.5 GB .mkv became a multi-GB str plus a
-# second copy from splitlines() — and on 2026-09-14 that swap-thrashed the 3.4 GB host for
-# five hours until a physical reset (tv-show-tracker-seedbox-manager, reading a media file to
-# satisfy the read-before-delete gate). 8 MiB is ~1 000 windows of the observation cap; a
-# larger text file is paged with shell (head / sed -n) or a util, which stream.
+# The largest file read_file will OPEN; a larger text file is paged with shell or a util.
 READ_MAX_BYTES = 8 * 1024 * 1024
 BINARY_SNIFF_BYTES = 8 * 1024        # a NUL byte in the first 8 KiB marks a file binary
 UTIL_DEFAULT_TIMEOUT_S = 300
@@ -53,17 +43,15 @@ def _within(resolved: Path, sealed: Path) -> bool:
     """Does the action path lie in (or at) `sealed`, taken at its own place or at what it
     resolves to? An action path is resolved — wholly, or up to its final entry for delete and
     move (`_entry`) — so a sealed path that is itself a link is met at its target by one and
-    at its own place by the other. Compared unresolved alone — behind a symlinked home, or a
-    relative CLI dir path — nothing matched, which opened the seal instead of closing it.
+    at its own place by the other.
     """
     return resolved.is_relative_to(sealed) or resolved.is_relative_to(sealed.resolve())
 
 
 def _listing_lines(path: Path) -> Iterator[str]:
     """A directory's content IS its entries: one line each — `dir` / `file` / `link`, a
-    file's size in bytes, the name — sorted by name, so a listing pages like a file. This is
-    how a season pack of 1.5 GB media files is LOOKED AT before it is deleted: by name and
-    size, never decoded.
+    file's size in bytes, the name — sorted by name, so a listing pages like a file and a
+    directory is LOOKED AT without decoding anything in it.
     """
     with os.scandir(path) as it:
         entries = sorted(it, key=lambda e: e.name)
@@ -104,11 +92,9 @@ def _binary_error(size: int) -> str:
 def _refusal(rel_path: str, size: int, binary: bool) -> dict | None:
     """The two reads that must never happen, decided from a stat and an 8 KiB sniff BEFORE
     anything is decoded: a binary file (a NUL byte in its head) and a file over
-    READ_MAX_BYTES. Both carry `size` — the whole of what read_file can tell about such a
-    file, and the reason the refusal still counts as having LOOKED at it for the
-    destruction gate (history.seen_paths reads the key back on resume). A DOCUMENT never
-    reaches this: it is converted (docread.py), and refused only when that fails
-    (`_document_refusal`).
+    READ_MAX_BYTES. Both carry `size`, so the refusal counts as having LOOKED at the file
+    for the destruction gate (history.seen_paths reads the key back on resume). A DOCUMENT is
+    converted instead (docread.py) and refused only when that fails.
     """
     if binary:
         return {"path": rel_path, "size": size, "error": _binary_error(size)}
@@ -162,15 +148,12 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
     except (OSError, PermissionError) as exc:
         return {"path": rel_path, "error": str(exc)}
     ctx.seen_paths.add(str(path))
-    # Reading a stage module IS the run's state transition — every recipe routes by
-    # "read the module for where you are" — so the engine tracks the live phase right
-    # here (→ status.json → the live tail's state event) with zero recipe cooperation; the
-    # stage modules are the phase graph's nodes (statemap), so the names always match.
+    # Reading a stage module IS the run's phase transition, tracked here with zero recipe
+    # cooperation; stage modules are the phase graph's nodes, so the names always match.
     if (path.suffix == ".md" and path.parent.name == STAGES_DIR
             and path.parent.parent == _own_dir(ctx)):
         ctx.phase = path.stem
-        # …and the PATH taken, not just the current node (F521/R1681): a run that skipped
-        # a declared stage was indistinguishable from one that worked through all of them.
+        # …and the PATH taken, not just the current node.
         if path.stem not in ctx.phases_entered:
             ctx.phases_entered.append(path.stem)
     if start_char and window:
@@ -184,18 +167,12 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
     return obs
 
 def _note_recorded_phase(ctx: RunContext, path) -> None:
-    """Record a phase the run WROTE for itself — the second half of stage coverage (F563).
+    """Record a phase the run WROTE for itself — the second half of stage coverage.
 
-    The read stamp below sees a stage only when the run RE-READS `stages/<name>.md`, so it
-    measures module re-reads rather than stage work: a routine whose recipe the model already
-    holds routes by writing `state/phase.json` and read as one that skipped everything (24 of
-    73 fleet runs on 2026-09-26; `llmsectest-weekday` 0 of 7 entered across three runs of
-    404-423 turns). A phase the run wrote down is the stronger claim of the two, and it is
-    already on disk — this only notices it.
-
-    Deliberately quiet: a cursor that is missing, malformed or not a stage name is simply not
-    evidence, and a write must never fail because of what it happened to contain. Validating
-    the name against the declared set is `stage_coverage`'s job, not this seam's.
+    The read stamp sees a stage only when the run re-reads `stages/<name>.md`; a run that
+    routes by writing `state/phase.json` is noticed here. Deliberately quiet: a malformed
+    cursor is not evidence, and a write never fails over its content. Validating the name is
+    `stage_coverage`'s job.
     """
     if path.name != "phase.json" or path.parent != _own_dir(ctx) / "state":
         return
@@ -222,12 +199,8 @@ MEMORY_REFUSAL = (".memory/ is reachable only through memory_read / memory_write
 def _memory_gate(ctx: RunContext, resolved) -> str | None:
     """The `.memory/` seal, on the RESOLVED path — where its siblings live.
 
-    `engine/actions.py` also tests it, but LEXICALLY, on the string the model supplied: it is
-    the cheap schema-retry correction that costs no turn. It is not a seal:
-    `state/../.memory/INDEX.md` and the absolute form both walk straight past it and
-    `resolve_rel` puts them right back inside the own dir. The engine-owned index went with
-    them — and a child, whose roots reach the routine's tree,
-    walked into the ROUTINE's `.memory/` the same way.
+    `engine/actions.py` also tests it LEXICALLY — a cheap correction, not a seal: a
+    traversal or an absolute path walks past it.
     """
     for d in routine_dirs(ctx):
         if _within(resolved, d / ".memory"):
@@ -247,8 +220,7 @@ FINISH_LINE_REFUSAL = ("the finish line is the operator's — a run reports agai
 
 def _finish_line_gate(ctx: RunContext, resolved) -> str | None:
     """The finish line decides when the routine RETIRES, so it is the operator's alone: a run
-    answers for it through its finish accounting and never edits it (six runs once rewrote the
-    document that decided their own end).
+    answers for it through its finish accounting and never edits it.
     """
     if any(resolved in (d / FINISH_LINE, (d / FINISH_LINE).resolve())
            for d in routine_dirs(ctx)):
@@ -268,10 +240,8 @@ def _jobs_gate(ctx: RunContext, resolved) -> str | None:
 def _removal_gate(ctx: RunContext, resolved: Path) -> str | None:
     """What a REMOVAL — delete, a move's source — may not take with it. Every other seal asks
     whether a path lies INSIDE something sealed; a removal also takes everything inside the
-    path, so `delete path: "." recursive: true` (or `state/..`) passed them all and removed the
-    whole routine: routine.yaml, .memory/, runs/ with the live transcript, .git. A routine dir
-    the run can reach is never removed whole, and neither is a directory holding its finish
-    line.
+    path. A routine dir the run can reach is never removed whole, and neither is a directory
+    holding its finish line or an engine-owned store.
     """
     for d in routine_dirs(ctx):
         if d.is_relative_to(resolved):
@@ -294,14 +264,10 @@ def _holds_config(resolved: Path) -> bool:
 
 def _engine_owned(ctx: RunContext, resolved) -> str | None:
     """`runs/` and `.util_outputs/` of every reachable routine dir: the engine's record of
-    what happened, never rewritten by the run it records — and `.doc_cache/`, the documents
-    read_file converted, whose files a later read trusts by their content hash, so a run that
-    edited one would be handed its own edit back as the document. One exemption, and only in the
-    ROUTINE's runs/: a child's own workspace tree (`runs/<ts>/sub/<n>/`, its children's
-    beneath it) is where a child WORKS. Everything else under it — the run's control.json,
-    status.json, transcript, the history of earlier runs — is the engine's and the web's;
-    a child that could write control.json could adopt a `config_change` (grants, budgets)
-    into the very run that spawned it.
+    what happened, never rewritten by the run it records — and `.doc_cache/`, whose files a
+    later read trusts by content hash. One exemption, only in the ROUTINE's runs/: a child's
+    own workspace tree is where it WORKS. Everything else there (control.json, status.json,
+    transcripts) is the engine's and the web's.
     """
     dirs = routine_dirs(ctx)
     workspace = dirs[-2] if len(dirs) > 1 else None     # the top-most child workspace
@@ -330,9 +296,7 @@ def _write_gate(ctx: RunContext, resolved, *, creates: bool = True) -> str | Non
     clearing one that is already stranded there is the repair, not the defect. A removal is
     held to what it would take WITH it instead (`_removal_gate`).
     """
-    # All structural, not grants: they hold with no policy loaded — the memory seal, the finish
-    # line, a note nobody would read (unread whatever the policy says), and a removal of a
-    # routine dir.
+    # All structural, not grants: they hold with no policy loaded.
     err = (_memory_gate(ctx, resolved) or _finish_line_gate(ctx, resolved)
            or _jobs_gate(ctx, resolved))
     if err is None and creates:
@@ -345,14 +309,12 @@ def _write_gate(ctx: RunContext, resolved, *, creates: bool = True) -> str | Non
         return err
     if err := _engine_owned(ctx, resolved):
         return err
-    # routine.yaml is config — never writable by ANY run (even the improver, even when the
-    # recipe is unlocked): config is the user's, changed via the UI or a deferred ask_user.
-    # Machine-tunable behavior knobs (deliberation) live in tuning.yaml, which is RECIPE.
+    # routine.yaml is config — never writable by ANY run, even with the recipe unlocked.
     if resolved.name == CONFIG_FILE or (not creates and _holds_config(resolved)):
         return ("routine.yaml is config (permissions, capabilities, budgets, roots) — no run "
                 "edits it, not even the routine-improver (machine-tunable knobs live in "
                 "tuning.yaml); file a deferred ask_user instead")
-    # Only the RECIPE seal reads the policy; the two above are structural (F698).
+    # Only the RECIPE seal reads the policy; the two above are structural.
     if (g := ctx.grants) is None:
         return None
     if not g.recipe_unlocked:
@@ -372,11 +334,8 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
         path = resolve_action_path(ctx, action["path"], write=True)
         if err := _write_gate(ctx, path):
             return {"kind": "write_file", "path": action["path"], "error": err}
-        # Grounding gate: write_file REPLACES a file wholesale. Overwriting one OUTSIDE
-        # the routine's own dir (a project file under an fs_write_root) requires having
-        # seen it this run — a model that never read the content cannot know what it
-        # destroys. The own dir is exempt (state/report rewrites are its normal mode);
-        # append adds without destroying; creating a new file needs no grounding.
+        # Grounding gate: overwriting a file OUTSIDE the own dir requires having seen it this
+        # run. The own dir, append and a new file are exempt.
         if (path.is_file() and not action.get("append")
                 and not path.is_relative_to(_own_dir(ctx))
                 and str(path) not in ctx.seen_paths):
@@ -385,66 +344,46 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
         path.parent.mkdir(parents=True, exist_ok=True)
         data = action["content"]
         if not isinstance(data, str):
-            # Structured content arrives as a live JSON value — models need not escape
-            # file bodies into strings; we serialize. An APPENDED value is a RECORD, not a
-            # document: one compact line, so a JSONL ledger stays one-object-per-line. The
-            # pretty form landed a 13-line row in self-audit's changelog.jsonl, which every
-            # reader of that file then counted as 13 malformed rows.
+            # Structured content is serialized here. An APPENDED value is a RECORD: one
+            # compact line, so a JSONL ledger stays one-object-per-line.
             data = (json.dumps(data, ensure_ascii=False) if action.get("append")
                     else json.dumps(data, indent=2, ensure_ascii=False)) + "\n"
         terminated = False
         if action.get("append"):
-            # A record-per-line file's structure IS the line boundary, so a string body with
-            # no trailing newline does not append a record — it extends the previous one
-            # (R2446/R2452: three release rows became one 5,832-char line, and the routine
-            # reading that hand-off could not distinguish a lost row from nothing shipped).
-            # A structured body is already terminated above; prose is left byte-faithful,
-            # because a run continuing a sentence next turn must not get a newline inserted.
+            # In a record-per-line file an unterminated string body would extend the previous
+            # record, so it is terminated; prose files stay byte-faithful.
             if data and not data.endswith("\n") and fileformat.record_per_line(path):
                 data += "\n"
                 terminated = True
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(data)
         else:
-            # F460, the write_file half: only a STR body over an existing file can break a
-            # format the engine did not produce (structured content is serialized here, and
-            # an append is not one document). The old text is read for a format the gate
-            # checks and for no other: reading it unconditionally decoded whatever a write
-            # replaced — a log, a media file — whole, the materialisation read_file's cap
-            # exists to prevent (2026-09-14).
+            # Only a STR body over an existing file can break a format; the old text is read
+            # only for a format the gate checks, never decoded otherwise.
             if (isinstance(action["content"], str) and fileformat.checks(path)
                     and path.is_file()
                     and (err := fileformat.check_after(
                         path, path.read_text(encoding="utf-8", errors="replace"), data))):
                 return {"kind": "write_file", "path": action["path"], "error": err}
-            # Atomic (tmp+rename): another process reading this path — self-audit reading any
-            # routine, or the target routine's own run when the improver rewrites its recipe
-            # under an fs_write_root — sees the old or new file whole, never a torn write. Its
-            # git autocommit / pre-run recipe snapshot can't stage a half-written file either.
+            # Atomic (tmp+rename): a concurrent reader or git autocommit never sees a torn write.
             keep = path.stat().st_mode & 0o7777 if path.exists() else None
             atomic_write(path, data, mode=keep)
         ctx.seen_paths.add(str(path))   # written = seen: a rewrite of own output is grounded
-        _note_recorded_phase(ctx, path)   # the run's own cursor is stage-coverage evidence (F563)
+        _note_recorded_phase(ctx, path)   # the run's own cursor is stage-coverage evidence
         size = path.stat().st_size      # TOTAL bytes on disk after the write
     except (OSError, PermissionError) as exc:
         return {"kind": "write_file", "path": action["path"], "error": str(exc)}
-    # `bytes` = the payload written — for a local write that IS bytes written (write() is
-    # all-or-nothing); `size` = the total AFTER it, proving append-vs-overwrite; `unparsed`
-    # = a body that should parse and does not, F588's one signal for a cut-short generation
-    # (the predicate is `fileformat.unparsed`; this module is at its size ceiling).
+    # `bytes` = the payload written; `size` = the total AFTER it (append vs overwrite);
+    # `unparsed` = a body that should parse and does not (a cut-short generation).
     return {"kind": "write_file", "path": action["path"], "bytes": len(data.encode("utf-8")),
             "append": bool(action.get("append")), "size": size,
-            **({"terminated": True} if terminated else {}),  # separator supplied (R2452)
+            **({"terminated": True} if terminated else {}),  # separator supplied
             **fileformat.unparsed(path, data)}
 
 
 def _nearest_anchor_hint(text: str, anchor: str) -> str:
-    """When an anchor doesn't match, find the closest ACTUAL line and show it via repr() — so a
-    near-miss on an invisible or ambiguous character (a non-ASCII dash like — vs -, a NBSP, a
-    tab-vs-spaces, trailing whitespace) is diagnosable at a glance instead of by trial and error.
-    read_file renders such characters escaped, so copying the displayed anchor can silently differ
-    from the file's real bytes; repr() of the true line shows exactly what to copy. Empty string
-    when nothing is close enough (a genuinely absent anchor gets no misleading hint).
+    """When an anchor doesn't match, show the closest ACTUAL line via repr(), so a near-miss on
+    an invisible or ambiguous character is diagnosable at a glance. Empty when nothing is close.
     """
     first = anchor.splitlines()[0].strip() if anchor.strip() else ""
     if not first:
@@ -465,9 +404,8 @@ def _edit_source(path: Path) -> tuple[str, str]:
 
     An edit holds the whole text and its replaced copy, so it refuses the two files read_file
     refuses — a binary one and one over READ_MAX_BYTES — from the same stat and sniff, before
-    any decode. A file that is not UTF-8 is refused too, and never decoded lossily: writing
-    back an `errors="replace"` decode would corrupt every byte it could not read. That decode
-    used to raise out of the handler, and an exception there ends the RUN, not the action.
+    any decode. A file that is not UTF-8 is refused too, never decoded lossily: writing back
+    an `errors="replace"` decode would corrupt every byte it could not read.
     """
     size, binary = _sniff(path)
     if binary or size > READ_MAX_BYTES:
@@ -510,15 +448,13 @@ def do_edit_file(action: dict, ctx: RunContext) -> dict:
                              "or set all: true to replace every occurrence"}
         new_text = text.replace(anchor, replacement) if action.get("all") \
             else text.replace(anchor, replacement, 1)
-        # F460: a structured file may not stop parsing because of an edit — refuse before
-        # the write, so the file is untouched and the run is told on the turn it erred.
+        # A structured file may not stop parsing because of an edit — refuse before the write.
         if err := fileformat.check_after(path, text, new_text):
             return {"kind": "edit_file", "path": action["path"], "error": err}
-        # Atomic + mode-preserving (the file exists — checked above), same reasoning as
-        # do_write_file: no torn read/commit for a concurrent reader of this routine's dir.
+        # Atomic + mode-preserving, as in do_write_file.
         atomic_write(path, new_text, mode=path.stat().st_mode & 0o7777)
         ctx.seen_paths.add(str(path))   # an anchored edit is grounded by its verbatim anchor
-        _note_recorded_phase(ctx, path)   # a cursor patched in place counts too (F563)
+        _note_recorded_phase(ctx, path)   # a cursor patched in place counts too
     except (OSError, PermissionError) as exc:
         return {"kind": "edit_file", "path": action["path"], "error": str(exc)}
     return {"kind": "edit_file", "path": action["path"],

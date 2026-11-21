@@ -1,12 +1,9 @@
-"""Settle an answered decision WITHOUT a run reading it (2026-11-09).
+"""Settle an answered decision WITHOUT a run reading it.
 
-The operator's "settle" on an UNDELIVERED decision (`web/decision_pickup`): an answer no run
-will ever read — its conversation finished during the turn it was filed in, its routine is off
-— and that he no longer wants acted on. Delivering it would start a run that acts on a stale
-word, so this does exactly what a run's consumption does (`inbox_questions`: archive the ask
-and the answer as one record, consume the answer file by rename, drop the pending record) and
-nothing else. The archive marks it `settled_by: operator`, so the receipt card says nobody
-acted on it.
+The operator's "settle" on an UNDELIVERED decision (`web/decision_pickup`) that no run will
+read and he no longer wants acted on. This does exactly what a run's consumption does (archive
+ask + answer as one record, consume the answer file, drop the pending record) and nothing else;
+the archive is marked `settled_by: operator`.
 """
 
 from __future__ import annotations

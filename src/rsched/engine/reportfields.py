@@ -1,17 +1,9 @@
 """The `report` action's DISPOSAL grammar — `closes`, `answers`, `settles`, `supersedes`.
 
-Moved out of `engine/actions.py` for the reason `engine/jobfields.py` and
-`engine/sidefields.py` were: that file is the action contract's single home, it is over the
-repo's size bar and may only shrink, so a kind whose grammar is a block of its own goes to its
-own module rather than growing it. Nothing about the rules changed in the move; the messages
-are byte-identical, because a refusal a run has learned to read is a surface too.
-
-What the four fields mean to each other is the whole content of this file. `answers` records
-the ONE exchange a reply belongs to, `settles` the other rows it declares finished,
-`supersedes` the rows it TAKES OVER (they stay live under this report), and `closes` says the
-reply itself is born settled. The contradictions refused here are the pairs that say opposite
-things about who holds the work next — each one was a real shape: a row settled in prose and
-open in the ledger (F497), a fold that silently won over an answer.
+`answers` records the ONE exchange a reply belongs to, `settles` the other rows it declares
+finished, `supersedes` the rows it TAKES OVER (they stay live under this report), and `closes`
+says the reply itself is born settled. The contradictions refused here are the pairs that say
+opposite things about who holds the work next. The refusal wording is a surface runs read.
 """
 
 from __future__ import annotations
@@ -24,36 +16,16 @@ def field_problems(obj: dict) -> list[str]:
     run already reads refusals in.
     """
     problems: list[str] = []
-    # EVERY rule below is about a LEDGER ROW, and a run-tree message has none (F859). A `report`
-    # addressed to `parent` or `child:<label>` is a hook delivered at that run's next turn
-    # boundary and gets no `R<n>` at all — `runtree`: "it is not an item and owes the ledger
-    # nothing". So there is nothing here to govern, and refusing the turn taught nothing a run
-    # could use: 19 such refusals across 11 routines by 2026-11-06 made 0.511.0's wording
-    # target-aware, and THREE MORE landed in one `scheduler-builder` run on 2026-11-08 anyway
-    # (turns 67, 223, 110). A clearer refusal is still a refusal, and the field was inert.
-    # The three fields `closes` rides with were never refused here at all — they validated and
-    # were then dropped unread by `admin_handlers.report`, which returns at its run-tree branch
-    # before reading them, so a run that wrote `answers: R123` believed a row disposed of. That
-    # is the costlier half: a refusal costs a turn, a false belief costs a row nobody closes.
-    # Both are answered in one place instead — `runtree.send` delivers the hook and NAMES the
-    # disposal fields it ignored, in the observation of the action that wrote them.
+    # EVERY rule below is about a LEDGER ROW, and a run-tree message (`parent`,
+    # `child:<label>`) has none (F859). It is not refused: `runtree.send` delivers the hook and
+    # NAMES the disposal fields it ignored, so the run is not left believing a row disposed of.
     from .runtree import is_runtree  # local: runtree imports inbox, this does not
     if is_runtree(obj.get("target") or ""):
         return []
-    # `closes` is a property OF a disposal — a terminal acknowledgment. `answers` disposes of
-    # ONE exchange, `settles` of several; with neither there is nothing to complete, so a bare
-    # closes is a contradiction, not a no-op. Before D134 only `answers` counted, which is why
-    # a report that asked nothing back could not be born settled at all: it answers no single
-    # row, so `closes` was refused and the carrier stayed open forever (F497).
-    # MEASURED 2026-11-12: 22 of these rejections, 11 routines, 18 runs since 2026-10-19 — and
-    # three runs earned it twice or three times in one run, so it was not teaching the second
-    # time either. Of the 13 whose transcripts survive, only 3 carried `supersedes`; TEN carried
-    # `target` + `closes` alone — a run ORIGINATING a notice it wants nobody to reply to. The
-    # old sentence stated the rule correctly and left that run with nowhere to go, so it says
-    # what to DO with an originating notice: drop `closes`. That is not the loss it looks like
-    # for the sender's intent — a closure is excluded from the report trigger's inbox predicate
-    # (`daemon/triggers`, include_closures=False) precisely because it asks nothing, so marking
-    # one would hide the notice rather than deliver it quietly.
+    # `closes` is a property OF a disposal (`answers` one exchange, `settles` several); with
+    # neither there is nothing to complete. The refusal tells an ORIGINATING notice what to do
+    # (drop `closes`): a closure is kept out of the report trigger's inbox predicate
+    # (`daemon/triggers`), so marking one would hide the notice rather than deliver it quietly.
     if (obj.get("closes")
             and not str(obj.get("answers") or "").strip()
             and not obj.get("settles")):
@@ -64,10 +36,8 @@ def field_problems(obj: dict) -> list[str]:
             "notice that asks nothing back: leave 'closes' out. The row is then the recipient's "
             "to dispose of, which is what puts it in front of them — a closure is kept out of "
             "the report trigger on purpose, so it is not the quiet way to be heard.")
-    # `answers` is ONE report id, held to the grammar `settles` and `supersedes` are. The ledger
-    # matches it against ids, so free text there disposed of nothing — while the run, and its
-    # observation, believed the exchange answered (the settled-in-prose, open-in-the-ledger
-    # shape F497 measured).
+    # `answers` is ONE report id: the ledger matches ids, so free text would dispose of
+    # nothing while the run believed the exchange answered.
     if ((answered := str(obj.get("answers") or "").strip())
             and not REPORT_ID_RE.match(answered.upper())):
         problems.append(f"kind=report: 'answers' takes the ONE report id you received and are "
@@ -88,9 +58,7 @@ def field_problems(obj: dict) -> list[str]:
                             "OTHER rows this reply disposes of")
         elif overlap := sorted({str(i).strip().upper() for i in obj["settles"]}
                                & {str(i).strip().upper() for i in (obj.get("supersedes") or [])}):
-            # Folding a row makes this report its thread, so it stays live until this one
-            # settles; settling it declares it finished now. Both at once on the same id is a
-            # contradiction the read model would have to break one way or the other.
+            # Folding keeps a row live under this report; settling declares it finished now.
             problems.append(f"kind=report: {', '.join(overlap[:3])} cannot be both 'settles' "
                             "and 'supersedes' — settling DECLARES a row finished, taking it "
                             "over CONTINUES it here. Pick one")
@@ -106,9 +74,7 @@ def field_problems(obj: dict) -> list[str]:
                             f"{', '.join(bad[:3])}")
         elif (answered := str(obj.get("answers") or "").strip().upper()) and answered in [
                 str(i).strip().upper() for i in obj["supersedes"]]:
-            # Answering a thread ends it; absorbing one continues it here. Both at once on the
-            # same id is a contradiction, and the fold would win silently — leaving the row
-            # reading THIS report's status while the run believed it had closed it.
+            # Answering ends a thread; absorbing continues it — and the fold would win silently.
             problems.append(f"kind=report: {answered} cannot be both 'answers' and "
                             "'supersedes' — answering ENDS that thread, taking it over "
                             "CONTINUES it here. Pick one")

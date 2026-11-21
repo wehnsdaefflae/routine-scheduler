@@ -1,14 +1,10 @@
 """The engine's side of the hook mirror: a reminder written, and an injection delivered.
 
-`rsched/hooks/store.py` owns the stream and says why the duplication is deliberate at this
-step of the D152 campaign. This module is only the seam that gives it a RUN's context — the
-routines home it writes under, the routine and run that caused the row — which the pure stores
-(`rsched/reminders`, the inbox) do not have and should not acquire.
+`rsched/hooks/store.py` owns the stream (D152). This module is only the seam that gives it a
+RUN's context — routines home, routine and run — which the pure stores do not have.
 
-Both functions are best-effort and return nothing: the reminder write and the injection
-delivery are the real work, already done when these are called, and a mirror that could fail
-either of them would be a defect dressed as bookkeeping. They are called AFTER the thing they
-record, for the same reason.
+Every function is best-effort, returns nothing, and is called AFTER the real work it records:
+a mirror must never fail the write or delivery itself.
 """
 
 from __future__ import annotations
@@ -19,14 +15,9 @@ from ..hooks import store as hookstore
 def reminder_written(loop, reminder, target: str = "") -> None:
     """Mirror a consequence reminder as a hook (`trigger: match`).
 
-    Called from the two paths that write one: the routine's own add/revise (`remind._persist`)
-    and a hook set on ANOTHER routine (`remind._set_for_other`). `target` distinguishes them,
-    and the store turns it into the addressee — `self` for a routine's own future runs, the
-    routine's slug for a foreign hook.
-
-    A revise re-records rather than editing: the stream is append-only, so a later row about
-    the same id is the later fact about it. That is what makes "when did this pattern change"
-    answerable at all, which neither the local file nor the library store can say.
+    Called from the routine's own add/revise (`remind._persist`) and a hook set on ANOTHER
+    routine (`remind._set_for_other`); `target` becomes the addressee (`self` or the slug).
+    A revise re-records: the stream is append-only, so a later row is the later fact.
     """
     ctx = loop.ctx
     try:
@@ -41,23 +32,10 @@ def reminder_removed(loop, reminder) -> None:
     """Record a routine DELETING ITS OWN reminder as a later row about that id
     (`disposition: remove`) — the half of the write path that was missing.
 
-    MEASURED on the live instance 2026-11-14, over all 31 routines with
-    `hooks/reminderproj.drift`: **23 ids exist as a hook and in no store**, five of them from
-    November, and one of those was deleted by the run that measured it. Every other act on a
-    reminder reached the stream — the write (`persist`), the target's say over a foreign hook
-    (`reminder_disposed`), the curator's disposal of a row in another store
-    (`reminder_curated`, D231) — and a routine deleting its own was the one that did not. So
-    the stream kept a definition the store had dropped, which is not a cosmetic drift: the
-    reminder half of this campaign ends with the store SERVED from the stream, and a fold that
-    cannot see a deletion would re-raise patterns their own routines removed. A reminder decides
-    whether an action is HELD, so that is a change to what binds a run, not a stale row.
-
-    Addressed `self`, like the write it undoes: these are the routine's own future runs, and
-    spelling it as the slug would make a self-hook indistinguishable from one a sibling set.
-    The projection subtracts on `remove` (`reminderproj.REMOVING`), so one row is the whole fix.
-
-    Best-effort and after the real removal, like every function here: a mirror that could fail
-    the deletion would be bookkeeping dressed as a feature.
+    Without it, a fold of the stream would re-raise a reminder its own routine removed — and a
+    reminder decides whether an action is HELD. Addressed `self`, like the write it undoes
+    (the slug would make it indistinguishable from a sibling's hook); the projection subtracts
+    on `remove` (`reminderproj.REMOVING`).
     """
     ctx = loop.ctx
     try:
@@ -72,12 +50,8 @@ def reminder_disposed(loop, reminder, disposition: str) -> None:
     """Record the TARGET's say over a foreign hook as a later row about the same id (D152 step
     4): `keep`, `mute` or `remove`.
 
-    Step 2 mirrored a reminder's WRITE and nothing else, so the one store could not answer what
-    happened to a hook — the question a store that owns the mechanism has to answer, and the
-    half of the record (`disposition`) the design named from the start. The row is the same
-    reminder hook with its disposition moved: append-only, so a later row IS the later fact,
-    which is also the only way "when was this muted, and by whose run" stays answerable at all
-    once a `mute` stamp expires.
+    The same reminder hook with its disposition moved — append-only, so "when was this muted,
+    and by whose run" stays answerable after a `mute` stamp expires.
     """
     ctx = loop.ctx
     try:
@@ -93,14 +67,8 @@ def reminder_curated(loop, record: dict, holder: str, disposition: str) -> None:
     """Record the CURATOR's disposal of a row in ANOTHER routine's store (D231): `dead` for a
     row retired with its tally kept, `remove` for one deleted outright.
 
-    Addressed to the HOLDER, not to `self`: the row lives in that routine's store and the
-    annotation is a fact about it, so a reader folding the stream by addressee finds the
-    disposal beside the hook it disposes of. The origin names the curating routine and run,
-    which is the half "who retired this, and when" needs that the annotation alone — written
-    into a store nobody reads chronologically — cannot answer.
-
-    Best-effort and after the real write, like every function here: a mirror that could fail
-    the disposal would be bookkeeping dressed as a feature.
+    Addressed to the HOLDER, not `self`, so a fold by addressee finds the disposal beside the
+    hook; the origin names the curating routine and run (who retired it, and when).
     """
     ctx = loop.ctx
     try:
@@ -114,13 +82,8 @@ def reminder_curated(loop, record: dict, holder: str, disposition: str) -> None:
 def injection_delivered(loop, m: dict) -> None:
     """Mirror a mid-run injection as a hook (`trigger: send`, addressee `run:<run_id>`).
 
-    Called from `control.inject_user_message` once the message is actually in the conversation,
-    so the row records a delivery rather than an intent — the web layer's `inject` route only
-    queues a file, and whether it reached a live run or waits for the next one is decided here.
-
-    Every channel rides this seam (`inbox.VIAS`): the operator typing in the run view, an
-    escalation rung's directive, a report being injected, a background result. `via` is what
-    says which, and it is the one thing a reader needs that the text does not carry.
+    Called from `control.inject_user_message` once the message is in the conversation, so the
+    row records a delivery, not an intent. Every channel rides this seam; `via` says which.
     """
     ctx = loop.ctx
     try:

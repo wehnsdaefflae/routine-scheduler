@@ -1,47 +1,24 @@
 """The ACTION SCHEMA as a compact FIELD INDEX — the prompt's half of a contract the wire
 already carries.
 
-## Why the dump was paid twice
+Every transport this instance speaks enforces `loop.action_schema` STRUCTURALLY (Anthropic as
+a tool's `input_schema`, OpenAI-compatible as strict `response_format`, Ollama as `format`),
+and the descriptions inside it are what the model reads there. Dumping the same object into
+the system prompt paid for the contract twice (about a quarter of a typical prompt).
 
-`completion.next_action` hands `loop.action_schema` to `endpoint.complete(..., schema=…)`, and
-every transport this instance speaks enforces it STRUCTURALLY: the Anthropic adapter offers it
-as a tool (`{"name": "action", "input_schema": schema}`) on plain `auto`, the OpenAI-compatible
-one as `response_format: {"type": "json_schema", "strict": True}`, Ollama as `format` — real
-constrained decoding. The descriptions inside that object are what the model reads there.
+The one thing the schema does NOT encode: `ACTION_SCHEMA` is FLAT — only `say` and `kind` are
+`required` — so nothing says which fields belong to which kind. `actions.KIND_FIELDS` does,
+and `validate_action` builds its allowed-field set from the same map. So the prompt carries
+the INDEX (what is callable, with which fields) and the wire carries the PROSE. A field the
+model gets wrong is taught at that moment by `schema_guard.retry_message` with
+`schemamemo.field_help`.
 
-`composer.system_sections` ALSO dumped the same object into the system prompt as indent=1 JSON.
-Measured over 21 live run captures (`runs/<ts>/prompt-sections.json`, R3341's boot capture) on
-2026-11-12, that section averaged **28,189 characters** — 26% of a 108,666-char prompt — of
-which **26,143 were `description` prose** and only ~7,800 the structure. So the contract
-travelled twice in one request, and the copy the provider enforces is the one the model cannot
-ignore.
-
-## What the prompt still owes
-
-One thing the schema object genuinely does NOT encode: `ACTION_SCHEMA` is FLAT — its only
-`required` entries are `say` and `kind` — so nothing in it says which fields belong to which
-kind. `actions.KIND_FIELDS` knows exactly, and it is the same map `validate_action` builds its
-allowed-field set from. Rendered as one line per kind that is **1,442 characters** for all 34
-kinds, against the 21,421 of `kindprose.kind_bullets` + 28,189 of dump that used to carry it.
-
-So the prompt carries the INDEX (what is callable, and with which fields) and the wire carries
-the PROSE (what each field means, enforced). A field the model gets wrong is taught at the
-moment it is wrong, by `schema_guard.retry_message` with `schemamemo.field_help` — which already
-quotes the schema's own words for the named field, inside the existing retry cycle.
-
-## The one case where the prompt must still carry the whole thing
-
-An endpoint whose `schema_mode` is `none` or `json_object` requests no grammar, so nothing but
-the prompt states the contract; and the engine itself SHEDS the grammar mid-run
-(`loop._schema_off` after two repeat-streak sheds, `loop._shed_schema_turns` for one turn).
-`enforced()` answers the first question per endpoint, and the composer asks it of EVERY member
-of the run's failover chain — a chain that can fail over to an unenforced endpoint is composed
-the old way, because the prompt cannot be rewritten later: it is a caching contract
-(`window.py`), and a cold window of this size has cost over $100 on this instance.
-
-A mid-run shed is the case the composer cannot foresee. It is handled where it happens, by an
-ENGINE NOTE carrying the full projection (`schemashed.py`) — an APPEND, which the caching
-contract allows, rather than a rewrite of what was already sent.
+An endpoint whose `schema_mode` is `none` or `json_object` requests no grammar, so only the
+prompt states the contract; `chain_carries` asks this of EVERY chain member and composes the
+full dump if any is unenforced, because the prompt is a caching contract (`window.py`) and
+cannot be rewritten later. A mid-run shed (`loop._schema_off`, `loop._shed_schema_turns`) is
+handled where it happens, by an ENGINE NOTE carrying the full projection — an APPEND, which
+the caching contract allows.
 """
 
 from __future__ import annotations
@@ -50,9 +27,7 @@ import json
 
 from .actions import KIND_FIELDS
 
-#: Fields that ride every kind, so naming them per kind would be 34 copies of one line. The
-#: harness states them once; `kindsurface._UNIVERSAL_FIELDS` is the same set plus the two
-#: capability-gated reminder fields, which are listed there because they are PROJECTED.
+#: Fields that ride every kind, stated once by the harness instead of per kind.
 UNIVERSAL = ("say", "kind", "note", "role_swap", "remind", "remind_feedback", "background")
 
 _HEAD = ("# ACTION SCHEMA (your every reply matches this)\n"
@@ -64,22 +39,15 @@ _HEAD = ("# ACTION SCHEMA (your every reply matches this)\n"
 
 
 #: The `schema_mode` values whose request carries the SCHEMA OBJECT ITSELF, descriptions
-#: included: `json_schema` (strict `response_format`) and `ollama_native` (Ollama's `format`
-#: field — real constrained decoding). `json_object` asks for "any JSON" and sends no schema;
-#: `none` asks for nothing. The `anthropic` wire has no mode: a schema'd call there is ALWAYS
-#: offered as a tool's `input_schema`, so an endpoint with no `schema_mode` attribute at all
-#: carries it (`endpoints/anthropic_api.complete`).
+#: included. `json_object` and `none` send no schema. The `anthropic` wire has no mode and
+#: ALWAYS offers the schema as a tool's `input_schema`, so no `schema_mode` at all carries it.
 _PROSE_MODES = ("json_schema", "ollama_native")
 
 
 def carried_on_the_wire(endpoint) -> bool:
     """Whether `endpoint`'s schema'd call puts the schema's own descriptions in front of the
-    model, so the composed prompt need not repeat them.
-
-    Asked of an endpoint rather than implemented on each adapter because both adapter files
-    sit AT the 350-line bar: the knowledge is one line of `schema_mode` vocabulary and belongs
-    with the section that acts on it. `InstrumentedEndpoint.__getattr__` passes the attribute
-    through, so the wrapper needs nothing of its own.
+    model, so the composed prompt need not repeat them. `InstrumentedEndpoint.__getattr__`
+    passes `schema_mode` through, so the wrapper needs nothing of its own.
     """
     mode = getattr(endpoint, "schema_mode", None)
     return True if mode is None else mode in _PROSE_MODES
@@ -89,8 +57,7 @@ def chain_carries(chain) -> bool:
     """True when EVERY member of a failover chain carries it.
 
     The whole chain, not the serving head: `engine/degrade.py` advances down it mid-turn and
-    the composed prompt cannot be rewritten afterwards — it is a caching contract
-    (`engine/window.py`), and a cold window of this size has cost over $100 on this instance.
+    the composed prompt cannot be rewritten afterwards (caching contract, `engine/window.py`).
     An empty or unreadable chain answers False, so the fallback is always the full text.
     """
     members = list(chain or ())
@@ -103,19 +70,13 @@ def wire_enforces(ctx) -> bool:
     The `main` chain only — including its transitive fallbacks, because `degrade` advances
     down it mid-turn and the composed prompt can never be rewritten afterwards.
 
-    NOT the `uncensored` chain, and that is a deliberate correction measured on 2026-11-12:
-    on this instance `uncensored` is served by `otari-openai-plain`, whose `schema_mode` is
-    `none` precisely because its model refuses `response_format`. Asking about both chains
-    therefore answered False for EVERY routine here — a cut that saves nothing in production
-    while passing every test. The uncensored chain serves only while a refusal back-off window
-    is open, which is rare and, crucially, is something the ENGINE sees at the moment it
-    happens: `turn_needs_the_contract` is asked at the head of every turn and the full
-    projection is appended then, as an ENGINE NOTE. An append is what the caching contract
-    allows; composing for the rare case was paying for it on every turn of every run.
+    NOT the `uncensored` chain, deliberately: it is typically served schema-free, so asking
+    about it would answer False for every routine. It serves only while a refusal back-off
+    window is open, which the ENGINE sees as it happens — `turn_needs_the_contract` appends
+    the full projection then, as an ENGINE NOTE.
 
-    Defensive by construction: no registry (the unit fixtures), an unresolvable role, or any
-    endpoint error answers False, so the prompt falls back to carrying the whole contract. A
-    measurement that guessed wrong here would cost a run its action grammar.
+    Defensive by construction: no registry, an unresolvable role, or any endpoint error
+    answers False, so the prompt falls back to carrying the whole contract.
     """
     cached = getattr(ctx, "wire_enforces_schema", None)
     if cached is not None:
@@ -147,11 +108,9 @@ def turn_needs_the_contract(loop, endpoint) -> bool:
       rest of the run (`loop._repeat_warning`);
     * `loop._shed_schema_turns` — the next reply alone runs schema-free.
 
-    Asked at the head of every turn (`turntakeover.serve_turn_head`), so the contract arrives
-    at the moment it is needed rather than being paid for on every turn against the chance.
-    Answers False once the note has been appended: an action definition must never be unloaded
-    after a run has used it, and re-appending the whole projection every turn would be the same
-    cost the cut removed.
+    Asked at the head of every turn (`turntakeover.serve_turn_head`). Answers False once the
+    note has been appended — it stays in the prompt, and re-appending every turn would cost
+    what the index saves.
     """
     if getattr(loop, "_schema_contract_sent", False):
         return False
@@ -184,10 +143,9 @@ def request_contract(loop, endpoint, schema: dict | None) -> None:
     endpoint switch. Consult the schema this attempt will send, retaining the existing
     once-per-run note and the cached prompt prefix.
 
-    Position matters as much as presence. Inside the retry loop the last user message is the
-    CORRECTION, and that is where `schemamemo`'s repeat mechanism has to be legible (D287:
-    `test_schema_memo` reads each call's last message). So the note goes in BEFORE this turn's
-    debris block when there is one, and is appended when there is not (the turn-head case).
+    Position matters: inside the retry loop the last user message is the CORRECTION, which
+    must stay last (D287). So the note goes in BEFORE this turn's debris block when there is
+    one, and is appended when there is not (the turn-head case).
     """
     from . import turndebris
     if (getattr(loop, "_schema_is_index", False)
@@ -214,9 +172,8 @@ def _fields(kind: str) -> tuple[list[str], list[str]]:
 def index(kinds: list[str]) -> str:
     """`kind: required [optional]`, one line per kind, in the caller's order.
 
-    The caller passes the PROJECTION (`kindsurface.effective_kinds`), so a run reads only the
-    kinds it may actually emit — the same narrowing the enforced schema gets, from the same
-    source, which is why the two cannot disagree.
+    The caller passes the PROJECTION (`kindsurface.effective_kinds`) — the same narrowing the
+    enforced schema gets, so the two cannot disagree.
     """
     lines = []
     for kind in kinds:
@@ -229,8 +186,6 @@ def index(kinds: list[str]) -> str:
 
 
 def full(schema: dict) -> str:
-    """The whole projection as JSON — what the prompt carried before, and still carries for a
-    run whose wire does not enforce it.
-    """
+    """The whole projection as JSON, for a run whose wire does not enforce it."""
     return ("# ACTION SCHEMA (your every reply matches this)\n"
             + json.dumps(schema, indent=1))

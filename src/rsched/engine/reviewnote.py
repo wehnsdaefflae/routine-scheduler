@@ -1,21 +1,12 @@
 """The review leg's WORDS — the note that opens it and the line it leaves on the run's result.
 
 Prompt surface (docs/prompt-anatomy.md pins it), kept apart from the driver (engine/reviewleg.py)
-so the wording reads in one place. The keeping standard is Hermes Agent's, tuned there against
-measured failures and adopted whole because each clause names one:
+so the wording reads in one place. The keeping standard is Hermes Agent's, each clause answering
+a measured failure: only what this run SHOWED; a general rule plus one clause of why, one lesson
+once; no negative claim about a tool from one failure; no unresolved failure as a method.
 
-- only what this run SHOWED — Hermes' memory review was writing guessed traits and turning a
-  one-off request into a standing preference;
-- a general rule plus one clause of why, no dates or ids, one lesson once — its skill review was
-  filing one reference per incident and appending "UPDATE: actually…";
-- no negative claims about a tool or source from one failure — "these harden into refusals the
-  agent cites against itself";
-- no unresolved failure written up as a working method.
-
-"Nothing to keep" is stated as a complete answer on purpose, and the opposite of Hermes' own
-"a pass that does nothing is a missed learning opportunity": on this instance a run that spends
-its turns on its own records is the failure the overhead measurement exists to catch, and a
-leg pressed to always write something produces exactly that.
+"Nothing to keep" is stated as a complete answer on purpose: a leg pressed to always write
+something produces the bookkeeping the overhead measurement exists to catch.
 """
 
 from __future__ import annotations

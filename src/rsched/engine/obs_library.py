@@ -1,11 +1,8 @@
 """Observation wording for the LIBRARY-writing kinds — `write_util`, `remove_util`, `write_rule`.
 
-Split out of `observations.py` (F393) by subject area, so each kind's strings still live in
-exactly one place. What these share is that the run just changed something every OTHER routine
-will see, so the wording has to say what landed, what it was checked against, and — for a
-refusal — which rung of the approval ladder stopped it. An ask-back on the approval is worded
-by `obs_admin.dialog_reply`, the one wording every blocking decision shares; this module
-supplies only each kind's way of re-submitting.
+The run just changed something every OTHER routine will see, so the wording says what landed,
+what it was checked against, and — for a refusal — which rung stopped it. An ask-back is worded
+by `obs_admin.dialog_reply`; this module supplies only each kind's way of re-submitting.
 """
 
 from __future__ import annotations
@@ -16,20 +13,9 @@ from .obs_admin import dialog_reply
 def _selftest_phase(output: str) -> str:
     """Name WHICH PHASE a refused util write failed in, when the captured traceback says.
 
-    A selftest failure has two very different meanings and the author needs to know which
-    before reading a line number. If the deepest frame is `in <module>`, the script did not
-    survive being imported — a syntax error, a missing import, a name the dispatch table
-    references but the file does not define — and no assertion ever ran. If the deepest frame
-    is inside a function, the script loaded and a check failed.
-
-    Those two call for opposite repairs, and the distinction was invisible: three reports
-    (R2036, R2037, R2042) from one run describe six consecutive refusals of large util folds,
-    each answered with a line number, none with the fact that every one of them broke at
-    module level before any test executed. That run spent ~20 turns testing hypotheses about
-    its test logic while the file was not importable.
-
-    Best-effort by design: it reads the traceback the observation ALREADY carries and adds a
-    sentence, never a verdict of its own. An unrecognised shape adds nothing.
+    Deepest frame `in <module>`: the script failed to import and no check ran. Inside a
+    function: it loaded and a check failed. Opposite repairs (R2036). Best-effort: reads the
+    traceback the observation already carries; an unrecognised shape adds nothing.
     """
     frames = [ln for ln in output.splitlines() if ln.lstrip().startswith('File "')]
     if not frames:
@@ -84,9 +70,7 @@ def format_library(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — one
             return (f"OBSERVATION (write_util {obs['name']!r} edit mode: NOT applied — "
                     f"{obs.get('reason', '')})")
         if obs.get("header_ok") is False:
-            # A doc-standard rejection is NOT a selftest failure (R93: reporting it as one
-            # sent authors debugging their test logic instead of adding a header line) —
-            # name the violated header contract and each concrete fix.
+            # A doc-standard rejection is NOT a selftest failure (R93) — name each fix.
             probs = "\n".join(f"- {p}" for p in (obs.get("problems") or []))
             return (f"OBSERVATION (write_util {obs['name']!r}: docstring HEADER violations — "
                     f"not saved, the selftest was not run):\n{probs}\n"

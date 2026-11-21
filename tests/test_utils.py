@@ -1,5 +1,6 @@
 """Util library: real uv-run of utils (catalog, run, selftest, composition). Uses uv."""
 
+import os
 import shutil
 
 import pytest
@@ -650,8 +651,8 @@ def test_dispatcher_list_skips_non_util_entries(tmp_path):
     (home / "utils" / "__pycache__").mkdir()
     (home / "utils" / ".ghost.removing.123").mkdir()
     (home / "utils" / "stray.txt").write_text("junk", encoding="utf-8")
-    r = sp.run([sys.executable, str(home / "gu"), "list"],
-               capture_output=True, text=True, timeout=30, check=False)
+    r = sp.run([sys.executable, str(home / "gu"), "list"], capture_output=True, text=True,
+               timeout=30, check=False, env={**os.environ, "GLOBAL_UTILS_HOME": str(home)})
     assert r.returncode == 0
     assert "adder" in r.stdout
     assert "__pycache__" not in r.stdout and "removing" not in r.stdout
@@ -670,8 +671,8 @@ def test_dispatcher_list_survives_an_oddly_written_util(tmp_path):
     for name, body in (("blank", b'"""   \n"""\n'), ("latin", b'"""caf\xe9 \xe9t\xe9."""\n')):
         (home / "utils" / name).mkdir()
         (home / "utils" / name / "main.py").write_bytes(body)
-    r = sp.run([sys.executable, str(home / "gu"), "list"],
-               capture_output=True, text=True, timeout=30, check=False)
+    r = sp.run([sys.executable, str(home / "gu"), "list"], capture_output=True, text=True,
+               timeout=30, check=False, env={**os.environ, "GLOBAL_UTILS_HOME": str(home)})
     assert r.returncode == 0, r.stderr
     assert "adder — " in r.stdout and "blank — " in r.stdout and "latin — " in r.stdout
 

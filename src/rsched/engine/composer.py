@@ -21,23 +21,17 @@ from .runkind import is_conversation
 
 PLAN_MAX_LINES = 60
 
-#: How many files a directory listing in the digest may name. Every OTHER growing part of
-#: this digest is capped — the plan at PLAN_MAX_LINES, the notes tail, the LEDGER tail, the
-#: `.memory/` INDEX's one line a note — because the digest is re-read on EVERY turn, so an
-#: unbounded part is a tax on every turn. These two listings were the exception: weightloss
-#: reached 285 state files and spent ~2 400 tokens per turn naming them (measured
-#: 2026-09-11, ~9% of that routine's whole prefix). 40 is chosen to orient, not to inventory
-#: — a run that needs the rest lists the directory itself.
+#: How many files a directory listing in the digest may name. Every growing part of the
+#: digest is capped, since it is re-read on EVERY turn; 40 orients rather than inventories —
+#: a run that needs the rest lists the directory itself.
 DIR_LIST_MAX = 40
 
 
 def _dir_listing(directory: Path) -> str:
     """`name (123B)` for the files in `directory`, MOST RECENTLY WRITTEN FIRST and capped.
 
-    Recency is the useful axis for a run reading its own workspace ("what did I write last
-    run"), and it is the one that survives truncation: an alphabetical cut of 285 files hides
-    everything after "d", while a recency cut hides only what nothing has touched in a long
-    time. Empty string when the directory holds no files.
+    Recency is the useful axis for a run reading its own workspace, and the one that survives
+    truncation. Empty string when the directory holds no files.
     """
     files = [p for p in directory.iterdir() if p.is_file()]
     try:
@@ -76,33 +70,24 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
     from ..paths import read_json
 
     parts: list[str] = []
-    # The user's ⚑ flags from the Messages page, resolved to the items THIS routine owns —
-    # placed first so orient reads the user's "work this first" before any planning.
-    # Optional inputs: a subrun/conversation digest (and most unit fixtures) has no
-    # routines_home context, and a digest without the section is simply unflagged.
+    # The user's ⚑ flags on items THIS routine owns — first, so they are read before planning.
+    # Optional: a digest without routines_home context is simply unflagged.
     if routines_home is not None and slug:
         from ..priorities import digest_section
         if prio := digest_section(routines_home, slug):
             parts.append(prio)
-    # F335: notes the routines sharing a store with this one left for it — DRAINED by boot
-    # (`sharedstores.drain`) before this is composed, so the digest builder stays pure and a
-    # note is delivered exactly once (mirroring how inbox/ drains).
+    # Shared-store notes for this routine — drained by boot beforehand, so this stays pure and
+    # a note is delivered exactly once.
     from ..sharedstores import digest_section as notes_section
     if notes_block := notes_section(store_notes or []):
         parts.append(notes_block)
-    # The TASKS this run owes (engine/jobops.py), before the phase: for a routine whose
-    # work is its jobs, the due list IS where the run starts ("" for every other run; the
-    # join below drops it).
+    # The jobs this run owes (engine/jobops.py), before the phase ("" for most runs).
     parts.append(jobs_section)
     phase = read_json(routine_dir / "state" / "phase.json")
     parts.append(f"Current phase: {json.dumps(phase, ensure_ascii=False)}" if phase
                  else "Current phase: (none recorded — likely the first run)")
-    # The WORKING PLAN, inlined in full and first: a run's own living decomposition of a job
-    # too big for one pass. A scheduled routine gets that spine from its compiled recipe
-    # (stages/ + phase.json); a CONVERSATION has no compiled recipe, so without this it
-    # re-derived its arc from chat scrollback every reply and finished at the shortest
-    # possible bar. Written and revised by the run itself (see the converse pattern) — the
-    # engine only carries it forward. Capped: a plan that outgrows this is a stages/ job.
+    # The WORKING PLAN: the run's own living decomposition — a conversation's spine, since it
+    # has no compiled recipe. Written by the run; the engine only carries it forward, capped.
     if plan := _plan_text(routine_dir):
         parts.append("WORKING PLAN (state/plan.md — YOUR living decomposition of this job; the "
                      "step marked in progress is where you are. Revise it as the work teaches "
@@ -140,9 +125,7 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
         if names:
             parts.append("stages/ stage modules (read the relevant one on demand with read_file): "
                          + ", ".join(names))
-    # Deliverables produced so far. A conversation writes these across many replies and the
-    # UI renders the folder in its side panel — but the digest never named them, so a reply
-    # re-derived "what have I already made for you" from scrollback, or silently rebuilt it.
+    # Deliverables so far, so a reply extends what it already made instead of rebuilding it.
     art_dir = routine_dir / "artifacts"
     if art_dir.is_dir() and (arts := _dir_listing(art_dir)):
         parts.append("artifacts/ delivered so far, newest first (the user sees these rendered in "
@@ -156,10 +139,8 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
     runs = sorted(runs_dir.glob("*/result.md")) if runs_dir.is_dir() else []
     if runs:
         last = runs[-1]
-        # Bounded in characters (engine/digesttail.py): a finish summary is the one history
-        # block whose length the WRITER chooses, and it rode every turn whole — 9,317 chars
-        # at the worst of 37 live digests. The head is kept, which is where a summary states
-        # what happened; the whole file is one read away and the marker names it.
+        # Bounded in characters (engine/digesttail.py): the writer chooses a summary's length.
+        # The head is kept; the marker names the file for the rest.
         parts.append(f"Last run result ({last.parent.name}):\n"
                      + digesttail.clip(last.read_text(encoding="utf-8").strip(),
                                        read_with=f"runs/{last.parent.name}/result.md"))
@@ -171,28 +152,19 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
         parts.append(ledger)
     mem_index = routine_dir / ".memory" / "INDEX.md"
     if mem_index.exists():
-        # D268: a note whose `stale_after` has passed is listed under its OWN heading, not
-        # among the notes a run is told to consult — the whole point of the date is that the
-        # run which wrote it predicted this day, and the digest is where that has to land.
-        # Notes carrying no date yield the one block this always was, byte for byte.
+        # D268: a note past its `stale_after` is listed under its OWN heading, not among the
+        # notes to consult.
         parts.extend(notemeta.digest_blocks(mem_index.read_text(encoding="utf-8")))
     elif (mem_dir := routine_dir / ".memory").is_dir():
         names = [p.name for p in sorted(mem_dir.glob("*.md"))]
         if names:
             parts.append(".memory/ notes (INDEX.md is MISSING — re-save each with "
                          "memory_write to rebuild it): " + ", ".join(names))
-    # Cross-run reuse of expensive output: the pointer for THIS run's own truncated calls
-    # rides each observation, but an output an EARLIER run paid for has no other route into
-    # the prompt. Absent (not an empty heading) until something has actually spilled.
+    # Spilled output an EARLIER run paid for has no other route into the prompt.
     if spilled := outputs.digest(routine_dir):
         parts.append(spilled)
-    # F529: what is in the inbox that THIS leg may not consume. A resumed leg drains only
-    # LIVE_MESSAGE_VIAS — an audit decision, a sibling's report, a queued routine-page
-    # message belongs to the next FRESH run — and the leg used to be told nothing, so a run
-    # explained an answered decision as still open three legs after the answer arrived
-    # ("did you lose my answer again?!"). Named, never delivered: boot drains BEFORE this is
-    # composed, so a fresh run shows nothing here and a resumed leg shows exactly what it
-    # may not take.
+    # F529: inbox freight THIS leg may not consume (a resumed leg drains only
+    # LIVE_MESSAGE_VIAS) — named, never delivered, so the run does not misread it as absent.
     from . import inbox as inbox_mod
     freight = inbox_mod.queued_freight(routine_dir, exclude_vias=inbox_mod.LIVE_MESSAGE_VIAS)
     if freight:
@@ -205,23 +177,14 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
                      "read the file in inbox/ before describing any of it as open):\n"
                      + flines)
     if open_qs:
-        # A question carrying a `config_patch` names the one control that would apply it
-        # (rsched/patchreceipt.pending_suffix) — the operator's ruling of 2026-10-23: a prose
-        # answer never applies, but what the run reads names the action that would.
+        # A question carrying a `config_patch` names the control that would apply it — a prose
+        # answer never does.
         qlines = "\n".join(f"- [{q['qid']}] {q['question']} (asked {q.get('asked', '?')})"
                            + patchreceipt.pending_suffix(q) for q in open_qs)
         parts.append(f"Open deferred questions (still unanswered):\n{qlines}")
     if deferred_qa:
-        # An answer to a question that carried a `config_patch` says whether the patch is
-        # LIVE (rsched/patchreceipt.py). Without it a run read an affirmative "Ok", recorded
-        # the budget raise as applied and planned 600 turns against a 400-turn ceiling —
-        # R2778, twice `budget_exhausted`. The verdict rides the pair in both directions: the
-        # apply button's answer says APPLIED, an ordinary answer says NOT APPLIED.
-        # R2197: and whether the answer is a REFUSAL — the Decisions page's first-class "no"
-        # (rsched/decline.py). A declined proposal arrives as a value, so a run never has to
-        # read a polite sentence and guess; without the line it would read one and guess wrong.
-        # D220: and whether the answer SETTLES the decision or only starts it. All three in
-        # one order, shared with the mid-run door (rsched/answerlines.py).
+        # Each answer carries its verdicts — patch APPLIED/NOT APPLIED, a decline, a proof —
+        # in one order shared with the mid-run door (rsched/answerlines.py).
         alines = "\n".join(f"- Q: {p['question']}\n  A: {p['answer']}"
                            + answerlines.suffixes(p) for p in deferred_qa)
         parts.append(f"ANSWERS received to earlier questions (consume now):\n{alines}")
@@ -233,36 +196,22 @@ def system_sections(ctx: RunContext, workflow_body: str, instruction: str,
                     allowed_kinds: set[str] | None = None,
                     report_msgs: list[str] | None = None) -> list[tuple[str, str]]:
     """The composed system prompt as `(name, text)` sections, in prompt order — what
-    `build_system_prompt` joins, and what the run record measures (`prompt_chars`): the
-    always-on prompt is the largest body every turn re-sends, so its make-up is recorded
-    rather than estimated.
+    `build_system_prompt` joins, and what the run record measures (`prompt_chars`).
     """
-    # CAPABILITIES lists utils at name+summary altitude only — exact usage flags stay
-    # on-demand via `util name=list`, so the prompt stays lean and never serves stale flags.
-    # Rule prose is NOT inlined: the library holds one copy, the workflow names the held
-    # slugs and the run reads what it needs (the state digest lists them).
-    # The schema is PROJECTED onto the kinds this run may actually emit (kindsurface): a
-    # restricted workflow never reads the fields and prose of channels it cannot use.
+    # Utils at name+summary only; rule prose not inlined; the schema PROJECTED onto the kinds
+    # this run may emit (kindsurface).
     kinds = effective_kinds(allowed_kinds, ctx.grants)
     projection = schema_for_kinds(kinds, reminders=bool(ctx.grants and ctx.grants.reminders_on))
     sections = [
         ("harness", harness_contract(ctx, kinds)),
-        # …and it is sent ONCE, not twice: `completion.next_action` hands this same projection
-        # to `endpoint.complete(schema=…)`, where the wire enforces it (a tool's input_schema,
-        # a strict response_format, Ollama's format) with its descriptions in front of the
-        # model. So where every chain member carries it, this section is the compact FIELD
-        # INDEX — which fields each kind takes, the one thing the flat schema does not encode
-        # — and `engine/schemaindex.py` holds why and when the full dump comes back.
+        # Where the wire enforces the schema, this is only the compact FIELD INDEX
+        # (`engine/schemaindex.py` says when the full dump comes back).
         ("schema", schemaindex.section(projection, kinds, ctx)),
         ("example", "# EXAMPLE of a valid reply\n" + json.dumps(example_action(), indent=1)),
         ("workflow", "# WORKFLOW (the control flow you follow)\n" + workflow_body.strip()),
     ]
-    # A top-level ROUTINE's task is its self-contained recipe (main.md + stages/), so no
-    # instruction is placed in the prompt — the seed isn't even persisted. A SUBRUN has no
-    # decomposed stages — its instruction IS the parent's self-contained brief, so it stays
-    # in the prompt. A CONVERSATION runs at depth 0 but its task IS its first message
-    # (instruction.md), so it carries the section too (without it the agent never sees its
-    # task — only the converse HOW-to pattern).
+    # A routine's task is its recipe, so no instruction section; a SUBRUN's instruction is its
+    # brief, and a CONVERSATION's is its first message — both carry it.
     if ctx.depth > 0 or (is_conversation(ctx) and instruction.strip()):
         sections.append(("instruction", "# INSTRUCTION (your assigned task)\n"
                          + instruction.strip()))
@@ -273,8 +222,7 @@ def system_sections(ctx: RunContext, workflow_body: str, instruction: str,
         joined = "\n\n".join(f"--- message {i + 1} ---\n{m}" for i, m in enumerate(inbox_msgs))
         sections.append(("messages", "# MESSAGES FROM THE USER (consume now)\n" + joined))
     if report_msgs:
-        # No standing prose here: what to do with a report addressed to you is the `report`
-        # action's own contract, already in the harness bullet above.
+        # No standing prose: the `report` contract is in the harness already.
         sections.append(("reports", "# REPORTS ADDRESSED TO YOU (consume now)\n"
                          + "\n\n".join(report_msgs)))
     return sections
@@ -295,13 +243,8 @@ def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
 def kickoff_message(ctx: RunContext) -> str:
     """The first user message of a fresh run — "start working, here is what a reply is".
 
-    It said "Reply with ONE JSON action object" from the first version, and that sentence
-    is the last instruction a run reads before its first action. Chaining shipped in 0.446.0
-    and is on for every routine, yet across the 60 most recent fleet transcripts exactly
-    1 turn of 8,084 carried more than one action (0.01%, 16 of 17 routines never once) — the
-    kickoff teaches the behaviour it measures. So it now says what the FIRST TURN is (one
-    step, not a plan) without denying what a reply may carry; the harness contract explains
-    chaining, and this line no longer contradicts it.
+    It says what the FIRST TURN is (one step, not a plan) without denying chaining — the last
+    instruction before the first action must not contradict the harness contract.
     """
     return (f"Begin run {ctx.run_id}. Nothing has been executed yet — the workflow starts now, "
             "at step 1. Reply with your first actual step as a JSON action object (not a plan, "

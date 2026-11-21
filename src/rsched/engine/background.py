@@ -1,53 +1,26 @@
-"""BACKGROUNDED ACTIONS — one read or fetch running off the turn's hot path (D118 phase 1).
+"""BACKGROUNDED ACTIONS — one call running off the turn's hot path (D118).
 
-A turn's actions are dispatched synchronously, one after another, which is right
-for a scheduled routine — nobody is watching it work — and wrong in a conversation, where a slow
-`util`, a long `llm` or a ten-minute test run FREEZES the human: a message sent meanwhile is only
-injected, picked up after the slow call finally lands.
+A slow call dispatched synchronously freezes a conversation: a message sent meanwhile waits for
+it to land. A run may mark a call `background: true`: it starts in a thread, the turn returns at
+once with a *started* observation naming a handle, and the real observation is appended at a
+later turn boundary, tagged with that handle.
 
-So a run may mark a read or a fetch `background: true`. The call starts in a thread, the turn
-comes back AT ONCE with a *started* observation naming a handle, and the real observation is
-appended at a later turn boundary, tagged with that handle. The conversation keeps its speaking
-turn throughout.
+Built on `engine/archival.py`'s shape (an engine thread started mid-turn, collected append-only
+at the boundary, a settle window at run end, `instrument.abandon_open_calls` for abandoned model
+calls), not on `daemon/detached.py`, whose daemon-ticked units would not start until the reply
+that needs the observation is gone.
 
-**Why this is built on `engine/archival.py` and not on `daemon/detached.py`.** The design entry
-proposed the detached machinery, "sized to a single action rather than a whole run". Measured
-against the code, that is the wrong parent: `daemon/detached.py` is a DAEMON-TICKED,
-multi-process manager over `background_home` whose unit is a routine-shaped directory with its
-own `routine.yaml`, budget and run subprocess, delivered back by a scheduler tick. A call
-backgrounded inside one reply would not START until the next daemon tick, and by then the reply's
-process — the thing waiting to read the observation — is gone. `archival.py` is the shape that
-already answers this exact need: a daemon thread started by the engine mid-turn, collected
-append-only at the turn boundary, with the two lessons it learned the hard way (a settle window
-at run end, and `instrument.abandon_open_calls` so an abandoned thread's in-flight model call
-cannot leak a permanently-`running` task). This module is that pattern, parameterised by action.
+Invariants:
 
-**Every call-time gate runs on the STARTING turn, synchronously, before anything is deferred**
-(F633). `util` and `script` are the two backgroundable kinds whose dispatch `engine/actionroute`
-owns rather than `executor.DISPATCH`, because D39 decided secret exposure at CALL time and that
-decision is answered by the user while the run waits — which a thread cannot do, having no turn to
-block on. Backgrounding one used to walk straight past that: a `script` raised `KeyError: 'script'`
-(DISPATCH has no entry for it, on purpose) and a `util` RAN with its exposure gate never asked.
-So the flag now defers the WORK and never the DECISION, and `_runner` reads the dispatch choice off
-the same routing table the foreground consults.
-
-**The ordering contract is preserved, not weakened.** One action still starts per turn and one
-observation still comes back for it; only the arrival is deferred. For a read or a fetch the KIND
-allowlist is what keeps that safe — its only effect IS the observation. A MUTATION defers behind
-`engine/background_order.py`, which holds any later action touching the target it declared until
-that write has landed (phase 3): the ordering is enforced, not entrusted to the caller.
-
-**Cancellation stops the DELIVERY, never the work** (phase 4's last part, decided D176 option
-(a)). `kill handle=bg1` reaches `cancel` below: the Pending leaves the live list at once, so the
-cap slot frees and `collect` can no longer deliver it — but a Python thread has no interruption
-point, so the call runs to its own end unread and its spend still books. `n` keeps meaning a
-sub-workflow; two namespaces stay two namespaces.
-
-**No new transcript event types.** The started record and the real observation are both
-`observation` events, carrying `background` and `handle`. A new type would mean five coupled
-changes (`EVENT_TYPES`, the console renderer, the CLI renderer, the docs' written-out list, the
-search sources) and records nothing until all five land; the design's own wording — "appended as
-an `observation` event tagged with its handle" — asks for exactly this instead.
+* **Every call-time gate runs on the STARTING turn**, synchronously (F633): a thread has no turn
+  to block on, so the flag defers the WORK, never the DECISION. `_runner` picks the dispatch
+  from the same routing table the foreground uses.
+* **Ordering is preserved.** One action starts per turn and one observation comes back for it.
+  A read's only effect is its observation; a MUTATION defers behind `engine/background_order.py`,
+  which holds later actions touching its declared target until it lands.
+* **`kill handle=…` stops the delivery** and, for `STOPPABLE_KINDS`, the work too (see `cancel`).
+* **No new transcript event types**: started, landed, cancelled and abandoned records are all
+  `observation` events carrying `background` and `handle`.
 """
 
 from __future__ import annotations
@@ -63,40 +36,21 @@ from .run_context import BACKGROUND_THREAD_PREFIX as THREAD_PREFIX
 #: The purpose tag an abandoned background call's in-flight model calls are closed under.
 BACKGROUND_PURPOSE = "background action"
 
-#: The backgroundable kinds whose work a cancel can actually STOP, because the thread is
-#: blocked on a SUBPROCESS rather than inside the interpreter.
-#:
-#: `util`, `script` and `shell` all run through `utils_run.run_jailed`, which already polls a
-#: `cancelled` callable inside the wait it performs anyway and ends the command's whole process
-#: group through `procgroup.terminate` (F586, decided D160-C; the 0.370.2 backstop SIGKILLs a
-#: group that ignores SIGTERM). So for these three, `kill handle=…` terminates the work.
-#:
-#: The others — `llm`, `decide`, `read_file`, `view_image`, `memory_read`, `read_rule` — run
-#: inside the interpreter, where Python offers no interruption point: nothing can make that
-#: thread stop, so the cancel can only stop the DELIVERY and free the cap slot. The operator
-#: named the asymmetry in 0.404.0's wording ("that sounds like a detach, not like a kill") and
-#: it was right: claiming one ceiling for both halves understated what the engine can do for
-#: exactly the calls worth cancelling, which are the slow ones — a ten-minute test run reaches
-#: the host through `shell` or `script`, never through `llm`.
+#: The backgroundable kinds whose WORK a cancel can stop: they run through
+#: `utils_run.run_jailed`, which polls a cancel check inside its wait and terminates the
+#: command's process group. Every other kind runs inside the interpreter, which has no
+#: interruption point, so a cancel there stops only the delivery.
 STOPPABLE_KINDS = ("util", "script", "shell")
 
-#: THERE IS NO CONCURRENCY CAP, and that is a decision rather than an omission (D166, answered
-#: (c)): "unbounded: simplest, and the run's own turn budget is already the practical limit".
-#:
-#: 0.392.0 shipped a cap of 3 (`MAX_CONCURRENT`, with a `refuse_at_capacity` refusal naming the
-#: live handles) because the ledger row had recorded option (a) from an earlier delivery of the
-#: same decision; the operator had since answered it differently, and the code, its test, the
-#: CHANGELOG entry and the prompt text every run reads were all built to the option he did not
-#: choose (F650). This comment exists so the cap is not reintroduced as an obvious improvement:
-#: the argument FOR one is real — every pending call is a live thread whose spend books against
-#: the same run's budgets (D167) — and it was heard and decided against. A run that fans out
-#: more than it has turns left to read pays for that in its own turn budget, which is the limit
-#: the decision points at. Reopening it means reopening D166, not editing this file.
+#: THERE IS NO CONCURRENCY CAP, and that is a decision rather than an omission (D166):
+#: unbounded, because the run's own turn budget is already the practical limit. The case for a
+#: cap (every pending call is a live thread booking against the run's budgets) was heard and
+#: decided against — do not reintroduce one as an obvious improvement; reopening it means
+#: reopening D166.
 
-#: How long a FINISHING run waits for a background call still in flight. The run's work is over,
-#: so this delays nothing anybody is waiting on — but a conversation's reply is rendered from the
-#: finish, so it stays short enough to be invisible. Deliberately the archival window: the two
-#: are the same trade, made at the same moment, and two numbers would only drift apart.
+#: How long a FINISHING run waits for a background call still in flight — short, since a
+#: conversation's reply renders from the finish. Deliberately the archival window: same trade,
+#: same moment, one number.
 SETTLE_SECONDS = 5.0
 
 
@@ -110,11 +64,8 @@ class Pending:
     turn: int                                   # the turn that STARTED it
     thread: threading.Thread
     result: dict = field(default_factory=dict)  # written by the thread, read after it is done
-    #: Set by `cancel` to stop the WORK, not just its delivery. Read by the cancel check this
-    #: call's own context carries, which `utils_run.run_jailed` polls inside its wait — so for a
-    #: `util`/`script`/`shell` the command's process group is terminated (F586's seam). A thread
-    #: running inside the interpreter has no such poll, which is why only `STOPPABLE_KINDS` are
-    #: given one: an event nothing reads would be a promise nothing keeps.
+    #: Set by `cancel` to stop the WORK; read by the cancel check `run_jailed` polls. Only
+    #: `STOPPABLE_KINDS` are given a context that reads it.
     stop: threading.Event = field(default_factory=threading.Event)
 
     @property
@@ -136,12 +87,8 @@ def configure(loop) -> None:
 def _pendings(loop) -> list[Pending]:
     """The live list — never a substitute for it.
 
-    This read used to be `getattr(loop, "_background", None) or []`, which looks harmless and
-    silently broke the whole feature: an EMPTY list is falsy, so every call on a loop with no
-    background work returned a FRESH throwaway list. `start` appended its Pending to that
-    throwaway and the next read got another one, so nothing was ever stored and `collect` saw
-    an empty list for the rest of the run — the backgrounded call ran, and its result was
-    discarded. A defaulting accessor must create the real attribute, not stand in for it.
+    A defaulting accessor must CREATE the real attribute: `getattr(...) or []` returns a fresh
+    throwaway for an empty list, so appended Pendings would vanish.
     """
     if getattr(loop, "_background", None) is None:
         loop._background = []
@@ -151,14 +98,9 @@ def _pendings(loop) -> list[Pending]:
 def _runner(kind: str):
     """The callable the FOREGROUND would have used for `kind` — the one the thread must use.
 
-    F633: this used to be `executor.dispatch` for every kind, on the premise that "the executor
-    is a pure (action, ctx) call, so a backgrounded util is byte-for-byte the same call". The
-    premise is false for exactly the two kinds `engine/actionroute._route` owns rather than
-    `executor.DISPATCH`: `script` is absent from DISPATCH on purpose (its call-time secret gate
-    is in front of it in `_route`), so a backgrounded one raised `KeyError: 'script'` every
-    single time — reported from a live run. `util` IS in DISPATCH, so it ran, with its D39 gate
-    skipped. The gate now runs on the starting turn (`actionroute._gate_for_background`) and the
-    dispatch choice is made here, from the same reading of the routing table.
+    `script` is absent from `executor.DISPATCH` on purpose (`actionroute._route` owns it, behind
+    its secret gate), so it needs its handler named here; the gate itself already ran on the
+    starting turn (`actionroute._gate_for_background`, F633).
     """
     from . import executor
 
@@ -170,10 +112,8 @@ def _runner(kind: str):
 def start(loop, action: dict, ctx) -> dict:
     """Run `action` in a thread and return the *started* observation for this turn.
 
-    The thread runs the ORDINARY dispatch path for the action's kind — `_runner` reads it off
-    the same routing table the foreground consults, so a backgrounded call is the same call it
-    would have been synchronously. What a background thread CANNOT do is ask the user anything,
-    so every call-time gate has already run on this turn, before `start` was reached.
+    The thread runs the ordinary dispatch path for the kind; every call-time gate has already
+    run on this turn, since a thread cannot ask the user anything.
     """
     dispatch = _runner(action["kind"])
 
@@ -183,43 +123,29 @@ def start(loop, action: dict, ctx) -> dict:
     pending = Pending(handle=handle, kind=action["kind"], brief=_brief(action),
                       turn=ctx.turn, thread=None)  # type: ignore[arg-type]
 
-    # The thread dispatches against a SHALLOW PROXY of the run context whose only difference is
-    # the cancel check: `engine.control.cancelled_for_turn` keys the F586 intent channel by TURN
-    # — deliberately, so a cancel clicked as one call ends cannot kill the next one — and a
-    # background call by definition outlives the turn that started it. So the check the ordinary
-    # dispatch installs can never fire again once that turn passes, which left `kill handle=…`
-    # able to stop only the delivery even for a `shell` blocked on a ten-minute subprocess. This
-    # proxy answers "cancelled" for the HANDLE instead, so `run_jailed` ends the command's
-    # process group inside the wait it already performs. A proxy rather than a mutated ctx: the
-    # real context is shared with the live turn, and flipping its cancel check would stop the
-    # FOREGROUND call too.
+    # A stoppable call's cancel check must answer for its HANDLE, not its starting turn
+    # (see `_cancellable_ctx`).
     thread_ctx = _cancellable_ctx(ctx, pending) if pending.stoppable else ctx
 
     def work() -> None:
         try:
             pending.result = dispatch(flagless, thread_ctx) or {}
         except Exception as exc:
-            # A handler that raised is an observation the run can read and route around — the
-            # same wording `actionroute.dispatch_action` gives a synchronous one. A background
-            # failure that vanished would be the `failure-visibility` rule broken by design.
+            # A handler that raised becomes an observation the run can route around, worded as
+            # `actionroute.dispatch_action` words a synchronous one.
             pending.result = {
                 "kind": action["kind"], "engine_error": True,
                 "error": f"{type(exc).__name__}: {exc} — raised by the handler while running "
                          "in the background. Do not repeat the identical action; work around "
                          "it, and report it if the task depends on it."}
 
-    # The NAME is load-bearing, not a label: `run_context.background_parking_key` reads it to
-    # decide that this thread's model spend must be PARKED rather than booked mid-flight
-    # (D167), and `_book_usage` reconstructs the same key from the handle. One constant, so a
-    # rename cannot quietly turn every background booking back into a racing mid-turn fold.
+    # The thread NAME is load-bearing: `run_context.background_parking_key` reads it to PARK this
+    # thread's model spend instead of booking it mid-flight (D167).
     pending.thread = threading.Thread(target=work, name=f"{THREAD_PREFIX}{handle}", daemon=True)
     _pendings(loop).append(pending)
     pending.thread.start()
-    # NO transcript event here. This observation is RETURNED, and the loop's `_observe` is the
-    # single writer of an action's observation event — writing one here recorded the start
-    # twice (measured: two `started` events for one action), which is also how a later reader
-    # counting handles sees phantom work. The deferred observation in `collect` below is the
-    # one this module does write, because by then no turn is dispatching it.
+    # NO transcript event here: this observation is RETURNED, and the loop's `_observe` is the
+    # single writer of an action's observation event.
     return {"kind": action["kind"], "background": True, "handle": handle, "started": True,
             "brief": pending.brief,
             "note": f"STARTED IN THE BACKGROUND as `{handle}` — this turn is yours again. The "
@@ -230,54 +156,26 @@ def start(loop, action: dict, ctx) -> dict:
 
 
 def cancel(loop, handle: str) -> dict:
-    """Stop DELIVERING a background call's observation and free its cap slot (D118 phase 4,
-    decided D176 option (a): `kill` keeps `n` for sub-workflows and addresses a background
-    call by a NEW `handle` field).
+    """Stop DELIVERING a background call's observation (`kill handle=…`, D176) — and, for
+    `STOPPABLE_KINDS`, stop its work too.
 
-    **Two different promises, by kind, and saying so is the point.** 0.404.0 claimed one
-    ceiling for both — "it stops the delivery, never the work" — and the operator named what
-    that is: *"that sounds like a detach, not like a kill"*. He was right, and the claim
-    understated the engine for exactly the calls worth cancelling, which are the slow ones.
+    The promise differs by kind and the observation says which: a `util`/`script`/`shell`
+    thread is blocked in `run_jailed`, whose cancel check (see `_cancellable_ctx`) terminates
+    the process group; any other kind runs inside the interpreter and runs to its own end
+    unread.
 
-    * For `STOPPABLE_KINDS` — `util`, `script`, `shell` — the thread is blocked on a SUBPROCESS,
-      and `utils_run.run_jailed` already polls a cancel check inside that wait and ends the
-      command's whole process group through `procgroup.terminate` (F586, decided D160-C; with
-      0.370.2's backstop for a group that ignores SIGTERM). So **the work stops**. What made this
-      unreachable until now was the intent channel's KEY, not Python: `cancelled_for_turn` keys
-      by turn, and a background call outlives its starting turn, so the check could never fire
-      again. `start` hands those threads a context whose cancel check reads this call's own
-      handle instead.
-    * For every other kind — `llm`, `decide`, `read_file`, `view_image`, `memory_read`,
-      `read_rule` — the work runs inside the interpreter, where Python offers no interruption
-      point. There the honest statement stands: the delivery stops, the work does not.
-
-    Both ways, three things always hold:
-
-    * the observation will NOT reach the run — no boundary message, no `collect` append;
-    * the cap slot frees AT ONCE, so the next flagged action is not refused (D166);
-    * the spend still books (D167) — the tokens were spent at the provider whichever way the
-      run then felt about the answer, and a cancellation that unbooked them would make
-      "background it, cancel it, read the free result" the cheapest spend a budget never sees.
-
-    A cancelled call is recorded as its own `observation` event rather than dropped. The run
-    asked for work, the work happened, the money was spent: a record that stops mid-sentence is
-    how a reader afterwards concludes the engine lost something. The payload mirrors `settle`'s
-    abandoned branch — same keys, one reader — with `cancelled: true` rather than `abandoned`,
-    because the two losses have different causes and a surface folding them could not tell a
-    run that chose to drop a result from a run that ran out of turns.
-
-    The Pending leaves the live list immediately, which is what frees the slot and what keeps
-    `collect` from delivering a result that lands a millisecond later: `collect` reads the live
-    list, and this call is no longer in it.
+    Either way: the observation never reaches the run, the Pending leaves the live list at once
+    (so `collect` cannot deliver a late landing), and the spend still books (D167) — unbooking
+    it would make "background, cancel, read nothing" free spend. The cancel is recorded as its
+    own `observation` event, keyed like `settle`'s abandoned record but with `cancelled: true`,
+    so a reader can tell a dropped result from one the run ran out of turns for.
     """
     live = _pendings(loop)
     wanted = str(handle or "").strip()
     pending = next((p for p in live if p.handle == wanted), None)
     if pending is None:
-        # Shaped like `subruns.kill`'s unknown-number error and for the same reason: an
-        # addressing mistake is correctable, so the observation says what the valid handles
-        # ARE. A run whose call already landed is the common case, so it is named first —
-        # the handle it is holding came from a `started` observation and looks live to it.
+        # Like `subruns.kill`'s unknown-number error: name the valid handles. "Already landed"
+        # is the common case, so it comes first.
         return {"kind": "kill", "handle": wanted, "error":
                 f"no background call `{wanted}` is in flight — it has already landed (its "
                 f"observation was appended at a turn boundary, tagged with its handle) or "
@@ -285,26 +183,17 @@ def cancel(loop, handle: str) -> dict:
                 + (f" In flight now: {background_summary.brief_list(live)}." if live else
                    " This run has nothing in flight.")}
     loop._background = [p for p in live if p is not pending]
-    # Ask the WORK to stop, where that is a thing this engine can do. For a util, script or
-    # shell the thread is blocked in `utils_run.run_jailed`, which polls this call's cancel
-    # check inside the wait it already performs and ends the command's whole process group
-    # (F586's seam, plus 0.370.2's SIGKILL backstop for a group that ignores SIGTERM). Set
-    # BEFORE the Pending leaves anything else, so the subprocess starts dying while we record.
+    # Ask the WORK to stop first (stoppable kinds only read it), so the subprocess starts dying
+    # while we record.
     pending.stop.set()
     ctx = loop.ctx
     spent = background_booking.book(ctx, pending.handle)
     landed = pending.done
-    # A call that had NOT landed has parked nothing yet: an `llm` or `decide` parks its reading
-    # only once the provider answers, and that answer is still on its way. So the handle goes on
-    # the ledger `background_booking.sweep` reads at every boundary — without it the reading
-    # arrives in a parking slot whose Pending has already left the live list, and `collect` and
-    # `settle` both iterate that list, so nobody ever pops it (F722: silent under-accounting,
-    # against this module's own promise and the `handle` field's schema description).
+    # A call still in flight has parked no reading yet; owe it so `background_booking.sweep`
+    # books it when it arrives — nothing else iterates a Pending off the live list (F722).
     if not landed:
         background_booking.owe(loop, pending.handle, pending.kind)
-    # Did this cancel stop the WORK, or only its delivery? True only for a call that was still
-    # running AND whose kind runs as a subprocess `run_jailed` can terminate — a call that had
-    # already finished has no work left to stop, whatever its kind.
+    # The work was stopped only if it was still running AND its kind is terminable.
     stopped_work = pending.stoppable and not landed
     ctx.transcript.event("observation", {
         "kind": pending.kind, "background": True, "handle": pending.handle,
@@ -337,15 +226,11 @@ def cancel(loop, handle: str) -> dict:
 def collect(loop) -> None:
     """At a turn boundary: append the real observation of every background call that landed.
 
-    At the boundary rather than mid-turn for the reason every other boundary feed exists: the
-    message list is only ever APPENDED to between turns, and a message arriving in the middle of
-    a turn's own bookkeeping is how an appended tail gets corrupted.
+    At the boundary because the message list is only appended to between turns.
     """
     from .observations import live_observation
 
-    # A cancelled call's reading may have arrived since the last boundary (F722). Swept FIRST
-    # and regardless of whether anything landed: a boundary with no landing is the common case
-    # for a run that cancelled one slow call and carried on.
+    # Book any cancelled call's late reading first, whether or not anything landed (F722).
     background_booking.record_sweep(loop, background_booking.sweep(loop))
     landed = [p for p in _pendings(loop) if p.done]
     if not landed:
@@ -356,10 +241,8 @@ def collect(loop) -> None:
         pending.thread.join(timeout=0)
         spent = background_booking.book(ctx, pending.handle)
         obs: dict[str, Any] = dict(pending.result or {})
-        # `ctx.turn + 1`, not `ctx.turn`: a boundary runs BEFORE the turn it opens is counted,
-        # so stamping the current value records the result as arriving on the turn that STARTED
-        # it — which is the one thing a reader checking the ordering is looking at. The turn
-        # named here is the turn that actually reads the message appended just below.
+        # `ctx.turn + 1`: a boundary runs before the turn it opens is counted, and the stamp
+        # must name the turn that reads the message appended below.
         ctx.transcript.event("observation", {
             **_recordable(obs), "background": True, "handle": pending.handle,
             **({"usage_booked": spent} if spent else {}),
@@ -374,26 +257,19 @@ def settle(loop) -> str:
     """At run end: give calls still in flight a moment to land, record every one of them, and
     return the one line the run's SUMMARY needs about what it never read.
 
-    Two different losses live here and they are not interchangeable:
+    Two distinct losses:
 
-    * a call that LANDED with no turn left to read it — its result exists, recorded under the
-      SAME payload keys `collect` writes (one shape, one reader), so a reader of the run has it
-      even though the model never did.
-    * a call still RUNNING — its result is gone. The thread is a daemon, so the interpreter
-      kills it WITHOUT unwinding its stack: the instrumentation wrapper's `except BaseException`
-      never runs and an in-flight model call's `finished`/`failed` record is never written, which
-      leaves a permanently-`running` task in the task centre — the leak archival already paid
-      for once. We are the party that knows, and we are still alive, so we say so.
+    * a call that LANDED with no turn left — its result is recorded `unread` under the same keys
+      `collect` writes, so a reader of the run has it even though the model never did;
+    * a call still RUNNING — its result is lost. A daemon thread dies without unwinding, so its
+      in-flight model calls are closed here (`instrument.abandon_open_calls`) or they would stay
+      `running` forever.
 
-    **BOTH are named in the returned line** (F715, authorized by D195): this spoke only for the
-    abandoned set, calling a late landing a short run's ordinary end — the engine's tidiness
-    over a reader told nothing of evidence the run never saw. The two DISTINCT sentences and
-    the reasoning behind them live in `engine/background_summary.py`.
+    Both are named in the returned line (F715/D195); the wording is
+    `engine/background_summary.py`'s.
     """
-    # The last chance to book a cancelled call's late reading (F722) — before the early return,
-    # because a run that cancelled its one slow call and then finished has NO pendings left and
-    # would otherwise never sweep. What is still owed after this is given up on: a thread killed
-    # with the interpreter parked nothing, so there is no reading to lose.
+    # Last chance to book a cancelled call's late reading — before the early return, since such
+    # a run may have no pendings left. Whatever is still owed afterwards parked nothing.
     background_booking.record_sweep(loop, background_booking.sweep(loop))
     background_booking.drop_all(loop)
     pendings = _pendings(loop)
@@ -413,15 +289,11 @@ def settle(loop) -> str:
             **({"usage_booked": spent} if spent else {}),
             "note": "landed after the run's last turn — recorded here, never read by the run"},
             turn=loop.ctx.turn)
-    # Abandoned bookkeeping only when there IS one; the SUMMARY renders either way (F715/D195).
     closed = instrument.abandon_open_calls(
         purpose=BACKGROUND_PURPOSE,
         error="the run ended before the background action finished") if abandoned else 0
     for pending in abandoned:
-        # Its spend books even though its RESULT is lost: the tokens were spent at the provider
-        # whether or not this run ever read the answer, and charging only the calls that landed
-        # would make "background it and finish" the cheapest way to spend money the budget
-        # never sees. A thread killed mid-call has parked nothing yet, so this is often empty.
+        # Its spend books even though its result is lost — the provider was paid either way.
         spent = background_booking.book(loop.ctx, pending.handle)
         loop.ctx.transcript.event("observation", {
             "kind": pending.kind, "background": True, "handle": pending.handle,
@@ -436,17 +308,11 @@ def settle(loop) -> str:
 def _cancellable_ctx(ctx, pending: Pending):
     """`ctx` with ONE thing changed: the cancel check reads this call's own stop event.
 
-    `engine.control.cancelled_for_turn` keys the F586 intent channel by TURN, deliberately — a
-    cancel clicked just as a long call finishes must not kill the NEXT call, and the UI's red ×
-    renders on one action's row, so the intent travels as "stop the call of turn N". A
-    background call breaks that key and only that key: it outlives the turn that started it, so
-    the check can never fire again once the run moves on.
-
-    So the thread gets a shallow proxy carrying `background_stop`, which `cancelled_for_turn`
-    prefers when present. A PROXY and not a mutated context: the real one is shared with the
-    live turn, so flipping its cancel check would stop the foreground call too — and a
-    `__getattr__` delegate rather than a copy, because `RunContext` holds the transcript, the
-    meter and the usage lock that the parked-spend booking depends on being the SAME objects.
+    `engine.control.cancelled_for_turn` keys cancel intent by TURN (so a cancel cannot hit the
+    next call), but a background call outlives its starting turn. The proxy carries
+    `background_stop`, which `cancelled_for_turn` prefers. A proxy, not a mutated ctx (that would
+    cancel the foreground call too), and a `__getattr__` delegate, not a copy (the transcript,
+    meter and usage lock must be the SAME objects).
     """
 
     class _BackgroundCtx:

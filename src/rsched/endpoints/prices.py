@@ -1,28 +1,21 @@
 """What a completion costs in dollars — the NOTIONAL figure every cost ranking reads.
 
-A subscription transport bills nothing per token, so the provider's own `cost` is 0.0 on every
-run it serves — nearly every run on this instance. Ranking routines by that number, or by
-`tokens` (fresh input + output, which leaves the prompt cache out), hid where the money went:
-freelance-radar's last run read `tokens: 650,520, cost: 0.0` while it had pushed 40 million
-cached input tokens through the model. This module gives every completion a dollar figure for
-its WHOLE context volume — fresh input, output, cache reads and cache writes, each at its own
-rate — whatever transport carried it.
+A subscription transport bills nothing per token, and `tokens` leaves the prompt cache out, so
+neither says where the money goes. This module gives every completion a dollar figure for its
+WHOLE context volume — fresh input, output, cache reads and cache writes, each at its own rate —
+whatever transport carried it.
 
 ## One source per model, decided by its ROUTE — never a chain of guesses
 
 - **A metered route** — the provider bills this call — is priced by the provider: the `cost` it
-  REPORTED on the completion when it reports one (OpenRouter does, the auto-router included,
-  whose list price is variable; an Otari gateway does for every call, as `cost_usd` —
-  `usage.reported_cost`), else the prices it PUBLISHES for that exact model id
+  REPORTED on the completion when it reports one (OpenRouter's `cost`, an Otari gateway's
+  `cost_usd` — `usage.reported_cost`), else the prices it PUBLISHES for that exact model id
   (OpenRouter's `/models`, Nano-GPT's own `/api/models`).
-- **A subscription route** (a proxy or gateway whose catalog lists ids and no prices — every
-  endpoint here that is neither OpenRouter nor Nano-GPT) is priced at the model's LIST price, read
-  from the public reference catalog (OpenRouter's `/models`) under the name vendors share
-  (`price_name`): that is what the same tokens cost when bought, which is what "notional" means.
-  The gateway reports such a call's bill as zero, which is true and is kept as its `cost`; a zero
-  is not a price, so the list price is still what `notional` carries. A gateway id ending
-  `-metered` is the PAID route of the same model and is read under that model's name, so when
-  its call reports no bill it falls back to the same list price.
+- **A subscription route** (every endpoint that is neither OpenRouter nor Nano-GPT) is priced at
+  the model's LIST price from the public reference catalog under the name vendors share
+  (`price_name`) — what the same tokens cost when bought. A reported zero bill is kept as its
+  `cost` but is not a price. A gateway id ending `-metered` is the PAID route of the same model
+  and is read under that model's name.
 
 What is not published is NOT priced. A model no source prices, or a completion that used a token
 class whose rate its source does not publish (a cache write on a model listing no cache-write
@@ -168,7 +161,7 @@ def refresh(server, reference_body: dict | None) -> dict:
 def missing(server) -> bool:
     """Has a configured model never been through a price refresh? Read by `limits.stale`, so a
     deploy that brings this cache, or a model added in Settings, is priced at the next tick
-    rather than at the limits cache's next daily expiry (0.428.0 left a day of runs unpriced).
+    rather than at the limits cache's next daily expiry.
     """
     data = read_json(cache_path(server.routines_home))
     checked = data.get("checked") if isinstance(data, dict) else None

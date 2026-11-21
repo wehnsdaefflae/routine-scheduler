@@ -11,8 +11,7 @@ and as cheap from one run to the next. So every run records two things beside it
   effort, the deliberation level, a hash of the behaviour-relevant config, a hash per held
   rule's text, and a trial id when the run was fired as a model trial. (The recipe and library
   commits ride the record already.) A CHANGE is a boundary between consecutive runs whose
-  fingerprints differ; nothing has to declare it. Runs from before this record existed are
-  REBUILT from the instance's own history (a one-shot backfill, honoured 2026-11-12): they carry
+  fingerprints differ; nothing has to declare it. Rebuilt records carry
   `source: "reconstructed"` and name what could not be recovered in `unknown`.
 - **`quality`** — the run's own counts, read as rates against its peers:
   CORRECTNESS — claims the verifier challenged and the ones that stood disputed, actions a
@@ -50,14 +49,10 @@ TRIAL_FILE = "trial.json"
 BEHAVIOUR = frozenset({"models", "efforts", "connections", "machines", "grants", "budgets",
                        "permissions", "shared_reminders", "capabilities", "fs_read_roots",
                        "fs_write_roots", "ladder", "chain_actions"})
-#: What does not change what a run DOES: who the routine is and where it shows (identity), WHEN
-#: it runs (its clock, its triggers, its gate, its off switch), how long its runs are kept,
-#: whether ANOTHER routine may edit it (`improve`) — and what the fingerprint measures as a
-#: component of its own: `deliberation`, `rules` (their texts, by slug), `tuning` (tuning.yaml
-#: is part of the recipe) and `trial`, which outlives the trial as history (rsched/trials.py) and
-#: would split the runs after a finished trial from the identical runs before it — and `outcome`,
-#: the operator's declaration of what the routine is FOR: it measures a run, it changes nothing
-#: the run may do.
+#: What does not change what a run DOES: identity, WHEN it runs, retention, `improve`, and what
+#: the fingerprint measures separately (`deliberation`, `rules` by text, `tuning` as recipe).
+#: `trial` outlives the trial as history, so hashing it would split identical runs; `outcome`
+#: measures a run and changes nothing it may do.
 NOT_BEHAVIOUR = frozenset({"slug", "dir", "name", "description", "tags", "kind",
                            "owner", "workflow_slug", "workflow_commit", "playbook_slug",
                            "pattern", "enabled", "cron", "tz", "triggers", "run_gate",

@@ -5,20 +5,11 @@ together at its next turn (`engine/chain.py`, the operator's terminal). This mod
 ORDER comes from; which of them actually run — and where a chain stops — is chain.py's.
 
 **Why the order is what the model meant.** A thinking model chains: it writes an action, thinks
-on as though it had run, and writes the next — whose `say` then reports the first one's effect
-("Fields added. Now computing it in run_probe"). Since 0.396.0 put the Anthropic action tool on
-`auto` so effort reaches the model, Opus 5 does this on most multi-step moments: the FIRST action
-arrives as JSON in a text block, the second as the tool call — and the adapter's `parsed` (the
-call) was all the engine read. So the second ran, the first vanished, and the second's narration
-claimed a change nobody had made (R2443-R2445: an import, test files, a pushed fix, an ask body —
-17 false claims in two llmsectest runs, and fleet-wide wherever an Anthropic model thinks).
-Replaying the real turn 194 of llmsectest-weekday:20261010-040001 through the live proxy
-reproduced the shape five times in five; a sharper tool description changed nothing, and with no
-tool offered at all the model still wrote two actions as two text blocks. Running the LATER
-action alone is wrong whichever channel carried it: it presupposes the earlier one. So the first
-runs first — and since 0.446.0 the later ones run after it, in the order written, which is what
-the model was describing all along. A chain stops at the first FAILURE for the same reason the
-order matters: past that point the narration describes a world that does not exist.
+on as though it had run, and writes the next — whose `say` reports the first one's effect. The
+first often arrives as JSON text and the second as the tool call; running only the call
+(R2443-R2445) made its narration claim changes nobody made. A later action presupposes the
+earlier one, so they run in the order written, and a chain stops at the first FAILURE: past it,
+the narration describes a world that does not exist.
 
 **Order.** A reply's text precedes its tool call — the Messages API ends a turn at the call, and
 an OpenAI-compatible reply's content precedes its tool calls — so the actions written as text come
@@ -31,9 +22,8 @@ transcript is the audit of how often a reply carried more than one.
 
 **What counts.** A JSON object in the text whose `kind` is an action kind. An object differing
 from another only in its narration (`say`, `note`, the reminder fields) is the SAME action
-written twice — the scripted harness, and a model that writes its call out as text too, both do
-that — and runs once with no note: telling the model a duplicate "did not run" would invite it
-to repeat an edit.
+written twice and runs once with no note — telling the model a duplicate "did not run" would
+invite it to repeat an edit.
 """
 
 from __future__ import annotations
@@ -140,10 +130,8 @@ def unexecuted_note(rows: list[dict] | None, because: str = "") -> str:
     "" when it ran them all. Names each by its canonical line and its own say — the say is the
     part that claimed an effect, so it is the part the run has to see did not happen.
 
-    `because` is why the engine stopped where it did — the chain's own stop reason
-    (engine/chain.py). Saying it is what keeps the note from teaching the opposite of the
-    feature: before chaining, this note told every run "the engine runs exactly ONE action per
-    reply", which a run that reads it stops chaining over.
+    `because` is the chain's own stop reason (engine/chain.py); saying it keeps the note from
+    teaching a run that only one action per reply ever runs.
     """
     if not rows:
         return ""

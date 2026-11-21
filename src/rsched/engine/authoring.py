@@ -1,13 +1,10 @@
 """Library AUTHORING handlers — `write_util`, `write_rule`, `remove_util`.
 
-Split out of `interact.py` (F393). What these share is not "they ask the user" — most kinds
-can do that — it is that they WRITE THE SHARED LIBRARY, so each is a ladder of refusals with
-its own approval dial (`confirm` for utils, `rule_confirm` for rules, because a rule revision
-lands on every holder at its next run and that is a different decision from creating a util).
-Every rung of a handler's ladder is its own teaching exit — collapsing them would make the
-refusals interchangeable — and the one rung both share, EDIT MODE's anchor patch, is one
-helper (`anchor_edit`), so a guard taught to one kind cannot be missing from the other.
-`memory_write`'s edit mode (R2456) is the third caller of that same helper, for the same reason.
+These WRITE THE SHARED LIBRARY, so each is a ladder of refusals with its own approval dial
+(`confirm` for utils, `rule_confirm` for rules — a rule revision lands on every holder at its
+next run). Every rung is its own teaching exit; the one rung they share, EDIT MODE's anchor
+patch, is one helper (`anchor_edit`, also used by `memory_write`'s edit mode) so a guard taught
+to one kind cannot be missing from another.
 
 There is deliberately no `remove_rule`: deleting a rule silently un-binds every holder with
 nothing to catch it, so a run reports it and the user deletes it.
@@ -24,14 +21,11 @@ from .observations import truncate
 
 
 def recreate_denial(loop, action: dict) -> list[str]:
-    """The never-recreate rule, checked INSIDE the schema-retry cycle (a denied call is
-    corrected and never becomes a turn, like every permission gate): a write_util for a
-    slug that once existed and was deleted from the util library — the user's deliberate
-    act, per the library's git history — must not proceed silently. The unlock is the
-    grant entity `recreate:<slug>` (entities.py): an allow-now decision THIS run opens
-    it (the routine's normal write_util approval level still applies afterwards), and a
-    never-decision tombstones it. `recreate:` has no allow-forever on purpose — a fresh
-    deletion must always outrank an old grant.
+    """The never-recreate rule, checked INSIDE the schema-retry cycle: a write_util for a
+    slug the user deleted from the util library (per its git history) must not proceed
+    silently. The unlock is the grant entity `recreate:<slug>` — allow-now opens it for THIS
+    run, a never-decision tombstones it. No allow-forever on purpose: a fresh deletion must
+    always outrank an old grant.
     """
     if action.get("kind") != "write_util":
         return []
@@ -64,9 +58,7 @@ def anchor_edit(text: str, action: dict, *, current: str, verbatim_from: str,
     `text` — every occurrence with `all: true`. Returns `(patched, "")`, or `("", reason)`,
     the teaching exit naming where to copy the anchor from.
 
-    An EMPTY anchor is refused before it is counted. "" occurs between every two characters,
-    so write_util answered it "anchor occurs 5001× … or set all: true", and with `all: true`
-    `str.replace` then wove the replacement between every character of the script.
+    An EMPTY anchor is refused before it is counted: "" occurs between every two characters.
     """
     anchor = str(action.get("anchor") or "")
     if not anchor:
@@ -89,9 +81,7 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
         return {"kind": "write_util", "name": name, "declined": True,
                 "reason": "sub-workflows cannot create/revise utils — use existing ones"}
     if name.startswith(utils_lib.STAGING_PREFIX):
-        # The prefix a candidate is selftested under (utils_stage) is HIDDEN from the catalog
-        # and the `gu` listing, so a util actually named that way would be a util no caller
-        # can discover — and the next authoring attempt's stale sweep would delete it.
+        # The selftest staging prefix is hidden from the catalog and swept as stale.
         return {"kind": "write_util", "name": name, "declined": True,
                 "reason": f"{utils_lib.STAGING_PREFIX!r} is reserved for utils being "
                           "selftested before install — pick a name without that prefix"}
@@ -100,11 +90,8 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
     src_path = str(action.get("path") or "")
     edit_mode = raw_content is None and not src_path
     if edit_mode:
-        # Edit mode (D42-B / F187): anchor-patch the EXISTING source ENGINE-side, so a
-        # 3-line fix to a 50KB util never requires re-emitting the whole script through
-        # one reply (the re-emit exceeded the output cap and made big utils unfixable
-        # for shell-less routines, observed 2026-07-24). The synthesized result rides
-        # the exact same approval + selftest + rollback gate as a full rewrite.
+        # Edit mode (D42-B): anchor-patch the EXISTING source engine-side, so a small fix
+        # never re-emits a big script through one reply. Same gate as a full rewrite.
         source = utils_lib.read_util(home, name)
         if source is None:
             return {"kind": "write_util", "name": name, "edit_failed": True,
@@ -118,11 +105,8 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
         if problem:
             return {"kind": "write_util", "name": name, "edit_failed": True, "reason": problem}
     elif src_path:
-        # Content-from-file (F280): install the script from a file's EXACT bytes — a
-        # large pre-built util (a subtask's tested draft, a consolidation) must not be
-        # re-typed through one reply, which caps out and is never guaranteed faithful.
-        # Reads under the run's own readable roots only; the result rides the SAME
-        # header + approval + selftest + rollback gate as inline content.
+        # Content-from-file (F280): a file's EXACT bytes, read under the run's readable
+        # roots only; the SAME gate as inline content.
         try:
             content = resolve_rel(ctx.routine.dir, src_path,
                                   ctx.read_roots()).read_text(encoding="utf-8")
@@ -138,10 +122,9 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
         return {"kind": "write_util", "name": name, "header_ok": False,
                 "problems": problems}
     creating = not utils_lib.exists(home, name)
-    # Approval policy is the routine's write_util capability level (always: every change;
-    # creations: new utils only; never). No grants on the ctx = confirm everything. A revision
-    # that WIDENS what the util reaches is asked about at every level and every time: it is a
-    # new grant for every routine that calls the util, in the shape of a fix.
+    # Approval policy is the routine's write_util level (always / creations / never; no grants
+    # = confirm everything). A revision that WIDENS the util's reach is always asked: it is a
+    # new grant for every routine that calls it.
     widened = ([] if creating
                else utils_header.widening(utils_lib.read_util(home, name) or "", content))
     approved_for_run = ("approval:write_util" in getattr(ctx, "granted_now", set())
@@ -163,28 +146,22 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
             "default": "the util is NOT applied until approved"}, poll_s,
             qtype="util-approval", subject=name)
         if not ask.get("answered"):
-            # pending — and after an ask-back the operator's words reach the run on THIS
-            # observation; the re-submitted write_util answers them and replaces the record
+            # pending — after an ask-back the operator's words ride THIS observation
             return {"kind": "write_util", "name": name, **still_pending(ask)}
         if not is_approval(ask["answer"]):
-            # carry the verbatim answer: a decline that hides WHAT was said reads as a
-            # contradiction when the user meant to approve in other words (F161)
+            # carry the verbatim answer: the user may have meant approval in other words
             return {"kind": "write_util", "name": name, "declined": True,
                     "answer": str(ask["answer"])[:200]}
         if str(ask["answer"]).strip().lower() == "approve this kind for the rest of this run":
             ctx.granted_now.add("approval:write_util")
-    # Selftest gates the LIBRARY BEFORE it holds the text (utils_stage.write_selftested,
-    # F584/D161): the candidate is tested under a throwaway slug and `utils/<name>` is written
-    # only on green, so there is no window in which another routine's `gu <name>` can reach an
-    # untested script — not the 120s selftest, not a dependency prewarm ahead of it.
+    # Selftest BEFORE the library holds the text (D161): tested under a throwaway slug,
+    # `utils/<name>` written only on green, so no `gu <name>` ever reaches an untested script.
     ok, output = utils_stage.write_selftested(
         home, name, content, policy=sandbox.base_policy(ctx.server),
         message=f"{'create' if creating else 'revise'} {name}",
         routines_home=ctx.server.routines_home, aborted=ctx.aborted)
     if not ok:
-        # Head+tail, never a head slice: a traceback's END is the repair material, and a
-        # long selftest log sliced at its head hid exactly the AssertionError that
-        # explained the failure (R93).
+        # Head+tail, never a head slice: a traceback's END is the repair material.
         output, _ = truncate(output, cap=2000)
         return {"kind": "write_util", "name": name, "created": creating,
                 "selftest_ok": False, "reverted": True, "output": output}
@@ -192,9 +169,8 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
 
 
 def _impact_note(ctx, kind: str, name: str, content: str | None) -> str:
-    """The blast radius, for the approval question. Advisory and best-effort: an impact that
-    could REFUSE a write would make a diagnostic the reason authoring fails, and the write gate
-    is the selftest and the linter, not this.
+    """The blast radius, for the approval question. Advisory and best-effort — never a reason
+    authoring fails.
     """
     from ..library_impact import impact, impact_lines
 
@@ -208,18 +184,9 @@ def handle_write_rule(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
     """Author or revise a GENERAL RULE in the shared library — the write_util shape, applied
     to prose instead of code, gated by the rule-authoring permission.
 
-    Two differences from a util, both from blast radius. A rule is held by many routines, so
-    the approval dial is its OWN (`rule_confirm`) rather than write_util's: a routine trusted
-    to author its own tools is not thereby trusted to reword what every other routine follows.
-    And the gate is the library LINTER instead of a selftest — prose has nothing to execute,
-    so conformance (a `# rule:` heading, tags, no capabilities smuggled into frontmatter) is
-    the only mechanical check there is; it runs BEFORE the approval ask, so a malformed draft
-    never reaches the user.
-
-    DELETION is deliberately not an action. Removing a rule silently un-binds every routine
-    holding it, and unlike a util there is no callers check that can catch it — a run that
-    believes a rule should go says so in a report or a deferred ask_user, and the user
-    deletes it on the Library tab.
+    Its approval dial is its OWN (`rule_confirm`), since a rule binds many routines; its gate
+    is the library LINTER (run before the approval ask) instead of a selftest. DELETION is
+    deliberately not an action — it would silently un-bind every holder; the user deletes it.
     """
     from .. import library_docs
     from ..workflows.lint import lint_rule_text
@@ -238,9 +205,7 @@ def handle_write_rule(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
     existing = library_docs.read_doc(home, name)
     raw_content = action.get("content")
     if raw_content is None:
-        # Edit mode, the normal shape for a revision: anchor-patch the current prose so a
-        # one-clause fix costs one clause, and so the change is legible as a diff to the
-        # user approving it.
+        # Edit mode, the normal shape for a revision: legible as a diff to the approver.
         if existing is None:
             return {"kind": "write_rule", "name": name, "edit_failed": True,
                     "reason": f"no rule {name!r} exists to revise — pass 'content' (the "
@@ -254,18 +219,14 @@ def handle_write_rule(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
     else:
         content = str(raw_content)
     if existing is not None and content == existing:
-        # A no-op revision used to COMMIT — on every holder of the rule (100+ for the big
-        # ones), as a change that changed nothing. rules-review carried a reminder for this
-        # from 2026-10-26 and retired it 2026-11-02 (R3148): the predicate is invisible to a
-        # regex, so the caution had to fire on every write_rule. Refused here instead.
+        # A no-op revision would commit a change to every holder (R3148).
         return {"kind": "write_rule", "name": name, "declined": True,
                 "reason": "this revision is identical to the rule already in the library — "
                           "nothing to change, and a commit here would reach every holder"}
     if problems := lint_rule_text(content, filename=f"{name}.md"):
         return {"kind": "write_rule", "name": name, "lint_ok": False, "problems": problems}
     creating = existing is None
-    # WHO ELSE this lands on: a revision reaches every holder at its next run, so the
-    # approval question names them. This is the fact that makes the decision reviewable.
+    # WHO ELSE this lands on — named in the approval question.
     holders = _rule_holders(ctx, name)
     if ctx.grants is None or ctx.grants.needs_rule_confirm(creating):
         verb = "author" if creating else "revise"
@@ -294,9 +255,7 @@ def handle_write_rule(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
 def _rule_holders(ctx, slug: str) -> list[str]:
     """Every routine/conversation whose config binds this rule — who a revision reaches.
 
-    Read straight off the config files rather than the registry: a rule is authored from a
-    maintenance routine that may not hold run-history access, and this is a fact about the
-    instance, not about any run.
+    Read straight off the config files, not the registry: a fact about the instance.
     """
     from .. import rules as rules_mod
 
@@ -313,10 +272,8 @@ def _rule_holders(ctx, slug: str) -> list[str]:
 
 def handle_remove_util(loop, action: dict, poll_s: float) -> dict:
     """Delete a global util (curation) — the write_util counterpart, gated by the same
-    util-authoring capability. Refuses if any sibling still declares it on a `calls:` line
-    (mirrors the `gu remove` no-callers refusal); asks for approval unless the routine's
-    write_util policy is 'never'; the removal itself runs un-sandboxed engine-side (like
-    write_util's library write), committed so it is recoverable from git history.
+    util-authoring capability. Refuses while any sibling declares it on a `calls:` line;
+    asks for approval unless write_util policy is 'never'; committed, so recoverable.
     """
     ctx = loop.ctx
     name = action["name"]

@@ -1,30 +1,18 @@
 """BACKGROUND archival — the navigable history is built off the hot path.
 
-Compaction has three tiers and the good one is slow: `archive_middle` hands the elided
-middle to a model and waits 180–600s for a set of navigable files back. That is a visible stall
-in the middle of a run, and it lands at exactly the moment the run is busiest.
+`archive_middle` (a model building navigable files from the elided middle) is slow, so the
+tiers are split in TIME: the deterministic digest (`maybe_compact`) lands INSTANTLY and the run
+carries on, while the archival runs in a thread; when it finishes the run is told by an APPENDED
+note.
 
-So the two tiers are split in TIME rather than traded off. The deterministic digest
-(`maybe_compact`, one line per elided turn) lands INSTANTLY and the run carries straight on; the
-archival call runs in a thread against the middle that was just elided; when it finishes, the
-run is told — by an APPENDED note — that the navigable history is now there.
+Nothing is summarized away: the transcript keeps every byte, the archive is built losslessly from
+the real middle, and the digest is only a placeholder for the time the archive takes. Do not chase
+speed with a lossy summarize-and-replace.
 
-**The guardrail this is built around.** Claude Code's compaction is instant BECAUSE it is
-summarize-and-replace, which is lossy: detail survives only in terminal scrollback. Do not chase
-that speed by adopting that mechanism. Nothing here summarizes anything away — the transcript
-has always kept every byte, the archive is still built losslessly from the real middle, and the
-digest is a PLACEHOLDER in the prompt for the minute the archive takes, not the product. What
-changed is when the run gets to keep working, not what it ends up with.
-
-Two consequences worth stating plainly rather than discovering later:
-
-- **The note is APPENDED, never swapped in.** Rewriting the digest message would be a second
-  rewrite of the prefix and a second cache invalidation for one compaction. Appending costs
-  nothing and keeps the message list append-only, which is the contract everywhere else.
-- **A run that ends inside the archival window keeps only the digest.** That is today's
-  degraded fallback, reached by a different route, and the transcript is untouched either way —
-  so the floor is exactly where it already was. Waiting for the thread at finish would
-  reintroduce the stall at the worst possible moment.
+- **The note is APPENDED, never swapped in** — rewriting the digest would invalidate the cache a
+  second time for one compaction.
+- **A run that ends inside the archival window keeps only the digest** (the degraded fallback;
+  the transcript is untouched). Waiting for the thread at finish would reintroduce the stall.
 """
 
 from __future__ import annotations
@@ -80,22 +68,17 @@ def start(loop, middle: list[dict], endpoint, ref, turn: int) -> None:
     pending.thread.start()
 
 
-#: How long a FINISHING run waits for an archival already in flight. The run's work is over,
-#: so this delays nothing the model or the user is waiting on — but a conversation's reply is
-#: rendered from the finish, so it stays short enough to be invisible. An archive that needs
-#: longer is abandoned: the thread is a daemon, `_swap_in_history` is atomic, and the digest
-#: plus the full transcript are what remain — exactly today's degraded fallback.
+#: How long a FINISHING run waits for an archival already in flight — short, because a
+#: conversation's reply is rendered from the finish. A longer one is abandoned (daemon thread,
+#: atomic `_swap_in_history`); the digest plus the full transcript remain.
 SETTLE_SECONDS = 5.0
 
 
 def settle(loop) -> None:
     """At run end: give an in-flight archival a moment to land, then record what happened.
 
-    Without this, a run that finishes shortly after compacting drops its archive on the floor.
-    That archive has no reader left in the run itself, but it is not worthless — the search
-    index covers `history/` and a later reader (a person, an audit routine) goes looking there.
-    Waiting a few seconds for a write already in flight is cheap; waiting the full archival
-    timeout would put the 180-600s stall back, at the moment a conversation's reply is due.
+    The archive still has later readers (the search index covers `history/`), so a run that
+    finishes just after compacting waits briefly for it — never the full archival timeout.
     """
     pending = getattr(loop, "_archival", None)
     if pending is None:
@@ -103,12 +86,9 @@ def settle(loop) -> None:
     pending.thread.join(timeout=SETTLE_SECONDS)
     if not pending.done:
         loop._archival = None
-        # The thread is a daemon, so the interpreter kills it at exit WITHOUT unwinding its
-        # stack — the instrumentation wrapper's `except BaseException` never runs and the call's
-        # `finished`/`failed` record is never written. The task centre marks a task terminal only
-        # from such a record, so each abandoned archive left a permanently-`running` task
-        # (F572: 17 of the 23 leaked tasks in conversation c-20260915-074755's sidecar were
-        # `Compaction · archival`). We are the party that knows, and we are still alive: say so.
+        # The daemon thread is killed at exit WITHOUT unwinding, so the instrumentation never
+        # writes its `finished`/`failed` record and the task would stay `running` forever
+        # (F572). We know, and are still alive: close it here.
         abandoned = instrument.abandon_open_calls(
             purpose=ARCHIVAL_PURPOSE,
             error="the run ended before the archive finished")
@@ -125,9 +105,7 @@ def settle(loop) -> None:
 def collect(loop) -> None:
     """At a turn boundary: if the archive has landed, tell the run where it is.
 
-    Called from the boundary rather than mid-turn on purpose — the message list is only ever
-    appended to between turns, and a note arriving in the middle of a turn's own bookkeeping is
-    how an appended tail gets corrupted.
+    At the boundary on purpose: the message list is only appended to between turns.
     """
     pending = getattr(loop, "_archival", None)
     if pending is None or not pending.done:
@@ -144,8 +122,7 @@ def _record(loop, pending: Pending, *, announce: bool) -> None:
     info: dict[str, Any] = dict(pending.result or {})
     ctx = loop.ctx
     if info.get("archival_degraded"):
-        # The digest stands, which is exactly where the synchronous path landed on a failure.
-        # Visible, because a silent degrade is how a broken archival model goes unnoticed.
+        # The digest stands. Recorded, so a broken archival model does not go unnoticed.
         ctx.transcript.event("compaction", {**info, "background": True})
         return
     if info.get("usage"):

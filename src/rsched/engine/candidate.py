@@ -1,11 +1,7 @@
 """A REPLACEMENT CANDIDATE — a routine rebuilt under a new slug, run beside the one it would
 replace, swapped in with ONE operator accept.
 
-On 2026-10-17 the operator replaced two routines by hand: freelance-radar (89 applications, zero
-interviews, ~2,000 recipe lines, 28 check scripts) and grants-radar (no new programme in 14
-runs) gave way to lean outcome-led rebuilds. routine-improver had visited both for months and
-could only make "small, reversible" changes — so it added controls to a design that needed
-deleting. This module is the mechanism that lets the improver do what the operator did: draft
+Lets the improver do more than small, reversible changes to a design that needs deleting: draft
 the replacement, prove it beside the old one, and hand the operator one decision.
 
 `create_routine` with `replaces: <slug>` (a depth-0 run holding the `rebuild_routine`

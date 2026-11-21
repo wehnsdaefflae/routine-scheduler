@@ -9,35 +9,25 @@ hold and one application of a re-driven finish's reminder payload (engine/remind
 by engine/remind_ledger.py), one warning before the window's middle is archived
 (engine/window.py), one context-window correction per window a failover has substituted DOWN to
 (engine/substitution.py). Two COUNTERS answer for the same scope (D245,
-engine/resumedcounters.py): how often each call has failed this run — the repair hint fires at
-the SECOND failure of one call — and whether repeat-streak shedding has already turned the
-provider's response format off for the rest of it. Each is an in-memory ledger the loop
-builds at construction — so every resumed leg used to start them EMPTY: a hold the run had
-already confirmed stopped the same action again after a restart, a finish deferral recurred,
-the verifier argued a line it had already conceded, and a repo the run had found clean read
-as dirty with the run's own edits.
+engine/resumedcounters.py): per-call failure counts (the repair hint fires at a call's SECOND
+failure) and whether repeat-streak shedding has turned the response format off. Each is an
+in-memory ledger the loop builds empty, so a resumed leg must rebuild it or every once-only
+promise restarts.
 
-**What "once" means** (operator decision, 2026-10-01):
+**What "once" means:**
 
-- a ROUTINE run — once per RUN. Every leg is the same run: a resume after a crash or a
-  restart, the operator's resume, a parked question answered after its process died, a
-  follow-up on a finished run.
-- a CONVERSATION — once per REPLY, because each reply is a new task. A reply ends in the
-  authored finish that IS its chat message (docs/conversations.md), so a leg whose
-  transcript's last finish is authored starts a NEW reply — the user's message it is about
-  to inject opens it — and its guards start fresh. Any other leg continues the reply that
-  began after the last authored finish: one an engine-written finish cut off (a crash, a
-  restart, an abort, a budget the engine had to end), or the first reply, which has no finish
-  before it.
+- a ROUTINE run — once per RUN. Every leg (a resume after a crash or restart, the operator's
+  resume, a parked question answered, a follow-up) is the same run.
+- a CONVERSATION — once per REPLY, because each reply is a new task. A leg whose transcript's
+  last finish is authored starts a NEW reply and its guards start fresh; any other leg
+  continues the reply begun after the last authored finish.
 
-That is the fact `boot` already reads to frame the leg (`leg_after_authored`: "this run
-already ENDED — a follow-up" against "interrupted and now RESUMED"), so the guards and the
-words the model is given about its leg cannot disagree about which reply it is in.
+That is the same fact `boot` reads to frame the leg (`leg_after_authored`), so the guards and
+the words the model is given about its leg cannot disagree.
 
 **The transcript is the record.** Each ledger is rebuilt from the events inside the scope,
-exactly as `history.seen_paths` rebuilds the write-grounding set — never from a side file the
-transcript could contradict. Where an event did not record the decision, it now does, as a
-payload EXTENSION on the event that carried the intervention, never a new event type: a hold's
+as `history.seen_paths` rebuilds the write-grounding set — never from a side file. A decision
+an event must carry is a payload EXTENSION on that event, never a new event type: a hold's
 observation names its source by its kind and what it spent (its reminder ids, or `action`);
 `assists` names the rule assists whose line an event carried; `undo_point` the repo a write's
 pre-action check found clean; `evict_warning` marks the eviction warning's engine note, and

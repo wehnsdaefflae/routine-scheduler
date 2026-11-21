@@ -1,15 +1,9 @@
 """The observation renderer's two FLOORS: an error result every kind can word, and a renderer
 that raises never ends the run.
 
-WHY. Every kind's renderer reads the fields of its kind's SUCCESS — a line count, an exit code, a
-child number. An observation that carries none of them (a refusal, an error, a call that has not
-produced anything yet) reached those reads four times, and each time the `KeyError` ended the
-engine mid-turn AND every resume after it, because a resumed leg re-renders the stored
-observation: a background start (D118), the reserved finish turn's refusal (fifteen kinds at
-once), a script's declaration gate (voice-model-trainer:20260910-030348), and memory_write's
-edit-mode refusals (0.410.0), whose first live refusal cost scheduler-builder:20261011-120001
-its summary after four shipped releases and then refused the resume at turn 0. Each was fixed
-where it struck; the class stayed open, because nothing stood between any renderer and the loop.
+WHY. Every kind's renderer reads the fields of its kind's SUCCESS. An observation carrying none
+of them (a refusal, an error) made the `KeyError` end the engine mid-turn AND every resume after
+it, because a resumed leg re-renders the stored observation.
 
 1. AN ERROR RESULT (`failed`). An observation carrying `error` is worded here, ABOVE the per-kind
    chain, unless its kind is in `OWN_ERRORS` — the kinds whose own renderer words a failure. A

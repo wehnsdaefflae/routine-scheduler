@@ -3,14 +3,11 @@ EngineLoop. One builder for every in-engine scheduling MODE: parallel (`spawn`) 
 (`subtask`). They are the same thing — a child run, as `engine/child.py` defines it — differing
 only in how the parent schedules it and how its budget is sliced.
 
-Each child is a REAL routine on disk under `runs/<ts>/sub/<n>/` while it runs (its own main.md +
-stages/ + instruction), so its module reads resolve under its own dir and it can itself
-decompose (the tree is recursive). Two numbers describe a child and they are not the same one:
-`sub_counter` COUNTS the children admitted this leg against the tree-wide `max_child_runs`
-allowance, while `n` NAMES one — unique across every leg of the run, read off the child
-directories themselves (`claim_child`). Lifecycle (start/monitor/announce/kill) stays in
-`SubrunManager` (subruns.py), which owns the exit-event machinery; this module only builds a
-child, not its thread.
+Each child is a REAL routine on disk under `runs/<ts>/sub/<n>/` while it runs, so its reads
+resolve under its own dir and it can itself decompose. `sub_counter` COUNTS the children
+admitted this leg against `max_child_runs`; `n` NAMES one, unique across every leg
+(`claim_child`). Lifecycle (start/monitor/announce/kill) stays in `SubrunManager`
+(subruns.py); this module only builds a child, not its thread.
 """
 
 from __future__ import annotations
@@ -49,15 +46,9 @@ def inheritable_resources(granted_now: set[str], granted_once: set[str]) -> set[
     with capabilities off; entities.is_resource is that line) — and never a once-armed
     one (D76): "one action" must not become a child's whole-run grant.
 
-    REACH IS NOT AUTHORITY, and briefing a child as though it were is the standing mistake
-    (F589). A child inherits the parent's resource entities, so since 0.432.0 it REACHES what
-    the routine reaches — it can run the routine's own `scripts/`, read its roots, call the
-    utils those grants name. It holds NO reserved capability: no `shell`, no reserved util or
-    verb, no authoring permission, whatever the parent holds. So a standing order briefed to a
-    child in terms of a capability (`run the gate with shell`, `write the util`) does not run
-    and cannot be made to run from inside the child — it refuses, and the parent reads the
-    refusal in a finish summary. Brief a child in terms of REACH (paths, scripts, plain utils)
-    and keep every reserved act in the parent's own turns.
+    REACH IS NOT AUTHORITY (F589): a child REACHES what the routine reaches (its `scripts/`,
+    roots, plain utils) but holds NO reserved capability — no `shell`, reserved util or verb,
+    authoring permission. Brief a child in terms of reach; keep reserved acts in the parent.
     """
     return {e for e in granted_now
             if entities.is_resource(e) and e not in granted_once}
@@ -115,13 +106,9 @@ def claim_child(parent_ctx: RunContext) -> int:
     """Count one more child against the tree's allowance and claim its NUMBER and directory.
     The caller holds `parent_ctx.sub_lock` and has checked the allowance under it.
 
-    The number is one past the highest any child of this RUN has ever used, not the
-    admission counter: that one counts THIS leg's children for the `max_child_runs` cap and
-    starts again at zero on every resumed leg — every conversation reply, every recovered
-    routine run — while the earlier legs' child directories are still on disk. Numbering from
-    the counter handed a second leg's first child `sub/1/` again: it ran inside the first
-    child's directory, appended to its transcript, and handed that child's artifacts back to
-    the parent as its own.
+    The number is one past the highest any child of this RUN has ever used — never the
+    admission counter, which restarts at zero on every resumed leg while earlier legs' child
+    directories remain on disk (a reused number would share a directory and transcript).
     """
     parent_ctx.sub_counter[0] += 1
     n = _highest_child_number(parent_ctx.root_run_dir) + 1
@@ -170,13 +157,9 @@ def build_child(parent_ctx: RunContext, action: dict, *, n: int, label: str, mod
     recipe_slug, note = materialize_to_disk(parent_ctx.server, recipe_slug, sub_dir,
                                             action["prompt"])
     transcript = Transcript(sub_dir / "transcript.jsonl")
-    # The optional `model` override on the action: a ROLE (main/tool_call; uncensored →
-    # the routine's uncensored model) or a CATALOG model NAME (`list_models` shows them).
-    # Default MAIN — a child continues the same routine's work, so it runs on the same
-    # model unless the call says otherwise (the per-routine subroutine role is retired,
-    # user order 2026-08-22). The subruns caller pre-validates the override (unconfigured
-    # uncensored, unknown catalog name) with a teaching rejection, so failures never
-    # crash the build here.
+    # The optional `model` override: a ROLE (main/tool_call/uncensored/supervisor) or a
+    # CATALOG NAME. Default MAIN — a child continues the routine's work. The subruns caller
+    # pre-validates the override, so it never crashes the build here.
     sel = str(action.get("model") or "main")
     if sel == "uncensored":
         target = parent_ctx.registry.for_uncensored(parent_ctx.routine.models,
@@ -184,8 +167,7 @@ def build_child(parent_ctx: RunContext, action: dict, *, n: int, label: str, mod
         _, sub_ref = target if target is not None else parent_ctx.registry.for_model(
             "main", parent_ctx.routine.models, parent_ctx.routine.efforts)
     elif sel in ("main", "tool_call", "supervisor"):
-        # `supervisor` (D164) resolves through the routine's MAIN while nobody has configured
-        # one, so a ladder rung behaves exactly as the code-pinned `main` did before it.
+        # `supervisor` (D164) resolves through MAIN while none is configured.
         _, sub_ref = parent_ctx.registry.for_model(
             supervisor_role(parent_ctx.routine.models) if sel == "supervisor" else sel,
             parent_ctx.routine.models, parent_ctx.routine.efforts)
@@ -199,18 +181,14 @@ def build_child(parent_ctx: RunContext, action: dict, *, n: int, label: str, mod
         run_dir=sub_dir, transcript=transcript, budgets=child_budgets,
         depth=parent_ctx.depth + 1, sub_n=n, sub_label=label,
         sub_counter=parent_ctx.sub_counter, sub_lock=parent_ctx.sub_lock,
-        # Children inherit their parent's RESOURCES, one-time grants included (fs roots,
-        # secrets, connections, machines) — but never its capability-class grants: sub-
-        # workflows run with capabilities off, and entities.is_resource is that line.
-        # A shared store is an ordinary fs write root (rsched/sharedstores.py), so it flows
-        # down with the parent's roots — a child sees the same stores its parent does.
+        # Children inherit their parent's RESOURCES (see inheritable_resources); a shared
+        # store is an ordinary fs write root, so it flows down too.
         granted_now=inheritable_resources(parent_ctx.granted_now,
                                           parent_ctx.granted_once),
         grant_args={e: v for e, v in parent_ctx.grant_args.items()
                     if entities.is_resource(e)},
-        # The share mounts are the PARENT's, provisioned once for the whole run tree
-        # under <routine>/mnt/ — a child inherits the fs roots that reach them, so it
-        # must inherit the truth about which ones are live too (R514).
+        # Share mounts are provisioned once for the whole run tree; a child inherits which
+        # ones are live along with the roots that reach them (R514).
         mounted_shares=set(parent_ctx.mounted_shares),
         unavailable_shares=dict(parent_ctx.unavailable_shares),
     )
@@ -222,20 +200,16 @@ def build_child(parent_ctx: RunContext, action: dict, *, n: int, label: str, mod
     from .runtime import load_workflow
 
     body, _prov, tools = load_workflow(sub_dir, child_ctx.routine)
-    # Carries WHY the parent set it (F751): a parent's kill never leaves the process, so the
-    # reason rides the object the child already polls and its close-out can name the actor.
+    # Carries WHY the parent set it (F751), so the child's close-out can name the actor.
     abort_event = abortmark.AbortEvent()
-    # The child's workflow `tools:` allowlist binds the child exactly as a top-level run's
-    # binds it — materialize carries the pattern's frontmatter through, load_workflow reads
-    # it, and dropping it here would let any child use every kind.
+    # The workflow's `tools:` allowlist binds the child exactly as it binds a top-level run.
     child_loop = EngineLoop(child_ctx, body, action["prompt"], abort_event=abort_event,
                             allowed_tools=tools)
     sub = Subrun(n=n, label=label, workflow=recipe_slug, mode=mode, note=note,
                  ctx=child_ctx, loop=child_loop, abort_event=abort_event,
                  started_mono=time.monotonic(), parent_dir=parent_ctx.routine.dir)
-    # subrun_start carries `mode` (the tree read-model distinguishes sequential/parallel) and
-    # the child's allocated budget (the per-node meter) — both are payload EXTENSIONS, so every
-    # existing consumer keeps working; a new event type would have broken them.
+    # `mode` and the allocated budget are payload EXTENSIONS of subrun_start, never a new
+    # event type, so every existing consumer keeps working.
     emit("subrun_start", {"n": n, "label": label, "workflow": recipe_slug, "mode": mode,
                           "depth": parent_ctx.depth + 1,
                           "budget": {"turns": child_budgets.max_turns,
@@ -245,22 +219,15 @@ def build_child(parent_ctx: RunContext, action: dict, *, n: int, label: str, mod
 
 
 def _sub_routine(routine, sub_dir, ref, *, deliberation: str = ""):
-    """A child's config: its OWN dir (so main.md + read_file/write_file resolve under sub_dir),
-    the parent's fs roots inherited, the RESOLVED child model (the parent's MAIN unless the
-    call overrode it) as the child's main (tool_call/uncensored inherited so the child can
-    spawn/subtask/llm too), permissions and
-    capabilities off (a child holds nothing gated: it reports through its finish summary and
-    keeps no LEDGER/audit). The parent's LIVE deliberation level carries over (a mid-run
-    switch reaches children spawned after it).
+    """A child's config: its OWN dir, the parent's fs roots inherited, the RESOLVED child
+    model as its main (other roles inherited), permissions and capabilities off (a child
+    holds nothing gated), and the parent's LIVE deliberation level.
     """
     import copy
 
     r = copy.copy(routine)
     r.dir = sub_dir
-    # children share the parent's tree (the contract even tells them to keep outputs disjoint
-    # there) — but moving r.dir to sub/ silently dropped the parent dir from the allowed
-    # roots, stranding a child tasked on parent state files (F185, ards sub/1 2026-07-24:
-    # every read_file of the routine's own state/ failed 'outside the allowed roots').
+    # Moving r.dir to sub/ must not drop the parent dir from the allowed roots (F185).
     # Extend — never replace — so configured extra roots still apply.
     r.fs_read_roots = [*routine.fs_read_roots, routine.dir]
     r.fs_write_roots = [*routine.fs_write_roots, routine.dir]

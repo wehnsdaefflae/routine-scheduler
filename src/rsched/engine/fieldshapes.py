@@ -1,10 +1,8 @@
 """A field written in an EVIDENTLY-INTENDED shape, put into its one canonical shape before the
 validator judges it.
 
-Measured on the wrong-turn stream (`wrong_turn_detected`, 2026-11-10..18): every shape below cost
-turns across several routines and models, each a schema rejection — and a rejected element of a
-chained reply stops the chain, so the actions written after it were NOT EXECUTED too. Each repair
-is LOSSLESS: the canonical value says exactly what the written one did, and nothing is guessed.
+Each shape below was a schema rejection that cost turns (and stopped a chained reply). Each
+repair is LOSSLESS: the canonical value says exactly what the written one did; nothing is guessed.
 
 - a memory note named `X.md` — how `.memory/INDEX.md` lists every note — is note `X`;
 - an integer field written as a numeric string (`"n": "4"`) is that integer;
@@ -71,13 +69,10 @@ def canonical(action: dict) -> dict:
 def _entries(written: object) -> object:
     """A finish `accounting` written as one STRING, as the list it spells — or as written.
 
-    Measured on the wrong-turn stream (2026-10-25..11-17): 19 turns across 12 routines were
-    refused for this one shape, 9 of them newline-separated entries, 6 a single entry, 2 the
-    list's own JSON. The repair is lossless only because `accounting.parse` is the judge: every
-    part must parse as a complete `<id> <verdict>: <account>` (or `b<n> waits on <who>:`) entry
-    on its own. One part that does not means the newlines are inside an account clause, where a
-    split would invent entry boundaries — so the field stays refused and the run is told the
-    shape, which is what `accounting.arrived` exists to make sayable.
+    Lossless only because `accounting.parse` is the judge: every part must parse as a complete
+    `<id> <verdict>: <account>` (or `b<n> waits on <who>:`) entry on its own. One part that does
+    not means a newline sits inside an account clause, where a split would invent boundaries —
+    so the field stays refused and `accounting.arrived` tells the run the shape.
     """
     if not isinstance(written, str) or not written.strip():
         return written

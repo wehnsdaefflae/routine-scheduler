@@ -1,24 +1,14 @@
 """The note channel — engine-side capture of the per-action `note` field.
 
-A note is 1-3 SELF-CONTAINED lines the model marks as worth keeping beyond the context
-window (a confirmed finding, a dead end, a fallback plan, an unresolved doubt). It rides
-ANY action at no turn cost — the one-action-per-turn contract prices every dedicated
-write at a full turn, which is why insights historically died with the window (models
-defer bookkeeping under budget pressure, and end-of-run writes are reconstructions).
+A note is 1-3 SELF-CONTAINED lines the model marks as worth keeping beyond the context window.
+It rides ANY action at no turn cost, so insight is not priced at a dedicated turn.
 
-The engine appends each note to the routine's state/notes.md with a provenance stamp
-(run · turn · phase · action). The stamp is an ADDRESS: the note's full context lives in
-the transcript / the compaction history archive, reachable by run+turn — notes carry the
-address of their context, not the context itself; the semantic half of context is the
-WRITER'S job (the contract demands self-containment, like a subrun brief or a finish
-summary — every boundary-crossing artifact in this system).
+The engine appends each note to state/notes.md with a provenance stamp (run · turn · phase ·
+action). The stamp is an ADDRESS into the transcript; self-containment is the WRITER's job.
 
-notes.md stays ordinary run-writable state: the model may reorganize it, the improver
-prunes it (a note that can't be understood alone is broken). The transcript keeps the
-raw record on the action event regardless — this file is the working copy. (LEDGER.md is a
-different thing: the engine's own record of each finished run, which no run writes —
-`rsched/runledger.py`.) Curation into the indexed cross-run store stays
-a deliberate memory_write (that turn price is the memory INDEX's quality gate).
+notes.md stays ordinary run-writable state (the transcript keeps the raw record). It is not
+LEDGER.md (`rsched/runledger.py`), and curation into `.memory/` stays a deliberate
+memory_write.
 """
 
 from __future__ import annotations
@@ -39,10 +29,7 @@ _HEADER = ("# Notes — findings captured via the `note` field (engine-appended,
 def _brief(action: dict) -> str:
     """Kind plus its most identifying field — enough to locate the moment, not describe it.
 
-    Now the canonical rendering (`actionschema.canon`), truncated. It used to carry its own
-    name/path/paths rule, which quietly disagreed with `BRIEF_FIELD` for every kind whose
-    identifying field is neither (`llm`, `ask_user`, `spawn`, `report`, `shell`, …) — those
-    stamped a bare kind with no target at all.
+    The canonical rendering (`actionschema.canon`), truncated.
     """
     from .actionschema import canon
 
@@ -64,13 +51,8 @@ def capture(ctx: RunContext, action: dict) -> None:
 def append_line(ctx, text: str, *, source: str) -> None:
     """Append ONE stamped line to `state/notes.md` — the channel the next run's digest reads.
 
-    Shared by the two writers: the model's own `note` field (`capture`, whose `source` is the
-    action that carried it) and a hook firing at the `run-end` point (`engine/assist.py`,
-    whose `source` says a rule wrote it). They must agree on the file's shape, and a second
-    hand-rolled append is how a file acquires two formats and the tail stops parsing.
-
-    Never raises — a failed capture must not fail the turn, and at `run-end` there is no turn
-    left to fail: the run has already succeeded by the time this is called.
+    Shared by both writers — `capture` and a `run-end` hook (`engine/assist.py`) — so the file
+    keeps ONE shape the tail can parse. Never raises.
     """
     stamp = f"[{ctx.run_ts} · turn {ctx.turn} · {getattr(ctx, 'phase', None) or '—'} · {source}]"
     from .run_context import work_dir
@@ -100,10 +82,8 @@ def tail(routine_dir, lines: int = 10) -> str:
     except OSError:
         return ""
     noted = [ln for ln in text.splitlines() if ln.startswith("- ")]
-    # Newest last, then bounded in CHARACTERS: a note line is a paragraph, so ten of them
-    # measured 5,508 chars at the median over 37 live digests (engine/digesttail.py). The
-    # OLDEST of the kept lines go first when the budget bites — the newest note is the one a
-    # run is most likely to need, and the whole file is one read away.
+    # Newest last, bounded in CHARACTERS (engine/digesttail.py); the OLDEST kept lines go
+    # first when the budget bites — the whole file is one read away.
     newest_last = "\n".join(noted[-lines:])
     if len(newest_last) <= digesttail.TAIL_BUDGET:
         return newest_last

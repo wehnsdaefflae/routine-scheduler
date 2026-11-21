@@ -1,53 +1,32 @@
-"""The ENGINE-SERVED CHEAP POLL — a repeat poll is answered by the cheap model, unasked (F785).
+"""The ENGINE-SERVED CHEAP POLL — a repeat poll is answered by the cheap model, unasked.
 
-D185 gave a run `role_swap`: it may drop ITSELF to the routine's `tool_call` model and climb
-back (`engine/roleswap.py`). Nothing in the fleet used it — 0 of 32 routines even configured a
-distinct main/tool_call pair — so the turns F785 measured went on paying main-model prices to
-read a one-line answer: *"2,651 turns do nothing but re-ask whether something finished (a release
-gate's status, a child's subruns table) … Each one re-sends the entire prompt to the main model."*
-The operator's answer to D217 was *"Both — the automatic cheap poll AND a real tool_call model to
-swap to"*; this module is the first half. The second is D230: `ServerConfig`'s
-`system_tool_call_model`, the instance-wide default an unset `tool_call` resolves through
-(`config.base.role_default_model`). The role is therefore read through that function here and not
-off `routine.models` alone — otherwise this module would stay the no-op it shipped as for the 31
-routines that name no `tool_call`, which is the fleet D217 was answered for. The default SHIPS
-EMPTY, so until the operator names a model there this module still serves nothing and says
-nothing, rather than claiming a saving it cannot make.
+The run-chosen `role_swap` (`engine/roleswap.py`) lets a run drop itself to the `tool_call`
+model; this module does the same for a REPEAT POLL without being asked, since reading a
+one-line "has it finished?" answer does not need the main model. The cheap model is resolved
+through `config.base.role_default_model` (the routine's `tool_call`, else the instance's
+`system_tool_call_model`); with no distinct cheap model the module serves nothing and says
+nothing.
 
-It is the same mechanism `roleswap` and `switches.apply_model_switch` use — assign
-`ctx.routine.models["main"]`, which `endpoints.for_model` re-resolves on every turn — driven by
-the engine instead of by the run. It hangs off `sidefields.land`, the seam `loop._land` already
-calls, so the turn loop gains no line and no new call site.
+Same mechanism as `roleswap` and `switches.apply_model_switch` — assign
+`ctx.routine.models["main"]`, which `endpoints.for_model` re-resolves every turn — hung off
+`sidefields.land`, so the turn loop gains no call site.
 
-WHAT IT COSTS A RUN TO BE WRONG decides every threshold here, because the cheap model is cheap
-at exactly the thing a stuck run needs:
+The cost of being wrong sets every threshold:
 
-* **Two consecutive polls are normal.** A run that re-checks a gate once has not entered a loop,
-  so `SERVE_FROM` is the SECOND consecutive repeat: the models never change under a single
-  re-check.
-* **The escape turn is never cheap.** At `wrongturn.WARN_STREAK` identical actions the engine
-  already tells the run it is stuck, lifts the provider schema for its next reply
-  (`loop._repeat_warning`) and fails the run at `loopnudge.REPEAT_FAIL`. That next reply has to
-  re-plan an escape WITHOUT a grammar to lean on — the worst turn in a run to hand to the cheap
-  model — so a byte-identical streak that deep restores the main model instead of serving cheap.
-* **Whoever else points `main` wins.** The operator's console switch (`switches`) and the run's
-  own `role_swap` both write the same slot; this layer only ever undoes a swap IT made, and
-  yields outright for the rest of the run the moment an action carries `role_swap`.
+* **Two consecutive polls are normal.** `SERVE_FROM` is the SECOND consecutive repeat, so a
+  single re-check never changes models.
+* **The escape turn is never cheap.** At `wrongturn.WARN_STREAK` identical actions the loop
+  warns the run and sheds the schema (`loop._repeat_warning`); that reply must re-plan without a
+  grammar, so a byte-identical streak that deep restores the main model instead.
+* **Whoever else points `main` wins.** The console switch and the run's own `role_swap` write
+  the same slot; this layer only undoes a swap IT made, and yields for the rest of the run once
+  an action carries `role_swap`.
 
-MEASURED REACH, so no reader has to guess (686 retained run dirs were F785's basis; this was
-measured over the 401 transcripts retained on 2026-11-01, 32,255 landed turns): turns whose
-action is poll-class at all — 14,395 (44.6%), which is the shape of F785's 11.5% claim, a count
-BY KIND. Turns where a poll class repeats twice in a row, which is what this module detects — 6
-(0.019%), of which the escape-turn stand-down below leaves 1 actually served (0.003%). The gap
-is structural, not a tuning choice: `REPEAT_FAIL` ends a run at 5 identical actions, so the real
-poll loop F785 measured is `poll → read the answer → poll` and its repeats are never ADJACENT.
-Worse for the two cases F785 names: when the poll's action never varies (`subruns` is declared
-`((), ())` — no fields at all), the class depth and the byte-identical streak are the SAME
-number, so `SERVE_FROM` always coincides with `WARN_STREAK` and the escape-turn stand-down fires
-instead of the serve. Adjacency detection — the conservative shape that was authorized —
-therefore cannot reach them at all; widening it (a poll class seen twice within a window of 4
-turns: 22 turns, 0.07%; or dropping adjacency entirely: 1,142 turns, 3.5%) is a decision this
-module does not take on its own. `tests/test_auto_cheap_poll.py` pins that empty band.
+Reach is small by construction: `REPEAT_FAIL` ends a run at 5 identical actions, so real poll
+loops alternate `poll → read → poll` and are rarely adjacent, and for a field-less poll
+(`subruns`) the class depth equals the identical streak, so `SERVE_FROM` coincides with
+`WARN_STREAK` and the band is empty. Widening to a windowed rule is an open operator decision;
+`tests/test_auto_cheap_poll.py` pins the empty band.
 """
 
 from __future__ import annotations
@@ -97,18 +76,9 @@ def poll_class(action: dict) -> str | None:
 def _cheap_model(loop) -> str | None:
     """The DISTINCT cheap model this run's turns can be served from, or None when there is none.
 
-    Resolved the way the engine resolves the role (`config.base.role_default_model`): the
-    routine's own `tool_call`, else the instance's `system_tool_call_model`. The second half is
-    D230, the other half of the operator's "both" answer to D217, and it is what moves this
-    module off the no-op it shipped as: 31 of the fleet's 32 routines configure no `tool_call`
-    model, and returning None for them was right only because an unset role resolved to
-    `system_model` — the model `main` was already on, and not necessarily cheaper. A default FOR
-    THE ROLE is the operator's fleet-wide choice of a cheaper model, so it is servable; with no
-    default set this still returns None and the mechanism stays silent.
-
-    A cheap model equal to the configured `main` is the same nothing, however it was resolved.
-    One rule, held in `roleswap.cheap_model`, because the run-chosen swap and this engine-served
-    one must not disagree about whether a cheaper model exists.
+    The routine's own `tool_call`, else the instance's `system_tool_call_model`; one equal to
+    the configured `main` is None. Delegated to `roleswap.cheap_model` so the run-chosen and the
+    engine-served swap cannot disagree about whether a cheaper model exists.
     """
     return roleswap.cheap_model(loop.ctx)
 
@@ -120,10 +90,8 @@ def _serve_cheap(loop) -> None:
     cheap = _cheap_model(loop)
     if cheap is None or models.get("main") == cheap:
         return
-    # The same record `roleswap` keeps, and for the same reason: `models['main']` is the thing
-    # being mutated, so where to climb back to has to be remembered before the first swap. One
-    # attribute shared by both layers, so a run's own `strong` climbs back correctly after an
-    # engine-served swap.
+    # Shared with `roleswap`: where to climb back to, remembered before the first swap, so a
+    # run's own `strong` climbs back correctly after an engine-served swap.
     if not hasattr(ctx, "configured_main"):
         ctx.configured_main = models.get("main") or ""
     models["main"] = cheap
@@ -153,20 +121,14 @@ def _restore(loop) -> None:
     if models.get("main") == strong:
         return
     if models.get("main") != getattr(loop, "_autoswap_model", None):
-        # Someone else re-pointed `main` since: the operator's console switch, or a failover.
-        # Theirs is the live decision and this layer does not clobber it.
-        #
-        # Compared against the model this layer actually SERVED, recorded at the swap — not
-        # against `models['tool_call']` (since D230 the served model may have come from the
-        # instance default, leaving that key empty) and not against a recomputed
-        # `_cheap_model` (which answers None once the swap is in place on a routine that
-        # configures no `main`, because the cheap model is then what `main` resolves to).
-        # Either of those reads refuses every restore and strands the run on the cheap model.
+        # Someone else re-pointed `main` since (console switch, failover): theirs stands.
+        # Compared against the model this layer SERVED — `models['tool_call']` may be empty
+        # (instance default) and a recomputed `_cheap_model` answers None once swapped, either
+        # of which would refuse every restore and strand the run on the cheap model.
         return
     if not strong:
-        # The routine configures no `main` of its own, so the honest inverse of the swap is
-        # removing the override: `main` resolves through the instance default again, which is
-        # exactly where it was before this layer touched it.
+        # No `main` of its own: the inverse of the swap is removing the override, so `main`
+        # resolves through the instance default again.
         models.pop("main", None)
         return
     models["main"] = strong
@@ -175,9 +137,8 @@ def _restore(loop) -> None:
 def _yield_to_run(loop) -> None:
     """Stand down for good: the run is steering its own model with `role_swap`.
 
-    A LATCH, not a reset. A run that has asked for a position once is managing its own turns,
-    and an engine that resumed guessing three polls later would fight the run for one slot —
-    the failure mode that makes an automatic mechanism worse than none.
+    A LATCH, not a reset: a run that asked for a position once manages its own turns, and an
+    engine that resumed guessing would fight it for the one slot.
     """
     loop._autoswap_yielded = True
     loop._autoswap_on = False
@@ -202,8 +163,7 @@ def at_landing(loop, action: dict) -> None:
     canon = canonical(action)
     repeated = getattr(loop, "_autoswap_canon", None) == canon
     loop._autoswap_canon = canon
-    # The engine's own stuck counter, read not copied: a byte-identical streak this deep is one
-    # the loop is already warning the run about.
+    # Byte-identical streak, compared against the loop's own warning threshold.
     loop._autoswap_same = (getattr(loop, "_autoswap_same", 0) + 1) if repeated else 1
     cls = poll_class(action)
     if cls is None or cls != getattr(loop, "_autoswap_class", None):

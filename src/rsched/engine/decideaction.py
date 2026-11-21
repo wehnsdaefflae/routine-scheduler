@@ -4,14 +4,13 @@ Where `llm` asks a chat model and parses its prose, `decide` asks a decision mod
 (endpoints/decisions.py: TypeSafe's Jev, OpenAI's Decisions API, the predator server) and gets
 the answer as a distribution over the answers it was offered: P(yes) for a yes/no question, a
 probability per option for a choice, a probability-weighted level for a score. There is no reply
-text, so the empty-completion and refusal-in-prose defences `llmaction.py` carries have nothing
-to defend against here — which is the reason the action exists (R2190, decided 2026-10-07).
+text, so the empty-completion and refusal-in-prose failures `llmaction.py` defends against
+cannot occur — which is why the action exists.
 
-Several questions over ONE body of evidence go in one call (`questions`): every provider
-evaluates them against a single ingestion, and the predator server keeps the encoded images in
-its cache across them. The evidence is text or JSON (`evidence`) plus `files` — images go to a
-model that takes them, text files are read in as evidence — so a long document is classified
-without passing through the run's own context first.
+Several questions over ONE body of evidence go in one call (`questions`), evaluated against a
+single ingestion. The evidence is text or JSON (`evidence`) plus `files` (images to a model that
+takes them, text files read in), so a long document is classified without passing through the
+run's own context.
 """
 
 from __future__ import annotations

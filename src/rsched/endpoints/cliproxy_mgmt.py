@@ -1,10 +1,8 @@
 """The proxy's management binding, resolved per ENDPOINT — and which of its accounts serve
 which endpoint.
 
-CLIProxyAPI is one process holding several credentials (a Claude account, a Codex account, an
-Antigravity — Google — account), reached through as many endpoints as the operator configured —
-one per provider here, all on the same base_url. Two facts follow, and both used to be wrong
-on the cards:
+CLIProxyAPI is one process holding several credentials (Claude, Codex, Antigravity), reached
+through as many endpoints as the operator configured, all on the same base_url. Two facts follow:
 
 - The management key belongs to the PROXY, not to an endpoint. An endpoint without its own
   `quota_source: cliproxy` binding resolves to a sibling's on the same origin (`binding`), so
@@ -13,8 +11,7 @@ on the cards:
 - Which accounts matter to a card is decided by the model ids bound to that endpoint,
   mapped to the proxy's provider names by model FAMILY (`providers_of`). A table, not a
   management lookup: the proxy lists NO models for a credential it cannot use, which is the
-  exact state a sign-in control exists for (2026-09-14: the cooling Codex credential served
-  an empty list while the Codex card was where its sign-in belonged).
+  exact state a sign-in control exists for.
 """
 
 from __future__ import annotations

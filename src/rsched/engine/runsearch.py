@@ -1,28 +1,16 @@
 """Search this routine's PAST RUNS — `memory_read` with `args` instead of a note `name`.
 
-What a run knows of its routine's history is what something CARRIED forward: the notes, the
-LEDGER, the notes tail, the last run's result. Everything else a past run saw — the exact error
-a util returned three weeks ago, the command that finally worked, what the operator wrote mid-run
-— sits in `runs/<ts>/transcript.jsonl` where no run looks, because reading a transcript cold is a
-large, blind read. `engine/recall.py` brings back the CURRENT run's archived middle; this is the
-same question asked across runs.
+What a past run saw but nothing carried forward sits in `runs/<ts>/transcript.jsonl`; this
+searches it across runs (`engine/recall.py` does the current run's archive). Modelled on Hermes
+Agent's `session_search`: SQLite FTS5 with BM25 — no model call, stdlib only — returning a few
+hits from DISTINCT runs, the best with context, so a search costs a bounded observation.
 
-Hermes Agent's `session_search` is the model, measured there and kept here in shape: SQLite FTS5
-with BM25 ranking — no model call, no embedding, nothing outside the standard library (the
-dependency `engine/recall.py` declines) — returning a few hits from DISTINCT runs, the best one
-with a little context around it and the rest as one snippet each, so a search costs a bounded
-observation rather than a transcript.
+THE INDEX is `runs/.recall.sqlite` (engine-owned, sealed, gitignored with `runs/`), refreshed at
+each search: changed transcripts re-indexed, pruned runs dropped, the searching run excluded.
+Indexed is what a run SAW and SAID — `say` and brief, rendered observations (capped), a
+person's messages, questions/answers, finish summaries — not engine notes (boilerplate).
 
-THE INDEX is `runs/.recall.sqlite`, engine-owned and gitignored with `runs/` (sealed from the
-run's own writes, `ownseal.SEALED_DIRS`). It is brought up to date at each search: a run whose
-transcript changed size or mtime is re-indexed, a run that was pruned is dropped, and the run
-doing the search is left out — its own history is in its context or its archive. What is indexed
-is what the run SAW and SAID: each action's `say` and brief, each observation as rendered
-(`observations.format_observation`, capped), a person's messages, questions and answers, and each
-finish summary. Engine notes are not: they are the engine's boilerplate, the same in every run.
-
-A query is FTS5 syntax (words, `"a phrase"`, `prefix*`, `OR`). Plain words are matched ALL
-together first, then ANY of them when that finds nothing, and the observation says which.
+A query is FTS5 syntax. Plain words match ALL first, then ANY, and the observation says which.
 """
 
 from __future__ import annotations

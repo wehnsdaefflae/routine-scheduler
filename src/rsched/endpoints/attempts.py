@@ -1,18 +1,12 @@
 """The retry loop's own report seam: one hook `with_retries` calls from INSIDE itself.
 
-F655. Instrumentation wraps an adapter from OUTSIDE (`instrument.InstrumentedEndpoint`) while
-the retry loop lives INSIDE it (`base.with_retries`), so the task record saw ONE call however
-many attempts it took — worst case three attempts of 600 s behind a single `started` row, which
-is how a retrying run became indistinguishable from a frozen one.
+Instrumentation wraps an adapter from OUTSIDE (`instrument.InstrumentedEndpoint`) while the
+retry loop lives INSIDE it (`base.with_retries`), so only the loop knows an attempt ended (F655).
+This is the one-way channel: `base` calls `boundary()` and imports nothing from `instrument`;
+`instrument` installs a reporter for one call and knows nothing about tenacity.
 
-Reporting the boundary therefore cannot be done by the wrapper: only the loop knows an attempt
-ended. This module is the one-way channel between them. `base` calls `boundary()` and imports
-nothing from `instrument`; `instrument` installs a reporter for the duration of one call and
-knows nothing about tenacity. Both halves stay testable alone.
-
-Scope, not a global: the reporter is a ContextVar set per call, so parallel subrun threads each
-report to their own call's record rather than to whichever one installed a hook last. A thread
-that nobody set one in reports nothing, which is also the whole no-sink fast path.
+The reporter is a ContextVar set per call, so parallel subrun threads each report to their own
+call's record. A thread with none set reports nothing — the no-sink fast path.
 """
 
 from __future__ import annotations

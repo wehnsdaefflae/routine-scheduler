@@ -21,10 +21,8 @@ def _take_invited_revisions(ctx: RunContext) -> bool:
     """Consume the revisions another routine proposed for THIS one and file them as this leg's
     instruction — True when there were any, which is what unlocks the recipe for the leg (D198).
 
-    Only an ordinary routine run is handed one: a CHILD run works its parent's brief and a
-    conversation has no recipe of its own (`recipeproposal.asks_for_revisions`' reasoning, and
-    the same three exclusions). Best-effort: a store read must never stop a run from booting,
-    so a broken spool leaves the invitation for the next fire instead of failing the leg.
+    Ordinary routine runs only (not a child, conversation or detached run). Best-effort: a
+    broken spool leaves the invitation for the next fire rather than failing the boot.
     """
     if ctx.depth > 0 or runkind.is_conversation(ctx) or runkind.is_detached_run(ctx):
         return False
@@ -34,8 +32,7 @@ def _take_invited_revisions(ctx: RunContext) -> bool:
         records = reciperevise.take(ctx.server.routines_home, ctx.routine.slug)
         if not records:
             return False
-        # `web-converse` is a LIVE via, so this leg's own boot drains it — the pair
-        # `web/api_recipe_revision.py` files for the same unlock, for the same reason.
+        # `web-converse` is a LIVE via, so this leg's own boot drains it.
         inbox.file_message(ctx.routine.dir, reciperevise.instruction(records),
                            via="web-converse")
     except OSError:
@@ -47,15 +44,11 @@ def _revise_unlock(loop, ctx: RunContext, *, resume: bool) -> tuple[bool, bool]:
     """`(revising, narrow)` for this leg — whether its recipe is unlocked, and whether the leg
     is a NARROW one (an approved recipe-revision card, engine/reviseleg.py).
 
-    The marker the /revise endpoints drop in the run dir is read once and cleared here, and an
-    unlocked leg gains the file-edit kinds even where the workflow's `tools:` omits them. D198
-    rides the same flag: a revision ANOTHER routine proposed for this one, authorized by the
-    operator (or by this routine's own `revise_confirm` dial) and waiting for this run — the
-    same one-leg unlock, pointed at an invitation instead of a marker (rsched/reciperevise.py).
-    Consumed HERE, at init, so a run is never rewritten mid-flight: one filed while this run is
-    going waits for the fire after it. Taken BEFORE a full-leg marker so the marker does not
-    short-circuit the invitation away unread — but NOT on a narrow leg, which makes exactly the
-    edit the card approved and leaves an invitation for the next fire.
+    The /revise marker is read once and cleared here; an unlocked leg gains the file-edit kinds
+    even where `tools:` omits them. An invited revision from another routine (D198,
+    rsched/reciperevise.py) is the same one-leg unlock, consumed at init so a run is never
+    rewritten mid-flight. It is taken before a full-leg marker (so it is not skipped unread),
+    but not on a narrow leg, which makes only the edit its card approved.
     """
     from .revise import REVISE_KINDS, clear_revise_marker, is_narrow, revise_marker
     marker = revise_marker(ctx.run_dir)
@@ -72,13 +65,8 @@ def build_base_policy(loop, grants_map: dict) -> None:
     """Set `loop.base_grants` — the run's CONFIG-derived grant policy, before the one-time
     overlay `requests.rebuild_policy` folds over it.
 
-    ONE builder, because a live `grants` config PATCH rebuilds the same policy mid-run
-    (`switches._adopt`). That seam used to carry its own copy of these arguments and carried
-    only two of them, so an operator clicking a grant on the Decisions page while a run had
-    its recipe UNLOCKED silently revoked the unlock (`recipe_unlocked` defaults False), an
-    admin conversation leg lost `admin`, and every child of that run — children read the
-    ROOT control.json, so they adopt the parent's patch — lost its subrun scope, gaining the
-    routine's denial wording and `run_history: last` in place of a child's own.
+    ONE builder, shared with the live `grants` PATCH (`switches._adopt`): a second copy of
+    these arguments drifts, silently dropping the recipe unlock, `admin` or a child's scope.
     """
     loop.base_grants = load_policy(loop.ctx.server.permissions_home,
                                    loop.ctx.routine.permissions,
@@ -89,16 +77,13 @@ def build_base_policy(loop, grants_map: dict) -> None:
                                    grants_map=grants_map)
     if loop.ctx.depth == 0 and runkind.is_root_conversation(loop.ctx):
         # `detach` is STRUCTURAL: a job that outlives the reply can only be delivered back
-        # into a conversation, so a root conversation holds it and nothing else does. It was
-        # a permission (background-tasks) held by 32 routines that could never use it.
+        # into a conversation, so a root conversation holds it and nothing else does.
         from dataclasses import replace
         loop.base_grants = replace(loop.base_grants,
                                    actions=loop.base_grants.actions | {"detach"})
     if loop.ctx.depth > 0:
-        # A spawned/subtask child: capabilities are off by design (childrun), so a
-        # gated-kind denial must name the child scope, not claim the routine lacks it.
-        # run_history drops back to "none" here: D96's always-on 'last' floor is a
-        # ROUTINE baseline, and a child's brief — not the archive — is its context.
+        # A child: capabilities are off by design, so a denial must name the child scope; and
+        # its brief, not the archive, is its context (run_history "none").
         from dataclasses import replace
         loop.base_grants = replace(loop.base_grants, is_subrun=True, run_history="none")
 
@@ -108,34 +93,22 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
                  allowed_tools: list[str] | None = None, resume: bool = False) -> None:
     """Everything an EngineLoop decides ONCE, before its first turn.
 
-    Split out of `EngineLoop.__init__` (F393). Which kinds this run may emit is the
-    load-bearing part: the workflow's `tools:` allowlist, intersected with the routine's
-    capabilities, plus the structural rules (a child holds nothing gated; creation kinds
-    reach every top-level run but not a within-reply child). The action SCHEMA is
-    projected from that set, so a kind this run may not use is not merely refused — it is
-    unrepresentable in the grammar the model generates against.
+    The load-bearing part is which kinds this run may emit: the workflow's `tools:` allowlist,
+    intersected with the routine's capabilities, plus structural rules (a child holds nothing
+    gated; creation kinds reach top-level runs only). The action SCHEMA is projected from that
+    set, so a kind the run may not use is unrepresentable, not merely refused.
     """
     loop.ctx = ctx
-    # F677: resolve the FINISH PATH now, while the build on disk is still the one this process
-    # booted with. `finishstands` reaches the gate through a deliberately lazy import, so left
-    # alone it loads `finishgate` — and everything the gate imports — at the finish turn, which
-    # on a run that ships releases is after its own release. Three runs on 2026-10-12 met a
-    # 0.416.0 `jobops` there holding a `GrantPolicy` from their boot build, and all three finish
-    # gates died with AttributeError. Pinning here costs one import at boot.
+    # Import the finish path NOW, while the build on disk is the one this process booted with —
+    # a run that ships a release would otherwise load a newer gate at its finish (F677).
     from . import finishstands
     finishstands.pin()
     loop.workflow_body = workflow_body
     loop.instruction = instruction
     loop.resume = resume     # rehydrate the prior transcript instead of a clean start
-    # A workflow may restrict which action kinds it may use (frontmatter `tools:`); `finish`
-    # is always permitted so a run can end. None = every tool allowed. Enforced per turn by
-    # validate_action, so the model is corrected within the schema-retry cycle.
-    # `is not None`, NOT a falsy test (D242): `tools: []` — the always-kinds and nothing else —
-    # is a RESTRICTION, and under `if allowed_tools` the empty list read as None, i.e. every
-    # kind allowed. A restriction that fails OPEN is the one direction it must never fail in,
-    # and nothing downstream could catch it: the other two readers of the allowlist already
-    # test `is None` (kindsurface.effective_kinds, workflows/lint._tools_problems), so the list
-    # reached them already turned into "unrestricted" here.
+    # The workflow's `tools:` allowlist (None = every kind); `finish` is always permitted.
+    # `is not None`, NOT a falsy test (D242): `tools: []` is a restriction, and must never
+    # fail open into "unrestricted".
     loop.allowed_tools = (set(allowed_tools) | {"finish"}
                           if allowed_tools is not None else None)
     loop.abort_event = abort_event or threading.Event()
@@ -155,53 +128,28 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     loop.executed_kinds = set()   # …and their KINDS: what the claim guard may call taken (D243)
     chain.configure(loop)      # this reply's action queue and what it has read
     loop._schema_storm_streak = 0   # consecutive retry-burdened turns (D87, SCHEMA_STORM_TURNS)
-    # This leg's wake, set in boot. The speaker turn is the USER's after the model hands
-    # it back with an authored finish (`leg_after_authored`); a message that resumes then
-    # keeps the turn with the user if it only EXECUTES commands (`leg_commands`, no
-    # `leg_prose`) — the model takes no turn. Prose hands the turn over. A run with its own
-    # work to do — a scheduled routine fire, or crash recovery mid-workflow — has no
-    # authored hand-back, so it always proceeds (commands there are injected context).
+    # This leg's wake, set in boot. After an authored finish (`leg_after_authored`) a resuming
+    # message that only EXECUTES commands keeps the turn with the user; prose hands it to the
+    # model. A run with its own work (a scheduled fire, crash recovery) always proceeds.
     loop.leg_commands = False
     loop.leg_prose = False
     loop.leg_after_authored = False
-    # Gated capabilities (write_util, reserved utils, runs/ access) come from the
-    # routine's CAPABILITIES mapping — user-set config a routine cannot loop-grant
-    # (its own routine.yaml is write-protected like the recipe); the library docs'
-    # requires: contribute only the reserved-util vocabulary and denial wording.
-    # Own-recipe writes are a CAPABILITY (`write_recipe`, held through the recipe-authoring
-    # conduct doc) — not, as before 0.261.0, a side effect of a user-granted fs_write_root
-    # covering the routine's own dir. That coupling meant giving a routine write access to its
-    # working directory silently also gave it the right to rewrite its own instructions, which
-    # is a different decision and deserves its own switch. routine.yaml stays sealed either way.
+    # Gated capabilities come from the routine's CAPABILITIES mapping — user-set config a run
+    # cannot grant itself. Own-recipe writes are their own capability (`write_recipe`), never a
+    # side effect of a write root covering the routine dir; routine.yaml stays sealed either way.
     unlocked = "write_recipe" in ((ctx.routine.capabilities or {}).get("actions") or [])
-    # A "revise recipe" run (the user asked from the run view to change this routine's OWN
-    # files) is granted recipe loop-write + the file-edit kinds for THIS leg only
-    # (`_revise_unlock`, engine/revise.py) — no persisted fs_write_root, so the recipe stays
-    # sealed to every ordinary run.
+    # A "revise recipe" leg gets recipe write + the file-edit kinds for THIS leg only.
     revising, narrow = _revise_unlock(loop, ctx, resume=resume)
-    # D62: an ADMIN conversation leg — the web layer validated RSCHED_ADMIN_TOKEN and dropped
-    # a one-shot marker, read once and cleared here. admin lifts CAPABILITY gating for this
-    # leg only (gated kinds, reserved utils, previous-run read depth); structural/ownership
-    # gates still apply. Root conversations only — a scheduled routine never gets an operator
-    # at the keyboard, and a subrun builds its own capabilities-off policy (engine/admin.py).
+    # D62: an ADMIN conversation leg (one-shot marker the web layer dropped) lifts CAPABILITY
+    # gating for this leg only; structural gates still apply. Root conversations only.
     from .admin import admin_marker, clear_admin_marker
     loop.admin_leg = admin_marker(ctx.run_dir) and runkind.is_root_conversation(ctx)
     clear_admin_marker(ctx.run_dir)
-    # D58: routine and lane creation is INITIATED from a conversation — that is where a
-    # user is in the loop to design with. F328 keeps the restriction and drops its
-    # consequence: a run without a user may still PROPOSE, so the kinds are surfaced
-    # everywhere and it is the HANDLER that decides between materializing (root
-    # conversation) and queuing a proposal for the Decisions page (anywhere else). Before
-    # this, a scheduled run holding a fully designed, user-approved routine had no way to
-    # hand it over at all and it was carried back to the operator by hand (R353). A None
-    # allowed set means "unrestricted" and already carries every kind. Depth 0 ONLY: a
-    # within-reply CHILD must not create or propose routines as a side effect — its parent
-    # is the one reasoning with the user, and a child's proposal traces to nothing.
+    # Creation kinds reach every depth-0 run; the HANDLER decides between materializing (root
+    # conversation) and queuing a proposal (F328). Never a child: its proposal traces to nothing.
     if loop.allowed_tools is not None and ctx.depth == 0:
         loop.allowed_tools |= {"create_routine", "manage_lane"}
-    # `decide` needs a DECISION model, which an instance configures or does not: without one
-    # the kind is projected out like any kind the run may not use, so an instance that never
-    # set one up keeps exactly the prompt it had (engine/decideaction.py).
+    # `decide` needs a configured DECISION model; without one the kind is projected out.
     from .decideaction import available as decide_available
     if not decide_available(ctx.server):
         from .actionschema import KINDS
@@ -220,66 +168,45 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     loop._last_rules_ts = ""    # edge-trigger for user-bound general rules
     loop._last_rule_drop_ts = ""   # …and for unbinding one mid-run (symmetric)
     loop._last_config_ts = ""   # edge-trigger for a live config PATCH (F337)
-    loop._challenged = set()   # F334 v2: conditions the verifier has
-    #                                      already objected to — at most once each,
-    #                                      or a stubborn pair livelocks the run
-    #                                      (re-seeded on resume: finishgate.rebuild)
-    # A signal already applied by an earlier leg must not re-fire on this one —
-    # the run's applied ledger (engine-owned) seeds the edge-triggers.
+    loop._challenged = set()   # verifier objections, at most once each (finishgate.rebuild)
+    # The run's applied ledger seeds the edge-triggers, so an earlier leg's signal won't re-fire.
     from .switches import load_applied_baselines
     load_applied_baselines(loop)
     ctx.deliberation = ctx.routine.deliberation   # live level; control.json may re-set it
-    # Repeat-streak escape hatch: identical-but-valid actions in a row are the second
-    # signature of provider grammar distortion (a model narrating "I keep forgetting args"
-    # while the grammar suppresses the field). At REPEAT_WARN the next completion runs
-    # schema-free; the contract in the system prompt still demands one JSON object.
-    # Once shedding has rescued the run twice, the diagnosis is settled for this model —
-    # the provider schema stays OFF for the rest of the run instead of re-triggering the
-    # suppression cycle on every fresh util call (~3 wasted turns each).
+    # Repeat-streak escape hatch: identical valid actions in a row signal grammar distortion, so
+    # at REPEAT_WARN the next completion runs schema-free. After two rescues the provider schema
+    # stays OFF for the rest of the run.
     loop._shed_schema_turns = 0
     loop._sheds = 0
     loop._schema_off = False
-    # The schema the TRANSPORT gets, projected onto the kinds this run may emit
-    # (the same projection the composed prompt shows). Narrowing the grammar makes a
-    # disallowed kind ungeneratable instead of generated-then-rejected. allowed_tools
-    # is fixed at boot; a mid-run GRANT decision (requests.apply_decision) re-projects
-    # this, so an allowed-now kind becomes generatable on the very next turn.
+    # The transport's schema, projected onto the kinds this run may emit (as the prompt shows);
+    # a mid-run grant (requests.apply_decision) re-projects it.
     from .kindsurface import effective_kinds, schema_for_kinds
     loop.action_schema = schema_for_kinds(effective_kinds(loop.allowed_tools, ctx.grants),
                                           reminders=bool(ctx.grants and ctx.grants.reminders_on))
-    # Whether the PROMPT carries only the field index for it (engine/schemaindex.py decided
-    # that at composition, from this same chain). When it does, a turn served with no grammar
-    # — an unenforced wire, the uncensored takeover, the repeat-streak shed — is handed the
-    # full contract as an ENGINE NOTE instead, once (`turntakeover._contract_if_unenforced`).
+    # When the prompt carries only the field index, a turn served with no grammar is handed the
+    # full contract once as an ENGINE NOTE (`turntakeover._contract_if_unenforced`).
     from . import schemaindex
     loop._schema_is_index = schemaindex.wire_enforces(ctx)
     loop._schema_contract_sent = False
-    # The relevance-trigger layer: one hold seam (engine/hold.py), two trigger sources —
-    # the reminders this routine learned and the assists its rules declare — and the run's
-    # own archived history as a third store to surface from. Each initialises its OWN run
-    # state: this function has no business knowing their field names, and the statement
-    # ceiling said so before the fourth one landed. (A resumed leg's boot then re-seeds the
-    # once-only ledgers among them from the transcript — engine/guardscope.py.)
+    # Per-loop layers each initialise their OWN state (a resumed leg re-seeds the once-only
+    # ledgers from the transcript — engine/guardscope.py).
     from . import archival, assist, background, hold, loopshape, recall, remind
     for layer in (hold, remind, assist, recall, archival, background, loopshape):
         layer.configure(loop)
-    # Once the conversation has been archived to on-disk history, the model is reminded
-    # to consult its index — right after each compaction, then every 10th turn (NOT every
-    # turn: an identical tail on every observation is pure rent on the context).
+    # After archiving, the history-index reminder rides right after each compaction, then every
+    # 10th turn — not every turn, which would be pure rent on the context.
     loop._history_active = False
     loop._hist_note_countdown = 0
-    # The RESERVED FINISH turn: a budget violation no longer ends the run behind the
-    # model's back. The first violation spends this reserve — one last turn, schema
-    # narrowed to finish — so the summary is ALWAYS authored. Only a second violation
-    # (the reserve already spent) force-finishes. See loopnudge.reserve_finish.
+    # The RESERVED FINISH turn: the first budget violation grants one finish-only turn, so the
+    # summary is always authored; a second force-finishes (loopnudge.reserve_finish).
     loop._finish_reserved = False
     loop._budget_spent = None    # which budget spent it: {resource, limit, message}
     loop._last_compact_after = 0   # post-compaction size; gates re-compaction (anti-thrash)
     loop._evict_warned = False   # the one-turn warning before the middle is elided
     loop._evict_owed = None      # (cap, stage, economics) of the pass that warning deferred
     loop._stage_mark = None      # where the run stood last turn — the stage-boundary edge
-    # 1.0 until a completion reports what the provider actually counted; every window the
-    # compaction gates see is divided by it from then on (window.note_prompt_size).
+    # Provider-calibrated token ratio; 1.0 until a completion reports (window.note_prompt_size).
     loop._token_ratio = 1.0
     try:
         hist_rel = str((ctx.run_dir / "history").relative_to(ctx.routine.dir))

@@ -1,36 +1,26 @@
 """The REVIEW LEG — a routine run that had something to learn from looks back once, at its end.
 
-The learning a run leaves behind used to happen INSIDE its task: memory upkeep, the D200 recipe
-ask, the reminder a run sets itself — each a turn the task paid for, and the overhead measurement
-(engine/overhead.py) counts every one of them against it. Hermes Agent (Nous Research) moved that
-work out of the conversation: after a turn it forks the agent ONTO THE SAME CACHED PREFIX, hands
-the fork a review prompt and a narrow tool allowlist, and lets it write memory and skills while
-the main conversation goes on. This is that loop, fitted to a scheduled run:
+Curation that would otherwise cost the task turns (memory upkeep, the D200 recipe ask, a
+self-set reminder) moves to a short leg after the task — Hermes Agent's review loop fitted to a
+scheduled run:
 
-- **When.** Not on a counter — every run here is scheduled, and Hermes turns its own review OFF
-  for cron at ~30K tokens an event. It runs when the run's OWN RECORD says it had something to
-  learn from (`triggers`): actions that failed, an action a caution held, replies the schema
-  refused, a repeat or a cycle the engine warned about, a person writing in mid-run, a `partial`
-  or authored `failed` ending, or notes no run has read in `notereads.UNREAD_RUNS` runs. And not
-  when the run kept its own notes this time (Hermes' back-off: a foreground memory write resets
-  the counter), was aborted, spent a budget, or is a child, a conversation, a detached task, a
-  narrow revise leg or an admin leg. The instance switch is `ServerConfig.review_leg`.
-- **Where.** In the close-out every ending shares (`loopend.finish_run`), BEFORE the finish event,
-  the ledger entry and the autocommit — so the notes it writes are committed with the run that
-  learned them, its summary line rides the run's result, and a RECIPE REVISION it names joins the
-  task's own lines on ONE D200 card. The same message list, the same model and the same action
-  schema: the provider serves the whole prefix from cache (the schema is part of that prefix, so
-  the narrow allowlist is enforced at VALIDATION, `loop.allowed_tools`, never by changing what is
-  sent — Hermes' reason for the same choice).
-- **What it may do.** `LEG_KINDS` — read notes, search past runs, read files, write notes,
-  finish — at most `REVIEW_TURNS` turns and `REVIEW_MAX_S` seconds, stopping at once on an abort
-  or a spent budget. Two guards Hermes measured it needed: a note that exists may be revised only
-  after this leg READ it (read-before-write), and a note may be deleted only once it was read AND
-  another note was written this leg — folding it in — never as a prune on its own.
-- **What it costs the record.** Every event it writes carries `review_leg`, and its framing note
-  opens the span, so `overhead`/`frictions` leave it out of the TASK's measurement; its spend is
-  the run's (`ctx.add_usage`), and `ctx.review` records what it did for the usage row's
-  `quality.review`. A leg that fails for any reason costs the run nothing but the leg.
+- **When.** Not on a counter (Hermes turns its own review OFF for cron). Only when the run's OWN
+  RECORD gave a reason (`triggers`): failed actions, a held action, refused replies, a repeat or
+  cycle warning, a person writing in mid-run, a `partial` or authored `failed` ending, or notes
+  unread for `notereads.UNREAD_RUNS` runs. Never when the run kept its own notes, was aborted,
+  spent a budget, or is a child, a conversation, a detached task, a revise leg or an admin leg.
+  The instance switch is `ServerConfig.review_leg`.
+- **Where.** In `loopend.finish_run`, BEFORE the finish event, the ledger entry and the
+  autocommit — so its notes are committed with the run, and a RECIPE REVISION it names joins the
+  task's lines on ONE D200 card. Same message list, model and action schema, so the prefix is
+  served from cache; the narrow allowlist is enforced at VALIDATION (`loop.allowed_tools`),
+  never by changing what is sent.
+- **What it may do.** `LEG_KINDS`, at most `REVIEW_TURNS` turns and `REVIEW_MAX_S` seconds,
+  stopping at once on an abort or a spent budget. An existing note is revised only after this
+  leg READ it, and deleted only once read AND folded into a note written this leg.
+- **What it costs the record.** Every event carries `review_leg`, so `overhead`/`frictions` leave
+  it out of the TASK's measurement; spend is the run's, `ctx.review` feeds `quality.review`. A
+  leg that fails costs the run nothing but the leg.
 """
 
 from __future__ import annotations

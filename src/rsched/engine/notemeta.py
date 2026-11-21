@@ -1,26 +1,19 @@
 """A note's EXPIRY and PROVENANCE as data — `memory_write`'s `stale_after` and `verified` (D268).
 
-Notes wrote their own freshness into prose ("verified live 2026-07-30", in a note's body), where
-nothing could read it: a run met that sentence only if it opened the note, and the one memory
-surface EVERY run reads — the `.memory/` index in the state digest — said nothing about whether
-what it listed was still true. These two optional fields (from the Open Knowledge Format) make it
-data the engine renders and judges.
+Freshness written into a note's prose is invisible to the one memory surface every run reads
+(the `.memory/` index in the state digest); these two optional fields make it data the engine
+renders and judges.
 
 WHERE THE DATA LIVES. The engine owns `.memory/INDEX.md` — one `- <name>.md: <about>` line per
-note, written by `memops._memory_index_upsert` — and that line is also the store for these two
-fields, appended as ` · `-separated markers the same upsert writes and the readers below parse
-back. One line per note stays the invariant every upsert relies on, and a second store cannot
-drift from the first because there is no second store.
+note (`memops._memory_index_upsert`) — and that line also stores these fields, as ` · `-separated
+markers the readers below parse back. One line per note stays the invariant; there is no second
+store to drift.
 
-WHY THE INDEX LINE SAYS "stale after" AND THE DIGEST SAYS "stale since". The line is written ONCE,
-at write time; "this note is stale" only becomes true on a later date. Writing the verdict into
-the file would record a claim that is false on the day it is made, so the file carries the DATE and
-the composer — which runs on the day it matters — renders the verdict under its own digest heading.
+The INDEX line says "stale after" (the DATE, written once); the digest says "stale since" — the
+composer renders the verdict on the day it is true, under its own heading.
 
-A VALUE THE ENGINE CANNOT RENDER IS IGNORED, NOT REFUSED (`from_action`). These are optional
-metadata on a write whose real payload is the note; failing the turn over a malformed date would
-cost the note itself. The observation names what was recorded instead, so a run that sent
-`stale_after: "soon"` learns that nothing was — the one thing a silently dropped field never does.
+A VALUE THE ENGINE CANNOT RENDER IS IGNORED, NOT REFUSED (`from_action`): the note is the
+payload, so a malformed date must not cost it. The observation names what was recorded instead.
 
 Schema + rendering + parsing only: this module reads no file and decides nothing about a run.
 `actions.KIND_FIELDS` declares the fields on the kind (undeclared, they are stripped before the
@@ -47,8 +40,7 @@ _VERIFIED_RE = re.compile(r" · ([a-z][a-z0-9._-]*)-verified (\d{4}-\d{2}-\d{2})
 _MARK_RE = re.compile(r" · (?:stale after \d{4}-\d{2}-\d{2}"
                       r"|[a-z][a-z0-9._-]*-verified \d{4}-\d{2}-\d{2})$")
 
-#: `memory_write`'s own field specs, held here with the rendering that reads them rather than in
-#: `actionschema.py`, which is over the repo's size bar and may only shrink.
+#: `memory_write`'s own field specs, held here with the rendering that reads them.
 ABOUT_FIELD = {
     "type": "string",
     "description": "memory_write: one-line INDEX entry — what this note holds + when to consult "
@@ -114,10 +106,8 @@ def verified_mark(verified: dict) -> str:
 
 
 def index_suffix(meta: dict | None) -> str:
-    """The markers appended to a note's INDEX line — "" for a note carrying no metadata.
-
-    Empty is the case that matters most: it is every note on the instance today, and it is why
-    an index without these fields renders byte for byte as it did before they existed.
+    """The markers appended to a note's INDEX line — "" for a note carrying no metadata, so
+    such an index renders byte for byte unchanged.
     """
     marks = []
     if stale := (meta or {}).get("stale_after"):
@@ -142,10 +132,8 @@ def about_of(line: str) -> str:
 def meta_of(line: str) -> dict:
     """The metadata an INDEX line already carries, read back off its rendered markers.
 
-    This is what makes the fields MERGE rather than replace: a run revising a note's content
-    does not have to restate an expiry it may not even know about, and a write that states
-    only `verified` leaves the `stale_after` standing. Without it, every ordinary revision
-    silently dropped whatever an earlier run had recorded.
+    This is what makes the fields MERGE rather than replace: a revision need not restate an
+    expiry it may not know about, and a write stating only `verified` keeps `stale_after`.
     """
     out: dict = {}
     if found := _STALE_RE.search(line):
@@ -190,13 +178,9 @@ def stale_digest(stale: list[str]) -> str:
 #: How many INDEX lines the digest shows before pointing at the file (composer's own cap).
 INDEX_SHOWN_MAX = 60
 
-#: The names a run reaches the INDEX by. The digest's own clip says "read .memory/INDEX.md for
-#: the full N lines" and `digesttail.clip` appends ".memory/INDEX.md holds it whole" — so those
-#: are the words a run has in front of it when it asks. Until F910 every door was locked:
-#: `read_file` refuses any `.memory/` path (engine/fileops.MEMORY_REFUSAL) and `memory_read`
-#: refused these names for not being kebab-case slugs. Measured 2026-11-18: seven turns lost
-#: across five routines in one day, one run spending it twice on CONSECUTIVE turns.
-#: Case-folded and `.md`-tolerant because the pointer is rendered as a FILENAME.
+#: The names a run reaches the INDEX by (F910): `read_file` refuses any `.memory/` path, so
+#: `memory_read` must accept the name the digest points at. Case-folded and `.md`-tolerant
+#: because the pointer is rendered as a FILENAME.
 INDEX_NAMES = frozenset({"index", "index.md"})
 
 
@@ -206,34 +190,21 @@ def is_index_name(name: str) -> bool:
 
 
 def index_read(kind: str, name: str) -> bool:
-    """A `memory_read` of the INDEX — the one name exempt from the kebab-case slug rule.
-
-    A predicate rather than the expression inline, because `engine/actions.py` sits AT its
-    size-ratchet ceiling (417 lines, `tests/size_ratchet.json`): a rule that costs its caller a
-    line is a rule that gets written somewhere worse.
-    """
+    """A `memory_read` of the INDEX — the one name exempt from the kebab-case slug rule."""
     return kind == "memory_read" and is_index_name(name)
 
 
 def digest_blocks(index_text: str) -> list[str]:
-    """The digest's `.memory/` parts for an index: the notes to consult, then the stale ones.
-
-    The whole block lives here rather than in `composer.state_digest` because that function is
-    at its complexity ratchet (C901 22): partitioning inline put it at 24 and reds the quality
-    gate. One function per part of the prompt is the composer's own shape anyway.
-    """
+    """The digest's `.memory/` parts for an index: the notes to consult, then the stale ones."""
     fresh, stale = partition_stale(index_text.strip().splitlines())
     blocks = []
     if fresh:
-        # Name the ACTION, not the path (F910): `read_file` refuses every `.memory/` path, so
-        # a pointer at the FILE sent five routines in one day into a call nothing could serve.
+        # Name the ACTION, not the path (F910): `read_file` refuses every `.memory/` path.
         more = (f"\n[... `memory_read name=index` reads .memory/INDEX.md, "
                 f"the full {len(fresh)} lines]"
                 if len(fresh) > INDEX_SHOWN_MAX else "")
-        # Bounded in CHARACTERS as well as in lines: an index line is a note's whole `about`
-        # sentence, so a routine with a mature store reached 23,069 chars here — the single
-        # largest block measured in any live digest (engine/digesttail.py). Line order is
-        # kept (the index is a catalogue, not a history), so the clip takes the tail.
+        # Bounded in CHARACTERS as well as lines: each line is a whole `about` sentence.
+        # Line order is kept (a catalogue, not a history), so the clip takes the tail.
         shown = digesttail.clip("\n".join(fresh[:INDEX_SHOWN_MAX]),
                                 read_with=".memory/INDEX.md (`memory_read name=index`)")
         blocks.append(".memory/ index (notes from earlier work — memory_read the relevant "

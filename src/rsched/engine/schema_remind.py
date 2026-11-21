@@ -1,15 +1,8 @@
 """The two reminder SIDE FIELDS as schema — `remind` and `remind_feedback`.
 
-Its own module for two reasons. `engine/actionschema.py` is over the repo's size bar and may
-only shrink, exactly as `engine/remind.py` was when `engine/remindfields.py` split off its pure
-checks — so the field pair follows its validator out.
-
-And F680: **every cap these fields enforce is stated here, interpolated from the constants that
-enforce it.** `reminder_checks.MAX_REGEX_CHARS` (200) and `MAX_DESCRIPTION_CHARS` (400) were
-enforced on the write path and named in no field description, so the only way to learn a limit
-was to be refused by it. Three routines hit that in one window, each losing a turn while
-curating correctly; a fourth was the run that shipped this. The numbers are imported, never
-retyped: a cap that drifts from its documentation is the same defect with a different number.
+**Every cap these fields enforce is stated here, interpolated from the constants that enforce
+it** (F680), so a run learns a limit without being refused by it. The numbers are imported,
+never retyped, so the documentation cannot drift from the cap.
 """
 
 from __future__ import annotations

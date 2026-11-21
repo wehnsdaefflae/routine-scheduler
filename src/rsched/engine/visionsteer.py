@@ -1,30 +1,20 @@
-"""Refuse `util vision <local file>` when THIS run can simply look at the file (R2249 bug 1).
+"""Refuse `util vision <local file>` when THIS run can simply look at the file (R2249).
 
-A multimodal run that calls the `vision` util pays for nothing it gets: the util needs
-`OPENROUTER_VISION_KEY`, so the call opens a credential-exposure question the user has to
-think about; it uploads the file to a third-party provider; and it hands back a transcription
-where `view_image` would have handed back the document. The engine knows both facts it needs
-to say so -- the run's own model and whether the file is viewable -- before the gate ever asks.
+For a multimodal run the `vision` util is all cost: it needs `OPENROUTER_VISION_KEY` (an
+exposure question for the user, and declining one closes off `vision` for the whole run),
+uploads the file to a third party, and returns a transcription where `view_image` returns the
+document. So the refusal replaces the question.
 
-So the refusal replaces the question. R2249's second-order cost is the reason it must:
-declining an exposure is scoped to the WHOLE run, so one needless prompt closes off every
-legitimate `vision` call for the rest of that run.
-
-The predicate is deliberately NOT a new one. `mediaops` decides natively-viewable as
-`oversize_reason(path, mime) is None and endpoint.supports_media(mime, **model_modalities(ref))`,
-and this module asks the same pair through `mediaops.natively_viewable`, so a bound added
-there is never missing here (the lesson F623 left: two predicates for one question drift).
-Everything that is NOT that case falls through untouched -- a text-only run, an endpoint that
-cannot carry the type, an oversized file, a URL, a `--selftest`, a verb that reads no file.
-Those are exactly the calls `vision` exists for.
+The predicate is `mediaops.natively_viewable`, the same one `view_image` uses, so the two cannot
+drift. Everything else falls through untouched — a text-only run, an endpoint that cannot carry
+the type, an oversized file, a URL, a `--selftest`, a verb that reads no file.
 """
 from __future__ import annotations
 
 from .mediaops import natively_viewable
 from .run_context import RunContext
 
-#: The util this module speaks for. One name, because the refusal's whole justification is
-#: that `view_image` does this util's job better for this run.
+#: The util this module speaks for.
 VISION = "vision"
 
 
