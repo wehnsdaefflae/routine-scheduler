@@ -1,12 +1,4 @@
-"""A child run's observation rows read as sentences, not as JSON dumps (D241 follow-up).
-
-0.566.0 renamed `spawn`/`subtask` to `child` (with a `mode`) and `subruns` to `children`, but
-`components/obs-text.js` kept its branches keyed on the old names. Every `child` and `children`
-observation therefore fell through to the last branch, `JSON.stringify` — the row existed and
-the reader got the payload instead of what happened. The rows below load the REAL renderer and
-assert the rendered TEXT, including the one thing the old `spawn` branch could not say: which
-MODE the child runs in.
-"""
+"""A child run's observation rows read as sentences, not as JSON dumps (D241 follow-up)."""
 from playwright.sync_api import expect
 
 _FIXTURE = """async (rows) => {

@@ -1,12 +1,4 @@
-"""Files-card rows on a NETWORK share are judged off the request; local rows stay fresh (2026-11-21).
-
-`/api/runs/{id}/files` resolved and statted every row inside the request, and a card listing
-hundreds of rows on the NAS sshfs share took 60-74 s (`web/fileverdicts.py`). Here a tmp dir plays
-the share (`netmounts.network_mounts` is patched to name it), so each test pins one property the
-change rests on: a share row is never touched by the request, its verdict lands from one
-background job, an unknown verdict is never offered as servable, and a local row is still judged
-afresh on every call — F896's guarantee, which `tests/test_run_files_concurrency.py` keeps pinning.
-"""
+"""Files-card rows on a NETWORK share are judged off the request; local rows stay fresh (2026-11-21)."""
 
 from __future__ import annotations
 

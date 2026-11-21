@@ -33,7 +33,7 @@ recipe version on the routine repo's HEAD and reflog (`readmodels/memo`).
 The fold is the WHOLE FLEET's measured history and every reading wants one routine's slice of
 it, so it is memoized SHARED (`memo.memoized_shared`): the cached value itself is handed out and
 `reading` only filters it into fresh dicts, never writing into it. Through `memo.memoized` every
-hit deep-copied all of it — 907 runs over 35 routines, 2.6-4.1 ms each on 2026-11-21, once per
+hit deep-copied all of it — 907 runs over 35 routines, 2.6-4.1 ms each, once per
 badge row per request, under the GIL — and `/api/health/blocked`'s slow-samples caught the request
 thread inside that copy. Anything that reads `_measured` through the memo must keep it read-only.
 """

@@ -1,11 +1,4 @@
-"""The files card offers no click for a row whose verdict is still being checked (2026-11-21).
-
-A row on a network share is judged by a background job (`web/fileverdicts.py`); until its
-verdict is kept, `/api/runs/{id}/files` serves it as `servable: null` with `pending: true`. The
-card used to treat anything but `false` as servable, so an unknown row would have been offered
-as a click — the one claim the server is careful never to make. The REAL response is served
-with only those two fields overridden, so what is tested is the card's reading of them.
-"""
+"""The files card offers no click for a row whose verdict is still being checked (2026-11-21)."""
 import json
 import re
 

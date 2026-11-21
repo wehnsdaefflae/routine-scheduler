@@ -38,7 +38,7 @@ the unit's own `OnFailure=` push, which still works when this daemon is down.
 endpoint_needs_reauth: every account of a SUBSCRIPTION LOGIN behind the model gateway is
 unavailable with no retry expected — the credential is dead and a run whose model routes to it
 fails at turn 0 (`daemon/endpoint_watch`, R2195; re-pointed from endpoints to the gateway's
-`plans:` logins by C5, 2026-11-21). routine is empty (an instance fact, `backup_stale`'s idiom);
+`plans:` logins by C5). routine is empty (an instance fact, `backup_stale`'s idiom);
 `login` (`<gateway>/<provider>`, e.g. `otari/claude`), `gateway`, `provider` and the `probe` that
 asked ride as fields, one row a day per login while the state holds. On 2026-09-14 06:18 a
 claude-proxy subscription token expired and eight routines failed at turn 0 within two minutes,

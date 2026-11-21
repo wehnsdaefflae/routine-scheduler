@@ -3,7 +3,7 @@
 `engine/runtime._log_cost_trend` files `cost_trend_degraded` at a run's end when a routine's last
 runs are clearly worse than the ones before them, and only after `readmodels/trend_attribution`
 has read the same window across the fleet and said WHOSE regression it is (F568). The stream had
-that finding and no reader a person clicks: the operator's decision of 2026-11-21 (#9) is to
+that finding and no reader a person clicks: the operator's decision (#9) is to
 SURFACE it — on Stats, in the Develop group, because a cost regression is how the system is
 changing, not work that was due and did not happen (it is not blocked work).
 

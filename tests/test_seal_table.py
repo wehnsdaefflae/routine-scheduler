@@ -1,9 +1,4 @@
-"""ONE table of sealed paths, every layer agreeing with it (`rsched/sealtable.py`).
-
-The resolved file gate, the removal gate and the Landlock jail all DERIVE from the table, and
-the lexical action gates say the table's words — so a row added, renamed or reworded is held
-by all of them at once, and this file is where a layer that stopped reading it goes red.
-"""
+"""ONE table of sealed paths, every layer agreeing with it (`rsched/sealtable.py`)."""
 
 from __future__ import annotations
 

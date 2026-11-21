@@ -1,4 +1,4 @@
-"""Kept chip verdicts for files-card rows on a NETWORK share — checked off the request (2026-11-21).
+"""Kept chip verdicts for files-card rows on a NETWORK share — checked off the request.
 
 `/api/runs/{id}/files` was the console's slowest route by server time: 1,070 rows over 2 s in
 13 days, median 6.0 s, worst 87.6 s. Timed against the runs behind most of them, every second

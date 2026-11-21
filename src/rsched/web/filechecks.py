@@ -12,7 +12,7 @@ on demand (so a small card only needs its row count), and the app lifespan shuts
 
 Only transcript rows are memoized, by the read model. Neither roots nor file verdicts live here
 between calls; rows on a NETWORK share never reach this pool from a request at all —
-`web/fileverdicts.py` checks them in a background job and keeps their verdicts (2026-11-21).
+`web/fileverdicts.py` checks them in a background job and keeps their verdicts.
 Results retain first-touched order, and rows are copied, NEVER annotated in place on the
 memoized read model (which is handed out shared, uncopied). Unexpected errors propagate in
 input order, just as in the old comprehension; queued checks are cancelled on exit. Running

@@ -1,4 +1,4 @@
-"""A routine's or a conversation's OWN secrets (D103, operator decision 2026-08-26 — R497;
+"""A routine's or a conversation's OWN secrets (D103 — R497;
 D216 rank 1 for conversations): the write surface for `secrets.d/<slug>.env`, the per-slug half
 of the two-scope store (rsched/secrets.py). One router serves both homes, because the store is
 keyed by the RUN's slug and a conversation's slug is its directory name exactly as a routine's

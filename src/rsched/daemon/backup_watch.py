@@ -46,7 +46,7 @@ every 5 s, and a row per tick would bury the stream it is meant to make legible 
 `tickguard` applies to a failing item. A stamp that becomes fresh again clears the memory, so the
 next staleness is reported rather than swallowed.
 
-THE WATCH'S VERDICT IS THE ONE THE CONSOLE READS (2026-11-21). `/api/health/blocked` asks whether a
+THE WATCH'S VERDICT IS THE ONE THE CONSOLE READS. `/api/health/blocked` asks whether a
 `backup_stale` row still holds (`web/operator_conditions`), and it used to answer by calling
 `staleness()` itself — four stamp reads, two of them on the off-box share over sshfs, inside every
 request. That made it the console's slowest request (≈8,000 client-side slow traces in 14 days,

@@ -1,12 +1,4 @@
-"""The console reads the backup watch's KEPT verdict; only the daemon reads the share (2026-11-21).
-
-`/api/health/blocked` asked "is the backup still stale?" by calling `backup_watch.staleness()`
-inside every request — stamp reads on the off-box share over sshfs — and was the console's slowest
-route: 14 of 20 retained slow-samples caught the request thread in `newest_stamp`'s `open`. The
-watch now reads the stamps once every `CHECK_EVERY_S`, in a worker thread, and keeps the verdict.
-Each test here pins one property that change depends on — above all that a verdict which is
-missing, failed or too old reads as UNKNOWN, never as the last `ok`.
-"""
+"""The console reads the backup watch's KEPT verdict; only the daemon reads the share (2026-11-21)."""
 
 from __future__ import annotations
 

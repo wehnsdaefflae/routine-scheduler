@@ -1,20 +1,5 @@
 """A test session's MEMORY ADMISSION: it waits for room, runs no more workers than fit, and is
 ended over its cap — so the kernel never chooses a live routine run as an OOM victim instead.
-
-Three things, and only these (C7, the operator 2026-11-21, which dropped the measured-history
-pricing this module used to carry beside them):
-
-1. **Wait.** The controller of a real session blocks until BOTH the host's `MemAvailable` and
-   this container's own cgroup headroom cover its selection's charge (`NEED_MB`, the fast one
-   scaled by the xdist worker count). On 2026-11-05 a gate started on a host with ~2 GB free and
-   the global OOM killed a live run. Past `RSCHED_TEST_MEM_WAIT_S` it STARTS ANYWAY under the
-   watchdog's cap (D295: refusing guaranteed no verdict — three gates exited 3 after 1,201 s
-   with zero tests on 2026-11-18 — while a bounded run can still produce one).
-   `RSCHED_TEST_MEM_WAIT=0` switches the wait and the watchdog off.
-2. **Cap the workers.** `headroom_mb` is the one reading `browsersource.fast_workers` sizes
-   `-n auto` from (D291: beside a live run the gate runs SMALLER instead of being refused).
-3. **Kill on a breach.** A `Watchdog` thread samples the cgroup's hold (anon + swap, the figure
-   an OOM is decided on) and SIGINTs the session once it passes its cap.
 """
 
 from __future__ import annotations

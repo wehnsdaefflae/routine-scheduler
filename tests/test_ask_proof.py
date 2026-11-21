@@ -1,9 +1,4 @@
-"""An `ask_user` may carry a PROOF per option, and it reaches the decision record (D220, #4).
-
-`rsched/proofs.py` and the daily sweep (`rsched/proofcheck.py`) existed with no way in: nothing
-the engine files ever carried a proof. The `proof` field is that way in — checked at validation,
-carried to `file_question(..., proof=…)`, and an unknown predicate NAMED in the observation.
-"""
+"""An `ask_user` may carry a PROOF per option, and it reaches the decision record (D220, #4)."""
 
 import json
 

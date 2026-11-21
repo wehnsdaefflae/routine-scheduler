@@ -1,19 +1,4 @@
-"""A RETIRED action kind is named nowhere the engine or the console still decides by kind.
-
-D241 (0.566.0) removed `spawn`, `subtask` and `subruns` in favour of `child` (with a `mode`)
-and `children`, and two tables were missed. `engine/loopshape._WAITING` still said `subruns`,
-so a `children` poll whose answer had not changed was warned as a stuck `action_cycle` instead
-of being read as waiting. And `engine/renamedkinds.RENAMED` carried no entry for any of the
-three, so a recipe the boot migration had not reached got the blank enum refusal that module
-exists to prevent. The console had the same defect twice: `obs-text.js` rendered a `child`
-observation as a raw JSON dump (its branch still keyed on `spawn`), and the run page's
-waiting label looked for `spawn`/`subtask`.
-
-The two halves are tested together because they are one fact read two ways: `RENAMED` is the
-register of retired kinds, so it is also the vocabulary the sweep below refuses — a future
-rename that adds its entry gets every forgotten table found by this file, with no list here to
-keep in step.
-"""
+"""A RETIRED action kind is named nowhere the engine or the console still decides by kind."""
 
 from __future__ import annotations
 

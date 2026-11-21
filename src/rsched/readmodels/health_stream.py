@@ -126,7 +126,7 @@ BLOCKED_EVENTS: dict[str, str] = {
     # An ANSWER the operator gave that no run will ever read — the reader it was given to never
     # comes (2026-11-09: two sat seven weeks). Due work in the plainest sense: he decided, and
     # nothing acts on it.
-    # C5 (2026-11-21): a dead subscription login behind the gateway — every fire whose model
+    # C5: a dead subscription login behind the gateway — every fire whose model
     # routes to it fails at turn 0, so the work is owed and will not happen until he signs in.
     "endpoint_needs_reauth": "a subscription login behind the model gateway is DEAD — every "
                              "account of it is unavailable with no retry expected, so each run "

@@ -21,7 +21,7 @@ flagged.
 
 MIGRATION(expires=2027-01-15): this whole integrity half — `UNDERSTATEMENT_SLACK`,
 `_child_volume`, `_understated`, `_sanitized`, and the `mixed_accounting` / `integrity` keys —
-exists only for the usage rows written before 0.494.0, and is deleted once they have aged out of
+exists only for the usage rows that understate a spawning run's tree (R3112), and is deleted once they have aged out of
 every window this reads.
 
 A per-run cost figure is only honest if every run was counted the same way. Until 0.494.0 two

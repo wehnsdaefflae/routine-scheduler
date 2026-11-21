@@ -2,7 +2,7 @@
 
 The files card (`api_runs.run_files`) asks of every row whether the console could serve it, and
 answering that means resolving the path and statting it. On a local disk that costs microseconds;
-on an sshfs share every path component is a network round trip, and on 2026-11-21 a conversation
+on an sshfs share every path component is a network round trip, and a conversation
 run whose card listed 307 rows on the NAS share took 73.7 s to answer it once, 4 s for a single
 row. So the card has to know WHICH rows are behind such a mount before it touches them, and the
 only way to know that without touching them is lexical: the path lies under a mount point whose

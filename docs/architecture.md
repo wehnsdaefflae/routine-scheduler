@@ -1956,7 +1956,7 @@ install gets the revision from the seed sync itself.)
   SINGLE-FLIGHT per key (0.340.0: a burst of identical requests — every open tab refetching one
   endpoint on a bus event — computes once while the rest wait and re-read), `readmodels/usage_stream`
   is the ONE parser of workflow-usage.jsonl and `readmodels/health_stream` the ONE parser of
-  health-events.jsonl (plus the blocked-fleet fold behind `GET /api/health/blocked`: the 21
+  health-events.jsonl (plus the blocked-fleet fold behind `GET /api/health/blocked`: the 20
   events that mean WORK THAT WAS DUE DID NOT HAPPEN — `postdeploy_failed`, `fire_refused`, `lane_fire_refused`,
   `fire_paused`, `lane_fire_paused`, `oneshot_skipped`, `lane_chain_stopped`, `lane_chain_member_skipped`, `scheduler_tick_error`,
   `finish_gate_failed`, `commit_failed`, `backup_stale`,

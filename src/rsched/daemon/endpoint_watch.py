@@ -6,7 +6,7 @@ credentials every run depends on had no such pass: on 2026-09-14 06:18 a claude-
 subscription token expired and eight routines failed at turn 0 within two minutes, each `503
 auth_unavailable`. This is that pass.
 
-WHAT IT WATCHES — the logins, not the endpoints (C5, operator 2026-11-21). Every model call
+WHAT IT WATCHES — the logins, not the endpoints (C5). Every model call
 leaves through the Otari gateway (docs/model-gateway.md), so no endpoint in `config.yaml` is a
 proxy any more: `otari`, `otari-openai` and `otari-openai-plain` all reach Otari, and Otari
 routes a name to the standalone CLIProxyAPI that holds the subscription logins. The facts that

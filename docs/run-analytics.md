@@ -843,7 +843,7 @@ health stream for that window held exactly one event, about an unrelated oversiz
 
 ## Blocked work (`/api/health/blocked`)
 
-Everything above measures runs that HAPPENED. 21 health events record the opposite —
+Everything above measures runs that HAPPENED. 20 health events record the opposite —
 `postdeploy_failed` (the daemon's own post-boot checklist found that what it serves, or what it
 can write or back up, is not what the deploy intended — most sharply a build that did not
 relaunch, which is a deploy that was due and did not land; `daemon/postdeploy_watch.py`),

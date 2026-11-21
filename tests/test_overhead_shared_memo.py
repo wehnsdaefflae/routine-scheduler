@@ -1,12 +1,4 @@
-"""The overhead fold is handed out SHARED: a reading copies nothing and changes nothing.
-
-`readmodels/overhead_reading.reading` wants one routine's slice of a fleet-wide fold (907 runs
-over 35 routines on the live instance), and `/api/health/blocked` asks it once per
-`process_overhead_high` row. Memoized with a deep copy per hit, that was 2.6-4.1 ms of copying per
-row per request under the GIL, and a slow-sample caught the request thread inside it. The fold is
-now `memo.memoized_shared`; these tests pin the two halves of that contract — no copy on the hit,
-and no reader ever writing into the shared value.
-"""
+"""The overhead fold is handed out SHARED: a reading copies nothing and changes nothing."""
 
 from __future__ import annotations
 
