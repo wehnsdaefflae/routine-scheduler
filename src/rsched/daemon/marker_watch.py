@@ -45,6 +45,7 @@ reading them once a day costs nothing and keeps the tick clean.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, date, datetime
 
@@ -85,15 +86,16 @@ class MarkerWatch:
 
     async def tick(self) -> None:
         """Read the declared expiries once a day and file what is due. Never raises into the
-        tick: a check about a deadline must not be the thing that stops the scheduler.
+        tick: a check about a deadline must not be the thing that stops the scheduler. The read
+        walks every source file, so it runs in a thread — on the event loop, at boot, it was
+        another pass every request waited behind (`daemon/owed_watch.py` says how long).
         """
         today = datetime.now(UTC).date()
         if self._checked == today:
             return
         self._checked = today
         try:
-            overdue = expired(today)
-            soon = due_soon(today)
+            overdue, soon = await asyncio.to_thread(lambda: (expired(today), due_soon(today)))
         except Exception:
             log.exception("marker-watch: reading the declared migration expiries raised")
             return

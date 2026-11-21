@@ -35,6 +35,7 @@ what is new is that the unit is declared where the latch that creates it lives.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from datetime import UTC, date, datetime, timedelta
@@ -159,12 +160,18 @@ class OwedWatch:
         self._checked: date | None = None
 
     async def tick(self) -> None:
+        """Once a day, IN A THREAD. The check reads every routine's obligations, questions and
+        answered archive and files cards. On the event loop — where an `async` tick that calls
+        it directly runs it — its first pass at boot held every request: `/api/questions` waited
+        25-31 s with every worker idle and the loop inside `proofcheck.sweep_routine`, slowed by
+        everything else booting beside it.
+        """
         today = datetime.now(UTC).date()
         if self._checked == today:
             return
         self._checked = today
         try:
-            self.check(today)
+            await asyncio.to_thread(self.check, today)
         except Exception:
             log.exception("owed-watch: the daily check raised")
 

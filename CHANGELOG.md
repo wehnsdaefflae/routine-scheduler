@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.580.0] — 2026-11-21
+
+### Fixed
+- **The daily owed-work check and the migration-marker scan no longer run on the event loop.**
+  0.578.0's reordering of the read-model warmer did NOT shorten the restart burst — after it,
+  `/api/questions` still took 31.5 s — and the slow-sample taken inside that burst showed why:
+  four questions requests waiting 24-31 s, every AnyIO and I/O-pool worker IDLE, and the event
+  loop itself inside `daemon/owed_watch.tick` → `proofcheck.sweep_routine`. The scheduler
+  starts each upkeep watcher with `_off_tick`, which creates a task ON THE LOOP, and
+  `OwedWatch.tick` called its synchronous `check` directly — every routine's obligations,
+  questions and answered archive read and cards filed, a few hundred ms warm, stretched to half a
+  minute at boot by the docs build, the post-deploy walk and the boot scans contending for the
+  GIL beside it. `MarkerWatch.tick` had the same shape, walking every source file. Both run in a
+  thread now (`asyncio.to_thread`), as the backup watch has since 0.573.0. A structural test
+  (`tests/test_daily_checks_off_loop.py`) reads which watchers the scheduler starts with
+  `_off_tick` and fails for any whose class never hands work to a thread — the one shape all
+  three of today's loop-blocking watchers shared. The warmer's ordering stays: it is still the
+  right order, it was just not the cause.
+
 ## [0.579.0] — 2026-11-21
 
 A code review measured what the instance actually uses and removed what it does not
