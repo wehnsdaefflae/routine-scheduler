@@ -76,7 +76,8 @@ about to touch, not all of them.
 - `uv sync` — the venv, on Python 3.12 (`.python-version` pins the engine image's interpreter;
   the suite refuses another minor version)
 - `uv run pytest -q` — the FAST suite (parallel via xdist; `-n0` for serial/`-s`). It first waits
-  for memory headroom (`tests/memgate.py`; `RSCHED_TEST_MEM_WAIT=0` skips). Single test:
+  for memory headroom, sizes `-n auto` to it and ends itself over its cap (`tests/memgate.py`;
+  `RSCHED_TEST_MEM_WAIT=0` skips). Single test:
   `uv run pytest tests/test_loop.py -q` or `-k <name>`. Live endpoint tests need `RSCHED_LIVE_TESTS=1`
 - `-m ui` is the opt-in BROWSER suite, `-m ""` is everything (**what ships a release**). Browser
   selections run in the `uitest` container, never beside the daemon:

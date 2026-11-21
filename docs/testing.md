@@ -16,12 +16,15 @@ CLAUDE.md's Commands section is the short form.
   so no gate pays wall clock for a coexistence nobody needs) — pass `-n0` for a serial run /
   debugging with `-s`. Every session first WAITS until
   BOTH the HOST's `MemAvailable` and THIS CONTAINER's own cgroup headroom cover its selection
-  (`tests/memgate.py`: the fast charge is DERIVED from the worker count — 930 MB controller +
-  610 MB per worker, rounded up to 256 MB, which re-derives the old 3,584 MB at four workers —
-  3.5 GB browser, 2,816 MB serial, up to `RSCHED_TEST_MEM_WAIT_S`, then exit 3
-  without starting; `RSCHED_TEST_MEM_WAIT=0` skips it): on 2026-11-05 a gate started on a host
-  with ~2 GB free and the global OOM killed a live run. Both budgets are the stages' MEASURED
-  hold — `held_peak_bytes`, anon + swap — not an estimate; `NEED_MB`'s comment holds the table. Two conftest
+  (`tests/memgate.py`, the ONE memory-admission module: the fast charge is DERIVED from the
+  worker count — 930 MB controller + 610 MB per worker, rounded up to 256 MB, which re-derives
+  the old 3,584 MB at four workers — 2,048 MB browser (read against the `uitest` cgroup alone),
+  2,816 MB serial): on 2026-11-05 a gate started on a host with ~2 GB free and the global OOM
+  killed a live run. It then WATCHES the session — a watchdog thread SIGINTs it once the
+  cgroup's hold passes the charge plus 512 MB — and past `RSCHED_TEST_MEM_WAIT_S` it starts
+  under that watchdog rather than exiting with no verdict (D295); `RSCHED_TEST_MEM_WAIT=0`
+  switches the wait and the watchdog off. Every charge is a stage's MEASURED hold —
+  `held_peak_bytes`, anon + swap — not an estimate; `NEED_MB`'s comment holds the table. Two conftest
   env knobs keep it honest AND fast: `RSCHED_SKIP_DOCS_BUILD` (the app lifespan's pdoc build
   — a to_thread task shutdown can only await) and `RSCHED_RETRY_BASE_DELAY` (endpoint retry
   LOGIC runs, the 1s/2s backoff clock doesn't); test_docs_build / test_with_retries_backoff
