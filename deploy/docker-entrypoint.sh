@@ -47,6 +47,21 @@ find /home/mark/.cache/uv ! -user mark -exec chown mark:mark {} + 2>/dev/null ||
 # The gh device-flow token (mounted ~/.config/gh) is useless to git without the credential
 # helper glue — without it, every in-container push fails "could not read Username" while
 # host pushes work, and self-audit's commits strand locally.
+# /dev/kvm, when this host maps it into the container (its docker-compose.override.yml — see
+# deploy/DOCKER.md, "KVM for runs"), keeps the HOST's group id, which names nothing in this image,
+# so a bare device map leaves it unopenable by `mark`: give the gid a name and `mark` the group,
+# exactly as deploy/desktop-entrypoint.sh does for the desktops. gosu takes `mark`'s groups from
+# /etc/group, so the daemon and every run it spawns can open the device. D170 phase 1 (D301(b)):
+# the micro-VM measurement needs a run that can. No device, nothing done.
+if [ -c /dev/kvm ]; then
+  kvm_gid="$(stat -c %g /dev/kvm)"
+  kvm_group="$(getent group "$kvm_gid" | cut -d: -f1 || true)"
+  if [ -z "$kvm_group" ]; then
+    kvm_group=kvmhost
+    groupadd -g "$kvm_gid" "$kvm_group"
+  fi
+  usermod -aG "$kvm_group" mark
+fi
 gosu mark sh -c 'command -v gh >/dev/null && gh auth status >/dev/null 2>&1 && gh auth setup-git 2>/dev/null' || true
 
 exec gosu mark "$@"

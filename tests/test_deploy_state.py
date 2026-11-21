@@ -221,3 +221,19 @@ def test_an_install_without_key_files_bundles(tmp_path):
     assert proc.returncode == 0, proc.stderr
     assert "skipping .credentials" in proc.stderr
     assert "git-repos/routine-scheduler/data.txt" in _tar_files(out)
+
+
+def test_the_entrypoint_names_the_kvm_devices_host_gid_before_dropping_root():
+    """D301(b): a host that maps /dev/kvm into the engine (its override file) must leave the
+    device OPENABLE by the runtime user. It keeps the host's gid, which names no group in the
+    image, so the entrypoint names it and adds `mark` before gosu — whose groups come from
+    /etc/group — or every run sees a device it cannot open. Guarded by the device's presence, so a
+    host without KVM is untouched; and the tracked compose file maps no such device, because a
+    missing one stops the container from starting at all."""
+    text = (DEPLOY / "docker-entrypoint.sh").read_text(encoding="utf-8")
+    stanza = text.index("if [ -c /dev/kvm ]; then")
+    assert "stat -c %g /dev/kvm" in text[stanza:]
+    assert "usermod -aG" in text[stanza:]
+    assert stanza < text.index("exec gosu mark")
+    compose = yaml.safe_load((REPO / "docker-compose.yml").read_text(encoding="utf-8"))
+    assert "/dev/kvm" not in (compose["services"]["rsched"].get("devices") or [])

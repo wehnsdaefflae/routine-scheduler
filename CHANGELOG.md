@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.571.0] — 2026-11-21
+
+### Added
+- **A host can give its runs KVM** (D301(b), unblocking D170 phase 1). The per-call micro-VM
+  measurement D170's answer named could not start: `/dev/kvm` was absent from the engine
+  container. `deploy/docker-entrypoint.sh` now names the device's HOST gid (which names nothing in
+  the image) and adds `mark` to it before dropping root — the desktop entrypoint's own fix — so the
+  daemon and every run it spawns can open the device; `/dev` is already read-write in the Landlock
+  jail. The device itself is mapped in the HOST's `docker-compose.override.yml`, not the tracked
+  compose file: a `devices:` entry for a device a host lacks stops the container from starting,
+  and Docker gives up after one failed start. `deploy/DOCKER.md` "KVM for runs" says how; a test
+  pins the stanza and keeps the tracked file free of the mapping. No hypervisor ships in the image:
+  choosing one is the measurement's own first step.
+
 ## [0.570.0] — 2026-11-21
 
 ### Fixed

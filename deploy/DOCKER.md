@@ -772,6 +772,32 @@ relay reads both, and a routine is granted `DESKTOP_VM_TOKEN` — never the oper
 code change, a rebuild of the guest only reaches a desktop at its next boot: `gu desktop stop`
 from the routine, or the console's Stop, starts the next one on the new image.
 
+## KVM for runs
+
+Opt-in per host, like the desktops, and for the same reason: a `devices:` entry naming a device
+the host lacks makes the container fail to START, and Docker's restart manager gives up after one
+failed start — so the core service's tracked compose file carries no such entry. A host with
+hardware virtualisation (`ls -l /dev/kvm`) that wants its RUNS to reach KVM — D170's per-call
+micro-VM measurement is the first user (D301(b), 2026-11-21) — maps the device in its own
+`docker-compose.override.yml`, which compose merges into the `rsched` service's list:
+
+```yaml
+services:
+  rsched:
+    devices:
+      - /dev/kvm
+```
+
+The device keeps the HOST's group id, which names nothing in the image, so a bare map is not
+enough: `deploy/docker-entrypoint.sh` gives that gid a name and adds `mark` to it before dropping
+root (the desktop entrypoint's own fix), and the daemon and every run it spawns inherit the group.
+`/dev` is read-write inside the Landlock jail (`sandbox._SYSTEM_RW`), so a util, script or `shell`
+command can open it. The change needs the container RECREATED (`docker compose build rsched`,
+then `docker compose up -d rsched`), which kills live runs — `rsched drain` first. Check it from
+a process with the daemon's groups: `docker exec rsched gosu mark sh -c 'id; test -r /dev/kvm -a
+-w /dev/kvm && echo kvm ok'`. A hypervisor binary is not part of this: the image ships none, and
+choosing one is the measurement's own first step.
+
 ## When the console goes slow
 
 Measure before guessing. Every read model on this instance answers in well under a second in
