@@ -358,12 +358,7 @@ the limits (single-writer status.json preserved).
   the NEXT run, which is why its payload is `note` rather than `remind`: the run is over. The moment and the payload are coupled
   (`assists.MOMENT_PAYLOADS`): `pre-action` can only hold — the only way to reach a chosen action
   is to stop it — and the free moments cannot hold, having no action in hand. A `pre-action` hold
-  goes through the same seam the consequence reminders use (`engine/hold.py`). The `boundary`
-  moment can also PERFORM an action (`engine/assist_action.py`, the `action` payload): the rule
-  does the thing its moment calls for, through `hooks/perform.py`, at no turn cost — bounded to
-  the firing routine's own capabilities by the model's own gates, barred from the kinds that
-  STEER a run (`assists.STEERING_KINDS`), and barred from both moments that change control flow,
-  because a hook performs and reports and only a hold can stop an action. The curated half of the same relevance-trigger layer the consequence reminders are
+  goes through the same seam the consequence reminders use (`engine/hold.py`). The curated half of the same relevance-trigger layer the consequence reminders are
   the self-authored half of. Compliance-CHECKING most rules is impossible — a compliant and a
   violating run leave byte-identical traces differing only in reasoning — but relevance is a
   property of the situation, which IS in the trace: the rule you cannot check, you can time.
@@ -442,12 +437,9 @@ the limits (single-writer status.json preserved).
   performed action therefore never changes control flow; `perform` returns an observation, never
   a verdict, and a failing action does not refuse the action the run was about to take. Stopping
   an action remains a `hold`, which TELLS the model and spends a turn on its decision — so
-  `HOLDING_POINTS`' pin now records a decision rather than an open question. **Its production
-  caller is the rule layer's `action` payload** (`engine/assist_action.py`): a curated rule with
-  that payload performs its action at `turn-boundary` and the run reads what came of it beside
-  the rule's own line. Until that caller existed the payload was honest in the registry and
-  exercised only by its tests, which is the state its own docstring recorded and vulture (at
-  min-confidence 60) was the pressure against.
+  `HOLDING_POINTS`' pin now records a decision rather than an open question. No mechanism
+  performs through it in production today: the payload is honest in the registry and
+  exercised by its tests.
 - **A run resumes where it left off** (`run_routine(resume_from=…)`, `EngineLoop(resume=True)`): the
   transcript is replayed into the message list (`history.replay_messages`) with a fresh budget window
   (`budget_base_turn`); usage REPORTING stays cumulative across legs (`history.prior_usage` →
@@ -560,7 +552,7 @@ value; `max_tokens` — the model's real OUTPUT limit, sent on every engine call
 is auditable), plus `fallbacks:` — the ordered FAILOVER chain (catalog names, NOT transitive).
 **Reasoning effort is NOT a catalog attribute**: it is a setting of its own, chosen where the
 model is USED — `routine.yaml` `efforts: {role: level}` (a conversation's too), the server's
-`system_effort` / `compaction_effort`, and a trial's `efforts:` — so one catalog entry serves
+`system_effort` / `compaction_effort` — so one catalog entry serves
 every level (the catalog once carried "Opus high", "Opus xhigh", … as one row per level, and
 every routine wanting another level needed another row). The registry applies the role's level
 to WHICHEVER model serves it, a failover rung included (`EndpointRegistry.for_model(kind,
@@ -581,10 +573,7 @@ name) — the ONE model for pre-routine machine work (the clarify flow + workflo
 generation/suggestion). `system_tool_call_model` SHIPS EMPTY, so nothing moved at the release:
 before it existed there was no instance default for the role at all, and 31 of 32 routines
 therefore resolved `main` and `tool_call` to one model — a `role_swap: cheap` turn saved exactly
-nothing while the run believed it did. A MODEL TRIAL (`trial:`, `rsched/trials.py`) replaces chat roles (and
-their efforts) for the routine's next N fires without touching `models:` / `efforts:` — the
-daemon names the trial's models and efforts to the engine per run, exactly as `run-once --model
-… --effort …` does by hand. A single `llm`/`spawn`/`subtask` call may override its model per call
+nothing while the run believed it did. A single `llm`/`spawn`/`subtask` call may override its model per call
 (`model:` a role — main|tool_call|uncensored — or a CATALOG model name; D81, extended by
 the 2026-08-22 order retiring the subroutine role. The `list_models` action shows the
 catalog; an unconfigured `uncensored` or an unknown name is rejected with a teaching note). `EndpointRegistry.resolve(name)` /
@@ -755,10 +744,7 @@ and the capabilities digest's catalog listing):
   fixed time the clock repeats when daylight saving ends fires once, `rsched/firetimes.py`),
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (role → catalog model NAME:
   main / tool_call / uncensored / supervisor — the last one the escalation ladder's overseer,
-  falling back to `main` when unset, D164), `trial:` (a MODEL TRIAL — `{id, models, runs, reason}`: the
-  next `runs` fires run on these catalog models instead, counted from the usage stream and
-  stopping by itself; the field stays as history until the next accepted change — see
-  docs/run-analytics.md "Model trials", `rsched/trials.py`), `connections:` (provider → account label — OAuth
+  falling back to `main` when unset, D164), `connections:` (provider → account label — OAuth
   connection bindings, a resource like models; see OAuth connections above),
   `permissions:` (held CONDUCT docs) + `capabilities:` (the engine-enforced surface: `actions`,
   `utils`, the approval dials `confirm` / `rule_confirm` / `remind_confirm` / `config_confirm` /
@@ -1128,14 +1114,8 @@ and the capabilities digest's catalog listing):
 - **A SINGLE ACTION in the background (`background: true`, D118)** is the third and smallest unit,
   and the one that keeps the SAME context: not a child run and not a detached job, just one slow
   step the run should not sit through. `engine/actions.BACKGROUNDABLE_KINDS` — `util`, `script`,
-  `shell`, `llm`, `decide`, `read_file`, `view_image`, `memory_read`, `read_rule`, and (D118
-  phase 3) the three mutations `write_file`, `edit_file`, `memory_write` — may carry the flag. A
-  deferred mutation is ORDERED rather than trusted: `engine/background_order.py` records the one
-  target it declared (`path`, or `name` for a memory note) and `actionroute.dispatch_action` holds
-  any later action that touches it until the write has landed, refusing only a SECOND deferred
-  write to the same target, which has no safe order. That barrier is what replaced phase 1's
-  blanket refusal of every mutation, and it closes on the dependency, so a run that never calls
-  `wait` cannot read stale state either.
+  `shell`, `llm`, `decide`, `read_file`, `view_image`, `memory_read`, `read_rule`, each a read or
+  a fetch whose only effect is its observation — may carry the flag.
   `actionroute.dispatch_action` runs the kind's CALL-TIME GATE first and synchronously
   (`_gate_for_background` → the D39 secret gate for `util`/`script`, which a thread cannot run
   because it files a blocking ask and a thread has no turn to block on — F633), then hands the
@@ -1174,14 +1154,10 @@ and the capabilities digest's catalog listing):
   confirmation chooses its namespace: `handle` when the action carried one, `n` otherwise — F723
   was that choice missing, rendering "sub-workflow #undefined terminated" for every cancel. Built on the ARCHIVAL shape, deliberately not on
   `DetachedManager`: a daemon-ticked multi-process unit would not start until the next tick, by
-  which time the reply's process is gone. A CONTROL kind may not carry the flag, nor may a mutation
-  this model cannot order — `delete`/`move`/`mkdir` (nothing slow to win, and `move` has two ends
-  rather than the one target a barrier keys on) or `write_util`/`write_rule` (no
-  `executor.DISPATCH` entry to run in a thread); the three that DECLARE one target may, behind
-  the barrier described above (D118 phase 3). Every refusal is given WITH THE REASON inside the
-  schema-retry cycle. A `then_script` may not ride a deferred change either: the thread
-  dispatches the kind, so the script would be dropped unrun with its secret gate never asked
-  (`engine/thenscript.problems`). **Three things now share the word "background" and the distinction is
+  which time the reply's process is gone. A CONTROL kind may not carry the flag, nor may any WRITE
+  (a file, a memory note, a util or a rule): a later action could read state the deferred call
+  had not written yet. Every refusal is given WITH THE REASON inside the schema-retry cycle.
+  **Three things now share the word "background" and the distinction is
   load-bearing**: a within-reply `subtask`/`spawn` thread, a cross-reply `detach` task, and this
   per-action flag. Name the mechanism, never the adjective alone.
 - **ask_user** is `blocking` (poll `inbox/answer-<qid>.json` up to `ask_timeout_min`, then the run
@@ -1925,11 +1901,10 @@ install gets the revision from the seed sync itself.)
   not the real one (it told the operator "already has an active run" whatever had actually
   happened). Its causes are `disabled`, `draining`, `overrun` and — F643 — **`stale_role`: a
   routine whose `models.main` names a model the catalog no longer serves is refused BEFORE a run
-  dir is claimed.** `trials.roles_problem` is the predicate, shared with `rsched validate`, the
-  config write edge and the ROUTINE PAGE's problem panel (`trials.config_problems`, which composes
-  it with an ignored trial's line — the two catalog questions the loader cannot ask, because it
-  cannot see the catalog; only the CHAT roles are judged, since `decision`/`decision_media` resolve
-  against the decision catalog) — but the fire guard asks it only about `FIRE_BLOCKING_ROLES`
+  dir is claimed.** `rolecatalog.roles_problem` is the predicate, shared with `rsched validate`,
+  the config write edge and the ROUTINE PAGE's problem panel (`rolecatalog.config_problems` — the
+  catalog question the loader cannot ask, because it cannot see the catalog; only the CHAT roles
+  are judged, since `decision`/`decision_media` resolve against the decision catalog) — but the fire guard asks it only about `FIRE_BLOCKING_ROLES`
   (`main` today),
   **deliberately narrower than what `validate` reports**: the loop resolves `main` on turn one, so
   a stale name there means the run cannot reach its first turn, while `tool_call` and `uncensored`
@@ -1961,9 +1936,7 @@ install gets the revision from the seed sync itself.)
   inheritance** (F394): the child is a fresh interpreter that gets none of the parent's
   configuration, so `runner_state.engine_cmd` passes `--config <the config the daemon loaded>` and
   `--homes <registry.homes_fingerprint>`, and `engine-run` — which defaults NEITHER — refuses the
-  run when the named config resolves to different homes. A MODEL TRIAL's run is told its models
-  the same way, `--model role=name`, read from the run dir's own `trial.json` on every leg
-  (`rsched/trials.py` arms it at the fire, so a resume keeps the trial its run started under). Without that, a caller holding a config
+  run when the named config resolves to different homes. Without that, a caller holding a config
   it built rather than loaded (every test) spawned an engine that read `~/.config/routine-scheduler/config.yaml`
   and executed against the live instance's homes, endpoints and money. A spawner whose config was
   never loaded from a file is refused in `engine_cmd`, before a process exists. **`rsched/registry.py`** (a shared read-model,
@@ -2221,10 +2194,8 @@ install gets the revision from the seed sync itself.)
   access request) — each keeps its decision card. A refusal at the boundary, a failed apply
   and a full spool all fall back to the ordinary card, because a config change that neither
   applied nor asked is the one state this surface must never reach.
-  One VALUE is judged there too: a `trial` (`config_bridge.trial_value` — its shape and its
-  models' catalog membership), because a model trial is proposed for routines the proposer does
-  not run, and its refusal teaches the shape. `"trial": null` clears one: `patch_routine` keeps
-  that one explicit null, which its `exclude_none` dump would otherwise read as "not sent".
+  `"outcome": null` clears the outcome contract: `patch_routine` keeps that one explicit null,
+  which its `exclude_none` dump would otherwise read as "not sent".
   Both PATCH handlers call `routines_common.signal_config_change`, which writes a
   `config_change` signal into the live run's `control.json` (the seam that already exists for
   reaching a running run); `engine/switches.apply_config_change` adopts the live half at the next

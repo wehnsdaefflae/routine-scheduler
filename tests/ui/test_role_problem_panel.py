@@ -1,4 +1,4 @@
-"""The routine page SAYS a stale model role (F643, rsched/trials.config_problems)."""
+"""The routine page SAYS a stale model role (F643, rsched/rolecatalog.config_problems)."""
 
 import yaml
 from playwright.sync_api import expect

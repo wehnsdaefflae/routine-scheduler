@@ -1,8 +1,7 @@
-"""The `--model` / `--effort` role overrides of `run-once` and `engine-run`.
+"""The `--model` / `--effort` role overrides of `run-once`.
 
 `kind=catalog-name` and `kind=level` pairs, repeatable per chat role. Split out of `cli.py`
-(one responsibility per file): this is the one place the two spellings are parsed, so a trial's
-engine subprocess and a hand-started run read them the same way.
+(one responsibility per file): this is the one place the two spellings are parsed.
 """
 
 from __future__ import annotations

@@ -109,7 +109,7 @@ def test_the_seed_rules_that_declare_assists_are_valid():
     # engine code with no reader
     used = {a.predicate for rule in declared.values() for a in rule}
     assert used == set(PREDICATES)
-    # every moment, both PROSE payloads (`action`: test_assist_action.py; no shipped rule yet)
+    # every moment, every payload
     assert {a.moment for rule in declared.values() for a in rule} == set(lib.MOMENTS)
     assert {a.payload for rule in declared.values() for a in rule} == {"remind", "note", "hold"}
 

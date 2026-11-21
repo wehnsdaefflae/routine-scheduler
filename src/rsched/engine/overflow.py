@@ -16,7 +16,6 @@ import dataclasses
 from ..endpoints import errorsignal
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
-from . import errorclass
 from .compaction import clamp_to_cap, estimate_input_tokens
 from .window import _reserved_tokens, compact_if_needed
 
@@ -117,8 +116,6 @@ def _recover_oversize_prompt(loop, endpoint, ref, exc: EndpointError) -> tuple |
     """
     actual, stated = parse_overflow_pair(exc)
     if stated is None and actual is None:
-        # both nets declined; a 400 quoting a token count is recorded (measurement only, R3108)
-        errorclass.note_overflow_declined(loop, exc)
         return None                       # not an overflow error — not ours
     ctx = loop.ctx
     before = estimate_input_tokens(loop.messages)

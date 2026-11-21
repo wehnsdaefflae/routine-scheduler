@@ -85,7 +85,7 @@ def test_every_declared_role_is_proposable_with_a_name_the_instance_serves(role)
 
 
 def test_a_chat_role_is_never_judged_against_the_decision_catalog():
-    """The reason `trials.roles_problem` is not reused: it checks every role against the CHAT
+    """The reason `rolecatalog.roles_problem` is not reused: it checks every role against the CHAT
     catalog, which would refuse a valid `decision` proposal."""
     for role in MODEL_KINDS:
         assert role_value(CATALOG, {"models": {role: "jev"}}) != ""

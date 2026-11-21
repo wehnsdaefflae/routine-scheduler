@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import lanes, registry, schedule, trials
+from .. import lanes, registry, rolecatalog, schedule
 from .. import triggers as triggers_mod
 from ..config import ROUTINE_MODEL_ROLES
 from ..config.base import DEFAULT_LADDER, DEFAULT_TURN_INTERVAL
@@ -189,14 +189,11 @@ def routine_detail(request: Request, slug: str) -> dict:
     # model (durable stream; the current month rides spend.current.referrals)
     referrals_total = sum(int(c.get("referrals") or 0)
                           for c in (monthly["by_routine"].get(slug) or {}).values())
-    trial = trials.state(server, info.cfg)
     return {
         **_card(request, info, monthly=monthly, lane_of=lane_of),
-        # A MODEL TRIAL (rsched/trials.py): the config plus `recorded` / `state` / `problem` —
-        # the header's chip. `config_problems` adds what the loader cannot see the catalog to
-        # report: an IGNORED trial, and a stale model role that kills every run at turn 0 (F643).
-        "trial": trial,
-        "problems": [*info.problems, *trials.config_problems(server, info.cfg, trial)],
+        # `config_problems` adds what the loader cannot see the catalog to report: a stale model
+        # role that kills every run at turn 0 (F643, rsched/rolecatalog.py).
+        "problems": [*info.problems, *rolecatalog.config_problems(server, info.cfg)],
         "referrals_total": referrals_total,
         "schedule_friendly": (schedule.cron_to_friendly(info.cfg.cron) if info.cfg.enabled
                               else {"frequency": "disabled"}),

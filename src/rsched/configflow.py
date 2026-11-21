@@ -46,9 +46,6 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
                           "run page's model-switch control, not a config edit")),
     "efforts": (NEXT_RUN, ("the reasoning effort is bound per turn like the model; changing it "
                            "mid-run is the run page's model-switch control, not a config edit")),
-    "trial": (NEXT_RUN, ("a model trial is armed when the daemon FIRES a run: its models are "
-                         "named to the engine at launch, so a run already going finishes on the "
-                         "model it booted with and the trial starts with the next fire")),
     "connections": (NEXT_RUN, "OAuth tokens are injected into the util environment at boot"),
     "machines": (NEXT_RUN, ("the share mounts are made by the daemon at binding time, so they "
                             "reach the NEXT run; an access-REQUEST for `machine:<name>` decided "
@@ -116,7 +113,7 @@ ADOPTABLE = tuple(f for f, (half, _) in CLASSIFICATION.items() if half == LIVE)
 #: on the operator's click. The engine may not import the web layer, which is why the two sets
 #: are spelled out here; `tests/test_configflow.py` pins each one to its model.
 ROUTINE_PATCH_FIELDS = frozenset({
-    "enabled", "run_gate", "schedule", "budgets", "models", "efforts", "trial", "connections",
+    "enabled", "run_gate", "schedule", "budgets", "models", "efforts", "connections",
     "grants", "machines", "name", "description", "tags", "pattern", "permissions",
     "capabilities", "rules", "shared_reminders", "improve", "chain_actions", "deliberation",
     "keep_runs",

@@ -1,4 +1,5 @@
-"""The two SWAP LAYERS, once the fleet has a default for the `tool_call` role (D230)."""
+"""The run's model SWAP (`role_swap`), once the fleet has a default for the `tool_call` role
+(D230)."""
 
 from __future__ import annotations
 
@@ -64,7 +65,7 @@ def test_role_swap_cheap_still_stands_down_with_no_default_set():
 
 def test_role_swap_never_serves_cheap_with_the_model_main_already_runs():
     """A default pointed at the model `main` runs is no saving, and must not be announced as
-    one — the same nothing `autoswap` always refused to claim."""
+    one."""
     from rsched.engine import roleswap
 
     loop, events = _swap_loop(_server(system_model="Big", system_tool_call_model="Big"),
@@ -99,59 +100,10 @@ def test_a_routine_that_configures_no_main_can_climb_back_out_of_cheap():
     assert "could not be served" not in str(events)
 
 
-# ---- the engine-served cheap poll (D217/F785) --------------------------------------------
-
-
-def test_the_engine_served_cheap_poll_uses_the_fleet_default_and_restores_from_it():
-    """`autoswap` is the half D217 shipped; the fleet default is what makes it reach a routine
-    that configures no `tool_call` of its own — which is 31 of the 32."""
-    from rsched.engine import autoswap
-
-    loop, _events = _swap_loop(_server(system_model="Big", system_tool_call_model="Cheap"),
-                               {"main": "Big"})
-    # the SAME poll class, not a byte-identical action: an identical streak that deep is the
-    # stuck-run escape turn, which this layer deliberately never serves cheap
-    for n in range(1, autoswap.SERVE_FROM + 1):
-        autoswap.at_landing(loop, {"say": "x", "kind": "wait", "n": n})
-
-    assert loop.ctx.routine.models["main"] == "Cheap"
-
-    autoswap.at_landing(loop, {"say": "x", "kind": "read_file", "path": "p"})
-    assert loop.ctx.routine.models["main"] == "Big"
-
-
-def test_the_engine_served_poll_still_does_nothing_without_a_default():
-    from rsched.engine import autoswap
-
-    loop, events = _swap_loop(_server(system_model="Big"), {"main": "Big"})
-    for n in range(1, autoswap.SERVE_FROM + 1):
-        autoswap.at_landing(loop, {"say": "x", "kind": "wait", "n": n})
-
-    assert loop.ctx.routine.models["main"] == "Big"
-    assert "serving your REPEAT POLLS" not in str(events)
-
-
-def test_an_engine_served_poll_restores_a_routine_that_configures_no_main():
-    """The autoswap mirror of the stranding hazard: its restore guard compared `main` with
-    `models['tool_call']`, which the fleet default leaves EMPTY — a guard reading that key
-    would refuse every restore and leave the run cheap for good.
-    """
-    from rsched.engine import autoswap
-
-    loop, _events = _swap_loop(_server(system_model="Big", system_tool_call_model="Cheap"), {})
-    for n in range(1, autoswap.SERVE_FROM + 1):
-        autoswap.at_landing(loop, {"say": "x", "kind": "wait", "n": n})
-    assert loop.ctx.routine.models["main"] == "Cheap"
-
-    autoswap.at_landing(loop, {"say": "x", "kind": "read_file", "path": "p"})
-    assert "main" not in loop.ctx.routine.models
-
-
-def test_both_layers_answer_one_question_about_a_cheaper_model():
-    """One rule (`roleswap.cheap_model`), because two would disagree on exactly the fleet D230
-    was built for — and a run's own `strong` must climb back correctly out of a swap the ENGINE
-    made, which it can only do if both layers resolved the same model."""
-    from rsched.engine import autoswap, roleswap
+def test_cheap_model_resolves_the_fleet_default_and_only_a_distinct_one():
+    """One rule (`roleswap.cheap_model`): the routine's own `tool_call`, else the fleet default,
+    and only when it differs from what `main` resolves to."""
+    from rsched.engine import roleswap
 
     for server, expected in ((_server(system_model="Big", system_tool_call_model="Cheap"),
                               "Cheap"),
@@ -159,4 +111,3 @@ def test_both_layers_answer_one_question_about_a_cheaper_model():
                              (_server(system_model="Big", system_tool_call_model="Big"), None)):
         loop, _events = _swap_loop(server, {"main": "Big"})
         assert roleswap.cheap_model(loop.ctx) == expected
-        assert autoswap._cheap_model(loop) == expected

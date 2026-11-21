@@ -9,10 +9,9 @@ and as cheap from one run to the next. So every run records two things beside it
 - **`fingerprint`** — everything that can change its behaviour, each a short stable value: the
   engine release, the main model by catalog name and by provider id (`model_id`) with its
   effort, the deliberation level, a hash of the behaviour-relevant config, a hash per held
-  rule's text, and a trial id when the run was fired as a model trial. (The recipe and library
-  commits ride the record already.) A CHANGE is a boundary between consecutive runs whose
-  fingerprints differ; nothing has to declare it. Rebuilt records carry
-  `source: "reconstructed"` and name what could not be recovered in `unknown`.
+  rule's text. (The recipe and library commits ride the record already.) A CHANGE is a boundary
+  between consecutive runs whose fingerprints differ; nothing has to declare it. Rebuilt records
+  carry `source: "reconstructed"` and name what could not be recovered in `unknown`.
 - **`quality`** — the run's own counts, read as rates against its peers:
   CORRECTNESS — claims the verifier challenged and the ones that stood disputed, actions a
   caution held, schema retries; COMPLETENESS — accounting lines owed, met, unmet, not due, and
@@ -36,12 +35,7 @@ import json
 from pathlib import Path
 
 from .. import __version__
-from ..paths import read_json
 from . import accounting, frictions
-
-#: Written by the runner for a run fired as a MODEL TRIAL (rsched/trials.arm), read once at the
-#: record; the runner reads its `models` again on every leg to name them to `engine-run`.
-TRIAL_FILE = "trial.json"
 
 #: Every RoutineConfig field is in exactly one of these two sets (tests/test_runrecord.py fails
 #: on a field in neither, so a new field is DECIDED, never hashed by default). BEHAVIOUR is what
@@ -51,13 +45,11 @@ BEHAVIOUR = frozenset({"models", "efforts", "connections", "machines", "grants",
                        "fs_write_roots", "ladder", "chain_actions"})
 #: What does not change what a run DOES: identity, WHEN it runs, retention, `improve`, and what
 #: the fingerprint measures separately (`deliberation`, `rules` by text, `tuning` as recipe).
-#: `trial` outlives the trial as history, so hashing it would split identical runs; `outcome`
-#: measures a run and changes nothing it may do.
+#: `outcome` measures a run and changes nothing it may do.
 NOT_BEHAVIOUR = frozenset({"slug", "dir", "name", "description", "tags", "kind",
                            "owner", "workflow_slug", "workflow_commit", "playbook_slug",
                            "pattern", "enabled", "cron", "tz", "triggers", "run_gate",
-                           "keep_runs", "improve", "deliberation", "rules", "tuning", "trial",
-                           "outcome"})
+                           "keep_runs", "improve", "deliberation", "rules", "tuning", "outcome"})
 
 
 def short_hash(text: str) -> str:
@@ -88,11 +80,6 @@ def rule_hashes(rules_home: Path | None, slugs: list[str]) -> dict[str, str]:
     return out
 
 
-def trial_id(run_dir: Path) -> str:
-    doc = read_json(Path(run_dir) / TRIAL_FILE)
-    return str(doc.get("id") or "") if isinstance(doc, dict) else ""
-
-
 def fingerprint(ctx, orch_ref) -> dict:
     return {
         "engine": __version__,
@@ -102,7 +89,6 @@ def fingerprint(ctx, orch_ref) -> dict:
         "deliberation": str(getattr(ctx, "deliberation", "") or ""),
         "config": config_hash(ctx.routine),
         "rules": rule_hashes(getattr(ctx.server, "rules_home", None), list(ctx.routine.rules)),
-        **({"trial": tid} if (tid := trial_id(ctx.run_dir)) else {}),
     }
 
 

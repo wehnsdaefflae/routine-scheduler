@@ -51,7 +51,7 @@ def test_a_run_records_what_made_it_and_how_it_went(make_routine, scripted, monk
     (rec,) = [r for r in _records(d) if r["depth"] == 0]
     fp, q = rec["fingerprint"], rec["quality"]
     assert fp["engine"] == __version__ and fp["model"] and isinstance(fp["rules"], dict)
-    assert len(fp["config"]) == 10 and "trial" not in fp
+    assert len(fp["config"]) == 10
     assert (q["owed"], q["met"], q["unmet"], q["not_due"]) == (2, 1, 1, 0)
     assert q["interventions"] == 1 and q["challenged"] == 0 and q["holds"] == 0
     assert q["elapsed_s"] >= 0 and "cache_read" in q
@@ -103,12 +103,6 @@ def test_a_rule_revision_moves_only_that_rules_hash(tmp_path):
     (tmp_path / "b.md").write_text("# rule: b — revised\n", encoding="utf-8")
     after = runrecord.rule_hashes(tmp_path, ["a", "b", "gone"])
     assert before["a"] == after["a"] and before["b"] != after["b"] and after["gone"] == ""
-
-
-def test_a_trial_run_names_its_trial(tmp_path):
-    (tmp_path / runrecord.TRIAL_FILE).write_text(json.dumps({"id": "t-1"}), encoding="utf-8")
-    assert runrecord.trial_id(tmp_path) == "t-1"
-    assert runrecord.trial_id(tmp_path / "nowhere") == ""
 
 
 def test_the_quality_counters_survive_a_resume():

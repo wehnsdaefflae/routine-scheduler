@@ -4,7 +4,7 @@ Nothing declares a change. Every depth-0 run's usage record carries a fingerprin
 (engine/runrecord.py) and the recipe commit; a CHANGE is a boundary between consecutive runs of a
 routine whose BEHAVIOUR KEY differs (readmodels/change_keys.py) — the recipe, the
 behaviour-relevant config, the main model, its effort, the deliberation level, a held rule's
-text, a model trial. The runs just before it and the runs just after it (at most `WINDOW` each,
+text. The runs just before it and the runs just after it (at most `WINDOW` each,
 each side only runs of ONE key) are compared signal by signal (readmodels/change_signals.py) on
 correctness, completeness and effectiveness, and the change gets one verdict:
 

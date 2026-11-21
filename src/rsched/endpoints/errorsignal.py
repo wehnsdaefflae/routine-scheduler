@@ -15,8 +15,7 @@ never the difference between armed and disarmed.
 
 A body with NO JSON (a proxy relaying an upstream failure bare) keeps two structural readings:
 the HTTP status, and a known enum token appearing bare (`_declared_token`), with
-`structured=False` so a caller can tell. Each undecidable site states which way it fails;
-`engine/errorclass.py` counts those rows.
+`structured=False` so a caller can tell. Each undecidable site states which way it fails.
 """
 
 from __future__ import annotations
@@ -193,17 +192,6 @@ def is_overflow(signal: ErrorSignal) -> bool:
         return True
     return bool(signal.structured and signal.status in OVERFLOW_STATUSES
                 and any(n is not None for n in signal.tokens))
-
-
-def overflow_decline_reason(signal: ErrorSignal) -> str:
-    """WHY a context-fault reading was declined: `never_overflow_status` (a declared non-context
-    fault), `no_structured_error` (nothing declared anything), or `no_hint_match` (declared, but
-    nothing says the input did not fit).
-    """
-    if (any(t in NEVER_OVERFLOW_CODES for t in signal.declared) or signal.limit_source
-            or signal.status in NEVER_OVERFLOW_STATUSES):
-        return "never_overflow_status"
-    return "no_hint_match" if signal.structured else "no_structured_error"
 
 
 def failover_class(signal: ErrorSignal) -> str:

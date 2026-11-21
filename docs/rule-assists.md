@@ -96,9 +96,9 @@ the per-rule `problems` the Library page shows.
 |---|---|---|---|---|
 | `pre-action` | on the action about to run | the action is HELD | `hold` | one turn |
 | `observation` | on the observation that just came back | a tail on that observation | `remind` | none |
-| `boundary` | at a turn boundary | an appended `ENGINE NOTE` | `remind`, `action` | none |
-| `spawn` | on a child run just started | an appended `ENGINE NOTE` | `remind`, `action` | none |
-| `child-exit` | on a child run's hand-back | an appended `ENGINE NOTE` | `remind`, `action` | none |
+| `boundary` | at a turn boundary | an appended `ENGINE NOTE` | `remind` | none |
+| `spawn` | on a child run just started | an appended `ENGINE NOTE` | `remind` | none |
+| `child-exit` | on a child run's hand-back | an appended `ENGINE NOTE` | `remind` | none |
 | `pre-finish` | as the run tries to end | a finish-gate deferral | `remind` | one turn |
 | `run-end` | once the run's result is written | a line in `state/notes.md`, for the NEXT run | `note` | none |
 | `restart` | as the DAEMON exits under a live run | a line in `state/notes.md`, for the NEXT leg | `note` | none |
@@ -133,9 +133,7 @@ child keeps running for many of them.
 **The moment and the payload are coupled, not free to combine**, and the linter enforces it.
 A chosen action can only be reached by STOPPING it — "remind and let it run" is not
 expressible once the action is emitted — so `pre-action` can only hold. And the free moments
-have no action in hand, so they have nothing to stop. `boundary` is also the one moment that
-can PERFORM an action (see "The payload axis" below): a moment that changes control flow may
-never, and of the two free ones only the boundary records its own observation in order. A rule that pairs them wrongly is
+have no action in hand, so they have nothing to stop. A rule that pairs them wrongly is
 refused at authoring time rather than silently never firing.
 
 **What a fire LOOKS LIKE in the console** (F591). A fire used to be invisible to a person: a
@@ -239,53 +237,14 @@ assists cost a turn (the one `hold` and the two `pre-finish` reminders).
 
 ## The payload axis, and what exists
 
-`remind → action → hold`, ascending. Each rung needed a channel that had to exist first:
-`remind` the observation tail and the engine note, `hold` the pre-action seam
-(`engine/hold.py`, shared with the reminder layer), and `action` the one that performs an
-authored action at a hook point with no model turn (`hooks/perform.py`, 0.460.0, lifted from
-`engine/control.run_user_command`). The design note spelled the middle as `scaffold → do` and
-recorded both as unbuilt; `do` is built and is spelled **`action`**, the name
-`hooks/points.PAYLOADS` already uses — one name per concept, pinned by
-`tests/test_hooks_points.py` so the two tables cannot drift. `scaffold` — pre-filling a draft
-for the model to work from — is still unbuilt and deliberately absent: an enum value the engine
-cannot honour would be a lie in the library's own contract. `PAYLOADS` names what works.
-
-### The `action` payload — a rule that DOES the thing its moment calls for
-
-```yaml
-assists:
-  - id: checkpoint
-    moment: boundary
-    predicate: user-corrected
-    payload: action
-    line: the correction belongs in the notes before the next edit
-    action: {say: "recording the correction", kind: write_file, path: state/note.md,
-             content: "…"}
-```
-
-Four bounds, and three of them are the operator's rulings rather than this layer's taste:
-
-- **`boundary` only, of the free moments.** The `observation` assists are asked BEFORE their
-  observation is recorded, so the record can name what fired on it (which a resumed leg rebuilds
-  its guards from); performing there would file the hook's own observation ahead of the one that
-  triggered it. The turn boundary is where an authored action already runs at no turn cost.
-- **Never at a moment that changes control flow.** *"No veto ever — a hook performs and reports;
-  only a hold (prose to the model) can stop an action"* (2026-10-26). So `pre-action` and
-  `pre-finish` carry no action, the same line `hooks/points.ACTION_POINTS` derives — and a failed
-  action changes nothing about what the run does next. It is reported, never enforced.
-- **Never a kind that STEERS a run** (`assists.STEERING_KINDS` — finish, spawn, wait, ask_user,
-  goal, create_routine …), the line `engine/commands.py` draws for the user's own slash commands,
-  and sharper here: an assist is authored once in a library rule and fires in every routine that
-  holds it, with no model turn in between.
-- **Never beyond the firing routine's own capabilities.** The action goes through the model's own
-  gates (schema → workflow tools ∩ capabilities → the routing table), so a rule held by a routine
-  without the capability performs nothing, and the refusal is what that run reads. Authoring-time
-  validation deliberately does NOT check this: one rule is held by routines with different
-  capabilities, so "may this run do this" has no answer until it fires.
-
-The rule's own `line` is appended whatever the action does — performing and reporting are one
-act, so the run always learns what fired, what it did, and that nothing about its own next
-action changed.
+`remind → hold`, ascending, plus `note` for the moments with no model to remind (`run-end`,
+`restart`). Each rung needed a channel that had to exist first: `remind` the observation tail and
+the engine note, `hold` the pre-action seam (`engine/hold.py`, shared with the reminder layer),
+`note` the next leg's `state/notes.md`. The design note's middle rungs — `scaffold` (pre-filling
+a draft for the model to work from) and `do` (performing an authored action) — are deliberately
+absent: an enum value the engine does not honour would be a lie in the library's own contract.
+`PAYLOADS` names what works. (Performing an authored action at a hook point is the HOOK seam's
+`action` payload, `hooks/perform.py`, not a rule's.)
 
 ## Reaching a live instance
 

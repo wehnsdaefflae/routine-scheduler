@@ -62,7 +62,7 @@ def field_problems(action: dict) -> list[str]:
 def cheap_model(ctx: RunContext) -> str | None:
     """The DISTINCT cheap model this run's turns can be served from, or None when there is none.
 
-    ONE rule for both swap layers (`engine/autoswap.py` delegates here). The role resolves to
+    The role resolves to
     the routine's own `tool_call`, else the instance's `system_tool_call_model`, and must DIFFER
     from what `main` resolves to.
     """

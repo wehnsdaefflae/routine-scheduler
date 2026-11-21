@@ -35,16 +35,13 @@ SIDE_FIELDS = ("note", "remind", "remind_feedback", "role_swap")
 ALWAYS_KINDS = ("finish", "report", "list_models")
 
 
-# The kinds a run may mark `background: true` (D118). Reads and fetches defer because their only
-# effect IS the observation; the three MUTATIONS each declare the one target they write, and
-# `engine/background_order.py` holds any later action touching it until the write lands. NOT here:
-#   · delete, move, mkdir — not worth deferring, and `move` has two ends;
-#   · write_util, write_rule — gated in `actionroute._route`, no `executor.DISPATCH` entry;
-#   · the control kinds, which steer the run or are already asynchronous (children).
-# `shell` declares no target, so a WRITING shell command stays the caller's ordering hazard.
+# The kinds a run may mark `background: true` (D118): reads and fetches, because their only
+# effect IS the observation. NOT here: every file, memory, util and rule WRITE (a later action
+# could read state it has not written yet), and the control kinds, which steer the run or are
+# already asynchronous (children). `shell` and `util` CAN write and declare no target, so a
+# writing command stays the caller's ordering hazard.
 BACKGROUNDABLE_KINDS = ("util", "websearch", "code_search", "script", "shell", "llm", "decide",
-                        "read_file", "view_image", "memory_read", "read_rule",
-                        "write_file", "edit_file", "memory_write")
+                        "read_file", "view_image", "memory_read", "read_rule")
 
 # kind → (required fields, allowed extra fields beyond say/kind)
 KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
@@ -67,14 +64,14 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "goal": (("verb",), ("id", "goals", "quote", "evidence")),
     "read_file": ((), ("path", "paths", "start_line", "start_char", "max_lines", "background")),
     "view_image": ((), ("path", "paths", "prompt", "background")),
-    "write_file": (("path", "content"), ("append", "then_script", "background")),
+    "write_file": (("path", "content"), ("append", "then_script")),
     "delete": (("path",), ("recursive",)),
     "move": (("src", "dst"), ()),
     "mkdir": (("path",), ("parents",)),
-    "edit_file": (("path", "anchor"), ("replacement", "all", "then_script", "background")),
+    "edit_file": (("path", "anchor"), ("replacement", "all", "then_script")),
     "memory_read": ((), ("name", "args", "background")),   # a note, or a past-run search
     "memory_write": (("name",), ("content", "about", "delete", "anchor", "replacement", "all",
-                                 "stale_after", "verified", "background")),   # D268: notemeta
+                                 "stale_after", "verified")),   # D268: notemeta
     "read_rule": (("name",), ("background",)),
     "write_rule": (("name",), ("content", "anchor", "replacement", "all")),
     "llm": (("prompt",), ("system", "response_schema", "model", "background")),
@@ -354,8 +351,7 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     # stray-field message below would not teach.
     if obj.get("background") is not None and kind not in BACKGROUNDABLE_KINDS:
         problems.append(
-            f"kind={kind} cannot run in the background: only a read, a fetch, or a mutation "
-            f"that declares the one target it writes may be deferred "
+            f"kind={kind} cannot run in the background: only a read or a fetch may be deferred "
             f"({', '.join(BACKGROUNDABLE_KINDS)}) — anything else would leave a later action "
             f"reading state it has not changed yet. Drop 'background' and run it synchronously")
     allowed = {"say", "kind", *SIDE_FIELDS, *required, *optional}   # side fields ride ANY kind

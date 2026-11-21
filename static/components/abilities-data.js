@@ -59,7 +59,7 @@ export const REMIND_CONFIRM_OPTIONS = [
 // two numbers); `never` widens that to every patch field that is not SEALED — so it also
 // reaches the schedule, the run gate, the rules and the outcome contract, which is why it is a
 // deliberate choice rather than the convenient one. The SEALED set (permissions, capabilities,
-// the fs roots, the models, the trial, the grants, the connections, the machines) is absolute
+// the fs roots, the models, the grants, the connections, the machines) is absolute
 // at every level: the dial can never hand a routine its own authority.
 export const CONFIG_CONFIRM_OPTIONS = [
   ["always", "on — every config change it proposes is your decision"],

@@ -51,49 +51,7 @@ At run start the engine stamps the current recipe commit into the run
   recipe version, so it is the only thing that dates the change the trend below reacts to.
 - And a `fingerprint` (depth 0, engine/runrecord.py): the engine release, the main model by
   catalog name and by provider id (`model_id`) with its effort, the deliberation level, a hash of
-  the behaviour-relevant config, a hash per held rule — and `trial`, the id of the model trial the
-  run was fired under (below).
-
-## Model trials
-
-A recipe version answers "did this CHANGE help?"; a **model trial** asks the same of the model
-(operator, 2026-10-08): is this routine's model more than its work needs, or not enough? A trial is
-ordinary config — `trial: {id, models, efforts, runs, reason}` in routine.yaml
-(`config/trialconf.py`), e.g. `{id: t-20261008-sonnet-high, models: {main: Sonnet},
-efforts: {main: high}, runs: 5, reason: …}` — that a
-capable maintenance routine (config-optimizer) PROPOSES as an `ask_user` `config_patch` and the
-operator applies with the Decisions page's one **approve & apply** (`{"trial": null}` clears one).
-The filing check refuses a malformed trial or a model the catalog lacks on the turn it is filed
-(`engine/config_bridge.trial_value`), and the PATCH refuses both again, plus a model whose window
-cannot run a turn — a trial is a `models:` binding for a few runs, so it meets the same checks.
-
-From the accept on, everything is DERIVED (`rsched/trials.py`) and nothing writes config again:
-
-- **Active** while fewer than `runs` of the routine's runs have recorded it — depth-0 records
-  folded per run (`usage_stream.usage_runs`) whose `fingerprint.trial` is the trial's id. Counted
-  from this stream, so a restart or a retention sweep loses no run and a fire that never reached
-  the engine (a gate skip, a failed launch) fakes none.
-- **Armed per fire.** While active, EVERY fire — schedule, lane, trigger, one-shot, manual — gets
-  `trial.json` (`{id, models, efforts, runs}`) in its new run dir before the engine exists (the runner, beside
-  a hand-started run's brief), and the runner names the models to `engine-run` as `--model
-  role=name` and the efforts as `--effort role=level`. The engine runs the routine on them for that run (children included), and the run's
-  record carries `fingerprint.trial` beside `fingerprint.model` (the catalog name it ran on) and
-  `fingerprint.effort` (engine/runrecord.py). A resume reads the run dir's OWN `trial.json`, so a run keeps the
-  trial it started under even once the trial has finished. `rsched run-once` arms nothing.
-- **Finished** at `runs` recorded runs: the trial simply stops applying. The field stays in
-  routine.yaml as history until the operator's next accepted change clears or replaces it — which
-  is why `trial` is outside the fingerprint's config hash: the runs after a finished trial must
-  compare equal to the identical runs before it. A new trial needs a new id; re-proposing an old
-  id finds its runs already counted.
-- **Ignored** while a model it names is not in the catalog (renamed or removed since the accept):
-  applied, the run would die resolving a model nobody serves. The routine page lists it among the
-  routine's problems and `rsched validate` prints it; no fire is armed.
-
-The routine page's header carries ONE chip while a trial is active — `trial · <model> · k of N
-runs`, the reason in its tooltip — and, once it finished, `trial finished · results in
-Development`, linking to the routine's change view (`#/changes/<slug>`), where the trial's runs are
-read against the runs on the routine's own model. `GET /api/routines/{slug}` carries the state as
-`trial` (`{id, models, runs, reason, recorded, state, problem}`, or null).
+  the behaviour-relevant config, a hash per held rule.
 
 ## The health view (Changes → a routine → Recipe health)
 
@@ -312,13 +270,12 @@ measured, from the runs themselves, with nothing declared:
 - **What made a run.** Every depth-0 usage record carries a `fingerprint` (`engine/runrecord.py`):
   the engine release, the main model by catalog name and by provider id (`model_id`) and its
   effort, the deliberation level, a short hash of the behaviour-relevant config, a short hash of
-  each held rule's text, and the id of a model trial when the run was fired as one. The recipe and
-  library commits ride the record already. The config hash covers an ALLOWLIST
+  each held rule's text. The recipe and library commits ride the record already. The config hash covers an ALLOWLIST
   (`runrecord.BEHAVIOUR`: models, connections, machines, grants, budgets, permissions, shared
   reminders, capabilities, read and write roots, the ladder); every other field is listed in
   `runrecord.NOT_BEHAVIOUR` — who the routine is, WHEN it runs (cron, zone, triggers, gate, off
   switch), retention, `improve`, and what is measured as its own component (deliberation, rules,
-  tuning — part of the recipe — and trial). `tests/test_runrecord.py` fails on a field in neither
+  tuning — part of the recipe). `tests/test_runrecord.py` fails on a field in neither
   set: 0.398.0 excluded YAML keys rather than field names, so every cron edit read as a behaviour
   change.
 - **How it went.** Beside it, `quality`: the accounting lines owed, met, unmet and not due
@@ -348,7 +305,7 @@ assist or a challenge — the fleet's challenged claims went from 0.03 a run to 
 2026-09-30, which read as every change of that day making the fleet less correct.
 
 `readmodels/change_keys.py` reads each run's behaviour key (recipe, config, model, `model_id`,
-effort, deliberation, a rule's text, a trial) and `readmodels/change_effects.py` finds the
+effort, deliberation, a rule's text) and `readmodels/change_effects.py` finds the
 CHANGES: boundaries between consecutive runs whose keys differ. The up to five runs before and
 after, each side only runs of one key, are judged signal by signal, each dimension
 `better`/`worse`/`mixed`/`same`, and the change gets one verdict — `improved`, `regressed`,
@@ -411,9 +368,8 @@ the `POOLED` signals (no absolute floors: they mean nothing on a ratio).
   (`change_effects.routine_timeline`) ride `GET /api/changes/{slug}`.
 
 `readmodels/model_fit.py` groups one routine's runs by what served them (model, `model_id`, effort,
-deliberation, trial) on the same signals — the table the config-optimizer reads to judge whether
-a model is overkill or not enough, and why a model TRIAL exists: one routine's runs on one model
-say nothing about another.
+deliberation) on the same signals — the table the config-optimizer reads to judge whether a model
+is overkill or not enough: one routine's runs on one model say nothing about another.
 
 A slug names a routine only for a while: archiving moves its dir to `.archive/<slug>-<run_ts>` and
 frees the slug for a new routine (`do-my-taxes` and `steward-hub-maintainer` were each archived and
@@ -423,7 +379,7 @@ are the live routines' alone, while releases, the fleet roll-up and the timeline
 archived ones too (`archived` names them): a routine that is gone still ran on those releases.
 Every reader that compares or sums one routine's runs keys them the same way
 (`incarnations.resolver` / `live_runs`): recipe health and its time trend, the run-end
-`cost_trend_degraded` check, a trial's run count, and the Stats tab's per-routine spend and
+`cost_trend_degraded` check, and the Stats tab's per-routine spend and
 compression rows, where an archived routine is a row of its own under its archive's name.
 
 Flag-first: nothing reverts or proposes on its own.
@@ -867,13 +823,6 @@ health stream for that window held exactly one event, about an unrelated oversiz
 - `model_chain_exhausted` is the same seam's harder failure: a role's WHOLE chain unusable
   mid-turn — every member failed hard or is cooling. It carries `model`, `last_model` and
   `cooldown_s`. A `model_failover` costs money; a `model_chain_exhausted` costs the run.
-- `error_class_undecided` (`engine/errorclass.py`, R3108) is the META reading on both: how often
-  the classifier behind that `reason` had no structural basis for its verdict. Retry, failover
-  and overflow policy read what a failed call DECLARED (`endpoints/errorsignal.py`), not its
-  prose; one row is filed when a failover class still falls through to `other`, and one when both
-  overflow nets decline a 400 whose body quotes token counts, carrying `classifier`,
-  `reason`/`declined_by` and `error_keys_in_excerpt`. Read it as a RATE against
-  `model_failover`. It changes no policy.
 - Read both by the HEAD, not by the count: one event is a provider hiccup, while a run of
   them sharing one `model` is a primary that is not serving the fleet. The per-run transcript
   `error` event with its `failover` payload stays the record of which model served a given

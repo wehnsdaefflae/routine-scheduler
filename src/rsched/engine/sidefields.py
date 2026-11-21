@@ -11,7 +11,7 @@ AFTER the interception check, so a reminder authored this turn never holds the a
 
 from __future__ import annotations
 
-from . import autoswap, notes, roleswap
+from . import notes, roleswap
 from .remindfields import field_problems as _reminder_problems
 from .roleswap import field_problems as _roleswap_problems
 from .sayfields import problems as _say_problems
@@ -33,9 +33,7 @@ def land(loop, action: dict) -> None:
 
     Best-effort: a failure to file a side field never fails the turn (the transcript keeps the
     raw field). `note` is stamped into state/notes.md; `role_swap` re-points the `main` role for
-    the NEXT completion. `autoswap` (the engine's own half of that slot) runs AFTER it and stands
-    down for the rest of the run once an action carries `role_swap`.
+    the NEXT completion.
     """
     notes.capture(loop.ctx, action)
     roleswap.apply(loop, action)
-    autoswap.at_landing(loop, action)   # F785: a REPEAT POLL is served cheap, unasked

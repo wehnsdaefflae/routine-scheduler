@@ -22,7 +22,7 @@ from pathlib import Path
 from .. import assists as lib
 from ..assists import Assist
 from ..hooks import dispatch, points
-from . import assist_action, assist_label, enginenote, notes
+from . import assist_label, enginenote, notes
 from . import hold as hold_seam
 from .assist_predicates import PREDICATES, Situation
 
@@ -186,8 +186,6 @@ def at_boundary(loop) -> None:
     if loop.assists:
         for assist in _matching(loop, "boundary", Situation(loop=loop)):
             enginenote.append(loop, rendered_line(assist), assists=[assist.key])
-            # an `action`-payload assist performs one authored action, no model turn
-            assist_action.act(loop, assist)
     loop.assist_user_replies = replies
 
 
@@ -205,7 +203,6 @@ def at_child_exit(loop, child_row: dict) -> None:
         return
     for assist in _matching(loop, "child-exit", Situation(loop=loop, child=child_row)):
         enginenote.append(loop, rendered_line(assist), assists=[assist.key])
-        assist_action.act(loop, assist, point="child-exit")
 
 
 def at_spawn(loop, start_row: dict) -> None:
@@ -219,7 +216,6 @@ def at_spawn(loop, start_row: dict) -> None:
         return
     for assist in _matching(loop, "spawn", Situation(loop=loop, child=start_row)):
         enginenote.append(loop, rendered_line(assist), assists=[assist.key])
-        assist_action.act(loop, assist, point="spawn")
 
 
 def at_run_end(loop, ending: dict) -> None:

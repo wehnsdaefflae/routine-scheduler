@@ -20,7 +20,6 @@ from .. import schedule
 from ..config.base import TUNING_KEYS, _known_tz
 from ..config.outcome import OutcomeConfig
 from ..config.routine import RunGatePatch
-from ..config.trialconf import TrialConfig
 from ..paths import read_yaml
 from .config_fields import (
     BudgetsPatch,
@@ -88,9 +87,8 @@ class RoutinePatch(BaseModel):
     efforts: dict | None = None             # {main|tool_call|uncensored: low|…|max} — a setting
     #                                          of its own, never a catalog row per level
     # REPLACED whole, and an explicit null CLEARS it (`patch_routine` keeps that one null, which
-    # `exclude_none` would read as "not sent"): a MODEL TRIAL (rsched/trials.py) and the OUTCOME
-    # contract — what the routine exists to produce, as numbers (config/outcome.py)
-    trial: TrialConfig | None = None
+    # `exclude_none` would read as "not sent"): the OUTCOME contract — what the routine exists to
+    # produce, as numbers (config/outcome.py)
     outcome: OutcomeConfig | None = None
     connections: dict | None = None         # {provider: account-label} OAuth connection bindings
     grants: dict | None = None              # {entity-id: bool} decision rows (secret exposure
@@ -290,9 +288,9 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     updates = patch.model_dump(exclude_none=True)
     if patch.run_gate is not None:
         updates["run_gate"] = patch.run_gate.model_dump(exclude_unset=True)
-    for key in ("trial", "outcome"):    # SENT as null: the one spelling of "clear it"
-        if key in patch.model_fields_set and getattr(patch, key) is None:
-            updates[key] = None
+    # SENT as null: the one spelling of "clear it"
+    if "outcome" in patch.model_fields_set and patch.outcome is None:
+        updates["outcome"] = None
     return apply_updates(request, info, updates)
 
 

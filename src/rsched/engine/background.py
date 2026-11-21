@@ -16,8 +16,8 @@ Invariants:
   to block on, so the flag defers the WORK, never the DECISION. `_runner` picks the dispatch
   from the same routing table the foreground uses.
 * **Ordering is preserved.** One action starts per turn and one observation comes back for it.
-  A read's only effect is its observation; a MUTATION defers behind `engine/background_order.py`,
-  which holds later actions touching its declared target until it lands.
+  Only a read or a fetch defers (`actions.BACKGROUNDABLE_KINDS`): its only effect is its
+  observation, so no later action can read state it has not written yet.
 * **`kill handle=…` stops the delivery** and, for `STOPPABLE_KINDS`, the work too (see `cancel`).
 * **No new transcript event types**: started, landed, cancelled and abandoned records are all
   `observation` events carrying `background` and `handle`.

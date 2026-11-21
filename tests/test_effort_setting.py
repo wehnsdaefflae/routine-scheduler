@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -12,7 +11,6 @@ from fastapi import HTTPException
 from conftest import authed_client, make_test_server, seeded_server
 from rsched.cli_overrides import parse_effort_overrides
 from rsched.config import EndpointConfig, ModelConfig, ServerConfig, load_routine
-from rsched.daemon.runner_state import engine_cmd
 from rsched.endpoints import EndpointRegistry
 from rsched.paths import atomic_write_json
 from rsched.web.config_fields import validate_efforts
@@ -263,17 +261,6 @@ def test_effort_overrides_parse_per_role_and_refuse_junk():
     for bad in ("main", "main=turbo", "decision=high", "=high"):
         with pytest.raises(SystemExit):
             parse_effort_overrides([bad])
-
-
-def test_the_engine_is_told_a_trials_efforts_beside_its_models(tmp_path):
-    server = SimpleNamespace(source=tmp_path / "config.yaml", routines_home=tmp_path / "routines",
-                             conversations_home=tmp_path / "conv", background_home=tmp_path / "bg")
-    cmd = engine_cmd(server, "slug", "20261014-120000", models={"main": "Opus"},
-                     efforts={"main": "xhigh", "tool_call": "low"})
-    assert cmd[cmd.index("--model") + 1] == "main=Opus"
-    pairs = [cmd[i + 1] for i, word in enumerate(cmd) if word == "--effort"]
-    assert pairs == ["main=xhigh", "tool_call=low"]
-    assert "--effort" not in engine_cmd(server, "slug", "20261014-120000")
 
 
 def test_the_engine_applies_an_effort_switch_without_touching_the_model(make_routine):

@@ -5,7 +5,6 @@ the routine, never by the bare slug."""
 from __future__ import annotations
 
 from helpers import measured_run, server_for, write_usage_stream
-from rsched import trials
 from rsched.readmodels import memo, run_health
 from rsched.readmodels.compression_stats import compression_stats
 from rsched.readmodels.incarnations import live_runs, resolver
@@ -19,7 +18,7 @@ def _home(tmp_path):
     for d in (home / "digest", home / ".archive" / f"digest-{STAMP}", home / ".archive" / "gone"):
         d.mkdir(parents=True)
         (d / "routine.yaml").write_text("slug: x\n", encoding="utf-8")
-    runs = [{**measured_run(i, trial="t-1"), "compression": {"applied": 1, "tokens_saved": 10}}
+    runs = [{**measured_run(i), "compression": {"applied": 1, "tokens_saved": 10}}
             for i in (1, 2, 5, 6)]
     runs.append({**measured_run(3, slug="gone"), "compression": {"applied": 1}})
     runs.append(measured_run(4, slug="c-20261004-120000"))
@@ -44,7 +43,6 @@ def test_the_readers_of_one_routines_runs_see_only_its_own(tmp_path):
     server = server_for(home / "digest")
     assert [r["run_id"] for r in run_health._stream_runs(server, "digest")] == [
         "digest:20261005-050000", "digest:20261006-050000"]
-    assert trials.recorded(home, "digest", "t-1") == 2
     spend = monthly_spend(server)["by_routine"]
     assert spend["digest"]["2026-10"]["runs"] == 2
     assert spend[f"digest-{STAMP}"]["2026-10"]["runs"] == 2

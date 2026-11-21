@@ -1,6 +1,5 @@
 """R2249 bug 1, the prompt-surface half: the util catalog tells a MULTIMODAL run that `vision`
-is for a text-only one, before any call is made. The engine's refusal (engine/visionsteer.py)
-is what enforces it; this is the same fact stated where it costs no turn.
+is for a text-only one, before any call is made — stated where it costs no turn.
 """
 
 from __future__ import annotations

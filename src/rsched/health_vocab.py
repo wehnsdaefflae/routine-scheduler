@@ -222,7 +222,7 @@ WHICH refusals are logged depends on the CAUSE, not on the fire reason:
     overruns legitimately and would spam the stream;
   - a STALE MODEL ROLE is logged for EVERY fire reason, because it is a broken config rather
     than a collision: no run of that routine can start until the name is fixed, and the detail
-    carries the operator-facing sentence naming the role (F643, rsched/trials.roles_problem).
+    carries the operator-facing sentence naming the role (F643, rolecatalog.roles_problem).
     Only `models.main` refuses a fire (daemon/runner.FIRE_BLOCKING_ROLES) - the loop resolves it
     on turn one, while a stale `tool_call`/`uncensored` may never be resolved at all and is
     reported by `rsched validate` rather than taking a working routine dark.
@@ -337,7 +337,6 @@ EVENTS: tuple[str, ...] = (
     "wrong_turn_detected",
     "run_corrected",
     "prompt_floor_over_window",
-    "error_class_undecided",
     "item_dropped_live",
     "oneshot_skipped",
     *_STORE_EVENTS,

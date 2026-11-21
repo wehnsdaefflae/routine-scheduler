@@ -14,7 +14,7 @@ import json
 from ..endpoints import errorsignal, failover
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
-from . import errorclass, refusal, substitution, turndebris
+from . import refusal, substitution, turndebris
 from .compaction import estimate_input_tokens
 from .overflow import _recover_oversize_prompt, _shrink_window_to_provider
 from .window import apply_media_fallback
@@ -26,8 +26,7 @@ def _failover_reason(exc: EndpointError) -> str:
 
     The basis is what the failure DECLARED (R3108): its status and error.code / error.type
     (`endpoints/errorsignal.py`), or for the engine's own findings the `engine=` set at the
-    raise — never phrases matched in the body. `other` stays an honest bucket;
-    `engine/errorclass.py` counts how often it is reached.
+    raise — never phrases matched in the body. `other` stays an honest bucket.
     """
     return errorsignal.failover_class(errorsignal.of(exc))
 
@@ -215,9 +214,6 @@ def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
     """
     failover.mark_failed(failed_ref.endpoint, failed_ref.model,
                          cooldown_s=failover.cooldown_for(exc))
-    # Counted where the class is computed, not where it is logged: the chain-exhausted branch
-    # never reaches `_log_failover`. Measurement only.
-    errorclass.note_failover_class(loop, exc, _failover_reason(exc))
     # The FIRST failure, kept once and never overwritten: if the whole chain dies, the last
     # rung's error is the least actionable one.
     if not loop.ctx.first_failover_cause:

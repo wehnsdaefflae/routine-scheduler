@@ -88,11 +88,10 @@ def test_unfingerprinted_runs_conversations_and_children_are_not_measured(tmp_pa
 
 def test_model_fit_groups_runs_by_what_served_them(tmp_path):
     runs = ([_run(i, volume=6_000_000) for i in range(1, 5)]
-            + [_run(i, model="Sonnet high", trial="t-1", volume=2_000_000, met=1)
+            + [_run(i, model="Sonnet high", volume=2_000_000, met=1)
                for i in range(5, 7)])
     fit = model_fit(_home(tmp_path, runs), "digest")
-    assert [(g["model"], g["trial"], g["runs"]) for g in fit] == [
-        ("Opus high", "", 4), ("Sonnet high", "t-1", 2)]
+    assert [(g["model"], g["runs"]) for g in fit] == [("Opus high", 4), ("Sonnet high", 2)]
     assert fit[0]["met_rate"] == 1.0 and fit[1]["met_rate"] == 0.5
     assert fit[1]["volume"] == 2_000_000
 

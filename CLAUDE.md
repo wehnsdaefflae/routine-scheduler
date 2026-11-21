@@ -185,8 +185,8 @@ Each is enforced somewhere — a test, the engine, or a past incident. Long form
   `--homes` — never give them defaults (the fallback is production)
 - **Under memory pressure the kernel takes a RUN, never the daemon** (`rsched/oomrank.py`); read an
   OOM from the HOST's `journalctl -k`, never the container's `memory.events`
-- **A model trial ends by COUNTING, never by a write**; `runrecord.BEHAVIOUR`/`NOT_BEHAVIOUR`
-  must classify every RoutineConfig field
+- `runrecord.BEHAVIOUR`/`NOT_BEHAVIOUR` must classify every RoutineConfig field (a field
+  hashed by default made every cron edit read as a behaviour change)
 - **Git is never SIGKILLed**: every git call goes through `libgit.git`; `libgit.commit` returns a
   `Commit` and is called directly, never through a pass-through; a lock is removed only when
   `gitlock` proves it stale
