@@ -40,14 +40,29 @@ EVENT = "wrong_turn_detected"
 MAX_ROWS = 40
 
 _TURN = re.compile(r"^\s*turn\s+\d+:\s*")
-_QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
+#: A quoted value, OR a quote the detail was CUT inside. `engine/completion.py` records the
+#: validator's message as `str(exc)[:200]`, so a third of the rows end mid-value with no
+#: closing delimiter: 109 of 333 in the 14-day window of 2026-11-21, 83 of them inside an
+#: unterminated quote. Masking only the paired form left every one of those details carrying
+#: its own value, which made ONE mistake a row per occurrence — `accounting: '…'` was 18 turns
+#: across 12 routines filed as 18 singletons, invisible under `MAX_ROWS`. The trailing branch
+#: fires ONLY at the end of the string, so a balanced detail is matched by the paired branch
+#: first and is left exactly as before.
+_QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"|['\"][^'\"]*\Z")
 _NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
-_LISTISH = re.compile(r"\[\{.*?\}\]|\{.*?\}")
+#: An inline object/list, or one the cut left unclosed — same reasoning, same end-anchor. The
+#: unclosed branches require NO closing bracket anywhere after the opener, so a complete
+#: `['a', 'b']` cannot reach them.
+_LISTISH = re.compile(r"\[\{.*?\}\]|\{.*?\}|\[[^\]]*\Z|\{[^}]*\Z")
 
 
 def cause(detail: str) -> str:
     """The detail with what varies between occurrences of ONE mistake masked: the turn number,
     quoted values, numbers and inline objects — so the same error from two runs is one row.
+
+    The detail arrives TRUNCATED (`str(exc)[:200]` at the recording call), so a value is as
+    likely to be cut open as closed; both forms are masked, or the same mistake becomes one
+    row per occurrence and the recurring classes fall off the bounded answer.
     """
     text = _TURN.sub("", detail)
     text = _LISTISH.sub("{…}", text)

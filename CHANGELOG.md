@@ -15,6 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.568.0] — 2026-11-21
+
+### Fixed
+- **The wrong-turn fold counted truncations, not mistakes.** The recorder keeps the
+  validator's message as `str(exc)[:200]` (`engine/completion.py`), so a long rejection
+  arrives cut — 109 of the 333 rows in the 14-day window of 2026-11-21, 83 of them ending
+  inside an unterminated quote. `readmodels/wrong_turns.cause()` masked only values with
+  their CLOSING delimiter, so every cut detail carried its own value into the cause and one
+  mistake became one row per occurrence. `accounting: '…'` — a list field given a string —
+  was 18 turns across 12 routines filed as 18 singletons, and `paths: {…}` 12 turns across 5
+  as 10; neither appeared anywhere in the answer, because both sat under `MAX_ROWS = 40`,
+  the bound that makes the fold readable. The mask now also matches a quote, bracket or brace
+  that the cut left open, anchored at the END of the string so a balanced detail is still
+  matched by the paired branch first and comes out exactly as before. Over that same window:
+  126 distinct causes become 87, 87 singleton rows become 44, and `remind.description is N
+  characters` is one row of 16 occurrences newest 2026-11-20 instead of 9 newest 2026-11-16 —
+  the class the fold exists to surface, previously understated by 44% with a stamp four days
+  stale. All 215 balanced, untruncated details in the window mask identically before and
+  after, which is what the new guard node asserts.
+
 ## [0.567.0] — 2026-11-20
 
 ### Changed
