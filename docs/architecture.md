@@ -2491,7 +2491,11 @@ install gets the revision from the seed sync itself.)
   `RESTART_RESUMES`, held by a global pause, never applied to a parked run (its question is
   durable) nor to a crash or an OOM — nothing is restarted on a cause nobody established.
   Orphaned runs claiming to be alive are still closed out at boot;
-  what changed is that a restart-caused one does not stay closed.
+  what changed is that a restart-caused one does not stay closed. The recovery note it files
+  READS the leg's dead children off `run.dir/sub/*/transcript.jsonl` (`daemon/deadchildren.py`)
+  instead of asserting they are gone: one line per child with turns and no finish — label, turn
+  reached, the `say` of that turn, and the transcript path — so the resumed leg reads what each
+  child left rather than re-issuing work that is sitting in the same run dir.
   **Where no mark exists, the boot reap still answers a narrower question than "why"**
   (`daemon/containerbirth.py`, R2928): WAS this process tree replaced while the run was alive?
   pid 1's start time (`/proc/stat`'s `btime` plus `/proc/1/stat`'s `starttime`) against the run's

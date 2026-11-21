@@ -1372,7 +1372,10 @@ lifespan's shutdown half writes the deliberate-shutdown mark on ANY graceful SIG
 RE-OPENS what the restart killed instead of closing it `aborted` (`daemon/reap_resume.py`,
 capped at `RESTART_RESUMES` so a boot loop cannot storm; a parked run keeps its durable
 question, and a crash or an OOM is never resumed here). An in-flight CHILD run does not survive
-either way, and the resumed leg's recovery note says so.
+either way, and the recovery note says so by READING the dead children off `run.dir/sub/*/`
+(`daemon/deadchildren.py`) — one line per child with turns and no finish, naming its label, the
+turn it reached, the `say` of that turn and its transcript path, so the leg reads what the child
+left instead of re-issuing work that is on disk.
 **A relaunch is not guaranteed either.** Docker's restart manager gives up after ONE failed
 start, so anything that makes the container fail to start leaves it down with nothing retrying
 and nothing said — a vanished bind source is the one that has happened, and the tor and chrome

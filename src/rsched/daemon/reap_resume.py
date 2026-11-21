@@ -9,7 +9,9 @@ start it again?* — and each obeys the same three rules, learned one incident a
     inbox and the next scheduled run reads it);
   * a CAP, so a condition that repeats cannot become a resume loop;
   * a NOTE the resumed leg reads, because a leg that continues as if nothing happened spends
-    its turns rediscovering that something did.
+    its turns rediscovering that something did — and every fact in it is READ off the run dir
+    rather than asserted: the dead children's own transcripts say how far each got and where
+    its work is (`daemon/deadchildren.py`), so the leg is not sent to redo what is on disk.
 
 A global pause holds every one of them (`pause.holds_automatic_leg`): a paused instance means
 the operator wants nothing starting, and an automatic leg is the easiest kind to forget.
@@ -122,7 +124,7 @@ def resume_after_restart(runner, cfg: RoutineConfig, run: registry.RunInfo, why:
     leaves the ordinary `aborted` record and loses nothing.
     """
     from ..engine.inbox import file_message
-    from . import pause
+    from . import deadchildren, pause
     if pause.holds_automatic_leg(runner.server, "restart orphan resume", cfg.slug):
         return False
     if blocker := restart_resume_blocker(run):
@@ -135,8 +137,12 @@ def resume_after_restart(runner, cfg: RoutineConfig, run: registry.RunInfo, why:
                  f"down ({why}) — not by anything this run did, and not by a budget. It is now "
                  f"resumed in place (automatic resume {spent} of {RESTART_RESUMES}). Re-read the "
                  "transcript for where the work actually stood: the last turn may have been cut "
-                 "off before its observation, and any CHILD RUN that was in flight did not "
-                 "survive, so re-issue what you still need. End with an honest authored finish.",
+                 "off before its observation."
+                 # The children clause is READ off `run.dir/sub/*/` rather than asserted: the
+                 # dead children's transcripts are right there, and a leg told only "they did
+                 # not survive" re-issues work that is already on disk (R3644).
+                 + deadchildren.note_clause(run.dir)
+                 + "\nEnd with an honest authored finish.",
                  source="daemon", via="background")
 
     async def _wake() -> None:

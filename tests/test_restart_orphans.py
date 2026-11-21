@@ -144,7 +144,11 @@ async def test_resume_asks_the_runner_and_leaves_the_leg_a_note(make_routine, tm
     assert asked == [("noted", "20260701-070000", "restart-resume")]
     notes = [p.read_text(encoding="utf-8") for p in (d / "inbox").glob("msg-*.json")]
     assert len(notes) == 1 and "AUTOMATIC RECOVERY" in notes[0]
-    assert "did not survive" in notes[0]          # the children are gone: say so
+    # This run had no children, so the note carries no children clause at all — what it says
+    # about them is READ off `run.dir/sub/` (R3644, tests/test_restart_note_children.py),
+    # never the asserted "any CHILD RUN ... did not survive" this line used to pin.
+    assert "did not survive" not in notes[0]
+    assert "Re-read the transcript" in notes[0]
     assert read_json(run.dir / "restart-resume.json")["resumes"] == 1
 
 

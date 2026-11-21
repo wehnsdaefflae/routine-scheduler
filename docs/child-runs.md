@@ -273,7 +273,11 @@ Completed subtasks are already in the parent transcript (as the wait / finished-
 so a resume replays them untouched. Children are **threads** in the parent process, so a run
 interrupted with children still running finds them dead on resume — the engine marks each aborted
 in the transcript and adds an ENGINE NOTE listing them, so the model re-issues what it needs
-instead of `wait`-ing forever for a child that can never finish.
+instead of `wait`-ing forever for a child that can never finish. The daemon's own
+restart-recovery note (`daemon/reap_resume.py`) says the same thing from the other side, and it
+too is READ rather than asserted: `daemon/deadchildren.py` walks `run.dir/sub/*/transcript.jsonl`
+and gives one line per child with turns and no finish — its label (from the parent's
+`subrun_start`), the turn it reached, the `say` of that turn, and the transcript path to read.
 
 The **registry** (`SubrunManager.subruns`) is in-memory too, so a resumed leg starts with an empty
 one while every `sub/<n>/` directory the earlier leg made is still on disk — one of them possibly
