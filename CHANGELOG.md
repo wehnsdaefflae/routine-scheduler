@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.578.0] — 2026-11-21
+
+### Fixed
+- **The read-model warmer no longer lengthens the restart burst.** 0.577.0's boot pass ran the
+  moment the app started — beside the scheduler's boot scans and every reconnecting console tab
+  — and computed the fleet-wide change fold (which spawns a `git` per change) before the
+  Decisions catalog. After its restart `/api/questions` took 25-29 s, against 16-18 s for the
+  whole burst at the restart before: the tabs' requests waited on a Decisions compute starved by
+  everything beside it. The boot pass now waits for the scheduler's own boot (`Scheduler.booted`,
+  set at the end of `_boot`; at most `BOOT_WAIT_MAX_S`, 120 s, so a boot that fails cannot hold
+  it), warms the Decisions catalog first, and leaves the fold until `BOOT_SETTLE_S` (60 s) later,
+  by the clock rather than by an idle event queue. Every event pass computes Decisions before
+  the fold for the same reason.
+
 ## [0.577.0] — 2026-11-21
 
 ### Fixed

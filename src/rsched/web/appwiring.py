@@ -90,10 +90,12 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
             task = asyncio.create_task(app.state.scheduler.run_forever())
             _observe(task, "scheduler")
             # the two read models a cold miss made slow (4.4 s, 1.1 s), recomputed in a thread
-            # after the run events that move them, and once now (web/readmodel_warm.py)
+            # after the events that move them, and once after the scheduler's boot (ordered:
+            # web/readmodel_warm.py)
             from . import readmodel_warm
 
-            warm_task = asyncio.create_task(readmodel_warm.bus_listener(server, bus))
+            warm_task = asyncio.create_task(readmodel_warm.bus_listener(
+                server, bus, ready=app.state.scheduler.booted))
             _observe(warm_task, "read-model warm")
         # Web Push sender: idles until a browser subscribes, then pushes new decisions
         from . import push as push_mod
