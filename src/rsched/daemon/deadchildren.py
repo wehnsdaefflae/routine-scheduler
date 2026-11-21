@@ -46,7 +46,7 @@ def _events(path: Path):
 
 
 def _labels(run_dir: Path) -> dict[int, str]:
-    """The label each child was spawned with, from the PARENT's `subrun_start` events.
+    """The label each child was spawned with, from the PARENT's `child_start` events.
 
     The parent transcript is the only place a label survives: a child's own header records its
     run id and workflow, never the name the parent called it.
@@ -54,7 +54,7 @@ def _labels(run_dir: Path) -> dict[int, str]:
     out: dict[int, str] = {}
     for ev in _events(run_dir / "transcript.jsonl"):
         payload = ev.get("payload") or {}
-        if ev.get("type") == "subrun_start" and isinstance(payload.get("n"), int):
+        if ev.get("type") == "child_start" and isinstance(payload.get("n"), int):
             out[payload["n"]] = str(payload.get("label") or "")
     return out
 

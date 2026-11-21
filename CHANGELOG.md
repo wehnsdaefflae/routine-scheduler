@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.583.0] — 2026-11-21
+
+### Changed
+- **One name for a child run, finished: the transcript events are `child_start` / `child_end`**
+  (D241's last increment; operator 2026-10-17: *"sub-runs / subtasks (why two terms for the same
+  thing? fix that)"*). The five surfaces that fail SILENTLY on an unknown type moved together —
+  `EVENT_TYPES` (which asserts on write), the console renderer (which drops an unrendered type),
+  `cli_render`, CLAUDE.md's written-out list with its count, `docs/contracts.md` — plus every
+  reader matching the names literally: the child-run tree, `engine/history` (a resumed leg's
+  announcements and orphan set), `boot`, `subruns`, `promptsegtext`, `cost_profile`. The console
+  labels follow: the rails' card is **children**, a row's address says "child run 2", the
+  waiting line says "waiting on child runs…". `docs/designs.md`'s D241 entry goes with it.
+- `src/rsched/migrate_child_events.py` (MIGRATION, expires 2026-12-31) renames the two events in
+  every stored transcript, at every depth of every run tree, gzipped archives included — 266 on
+  this instance, 184 of them gzipped. Unlike D241's earlier migrations it rewrites a RECORD,
+  deliberately: an event `type` is the token those readers dispatch on, not a sentence about the
+  past. It assigns a key on a PARSED row, so prose quoting `subrun_end` survives byte for byte.
+- **The finish verifier cascades per routine** (D302(c), narrowing D287; operator: *"the six
+  routines at 100% agreement get the screen, the three below 85% keep the prose judge for every
+  claim"*). `engine/claim_screen.py` is the table; a screened routine whose claims ALL clear the
+  threshold skips the prose call. The decision shadow retired earlier the same day is restored
+  with it, on his instruction (*"the retirement was about an unused mechanism, and D302(c) is
+  the operator asking for it to be USED"*), and keeps recording for every routine so the table
+  has a live evidence source. Three rules the answer left open are written down: an unnamed
+  routine keeps the judge; the threshold is 0.95, not the shadow's recording 0.5 (at which the
+  screen passes 8 of the 11 claims the judge refuted); a minimum-pairs floor of 12. **Worth,
+  measured:** the judge is ONE call per finish over all its claims, so over the window's 128
+  calls the cascade skips 6 — 4.7%, zero missed. The 27% argued counts claims, not calls.
+- **The playbook offer's composed sentence is asserted where it is composed** (R3645). The
+  sentence is spliced from a console clause and a server fragment, so it exists in no file, and
+  the guard written after 0.443.0 said "work" twice lived in the half that cannot see the other.
+  A browser case reads the rendered line back — and found a live defect on its first run: the
+  refine branch said "did real work — … — refine X with what this conversation did differently?".
+  The fragment now reads "with what went differently here".
+
+### Fixed
+- **The restart recovery note READS its dead children off disk** (R3644; operator: *"make sure
+  that resuming a run also includes its sub runs / children"*). It asserted "any CHILD RUN that
+  was in flight did not survive" while the child's transcript sat unread in the same directory.
+  `daemon/deadchildren.py` states one read line per child with turns and no finish: label, turn
+  reached, that turn's `say`, the transcript path. His other half — no automatic daemon restart
+  while routines run — is not in this release.
 ## [0.582.0] — 2026-11-21
 
 ### Fixed

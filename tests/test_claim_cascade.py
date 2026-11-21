@@ -126,7 +126,6 @@ def test_the_recorded_row_says_the_judge_was_skipped(tmp_path, monkeypatch):
     distinguishable from one where the judge answered nothing, or every later agreement
     figure silently includes claims nothing was compared against."""
     import json
-    from types import SimpleNamespace as NS
 
     from rsched.endpoints.decisions import Decision, DecisionAnswer
     from rsched.engine import decision_shadow as shadow
@@ -137,9 +136,11 @@ def test_the_recorded_row_says_the_judge_was_skipped(tmp_path, monkeypatch):
                                 probabilities={"yes": high, "no": 1 - high}, probability=high)],
         usage={"in": 10, "out": 2}, model="gemini-decision", provider="otari")
     monkeypatch.setattr(shadow, "_ask_many", lambda *a, **k: answered)
-    ctx = NS(server=NS(routines_home=tmp_path, decision_models={"gemini-decision": object()},
-                       decision_model="gemini-decision", decision_media_model=""),
-             routine=NS(slug=SCREENED, models={}), run_id="20261121-140004")
+    ctx = SimpleNamespace(
+        server=SimpleNamespace(routines_home=tmp_path, decision_model="gemini-decision",
+                               decision_models={"gemini-decision": object()},
+                               decision_media_model=""),
+        routine=SimpleNamespace(slug=SCREENED, models={}), run_id="20261121-140004")
 
     shadow.compare_claims(ctx, question="q", evidence="e",
                           claims=[{"id": "d1", "text": "x"}], chat_supported={},

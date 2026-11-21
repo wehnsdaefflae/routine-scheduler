@@ -25,18 +25,6 @@ decided in conversation before any finding exists says so and carries none.
 
 ---
 
-## One name for a child run: the transcript events (decided 2026-10-17, in conversation)
-
-**Decided by the operator in conversation 2026-10-17; no finding.** His words: *"sub-runs /
-subtasks (why two terms for the same thing? fix that)"*. The kinds (`child` with `mode`,
-`children`) and the budget keys (`max_child_runs` / `max_child_depth`) have shipped. What remains:
-the transcript events `subrun_start` / `subrun_end` become `child_start` / `child_end` —
-EVENT_TYPES, the web renderer and the meta routines move together, and stored transcripts are
-migrated one-shot (a resume re-renders history, so old event names must not survive) — and any
-console label still saying "sub-run" says "child run".
-
----
-
 # Handed over from the 0.371.0–0.372.2 review (2026-10-01)
 
 Everything below was PROPOSED by the review of 0.371.0 and the work that built 0.372.0–0.372.2,

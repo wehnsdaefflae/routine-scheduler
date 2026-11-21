@@ -34,7 +34,7 @@ def _child(run_dir, n, *, turns=0, says=(), finished=False):
 
 def _parent_transcript(run_dir, *starts):
     """The parent's own transcript — the only place a child's LABEL survives the leg."""
-    rows = [{"type": "subrun_start",
+    rows = [{"type": "child_start",
              "payload": {"n": n, "label": label, "workflow": "general-task"}}
             for n, label in starts]
     (run_dir / "transcript.jsonl").write_text(
