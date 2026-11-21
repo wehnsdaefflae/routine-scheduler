@@ -17,7 +17,16 @@ import time
 from ..endpoints.base import EndpointError, retry_base_delay
 from ..endpoints.usage import fold_usage as base_fold
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
-from . import denialmemo, overflow, paramsalvage, schemamemo, turndebris, turntakeover, wrongturn
+from . import (
+    denialmemo,
+    kindaliases,
+    overflow,
+    paramsalvage,
+    schemamemo,
+    turndebris,
+    turntakeover,
+    wrongturn,
+)
 from .actions import KIND_EXAMPLES, normalize_action, validate_action
 from .actionschema import ACTION_SCHEMA
 from .completionrequest import complete_attempt
@@ -271,6 +280,8 @@ def judge(loop, action: dict) -> tuple[dict, list]:
     if salvaged:
         paramsalvage.record(loop.ctx, action, salvaged)
     candidate = normalize_action(repaired)
+    if (spelled := kindaliases.spelled_kind(repaired)) is not None:
+        candidate = kindaliases.Spelled(candidate, spelled)   # the mark `loop._land` records
     problems = (validate(candidate, ACTION_SCHEMA)
                 or validate_action(candidate, allowed_kinds=loop.allowed_tools,
                                    grants=loop.grants)

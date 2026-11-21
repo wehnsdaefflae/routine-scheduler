@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.581.0] — 2026-11-21
+
+### Fixed
+- **`rsched census` sees the alias action kinds.** `websearch` and `code_search` (D290) are
+  rewritten into the util call they spell before anything is recorded, so the census listed both
+  as "never used" whatever the fleet wrote. The landed `assistant_action` event of an alias now
+  carries `spelled: <alias kind>` beside `turn` and `phase` — an EVENT key, never in the payload,
+  so the action schema, the prompt, the model's messages and a resumed leg's replay are
+  unchanged. `completion.judge` (the one seam every first and chained action passes) wraps the
+  normalized action in `kindaliases.Spelled`, a plain dict carrying the mark as an attribute, and
+  `loop._land` records it — the mark travels with its own action, so every element of a chain
+  is marked independently. The census counts the mark under the alias kind; `util` still counts
+  every util call however it was spelled.
+- **The census measures config keys where they live.** It read only the routines home, so
+  `kind` and `playbook` (conversation configs) and `owner` (detached background tasks) always
+  read as unused. It now reads every `routine.yaml` under the routines, conversations and
+  background homes, and reports how many configs it read.
+- **`dir`, `deliberation` and `tuning` are no longer routine.yaml keys.** They are RUNTIME
+  fields the loader fills (the routine's dir, tuning.yaml's level and the whole of it), and no
+  writer puts them in a routine.yaml — checked across the web, engine and config writers and the
+  live homes. They are named once, `config.routine.RUNTIME_FIELDS`, and left out of `TOP_KEYS`:
+  the census no longer lists them as unused keys, and the loader reports one found in a file as
+  an unknown key ("the loader fills it, never this file") instead of accepting it silently.
+
 ## [0.580.0] — 2026-11-21
 
 ### Fixed

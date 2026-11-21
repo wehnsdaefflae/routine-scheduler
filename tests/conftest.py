@@ -588,9 +588,9 @@ def cli_server(tmp_path, monkeypatch):
     lib = tmp_path / "library"
     for kind in ("workflows", "rules", "permissions"):
         shutil.copytree(LIBRARY_SEED / kind, lib / kind)
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(yaml.safe_dump({"token": "t", "libraries_home": str(lib), **{
-        f"{h}_home": str(tmp_path / h) for h in ("routines", "conversations")}}), encoding="utf-8")
+    homes = {f"{h}_home": str(tmp_path / h) for h in ("routines", "conversations", "background")}
+    cfg = yaml.safe_dump({"token": "t", "libraries_home": str(lib), **homes})
+    (cfg_path := tmp_path / "config.yaml").write_text(cfg, encoding="utf-8")
     server, problems = load_server_config(cfg_path)
     assert not problems
     (tmp_path / "routines").mkdir(exist_ok=True)

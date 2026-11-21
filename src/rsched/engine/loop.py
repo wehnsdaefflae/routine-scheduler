@@ -31,6 +31,7 @@ from . import (
     donothing,
     finishstands,
     hold,
+    kindaliases,
     loopend,
     loopnudge,
     loopsetup,
@@ -72,16 +73,14 @@ from .switches import (
 )
 
 REPEAT_WARN = 3
-# MAX_SCHEMA_ATTEMPTS and RunAborted are NOT re-exported: completion.py and control.py define
-# them and every importer in the tree takes them from there (D243 needed the lines).
+# MAX_SCHEMA_ATTEMPTS and RunAborted are NOT re-exported: import them from completion / control.
 __all__ = ["POLL_S", "REPEAT_FAIL", "REPEAT_WARN", "EngineLoop"]
 
 
 class EngineLoop:
-    """The turn loop — the heart of a run. Each turn: budgets → pause gate → drain
-    injected messages → announce finished subruns → ONE valid JSON action from the model
-    (3 attempts: up to 2 schema retries) → dispatch → append the observation; repeat until `finish`.
-    Construct with `resume=True` to rehydrate a prior transcript and continue it.
+    """The turn loop — the heart of a run: each turn, budgets → pause gate → injected messages
+    → finished subruns → ONE valid JSON action (≤2 schema retries) → dispatch → observation,
+    until `finish`. `resume=True` rehydrates a prior transcript and continues it.
     """
 
     # Filled in by `loopsetup.configure` — declared so the class says what an EngineLoop HOLDS.
@@ -235,8 +234,8 @@ class EngineLoop:
         background.collect(self)     # backgrounded actions whose observation has landed
 
     def _land(self, action: dict, usage: dict | None = None, *, chained: bool = False) -> None:
-        """The accepted action becomes the turn: counted, recorded with the phase it was
-        taken in, its note filed, appended as the model's message, remembered for the digest.
+        """The accepted action becomes the turn: counted, recorded with its phase (and an alias
+        spelling, kindaliases), its note filed, appended as the model's message, remembered.
 
         A CHAINED element (engine/chain.py) lands inside the SAME turn: the counter does not
         advance, the event names its element, and the reply's spend is booked on its first action.
@@ -246,7 +245,8 @@ class EngineLoop:
             ctx.turn += 1
         ctx.transcript.event("assistant_action", dict(action), turn=ctx.turn, usage=usage,
                              **({"chained": self.chain_run} if chained else {}),
-                             **({"phase": ctx.phase} if ctx.phase else {}))
+                             **({"phase": ctx.phase} if ctx.phase else {}),
+                             **kindaliases.event_mark(action))
         sidefields.land(self, action)   # note filed, role swap applied: turn-free, best-effort
         self.messages.append({"role": "assistant",
                               "content": json.dumps(action, ensure_ascii=False)})
