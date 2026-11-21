@@ -20,6 +20,8 @@ import { mountRunJob } from "/static/components/runjob.js";
 import { createModelSwitch } from "/static/components/runswitch.js";
 import * as runsup from "/static/components/runsupervise.js";
 import { renderLadder } from "/static/components/ladderstrip.js";
+import { attentionBlock } from "/static/components/attention-block.js";
+import { waitingLabel } from "/static/components/waiting-label.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { busy, chip, el, emptyState, fmtAbs, fmtDur, fmtTokens, skeleton, streamStatus,
          toast, toastError, toDate } from "/static/util.js";
@@ -237,22 +239,11 @@ export async function render(view, runId, query = {}) {
   let subPoll = null, subOffset = 0, subTranscript = null;
 
   const scrollDown = () => { if (autoscroll) window.scrollTo(0, document.body.scrollHeight); };
-  // What the run is ACTUALLY doing (F170): the engine emits assistant_action when a
-  // turn's action starts executing and observation when it lands — between the two the
-  // run waits on the ACTION (a util, a sub-run, a file op), not on the model.
+  // What the run is ACTUALLY doing (F170) — the wording lives in components/waiting-label.js
   let pendingAction = null;
-  const waitingLabel = () => {
-    const p = pendingAction;
-    if (!p || !p.kind) return "waiting for the model…";
-    if (p.kind === "util") return p.name ? `running util ${p.name}…` : "running a util…";
-    if (p.kind === "llm") return "running an LLM subcall…";
-    if (["child", "detach", "wait"].includes(p.kind)) return "waiting on child runs…";
-    if (p.kind === "ask_user") return "waiting for your answer…";
-    return `executing ${p.kind}…`;
-  };
   const setWaiting = (active) => {   // shown only for the main run (a sub-run is polled, not live)
     waitingBox.replaceChildren();
-    if (active && viewingSub == null) waitingBox.append(busy(waitingLabel()));
+    if (active && viewingSub == null) waitingBox.append(busy(waitingLabel(pendingAction)));
   };
 
   function stopSubPoll() {
@@ -453,6 +444,10 @@ export async function render(view, runId, query = {}) {
         + "of its recipe's Done when"));
   }
   mainBox.replaceChildren();
+  // D289: his seven classes LEAD, the narrative follows. Empty renders nothing at all, so a
+  // run with nothing for him reads exactly as it did before (components/attention-block.js).
+  const att = attentionBlock(detail.attention);
+  if (att) mainBox.append(att);
   const transcript = createTranscript(mainBox, {
     // deferred questions become answerable right in the conversation…
     answer: async (qid, text, decision) =>

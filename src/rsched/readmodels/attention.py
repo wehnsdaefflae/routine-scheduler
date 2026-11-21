@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 #: his seven, in his order. `source` names where a row comes from, so a label can be checked.
@@ -175,45 +176,73 @@ def _marked(status: dict) -> list[dict]:
     return out
 
 
-def _events(status: dict, home: Path | None) -> list[dict]:
+def health_path(home: Path | str) -> Path:
+    """The instance-wide health stream — the ONE place this module names it."""
+    return Path(home) / ".control" / "health-events.jsonl"
+
+
+def _stream_rows(home: Path | None) -> list[dict]:
+    """Every health row with a `run_id`, read ONCE. `[]` for a missing or unreadable stream."""
+    if home is None:
+        return []
+    path = health_path(home)
+    if not path.is_file():
+        return []
+    out: list[dict] = []
+    try:
+        with path.open(encoding="utf-8") as fh:
+            for line in fh:
+                rec = _loads(line)
+                if rec and rec.get("run_id") and rec.get("event"):
+                    out.append(rec)
+    except OSError:
+        return []
+    return out
+
+
+def _by_run(rows: list[dict]) -> dict[str, list[dict]]:
+    """The stream grouped by the run that filed each row."""
+    grouped: dict[str, list[dict]] = {}
+    for rec in rows:
+        grouped.setdefault(str(rec["run_id"]), []).append(rec)
+    return grouped
+
+
+def _events(status: dict, home: Path | None,
+            rows: list[dict] | None = None) -> list[dict]:
     """(b) — the health events THIS run filed, which is the engine's own record of something
     unexpected having happened.
 
     Joined on `run_id` (`<slug>:<ts>`, carried by 1,651 of the stream's 2,119 id-bearing rows
     on 2026-11-14) rather than on the routine, because the question each surface asks is about
-    ONE run. `home` is passed in so a caller folding many runs reads the stream once; without
-    it the class is simply absent, never guessed from prose.
+    ONE run. `rows` is this run's rows already grouped by a caller folding many runs
+    (`attention_for_runs`), so the stream is read once for all of them; without it `home` is
+    read here for this one run. With neither, the class is simply absent, never guessed.
     """
     run_id = str(status.get("run_id") or "")
-    if home is None or not run_id:
+    if not run_id:
         return []
-    path = Path(home) / ".control" / "health-events.jsonl"
-    if not path.is_file():
-        return []
+    if rows is None:
+        if home is None:
+            return []
+        rows = _by_run(_stream_rows(home)).get(run_id, [])
     seen: dict[str, dict] = {}
-    try:
-        with path.open(encoding="utf-8") as fh:
-            for line in fh:
-                if run_id not in line:
-                    continue
-                rec = _loads(line)
-                if not rec or str(rec.get("run_id") or "") != run_id or not rec.get("event"):
-                    continue
-                event = str(rec["event"])
-                # ONE ROW PER EVENT, counted — measured on this instance 2026-11-14: 266 of
-                # 846 of these rows were the same event filed again inside one run, and one
-                # run produced 30 rows. A labelled block that led with thirty lines, nine of
-                # them the same word, would be LONGER and less actionable than the narrative
-                # it leads — the opposite of what he asked for. The count keeps the magnitude
-                # (`blocked_kinds` makes the same distinction between a count and a span).
-                if event in seen:
-                    seen[event]["occurrences"] += 1
-                    continue
-                row = _row("b", f"{run_id}:{event}", event, rec.get("detail") or "")
-                row["occurrences"] = 1
-                seen[event] = row
-    except Exception:
-        pass
+    for rec in rows:
+        if str(rec.get("run_id") or "") != run_id or not rec.get("event"):
+            continue
+        event = str(rec["event"])
+        # ONE ROW PER EVENT, counted — measured on this instance 2026-11-14: 266 of 846 of
+        # these rows were the same event filed again inside one run, and one run produced 30
+        # rows. A labelled block that led with thirty lines, nine of them the same word, would
+        # be LONGER and less actionable than the narrative it leads — the opposite of what he
+        # asked for. The count keeps the magnitude (`blocked_kinds` makes the same distinction
+        # between a count and a span).
+        if event in seen:
+            seen[event]["occurrences"] += 1
+            continue
+        row = _row("b", f"{run_id}:{event}", event, rec.get("detail") or "")
+        row["occurrences"] = 1
+        seen[event] = row
     return list(seen.values())
 
 
@@ -231,3 +260,43 @@ def classify_run(run_dir: str | Path, *, home: str | Path | None = None) -> list
     rows = (_goals(status) + _partial(status, d) + _asks(d) + _marked(status)
             + _events(status, Path(home) if home else None))
     return sorted(rows, key=lambda r: (_ORDER.get(r["class"], 99), r["id"]))
+
+
+def _classify(run_dir: Path, events: list[dict]) -> list[dict]:
+    """`classify_run` with this run's health rows already in hand."""
+    status = _read_json(run_dir / "status.json")
+    if not status:
+        return []
+    rows = (_goals(status) + _partial(status, run_dir) + _asks(run_dir) + _marked(status)
+            + _events(status, None, events))
+    return sorted(rows, key=lambda r: (_ORDER.get(r["class"], 99), r["id"]))
+
+
+def attention_for_runs(home: str | Path, run_dirs: Sequence[str | Path]) -> dict[str, list[dict]]:
+    """`{run dir: rows}` for MANY runs, reading the health stream ONCE.
+
+    `classify_run` opens the whole stream per call, so a surface folding one run per routine
+    would read it once per card on every refresh — the gap its own docstring promised was
+    closed. The rows are identical to `classify_run`'s; only the number of stream reads
+    differs, which is what the fast test pins.
+
+    Memoized on the stream's fingerprint and every run's `status.json`, because the routine
+    cards refresh on `run_*` bus events and a burst of identical requests should cost one fold
+    (`readmodels/memo`, single flight).
+    """
+    from . import memo
+
+    dirs = [Path(d) for d in run_dirs]
+    key = "attention:" + "|".join(sorted(str(d) for d in dirs))
+    sources = [health_path(home), *(d / "status.json" for d in dirs)]
+    return memo.memoized(key, sources, lambda: _fold(home, dirs))
+
+
+def _fold(home: str | Path, dirs: list[Path]) -> dict[str, list[dict]]:
+    grouped = _by_run(_stream_rows(Path(home)))
+    out: dict[str, list[dict]] = {}
+    for d in dirs:
+        status = _read_json(d / "status.json")
+        run_id = str(status.get("run_id") or "") if status else ""
+        out[str(d)] = _classify(d, grouped.get(run_id, []))
+    return out

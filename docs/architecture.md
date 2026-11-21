@@ -788,6 +788,16 @@ and the capabilities digest's catalog listing):
   `↑` for the `oversight` child mode, and the run rail's **oversight strip**
   (`readmodels/ladder.py` → the run detail's `ladder` field → `components/ladderstrip.js`),
   a section added only for a run that HAS a rung.
+- **The attention block** (D289) takes the same path one layer above the narrative:
+  `readmodels/attention.py` → the run detail's `attention` field → `components/attention-block.js`,
+  mounted as the FIRST thing in the run page's transcript column. The seven classes are the
+  operator's own list in his own order ((a) context to decide … (g) dead end), four DERIVED from
+  what the engine already records and three MARKED by the run because nothing records them; a row
+  carries `text` and `detail` rather than an id, because his requirement was that a row be
+  self-contained. `attention_for_runs(home, run_dirs)` reads the health stream ONCE for many runs
+  and memoizes on its fingerprint, so a surface folding one run per routine costs one stream read
+  per refresh and not one per card. An empty list renders NOTHING: a run with nothing for him
+  reads exactly as it did before the block existed.
   **Where a rung is SWITCHED ON**: the routine page, in the two groups its two authority classes
   belong to — `ladder` under **Limits & reach → Oversight** (config, so it saves through the
   page's one accept bar, and the section names `budgets.max_child_depth` when that already caps
