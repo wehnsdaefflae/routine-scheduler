@@ -17,7 +17,8 @@ from ..report_threads import TRIAGE_READER
 
 #: The kinds that can come back QUEUED — a scheduled run's proposal for the Decisions page.
 #: Both carry the same three keys (`queued`, `id`, `next`) plus a self-describing
-#: `proposal` line written by the handler, so one branch renders both.
+#: `proposal` line written by the handler, so one branch renders both. Being queueable is also
+#: why every depth-0 run is granted them (`loopsetup`): a run with no user files a proposal.
 QUEUEABLE_KINDS = ("create_routine", "manage_lane")
 
 

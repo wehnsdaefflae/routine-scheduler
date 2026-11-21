@@ -16,13 +16,12 @@ from __future__ import annotations
 
 import re
 
-#: The side fields a run may write beside `say` — `actions.SIDE_FIELDS`, not imported because this
-#: module is pure and must not import the action contract.
-_FIELDS = ("note", "remind", "remind_feedback")
-#: A whole ELEMENT named after a side field — `<note>…</note>`, attributes allowed, nothing or
-#: anything between the tags. Neither tag alone qualifies: a run quoting `<note>` or `</note>`
-#: in a sentence is describing the channel, not trying to use it.
-_TAG = re.compile(r"<(" + "|".join(_FIELDS) + r")(?:\s[^>]*)?>.*?</\1\s*>",
+from .sidefieldset import FILED_FIELDS
+
+#: A whole ELEMENT named after a side field the engine files — `<note>…</note>`, attributes
+#: allowed, nothing or anything between the tags. Neither tag alone qualifies: a run quoting
+#: `<note>` or `</note>` in a sentence is describing the channel, not trying to use it.
+_TAG = re.compile(r"<(" + "|".join(FILED_FIELDS) + r")(?:\s[^>]*)?>.*?</\1\s*>",
                   re.IGNORECASE | re.DOTALL)
 
 

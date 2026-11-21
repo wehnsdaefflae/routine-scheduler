@@ -20,12 +20,12 @@ from . import thenscript
 from .actions import ALWAYS_KINDS, KIND_FIELDS
 from .actionschema import ACTION_SCHEMA, KINDS
 from .kindaliases import ALIAS_KINDS
+from .sidefieldset import REMINDER_FIELDS, SIDE_FIELDS
 
-# Fields every kind carries (actions.validate_action allows `note` on any kind, like `say`).
-_UNIVERSAL_FIELDS = ("say", "note", "kind", "role_swap")
-# …and the two that ride every kind only while the reminders capability is on (projected out,
-# not described-then-refused).
-_REMINDER_FIELDS = ("remind", "remind_feedback")
+# Fields every kind carries: `say`, `kind` and the side fields — less the reminder pair, which
+# rides every kind only while the reminders capability is on (projected out, not
+# described-then-refused).
+_UNIVERSAL_FIELDS = tuple(f for f in ("say", "kind", *SIDE_FIELDS) if f not in REMINDER_FIELDS)
 
 _CLAUSE_SEP = " · "
 
@@ -82,7 +82,7 @@ def schema_for_kinds(kinds: list[str] | set[str] | None, *,
             else {k for k in kinds if k in KIND_FIELDS} | set(ALWAYS_KINDS))
     if keep >= set(KINDS) and reminders:
         return ACTION_SCHEMA
-    fields = set(_UNIVERSAL_FIELDS) | (set(_REMINDER_FIELDS) if reminders else set())
+    fields = set(_UNIVERSAL_FIELDS) | (set(REMINDER_FIELDS) if reminders else set())
     for kind in keep:
         required, optional = KIND_FIELDS[kind]
         fields.update(required)
@@ -98,7 +98,7 @@ def schema_for_kinds(kinds: list[str] | set[str] | None, *,
         name: spec for name, spec in out["properties"].items() if name in fields
     }
     for name, spec in out["properties"].items():
-        if (name not in _UNIVERSAL_FIELDS and name not in _REMINDER_FIELDS
+        if (name not in _UNIVERSAL_FIELDS and name not in REMINDER_FIELDS
                 and isinstance(spec.get("description"), str)):
             spec["description"] = _project_description(spec["description"], keep)
     out["properties"]["kind"] = {**ACTION_SCHEMA["properties"]["kind"],

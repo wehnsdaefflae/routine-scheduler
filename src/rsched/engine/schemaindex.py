@@ -26,9 +26,11 @@ from __future__ import annotations
 import json
 
 from .actions import KIND_FIELDS
+from .sidefieldset import SIDE_FIELDS
 
-#: Fields that ride every kind, stated once by the harness instead of per kind.
-UNIVERSAL = ("say", "kind", "note", "role_swap", "remind", "remind_feedback", "background")
+#: Fields that ride every kind (`background`: every kind that takes it), stated once by the
+#: harness instead of per kind.
+UNIVERSAL = ("say", "kind", *SIDE_FIELDS, "background")
 
 _HEAD = ("# ACTION SCHEMA (your every reply matches this)\n"
          "Your reply is ONE JSON object. `say` and `kind` are required on every action; "

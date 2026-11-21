@@ -23,10 +23,7 @@ from .kindaliases import rewrite as alias_rewrite
 from .kindexamples import KIND_EXAMPLES  # noqa: F401 — re-exported: importers read it here
 from .reportfields import field_problems as report_field_problems
 from .sidefields import problems as side_field_problems
-
-# The fields that ride EVERY kind alongside `say`, each a no-turn side effect the engine files
-# rather than an argument to the action. One written INSIDE `say` is corrected: engine/sayfields.
-SIDE_FIELDS = ("note", "remind", "remind_feedback", "role_swap")
+from .sidefieldset import SIDE_FIELDS  # the fields riding EVERY kind beside `say`
 
 # Kinds available on EVERY turn regardless of the workflow's `tools:` allowlist and the
 # capability layer: `finish` so a run can always end, `report` so work that is not the run's
@@ -46,15 +43,16 @@ BACKGROUNDABLE_KINDS = ("util", "websearch", "code_search", "script", "shell", "
                         "read_file", "view_image", "memory_read", "read_rule",
                         "write_file", "edit_file", "memory_write")
 
-# kind → (required fields, allowed extra fields beyond say/kind)
-KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
-    "util": (("name",), ("args", "timeout_s", "background")),
+# kind → (required fields, allowed extra fields beyond say/kind). `background` is appended below
+# for BACKGROUNDABLE_KINDS, never listed here: that tuple is the one statement of which defer.
+_OWN_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "util": (("name",), ("args", "timeout_s")),
     # D290: SPELLINGS of the util call, rewritten into it before any gate (kindaliases.py).
     # `args` is REQUIRED so an alias naming no query is refused without spending a turn.
-    "websearch": (("args",), ("timeout_s", "background")),
-    "code_search": (("args",), ("timeout_s", "background")),
-    "script": (("name",), ("args", "timeout_s", "background")),
-    "shell": (("command",), ("timeout_s", "path", "background")),
+    "websearch": (("args",), ("timeout_s",)),
+    "code_search": (("args",), ("timeout_s",)),
+    "script": (("name",), ("args", "timeout_s")),
+    "shell": (("command",), ("timeout_s", "path")),
     "write_util": (("name",), ("content", "path", "anchor", "replacement", "all")),
     "remove_util": (("name",), ()),
     "schedule_run": (("target",), ("fire_at", "reason", "cancel", "id")),
@@ -65,21 +63,21 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "job": (("verb",), ("id", "title", "brief", "path", "state", "outcome", "summary",
                          "wake", "quiet_days", "accounting")),
     "goal": (("verb",), ("id", "goals", "quote", "evidence")),
-    "read_file": ((), ("path", "paths", "start_line", "start_char", "max_lines", "background")),
-    "view_image": ((), ("path", "paths", "prompt", "background")),
-    "write_file": (("path", "content"), ("append", "then_script", "background")),
+    "read_file": ((), ("path", "paths", "start_line", "start_char", "max_lines")),
+    "view_image": ((), ("path", "paths", "prompt")),
+    "write_file": (("path", "content"), ("append", "then_script")),
     "delete": (("path",), ("recursive",)),
     "move": (("src", "dst"), ()),
     "mkdir": (("path",), ("parents",)),
-    "edit_file": (("path", "anchor"), ("replacement", "all", "then_script", "background")),
-    "memory_read": ((), ("name", "args", "background")),   # a note, or a past-run search
+    "edit_file": (("path", "anchor"), ("replacement", "all", "then_script")),
+    "memory_read": ((), ("name", "args")),   # a note, or a past-run search
     "memory_write": (("name",), ("content", "about", "delete", "anchor", "replacement", "all",
-                                 "stale_after", "verified", "background")),   # D268: notemeta
-    "read_rule": (("name",), ("background",)),
+                                 "stale_after", "verified")),   # D268: notemeta
+    "read_rule": (("name",), ()),
     "write_rule": (("name",), ("content", "anchor", "replacement", "all")),
-    "llm": (("prompt",), ("system", "response_schema", "model", "background")),
+    "llm": (("prompt",), ("system", "response_schema", "model")),
     "decide": ((), ("question", "answer_type", "options", "questions", "evidence", "files",
-                    "model", "background")),
+                    "model")),
     # D241: ONE kind for a child run, its scheduling in a flat `mode` (childfields.py)
     "child": (("prompt",), ("mode", "workflow", "label", "turns", "model")),
     "detach": (("prompt",), ("workflow", "label")),
@@ -98,6 +96,8 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "do_nothing": ((), ()),
     "finish": (("status", "summary"), ("accounting", "reply_to", "final")),
 }
+KIND_FIELDS = {kind: (req, (*opt, "background") if kind in BACKGROUNDABLE_KINDS else opt)
+               for kind, (req, opt) in _OWN_FIELDS.items()}
 
 
 def normalize_action(obj: dict) -> dict:

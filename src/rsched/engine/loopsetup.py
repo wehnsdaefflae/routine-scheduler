@@ -9,6 +9,7 @@ from ..policyload import load_policy
 from . import (
     chain,
     loopnudge,
+    obs_admin,
     reviseleg,
     runkind,
 )
@@ -145,10 +146,11 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     from .admin import admin_marker, clear_admin_marker
     loop.admin_leg = admin_marker(ctx.run_dir) and runkind.is_root_conversation(ctx)
     clear_admin_marker(ctx.run_dir)
-    # Creation kinds reach every depth-0 run; the HANDLER decides between materializing (root
-    # conversation) and queuing a proposal (F328). Never a child: its proposal traces to nothing.
+    # The kinds that can QUEUE reach every depth-0 run; the HANDLER decides between materializing
+    # (root conversation) and queuing a proposal (F328). Never a child: its proposal traces to
+    # nothing.
     if loop.allowed_tools is not None and ctx.depth == 0:
-        loop.allowed_tools |= {"create_routine", "manage_lane"}
+        loop.allowed_tools |= set(obs_admin.QUEUEABLE_KINDS)
     # `decide` needs a configured DECISION model; without one the kind is projected out.
     from .decideaction import available as decide_available
     if not decide_available(ctx.server):

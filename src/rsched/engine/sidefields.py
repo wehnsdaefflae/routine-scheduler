@@ -1,8 +1,8 @@
 """The SIDE FIELDS' checks, dispatched together — `note`, `remind`, `remind_feedback`, `role_swap`.
 
-`actions.SIDE_FIELDS` names the fields that ride EVERY kind alongside `say`, each a no-turn side
-effect the engine files rather than an argument to the action — valid on any kind, required by
-none. `problems` is pure (no I/O, problems as strings for the schema-retry cycle); `land` is what
+`sidefieldset.SIDE_FIELDS` names the fields that ride EVERY kind alongside `say`, each a no-turn
+side effect the engine files rather than an argument to the action — valid on any kind, required
+by none. `problems` is pure (no I/O, problems as strings for the schema-retry cycle); `land` is what
 the engine DOES with an accepted action's fields.
 
 `remind` and `remind_feedback` land elsewhere on purpose: in `loop._tails` / `loop._finish`,
