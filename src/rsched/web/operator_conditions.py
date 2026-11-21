@@ -13,7 +13,7 @@ So each row is asked about NOW, by the one reader that already decides that cond
 - `backup_stale` — does the backup watch judge it stale now? Read from the verdict the daemon's
   own periodic check keeps (`BackupWatch.current`), never by reading the stamps here: that read
   goes to the NAS share over sshfs, and doing it per request made this the console's slowest
-  route (2026-11-21). No scheduler, or no current verdict, is `None`.
+  route. No scheduler, or no current verdict, is `None`.
 - `answer_undelivered` — does that routine or conversation still hold an answer no run will
   read (`readmodels/answer_pickup`)?
 - `lane_chain_member_skipped` — does a lane still name that slug while no routine has it?

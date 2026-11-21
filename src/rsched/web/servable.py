@@ -25,7 +25,7 @@ not the other is a hole, or a dead chip, that nobody sees; that is the defect D1
 the transcript when the file was touched would outlive the grant that justified it. The ROUTE
 holds this on every call without exception. The CHIP holds it for every local row; for a row on
 a network share it reads a verdict a background job kept, at most `VERDICT_MAX_AGE_S` old
-(`web/fileverdicts.py`, 2026-11-21) — statting those rows per request cost up to 74 s a card —
+(`web/fileverdicts.py`) — statting those rows per request cost up to 74 s a card —
 so what can lag there is the offer of a click, never the serving.
 
 Write roots are not read roots: D172 widens READ roots only. A path under a write-only grant

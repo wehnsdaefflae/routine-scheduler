@@ -19,7 +19,7 @@ another HTTP request. `in_flight` cannot narrow it further by construction: it i
 http middleware, and an http middleware never sees a websocket scope, so a row at 0 REFUTES HTTP
 queueing for that request and says nothing about open streams, engine work or pytest workers.
 
-What the samples this module took then showed (2026-11-21): the 400 ms was a daytime figure for a
+What the samples this module took then showed: the 400 ms was a daytime figure for a
 read over sshfs, not a bound. 14 of 20 retained samples caught `/api/health/blocked`'s thread
 INSIDE `backup_watch.newest_stamp`'s `open`/`read_text` on the off-box share, so the handler WAS
 the cost; the request now reads the daemon watch's kept verdict (`BackupWatch.current`) instead.
