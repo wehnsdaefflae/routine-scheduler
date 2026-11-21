@@ -8,7 +8,7 @@ import re
 from playwright.sync_api import expect
 
 from .conftest import until
-from .helpers import hold_requests, stored_config
+from .helpers import hold_requests, release, stored_config
 
 CHANGED = re.compile(r"\bsf-changed\b")
 GATE_TEST = re.compile(r"/api/routines/uir/gate/test$")
@@ -230,6 +230,7 @@ def test_a_double_clicked_gate_test_asks_the_checks_once(ui, ui_page):
     until(lambda: held, what="the gate test", page=ui_page)
     ui_page.wait_for_timeout(400)
     assert len(held) == 1, f"{len(held)} gate tests for one click"
+    release(ui_page, GATE_TEST, held)
 
 
 def test_only_the_newest_gate_test_paints_its_verdict(ui, ui_page):

@@ -112,7 +112,7 @@ def lane_members(ui, lane_id: str) -> list[str]:
 
 def hold_requests(page, pattern) -> list:
     """Route `pattern` and HOLD every request it matches: each one waits, unanswered, in the
-    returned list until the test continues or fulfils it."""
+    returned list until the test settles it — `fulfill`/`continue_` each, or `release` them."""
     held = []
 
     def hold(route):        # Playwright wraps a Python function, never a bound builtin
@@ -120,6 +120,18 @@ def hold_requests(page, pattern) -> list:
 
     page.route(pattern, hold)
     return held
+
+
+def release(page, pattern, held: list) -> None:
+    """Let every request still held under `pattern` through, then drop the route.
+
+    `unroute` alone frees the browser's request but never settles the Route: its handler
+    coroutine waits for good, and when it is garbage-collected — during a LATER test — its
+    cleanup raises outside any event loop, which pytest reports as that test's error.
+    """
+    for route in held:
+        route.continue_()
+    page.unroute(pattern)
 
 
 def watch_requests(page, pattern) -> list[str]:

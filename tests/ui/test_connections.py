@@ -12,7 +12,7 @@ from rsched.oauth import store
 from rsched.oauth.store import Connection
 
 from .conftest import until
-from .helpers import unfold
+from .helpers import release, unfold
 
 
 def test_connections_card(ui, ui_page, monkeypatch):
@@ -123,7 +123,7 @@ def test_a_double_clicked_connections_save_patches_once(ui, ui_page):
     ui_page.wait_for_timeout(400)
     assert len(patches) == 1, f"{len(patches)} PATCHes for one save"
     expect(save).to_be_disabled()
-    ui_page.unroute(detail)                            # releases the held PATCH
+    release(ui_page, detail, patches)
     expect(save).to_be_enabled()
 
 
