@@ -28,7 +28,9 @@ from . import (
     inbox,
     jobops,
     ledgerentry,
+    notereads,
     recipeproposal,
+    reviewleg,
     reviseleg,
     runkind,
 )
@@ -187,6 +189,12 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
                     "delivered this run; it stays queued and opens the next "
                     "run/reply.]")
     if ctx.depth == 0 and not leg:   # a revise leg owes no job and proposes no revision
+        # The post-run REVIEW LEG (engine/reviewleg.py), FIRST: a run whose own record shows it
+        # had something to learn from looks back once on its warm cache, before the finish event
+        # and the autocommit, so its notes are committed with the run and a recipe revision it
+        # names joins this run's own lines on the one card below.
+        summary += reviewleg.maybe_run(loop, status, summary, authored=authored,
+                                       aborted=abort is not None)
         # what the run owed its JOBS and never checkpointed is carried to the next run, and
         # the summary says so (engine/jobops.py)
         summary += jobops.close_out(ctx, status)
@@ -238,6 +246,8 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
         # P1: the process record is the ENGINE's — one LEDGER.md entry from what this leg
         # already produced, before the autocommit so it is committed with the run it records.
         ledgerentry.record(loop, status, summary)
+        if not leg and recipeproposal.asks_for_revisions(ctx):
+            notereads.record(ctx)   # which notes this routine run read, before the autocommit
         # D152 step 8: the `run-end` hook point. HERE — the point's own words are "the run is
         # over and its result is written" — and before the autocommit, so a line written for
         # the next run is committed with the run that learned it. Its carrier is the only one

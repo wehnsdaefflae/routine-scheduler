@@ -218,6 +218,33 @@ the limits (single-writer status.json preserved).
   Deterministic overlap works while the archive is small and degrades as it grows, so it
   surfaces one file above a floor score rather than a list, and the semantic path (embeddings)
   waits behind evidence that the cheap one is insufficient.
+- **Past-run search** (`engine/runsearch.py`) asks the same question ACROSS runs: `memory_read`
+  given `args` (words) instead of a `name` searches the routine's earlier transcripts — what
+  each run saw and said, a person's messages, each finish summary — through a SQLite FTS5 index
+  in `runs/.recall.sqlite` (engine-owned, gitignored with `runs/`, refreshed at each search; the
+  searching run is excluded). BM25-ranked, up to three hits from different runs, the best with
+  its neighbouring records, the rest one snippet each: a bounded observation rather than a cold
+  transcript read. No model call and no dependency beyond the standard library — Hermes Agent's
+  `session_search` is the model, and its own docs had dropped the LLM summary it once added.
+- **The REVIEW LEG** (`engine/reviewleg.py`, `engine/reviewnote.py`): Hermes Agent's learning
+  loop — after a turn it forks the agent onto the SAME cached prefix with a review prompt and a
+  narrow tool allowlist, and lets the fork write memory — fitted to a scheduled run. It runs in
+  the close-out every ending shares (`loopend.finish_run`), after the run's authored finish and
+  before the finish event, the ledger entry and the autocommit, on the same message list and
+  the same schema (the allowlist is enforced at validation; changing the schema would break the
+  cached prefix). It runs only when the run's OWN RECORD gave it a reason — actions that failed,
+  a hold, refused replies, a repeat or cycle warning, a person writing in, a `partial` or
+  authored `failed` ending, notes unread for 20 runs — never on a counter (Hermes switches its
+  own review off for cron at ~30K tokens an event), and not when the run kept a note itself, was
+  aborted, spent a budget, or is a child, a conversation, a detached task, a narrow revise leg
+  or an admin leg. It holds `memory_read`/`memory_write`/`read_file`/`finish` for at most 6
+  turns and 5 minutes; an existing note is revised only after the leg read it, and deleted only
+  to fold it into another note the leg wrote. Its events carry `review_leg` and are left out of
+  the task's overhead; a `RECIPE REVISION:` line it names joins the run's one D200 card; a leg
+  that fails for any reason costs the run nothing but the leg. `ServerConfig.review_leg`
+  (config.yaml, on by default) is the instance's switch. Which notes the runs actually read is
+  counted per note in `.memory/.reads.json` (`engine/notereads.py`), engine-owned beside
+  `INDEX.md`; nothing deletes a note for being unread — the leg is told and may fold it.
 - **The gate is sized in CALIBRATED tokens.** `estimate_input_tokens` is 3.5 UTF-8 bytes per
   token — a packing guess, not a tokenizer — while every gate compares it against a real window.
   So `window.note_prompt_size` divides what the provider just REPORTED by what was estimated,

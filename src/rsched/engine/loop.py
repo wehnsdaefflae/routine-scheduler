@@ -34,6 +34,7 @@ from . import (
     loopend,
     loopnudge,
     loopsetup,
+    loopshape,
     mediaops,
     obstails,
     recall,
@@ -239,8 +240,7 @@ class EngineLoop:
         # operative line as an appended ENGINE NOTE. Append-only and turn-free, the
         # same carrier a mid-run rule binding already uses.
         assist.at_boundary(self)
-        # …as does a background archival that finished since the last turn.
-        archival.collect(self)
+        archival.collect(self)   # …as does a background archival landed since the last turn
         # …as does a BACKGROUNDED ACTION whose real observation has landed (D118 phase 1):
         # the run marked a read or a fetch `background`, got its turn back at once, and this
         # is where the actual observation arrives — the same start-now/collect-later shape
@@ -380,9 +380,8 @@ class EngineLoop:
         # moment is "what just came back" rather than "what you are about to do" — asked
         # before the observation was recorded (`_observe`), read here in their place.
         text += assist.tail(fired)
-        # …and the run's OWN archived history is the third store this layer
-        # feeds from: when what just happened overlaps an archived topic, the
-        # tail names the file rather than leaving the run to remember it.
+        # …and the run's OWN archived history is the third store this layer feeds from: when
+        # what just happened overlaps an archived topic, the tail names the file.
         text += recall.at_observation(self, action, obs)
         # D65: an `allow once` grant is spent by THIS successfully-dispatched
         # matching action — revoked here, at the same boundary, and announced so
@@ -395,6 +394,7 @@ class EngineLoop:
             text += requests.spent_notice(spent, action)
         if REPEAT_WARN <= streak < REPEAT_FAIL:
             text += self._repeat_warning(streak)
+        text += loopshape.after(self, action, obs)   # a cycle, varied failures, a same result
         if warning := self.ctx.budget_warning():
             text += turnwindow.converge(warning)
         # D227: and what is LEFT, as a fact — HERE because the contract is composed once

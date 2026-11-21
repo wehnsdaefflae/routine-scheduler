@@ -77,11 +77,27 @@ def _observation(payload: dict) -> str | None:
     return f"refused:{kind or '?'}"
 
 
+def in_task(events: Iterable[dict]) -> Iterator[dict]:
+    """The events minus each REVIEW LEG's span (engine/reviewleg.py) — its opening note up to the
+    run's finish event. The leg is the run looking back, not the task, and is recorded apart.
+    """
+    review = False
+    for ev in events:
+        payload = ev.get("payload")
+        if ev.get("type") == "user_injection" and isinstance(payload, dict) and payload.get(
+                "review_leg"):
+            review = True
+        elif ev.get("type") == "finish":
+            review = False
+        if not review:
+            yield ev
+
+
 def from_events(events: Iterable[dict]) -> dict[str, int]:
     """Every signature in one run's events, with how often it happened."""
     found: Counter[str] = Counter()
     unmet: list[str] = []
-    for ev in events:
+    for ev in in_task(events):
         payload = ev.get("payload")
         if not isinstance(payload, dict):
             continue

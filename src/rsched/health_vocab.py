@@ -68,7 +68,8 @@ without the accountability it was traded for.
 
 wrong_turn_detected: a turn came back WELL-FORMED AND WRONG, and the engine saw it
 (`engine/wrongturn.py`, R2652). Carries `reason` (schema_rejected · repeat_invalid ·
-attempts_exhausted · action_repeat), `turn`, `model` and `effort` as structured fields, plus
+attempts_exhausted · action_repeat · action_cycle · varied_failures — the last two from
+`engine/loopshape.py`), `turn`, `model` and `effort` as structured fields, plus
 `streak` on a repeat. `repeat_invalid` is the correction that taught nothing — the identical
 invalid reply inside ONE turn, or a rejection this run already earned at an EARLIER turn (F736,
 `engine/schemamemo.py`, which is also what stops that retry being the identical ask). It exists

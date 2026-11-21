@@ -8,7 +8,12 @@ an edit, and — for `.memory/` and the rule library — that the engine owns th
 
 from __future__ import annotations
 
-from . import docread, notemeta, readwindow, thenscript
+from . import docread, notemeta, readwindow, runsearch, thenscript
+
+#: What every landed memory_write ends on (Hermes Agent's memory tool, measured there: a write
+#: answered with the note's state invited the model to "find more to fix" in the next turn).
+#: The note's lines are deliberately NOT echoed for the same reason.
+_SAVED = " Saved — this write is complete; do not repeat it."
 
 
 def _with_script(obs: dict) -> str:
@@ -128,6 +133,8 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
         return (f"OBSERVATION (edit_file): replaced {obs['replacements']} occurrence(s) in "
                 f"{obs['path']} (now {obs['bytes']} bytes)")
     if kind == "memory_read":
+        if obs.get("search") is not None:
+            return runsearch.render(obs)
         if obs.get("missing"):
             topics = ", ".join(obs.get("topics") or []) or "(none yet)"
             return (f"OBSERVATION (memory_read): no note named {obs['name']!r}. "
@@ -179,8 +186,8 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
             # edit's anchor can be chosen without re-reading the whole note (R2456)
             return (f"OBSERVATION (memory_write {obs['name']}.md, edit mode): replaced "
                     f"{obs['replacements']} occurrence(s); the note is now {obs['lines']} "
-                    f"lines.{over}")
+                    f"lines.{over}{_SAVED}")
         return (f"OBSERVATION (memory_write): note {obs['name']}.md "
                 f"{'created' if obs.get('created') else 'revised'} ({obs['lines']} lines); "
-                f"INDEX.md updated from 'about'.{over}")
+                f"INDEX.md updated from 'about'.{over}{_SAVED}")
     return None

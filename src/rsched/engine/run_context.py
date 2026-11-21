@@ -256,6 +256,8 @@ class RunContext:
     # What scripts/outcome.py measured at the run's end (engine/outcome.py), None = undeclared;
     outcome_measures: dict | None = None  # and its actions by task/process/friction (overhead.py)
     overhead: dict | None = None
+    notes_read: set[str] = field(default_factory=set)   # memory notes read (notereads.py)
+    review: dict | None = None   # what the post-run review leg did (engine/reviewleg.py)
     # The run's QUALITY counters (engine/runrecord.py) — run-cumulative like asks_deferred, so a
     # resumed leg reseeds them (history.prior_counters): claims the verifier challenged and the
     # ones that stood disputed (the finish's and a goal check's), actions a caution held, and the
@@ -264,15 +266,13 @@ class RunContext:
     claims_disputed: int = 0
     holds: int = 0
     interventions: int = 0
-    # The OPEN task (engine/jobops.py) and its workspace: while one is open, the run's
-    # relative paths, scripts, shell and util calls and its memory notebook resolve in the
-    # workspace instead of the routine's own dir (`work_dir`). Empty / None otherwise.
+    # The OPEN task (engine/jobops.py) and its workspace: while one is open, the run's relative
+    # paths, scripts, shell, utils and memory resolve there (`work_dir`). Empty / None otherwise.
     job_id: str = ""
     job_dir: Path | None = None
     # User UTTERANCES this leg: a settled blocking answer, a held reply, a dialog turn, an
-    # injected message, a slash command. Not telemetry, and deliberately NOT carried across
-    # legs — `create_routine` reads it to tell "the user has spoken since I drafted" from
-    # "nobody has seen the draft yet" INSIDE one reply, which a pid alone cannot (R1310).
+    # injected message, a slash command. Not telemetry, deliberately NOT carried across legs —
+    # `create_routine` reads it to tell "the user has spoken since I drafted" (R1310).
     user_replies: int = 0
     _started_mono: float = field(default_factory=time.monotonic)
     #: memo for `stage_coverage`, keyed on the stages entered so far (see there)

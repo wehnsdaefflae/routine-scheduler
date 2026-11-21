@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from ..ids import is_slug
 from ..paths import atomic_write
-from . import notemeta
+from . import notemeta, notereads, runsearch
 from .authoring import anchor_edit
 from .observations import truncate
 from .run_context import RunContext, work_dir
@@ -65,7 +65,9 @@ def _memory_index_upsert(mem_dir, name: str, about: str | None,
     atomic_write(index, "\n".join(lines) + ("\n" if lines else ""))
 
 def do_memory_read(action: dict, ctx: RunContext) -> dict:
-    """One note, or the INDEX the digest points at.
+    """One note, the INDEX the digest points at, or — given `args` — a search of the routine's
+    past runs (engine/runsearch.py). A note read from the routine's own notebook is counted
+    (engine/notereads.py).
 
     F910: the digest clips its `.memory/` block with "read .memory/INDEX.md for the full N
     lines", and that file was reachable by NOTHING — `read_file` refuses every `.memory/` path
@@ -73,6 +75,8 @@ def do_memory_read(action: dict, ctx: RunContext) -> dict:
     here, under the names the pointer actually prints (`notemeta.is_index_name`). Writing it
     stays refused: the engine owns the file and builds it from each note's `about` line.
     """
+    if action.get("args"):   # a SEARCH of the routine's past runs instead of a note
+        return runsearch.search(ctx.routine.dir, ctx.run_ts, " ".join(map(str, action["args"])))
     name = action["name"]
     mem_dir = work_dir(ctx) / ".memory"
     if notemeta.is_index_name(name):
@@ -88,6 +92,7 @@ def do_memory_read(action: dict, ctx: RunContext) -> dict:
         return {"kind": "memory_read", "name": name, "missing": True,
                 "topics": _memory_topics(mem_dir)}
     content, truncated = truncate(path.read_text(encoding="utf-8", errors="replace"))
+    notereads.noted(ctx, mem_dir, name)
     return {"kind": "memory_read", "name": name, "content": content,
             "lines": len(content.splitlines()), "truncated": truncated}
 

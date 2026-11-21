@@ -91,7 +91,9 @@ ACTION_SCHEMA: dict = {
         "args": {
             "type": "array", "items": {"type": "string"},
             "description": "util/websearch/code_search/script: command-line arguments passed "
-                           "to the script (append '--json' for structured output)",
+                           "to the script (append '--json' for structured output) · "
+                           "memory_read: words to search your routine's past runs for, "
+                           "instead of a `name`",
         },
         "timeout_s": {
             "type": "integer", "minimum": 1, "maximum": 1800,
@@ -322,9 +324,8 @@ ACTION_SCHEMA: dict = {
                                   "record appended to a `.jsonl`/`.ndjson` file gets the "
                                   "newline it needs so it cannot merge into the row before "
                                   "it (every other file is appended byte-faithfully)"},
-        # memory_write (memory_read needs only `name`). The four specs live in
-        # engine/notemeta.py beside the INDEX rendering that reads them — this file is over the
-        # repo's size bar and may only shrink, the same split schema_remind.py was made by.
+        # memory_write (memory_read: `name`, or `args` to search). The four specs live in
+        # engine/notemeta.py beside the INDEX rendering that reads them (this file may only shrink).
         "about": notemeta.ABOUT_FIELD,
         "delete": notemeta.DELETE_FIELD,
         "stale_after": notemeta.STALE_AFTER_FIELD,   # D268: a note's expiry, as data
@@ -372,8 +373,7 @@ ACTION_SCHEMA: dict = {
                                     "(default general-task) — pick the pattern matching its "
                                     "purpose · create_routine: the library workflow pattern the "
                                     "new routine is materialized from (default general-task)"},
-        # D198: the fields only this kind uses live in `schema_routine` — this file is AT its
-        # size ceiling (shrink-only), so the revise path's `revises` flag needed room first.
+        # D198: the fields only this kind uses live in `schema_routine` (this file is shrink-only).
         **schema_routine.ROUTINE_FIELDS,
         "label": {"type": "string",
                   "description": "child/detach: short name shown in the run tree"},

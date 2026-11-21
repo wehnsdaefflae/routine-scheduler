@@ -384,6 +384,12 @@ one you are about to touch, not all of them.
   Wrong turns panel (`readmodels/wrong_turns`, 2026-11-19) — never on the blocked-work surface,
   where ~230 a week buried the real blocks although the run goes on — and is a MEASUREMENT: it changes no effort, no model and no retry — the effort ladder
   behind it is a later increment that this rate has to justify, so do not wire one here.
+  `engine/loopshape.py` adds the shapes the identical streak cannot see — `action_cycle` (2-4
+  actions taking turns with UNCHANGED results) and `varied_failures` (3 DIFFERENT failing calls of
+  one kind, `shell` exempt) — each a warning tail plus a row, never an ended run; and it stands in
+  for a ≥512-char result already verbatim in context (`same_as_turn`, rendered by
+  `engine/samestub.py` live and on replay; the record keeps the full result). A `shell` exit 0
+  whose command line hides whose status it is says so in the head (`engine/exitattr.py`).
   **A classifier that could not decide STRUCTURALLY is a health event on the same terms**
   (`error_class_undecided`, `engine/errorclass.py`, R3108): retry, failover and prompt-window
   policy are decided in three places by matching ENGLISH SENTENCES in a provider's error body
@@ -726,7 +732,24 @@ one you are about to touch, not all of them.
   (`notemeta.meta_of` reads them back off the line): a revision that does not restate an expiry
   keeps it, which is what stops an ordinary write silently dropping what an earlier run knew.
   A value the engine cannot render is LEFT OUT, never refused — the note is the payload, and the
-  observation names what was recorded. The operator's file endpoint agrees about the files the engine owns:
+  observation names what was recorded. `memory_read` with `args` (words) instead of a `name`
+  SEARCHES the routine's PAST RUNS (`engine/runsearch.py`: SQLite FTS5 in `runs/.recall.sqlite`,
+  the searching run excluded, three hits from distinct runs). Which notes runs READ is counted per
+  note in `.memory/.reads.json` (`engine/notereads.py`, engine-owned like INDEX.md) — a count that
+  deletes nothing. **The REVIEW LEG** (`engine/reviewleg.py`, Hermes Agent's learning loop fitted
+  to a scheduled run) is where curation into `.memory/` happens without the task paying: inside
+  `loopend.finish_run`, after the authored finish and before the finish event, a depth-0 routine
+  run whose OWN RECORD gave a reason (failed actions, a hold, refused replies, a repeat/cycle
+  warning, a person writing in, a `partial`/authored `failed` ending, notes unread 20 runs) and
+  that kept no note itself continues ON THE SAME MESSAGE LIST AND SCHEMA (the narrow allowlist is
+  enforced at validation — changing the schema breaks the cached prefix) for ≤6 turns of
+  `memory_read`/`memory_write`/`read_file`/`finish`. A note is revised only after the leg read it
+  and deleted only to fold it into one the leg wrote; its events carry `review_leg` and are out of
+  the task's overhead (`frictions.in_task`); its RECIPE REVISION lines join the run's one D200
+  card; it never fails the run. Never give it a counter trigger or an "always write something"
+  prompt — Hermes switched its own off for cron, and pressing a leg to write is bookkeeping.
+  `ServerConfig.review_leg` (config.yaml) is the switch; the suite sets
+  `RSCHED_SKIP_REVIEW_LEG` (conftest), and `tests/test_review_leg.py` clears it. The operator's file endpoint agrees about the files the engine owns:
   `PUT /api/routines/{slug}/file` refuses `routine.yaml`, `state/finish-line.json`,
   `.memory/INDEX.md`, `LEDGER.md`, `.ledger/`, `.git/`, `runs/`, `inbox/` and `questions/` BY NAME
   (`api_routine_files.NOT_EDITABLE_HERE`), each refusal naming the endpoint or owner that holds

@@ -145,7 +145,8 @@ def digest_ask(*, unlocked: bool) -> str:
                 "run as written needs no change.")
     return ("RECIPE REVISIONS: before you finish, say whether your own recipe should change — "
             f"one line in the summary per revision, beginning `{MARKER}` and naming the file, "
-            "the change, and what THIS run showed. You hold no recipe-writing capability, so "
+            "the change, and what THIS run showed — the change a general rule with its reason, "
+            "not this run's incident and no dates. You hold no recipe-writing capability, so "
             "those lines are filed as one proposal on the operator's Decisions page; approving "
             "it resumes this run with your recipe writable, so the change is made where it was "
             "reasoned. A recipe that served this run as written needs no line.")

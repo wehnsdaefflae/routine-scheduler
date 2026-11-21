@@ -100,9 +100,9 @@ def test_command_runs_and_captures_both_streams(shell_ctx):
     obs = dispatch({"kind": "shell", "command": "printf 'a\\nb\\n' | wc -l; echo oops >&2"},
                    shell_ctx)
     assert obs["exit"] == 0
-    assert obs["stdout"].strip() == "2"
-    assert "oops" in obs["stderr"]
-    assert "OBSERVATION (shell, exit 0)" in format_observation(obs)
+    assert (obs["stdout"].strip(), "oops" in obs["stderr"]) == ("2", True)
+    assert format_observation(obs).startswith(   # whose 0 it is: engine/exitattr.py
+        "OBSERVATION (shell, exit 0 — the exit of `echo`, the last command, not of `wc`):")
 
 
 def test_a_failing_command_reports_its_exit_and_adds_no_advice(shell_ctx):

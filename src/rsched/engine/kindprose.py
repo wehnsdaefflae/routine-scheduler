@@ -121,7 +121,7 @@ EXPENSIVE to find out (environment quirks, working solutions, constraints nobody
 down), not what the instruction or a plain look at the data would tell anyone. \
 The state digest \
 shows .memory/INDEX.md at run start, clipped — `memory_read name=index` returns it whole; \
-consult it before re-discovering anything; revise notes \
+consult it — or search your past runs (`args`) — before re-discovering anything; revise notes \
 that \
 turned out wrong instead of appending contradictions. read_file / write_file are rejected on \
 .memory/ paths."""),

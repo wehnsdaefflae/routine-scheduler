@@ -656,6 +656,16 @@ so do `report` and `ask_user`, which ARE the product for some routines. The run 
 (`engine/runtime.py`), over the whole run's transcript, so a resumed run's newest leg carries
 the run.
 
+**The REVIEW LEG is not the task, and is measured apart** (`engine/reviewleg.py`). A run whose own
+record gave it a reason looks back once at its end, on the same cached prefix, and keeps what a
+later run needs in `.memory/` — the learning that used to be a task turn. Its span (its opening
+note to the run's finish event) is left out of `overhead` and `frictions` alike
+(`frictions.in_task`), and what it did is recorded as `quality.review` —
+`{reasons, turns, wrote, deleted, stopped?}`. Its tokens are the run's: they are in the row's
+usage like every other call the run made. Which notes a routine's runs actually READ is counted
+per note in `.memory/.reads.json` (`engine/notereads.py`), and a note no run has read in 20 runs
+is named to the review leg, which may fold it into the note that covers it.
+
 **Per routine** (`readmodels/overhead_reading.py`): the MEDIAN `process_share` of the newest
 `overhead.WINDOW` (5) measured depth-0 runs UNDER THE ROUTINE'S CURRENT RECIPE, judged once there
 are `MIN_RUNS` (3), against `overhead.THRESHOLD` (0.27). A run counts only when its row's
@@ -1022,7 +1032,10 @@ in 76 rows it had fired zero times while ten runs repeated one verbatim rejectio
 287, 315, 331, 349, 483, 592, 613, 647, 662 and 683), `attempts_exhausted` (every schema attempt spent,
 no action accepted, the run ends), and `action_repeat` (a schema-VALID action landing for the
 third time in a row — `loop.REPEAT_WARN`, where each action is individually well-formed and the
-run has stopped moving). ONE row per (reason, turn): a turn rejected three times is one wrong
+run has stopped moving), and the two shapes that streak cannot see (`engine/loopshape.py`, each
+filed once per onset beside the warning the run is given): `action_cycle` (two to four actions
+taking turns with UNCHANGED results — a waiting kind never forms one) and `varied_failures`
+(three DIFFERENT calls of one kind failing in a row, `shell` exempt). ONE row per (reason, turn): a turn rejected three times is one wrong
 turn, and the per-attempt record is already in that run's transcript.
 
 The EVENT is a **MEASUREMENT** — no effort is changed, no model is swapped, no attempt is added

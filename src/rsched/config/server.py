@@ -118,6 +118,10 @@ class ServerConfig(_Config):
     # system model: a cheap model asked to think at the big model's level is not the saving the
     # operator asked for. A routine's own `efforts.tool_call` still outranks it.
     system_tool_call_effort: str = ""
+    # The post-run REVIEW LEG (engine/reviewleg.py): a routine run whose own record shows it
+    # had something to learn from looks back once on its warm cache and keeps what a later run
+    # needs in `.memory/`. One fleet switch, settable in config.yaml only; off = never runs.
+    review_leg: bool = True
     # Background navigable-history archival only; blank preserves automatic tool-call/main routing.
     compaction_model: str = ""
     # The reasoning effort that compaction model runs at (config.base.EFFORT_LEVELS); blank = the

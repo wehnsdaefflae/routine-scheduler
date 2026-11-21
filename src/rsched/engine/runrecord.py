@@ -142,4 +142,6 @@ def quality(ctx) -> dict:
         # its landed actions by task/process/friction and the `process_share` — the fleet
         # invariant's input (engine/overhead.py); absent (unknown) with no transcript to read
         **({"overhead": dict(ctx.overhead)} if ctx.overhead else {}),
+        # what the post-run review leg did, when it ran (engine/reviewleg.py)
+        **({"review": dict(review)} if (review := getattr(ctx, "review", None)) else {}),
     }

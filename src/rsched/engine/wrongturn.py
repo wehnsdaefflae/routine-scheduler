@@ -22,7 +22,7 @@ also the `(turn, effort-that-sufficed)` corpus token-lab's R1668 says this insta
 resolves nothing and mutates nothing, and a run-level assertion that the resolved model and
 effort are identical across a run that trips a trigger and one that does not.
 
-THE FOUR TRIGGERS are the visible failures the engine ALREADY DETECTS — nothing here is a new
+THE TRIGGERS are the visible failures the engine ALREADY DETECTS — nothing here is a new
 judgement about a turn:
 
 * `schema_rejected` — a reply that is not a valid action: unparseable, schema-invalid, or
@@ -44,6 +44,9 @@ judgement about a turn:
   where the engine already warns (`loop.REPEAT_WARN`; `loop.REPEAT_FAIL` ends the run). Wrong
   in the way token-lab's blind spot is wrong — chained state, not disguise: each action is
   individually well-formed and the run is no longer moving.
+* `action_cycle` and `varied_failures` — the two shapes the identical streak cannot see, read by
+  `engine/loopshape.py`: two to four actions taking turns with unchanged results, and three
+  DIFFERENT calls of one kind failing in a row. Warned once per onset, like the streak.
 
 ONE ROW PER (reason, turn). A single turn can be rejected three times, and three rows would make
 the stream say three wrong turns where there was one — `health_cooldown`'s docstring records what
@@ -72,9 +75,10 @@ if TYPE_CHECKING:                                  # pragma: no cover - typing o
 EVENT = "wrong_turn_detected"
 
 #: The `reason` vocabulary, as the module docstring defines each. A filter asks "how many turns
-#: came back wrong, and which way" — so the four stay distinguishable rather than folded into a
+#: came back wrong, and which way" — so the reasons stay distinguishable rather than folded into a
 #: count that cannot tell a recovered rejection from a run the engine had to end.
-REASONS = ("schema_rejected", "repeat_invalid", "attempts_exhausted", "action_repeat")
+REASONS = ("schema_rejected", "repeat_invalid", "attempts_exhausted", "action_repeat",
+           "action_cycle", "varied_failures")
 
 #: The identical-action streak at which a repeat is filed — the streak the engine ALREADY warns
 #: the run about, never a new threshold of this module's own. Pinned equal to `loop.REPEAT_WARN`

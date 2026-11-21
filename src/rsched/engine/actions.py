@@ -86,7 +86,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "move": (("src", "dst"), ()),
     "mkdir": (("path",), ("parents",)),
     "edit_file": (("path", "anchor"), ("replacement", "all", "then_script", "background")),
-    "memory_read": (("name",), ("background",)),
+    "memory_read": ((), ("name", "args", "background")),   # a note, or a past-run search
     "memory_write": (("name",), ("content", "about", "delete", "anchor", "replacement", "all",
                                  "stale_after", "verified", "background")),   # D268: notemeta
     "read_rule": (("name",), ("background",)),
@@ -359,6 +359,8 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
                         f'catalog lists it, or "list" for the catalog — got {name!r}')
     if kind in ("memory_read", "memory_write"):
         name = str(obj.get("name") or "")
+        if kind == "memory_read" and bool(name) == bool(obj.get("args")):
+            problems.append("memory_read: pass EITHER 'name' (a note) OR 'args' (search words)")
         if name and not is_slug(name) and not notemeta.index_read(kind, name):
             problems.append(f"kind={kind}: 'name' must be a kebab-case topic slug, got {name!r}")
         if kind == "memory_write" and notemeta.is_index_name(name):
@@ -366,10 +368,8 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
                             ".memory/INDEX.md from each note's 'about' line")
         if kind == "memory_write" and not obj.get("delete"):
             # THREE modes, each with its own required fields: delete (above), EDIT MODE
-            # (`anchor` + optional `replacement`, patching the note in place — R2432/R2456,
-            # so adding two facts to a 95-line note never re-emits 95 lines), and the whole
-            # note (`content` + `about`). Mixing edit mode with `content` is refused rather
-            # than silently preferring one, the way write_util/write_rule do it.
+            # (`anchor` + optional `replacement`, in place — R2432/R2456), and the whole note
+            # (`content` + `about`). Mixing edit mode with `content` is refused, not preferred.
             if obj.get("anchor") is not None:
                 if obj.get("content") is not None:
                     problems.append("memory_write: pass EITHER 'content' (the whole note) OR "

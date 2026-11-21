@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 
-from . import obs_floor, obs_hold, obs_secrets, outputs, thenscript
+from . import exitattr, obs_floor, obs_hold, obs_secrets, outputs, samestub, thenscript
 from .obs_admin import dialog_reply
 from .replyactions import unexecuted_note
 
@@ -198,10 +198,8 @@ def _secret_gate(obs: dict, kind: str) -> str:
 
 
 def format_observation(obs: dict) -> str:
-    """The user message an observation becomes: its kind's wording, then — when the reply that
-    produced it carried more actions than the one that ran — the ones that did NOT run, named
-    (engine/replyactions.py). Stored on the observation, so the live turn and a resumed leg's
-    replay read the same words. Never raises (`render_observation`).
+    """The user message an observation becomes — the same words live and on a resumed leg's
+    replay, never raising (`render_observation`).
     """
     return render_observation(obs)[0]
 
@@ -214,6 +212,8 @@ def render_observation(obs: dict) -> tuple[str, str | None]:
     raw result instead; `live_observation` is how a live turn records that it happened.
     """
     try:
+        if stub := samestub.render(obs):   # an unchanged repeat result (engine/loopshape.py)
+            return stub, None
         return (_observation_body(obs) + outputs.observation_tail(obs)
                 + unexecuted_note(obs.get("not_executed"),
                                   str(obs.get("chain_stopped") or ""))), None
@@ -272,7 +272,8 @@ def _observation_body(obs: dict) -> str:  # noqa: PLR0911
     if kind == "shell":
         # No advisory tail: a non-zero exit here is usually the answer, not a mistake (do_shell).
         where = f", in {obs['cwd']}" if obs.get("cwd") else ""
-        return (f"OBSERVATION (shell, exit {obs['exit']}{where}):\n" + _run_body(obs)
+        return (f"OBSERVATION (shell, exit {obs['exit']}{where}{exitattr.note(obs)}):\n"
+                + _run_body(obs)
                 + _killed_note(obs))
     if kind in ("util", "script"):
         if kind == "util" and obs.get("name") == "search":

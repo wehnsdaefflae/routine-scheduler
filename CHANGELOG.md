@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.572.0] — 2026-11-21
+
+### Added
+- **The REVIEW LEG — Hermes Agent's learning loop, fitted to a scheduled run**
+  (`engine/reviewleg.py`, `engine/reviewnote.py`). A depth-0 routine run whose own record gave it
+  a reason — two or more failed actions, an action a caution held, refused replies, a repeat or
+  cycle warning, a person writing in mid-run, a `partial` or authored `failed` ending, or notes
+  no run has read in 20 runs — and that kept no note of its own now looks back ONCE inside its
+  close-out, after its authored finish and before the finish event and the autocommit: on the
+  SAME message list and the same schema (so the provider serves the whole prefix from cache; the
+  narrow allowlist is enforced at validation), for at most 6 turns of `memory_read`,
+  `memory_write`, `read_file` and `finish`. What it keeps lands in `.memory/` and is committed
+  with the run; a `RECIPE REVISION:` line it names joins the run's one D200 card. Two guards
+  Hermes measured it needed: an existing note is revised only after the leg read it, and a note
+  is deleted only to FOLD it into one the leg wrote. The keeping standard is Hermes' own, tuned
+  there against measured failures (only what the run showed; a general rule with one clause of
+  why, no dates or ids; correct in place; never a negative tool claim from one failure; never an
+  unresolved failure written up as a method) — but NOT its "a pass that does nothing is a missed
+  opportunity": here "nothing to keep" is a complete answer. The leg's span is left out of the
+  task's overhead and frictions (`frictions.in_task`), recorded as `quality.review`, and a leg
+  that fails costs the run nothing but the leg. `ServerConfig.review_leg` switches it
+  (config.yaml, on by default).
+- **Search a routine's past runs** (`engine/runsearch.py`): `memory_read` with `args` (words)
+  instead of a `name` searches every earlier run's transcript through a SQLite FTS5 index in
+  `runs/.recall.sqlite` — BM25, up to three hits from different runs, the best one with its
+  neighbouring records, the searching run excluded; ALL words first, then ANY. Standard library
+  only, no model call (Hermes' `session_search` is the model).
+- **Which notes runs actually READ** is counted per note in `.memory/.reads.json`
+  (`engine/notereads.py`, engine-owned beside `INDEX.md`). A note unread for 20 runs is named to
+  the review leg, which may fold it into the note that covers it; nothing deletes a note for
+  being unread.
+- **Two stuck-run shapes the identical-action streak cannot see** (`engine/loopshape.py`): a
+  CYCLE of two to four actions with unchanged results (never a waiting kind) and THREE DIFFERENT
+  calls of one kind failing in a row (`shell` exempt). Each is a warning tail once per onset and a
+  `wrong_turn_detected` row (`action_cycle`, `varied_failures`) — a measurement, never an ended
+  run. The same module stands in for a large result (512+ characters) byte-identical to one
+  still verbatim in the live context: the observation is marked `same_as_turn` before it is
+  recorded and renders as one line, live and on replay alike (`engine/samestub.py`); the record
+  keeps the full result.
+- **A `shell` exit 0 says whose status it is** when the command line hides it
+  (`engine/exitattr.py`): `pytest | tail` reports `tail`'s, `make || true` reports nothing about
+  `make`, `pytest; echo done` reports `echo`'s. Nothing is said for a non-zero exit or once the
+  command sets `pipefail`.
+
+### Changed
+- **A landed `memory_write` ends on "Saved — this write is complete; do not repeat it."**, and
+  the D200 recipe-revision ask asks for "the change a general rule with its reason, not this
+  run's incident and no dates". The memory kind bullet names the past-run search (+28 chars on
+  the always-on contract, recorded in `tests/prompt_budget.json`).
+
 ## [0.571.0] — 2026-11-21
 
 ### Added

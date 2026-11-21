@@ -90,7 +90,7 @@ from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 
 from . import hold
-from .frictions import _lines
+from .frictions import _lines, in_task
 
 TASK, PROCESS, FRICTION = "task", "process", "friction"
 
@@ -290,7 +290,7 @@ def from_events(events: Iterable[dict], routine_dir: str | Path) -> dict | None:
     counts = {TASK: 0, PROCESS: 0, FRICTION: 0}
     run_ts = ""
     pending: dict | None = None
-    for ev in events:
+    for ev in in_task(events):
         if ev.get("type") == "header" and ev.get("run_id"):
             run_ts = str(ev["run_id"]).rpartition(":")[2]
         payload = ev.get("payload")
