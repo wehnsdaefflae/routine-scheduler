@@ -1,20 +1,4 @@
-"""F264 + R132: a blocking question renders ONE full answer form, and its buttons in view.
-
-A conversation renders a pending question on TWO surfaces: inline in the chat transcript
-(chat.js `questionInline`, fed by the `question` transcript event) and in the pinned panel
-above the composer (conversations.js `questionPanel`, fed by status.json's question). The
-run view mirrors this (transcript.js `questionNode` + the page-top panel). Two rules hold:
-
-- F264: the pinned panel owns the ONE full form (free text, ask-back, expires chrome). The
-  inline rendering of a BLOCKING question must never build a second full form.
-- R132: the inline rendering must still carry the one-click controls (option buttons /
-  typed-decision buttons, `quick: true` in answerform.js) — a util approval whose only
-  buttons live on another surface sent the operator hunting through the Decisions tab.
-
-Source-level guard (like test_static_imports / test_lint) because the console is no-build
-vanilla ES modules; the browser-level half lives in tests/ui/test_flows.py (the run-view
-inline approve flow), which needs the Playwright harness.
-"""
+"""F264 + R132: a blocking question renders ONE full answer form, and its buttons in view."""
 import re
 from pathlib import Path
 

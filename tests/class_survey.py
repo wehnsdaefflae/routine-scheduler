@@ -1,25 +1,6 @@
 """What `static/` MOUNTS and what its stylesheets NAME — the extraction half of the class
 contract (R2885). The rules that judge the answer live in tests/test_static_class_contract.py;
 this module only reads, and is a helper like tests/render_guard.py, not a test module.
-
-WHAT IT SEES. Class LITERALS only — `class: "…"`, `className = "…"`, and the string arguments of
-`classList.add/remove/toggle` — plus the values of a map whose NAME says it holds classes
-(`VERDICT_CLASS`, `STATUS_TONE`, `OUTCOME_CHIP`, `GATE_CLS`): that bare-token class-map idiom IS
-the 0.399.2 defect and it recurs (itemcard.js, jobs-panel.js, runjob.js, views/routine.js). A
-piece of a template literal touching a `${…}` hole is dropped, not guessed at — `chip-${k}` is
-not a class token. Token-not-substring throughout: `.conv-tag` is not styled because
-`.conv-tagsel` is.
-
-THREE SETS per module, because the rules need different ones:
-  mounted    — what this module really puts on an element. What gets CHECKED.
-  context    — what may be on that element: `mounted`, plus a class the module names as a string
-               that some stylesheet styles (an array-built list `["card", live ? "live" : ""]`
-               reaches the DOM exactly like a literal), plus `chip` where it calls `chip()`,
-               plus the shell's own classes from index.html.
-  ancestors  — `context` unioned over the module's IMPORT CLOSURE: a component may rely on a root
-               class the view that mounts it emits (dev.css styles `.outcome-panel .summons`,
-               and views/changes-routine.js:248 mounts `.outcome-panel` around
-               components/outcome-panel.js).
 """
 from __future__ import annotations
 

@@ -1,24 +1,4 @@
-"""The browser screen's clipboard actually SYNCS, both ways, when the switch is on (F831).
-
-The operator, 2026-11-02: *"the host to client clipboard sync for the sidecar browser does not
-work"*. D221's switch set the iframe's `allow="clipboard-read; clipboard-write"` and its four
-tests (tests/ui/test_browser_clipboard_toggle.py) assert that CONTROL against a dead screen — so
-the suite could not tell "the clipboard syncs" from "the frame is permitted to sync it". It did
-not sync: neither noVNC the sidecars serve (Debian bookworm's 1.3.0 for the browser, 1.6.0 for
-the desktops) calls `navigator.clipboard` anywhere. Their clipboard is a manual side panel — the
-textarea `#noVNC_clipboard_text`, whose `change` event sends its text to the guest
-(`UI.clipboardSend` → `rfb.clipboardPasteFrom`, app/ui.js) and whose value noVNC overwrites with
-a plain `.value =` when the guest copies (`UI.clipboardReceive`).
-
-`components/clipboard-bridge.js` drives that panel from the embedder. These tests mount, in place
-of the relayed `vnc.html`, a page carrying EXACTLY that contract — the panel's id, a `change`
-listener standing in for `clipboardSend`, and a `receive()` doing what `clipboardReceive` does —
-and drive the real console page and the real clipboard of the browser under test. What they do
-NOT do is run an RFB stream: the uitest container has no VNC server, so "the guest's X selection
-then holds it" rests on x11vnc's own relay (deploy/chrome-entrypoint.sh: no `-nosel` /
-`-noclipboard`), which was never in doubt. The defect was the missing call, and that is what is
-proven here.
-"""
+"""The browser screen's clipboard actually SYNCS, both ways, when the switch is on (F831)."""
 from __future__ import annotations
 
 from playwright.sync_api import expect

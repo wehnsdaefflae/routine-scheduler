@@ -220,8 +220,7 @@ def test_resolve_chain_follows_fallbacks_transitively(tmp_path):
     endpoint — so the chain was two models in one failure domain. One credential expiry on
     2026-09-14 killed eight routines at turn 0, and the same empty walk ends a run on a
     classifier refusal (engine/degrade walks this chain for both).
-
-    The reachable set is now what a reader of config.yaml would expect, with no config edit."""
+    """
     reg = EndpointRegistry(_nested_server(tmp_path / "routines"))
     names = [ref.name for _, ref in reg.resolve_chain("astra")]
     assert names == ["astra", "opus", "glm-a", "glm-b"]
@@ -246,9 +245,7 @@ def test_resolve_chain_breadth_first_keeps_the_authors_order(tmp_path):
 def test_resolve_chain_unresolvable_rung_does_not_truncate_the_ladder(tmp_path):
     """`broken` names a missing endpoint, so as a FALLBACK it is skipped — but what it
     declared is still followed. A bad rung costs one model, not every model below it.
-
-    As a PRIMARY it still raises: a run must not quietly start with no model at all, and
-    that refusal is `resolve`'s, not this walk's."""
+    """
     reg = EndpointRegistry(_nested_server(tmp_path / "routines"))
     names = [ref.name for _, ref in reg.resolve_chain("head")]
     assert "broken" not in names and "glm-a" in names   # skipped, but its declaration survived
@@ -332,18 +329,7 @@ def test_run_fails_over_to_fallback_model(make_routine, monkeypatch):
 
 
 def test_the_fallback_model_is_told_it_is_the_fallback(make_routine, monkeypatch):
-    """D146-B: the switch must reach the RUNNING model, not only its readers.
-
-    Everything the switch wrote before this was for a reader after the fact — a transcript
-    `error` event and a fleet health event — while `completion` deletes the failed-attempt
-    debris from the live prompt on success. So the new model inherited the turn with no trace
-    of the switch and no way to know its own situation.
-
-    weightloss:20260923-220004 is what that cost: configured on Opus high, served two rungs
-    down after a 503 and a 402, it read its own field-shifted output and concluded "the model
-    cannot reliably hold the action schema; pick a stronger model" — a false diagnosis about
-    itself, which it had no information to correct. $1.01 over 193 turns.
-    """
+    """D146-B: the switch must reach the RUNNING model, not only its readers."""
     d = make_routine("failover-told")
     server = _catalog_server(d.parent)
     eps = _wire(monkeypatch, server, {
@@ -378,13 +364,7 @@ def test_the_fallback_model_is_told_it_is_the_fallback(make_routine, monkeypatch
 
 
 def test_a_verdict_after_failover_names_the_configured_model_too(make_routine, monkeypatch):
-    """D146-A: an engine-authored failure verdict must say WHICH model it is indicting.
-
-    `ctx.main_model` follows every switch, so a schema-storm verdict on a failed-over run
-    named the fallback while the routine's config, the dashboard row and the operator all said
-    the primary — and then advised picking a stronger model, which is the one thing that
-    cannot help when the configured model was simply unreachable (F547).
-    """
+    """D146-A: an engine-authored failure verdict must say WHICH model it is indicting."""
     d = make_routine("verdict-names-both")
     server = _catalog_server(d.parent)
     # epA dies; epB then returns four turns that each need a schema retry, tripping the storm
@@ -430,14 +410,7 @@ def test_a_verdict_without_failover_keeps_its_short_form(make_routine, monkeypat
 
 
 def test_a_field_shifted_util_action_is_told_it_is_field_shifted(make_routine, monkeypatch):
-    """D146-C: name the fault, not the one field that happened to carry a constraint.
-
-    All eight rejections in weightloss:20260923-220004 carried ONE message —
-    `timeout_s: 0 is less than the minimum of 1` — because `timeout_s` is the only field with
-    a numeric minimum. The actual candidates had `name='300'`, `name='180'` and a whole
-    sentence of prose in `name`: a whole-object field shift, schema-VALID in every other
-    respect. The correction described the symptom four times and the fault went unnamed.
-    """
+    """D146-C: name the fault, not the one field that happened to carry a constraint."""
     d = make_routine("field-shift-named")
     server = _catalog_server(d.parent)
     bad = {"kind": "util", "name": "300",
@@ -481,14 +454,7 @@ def test_run_fails_when_chain_exhausted(make_routine, monkeypatch):
 
 
 def test_exhausted_chain_names_the_first_rung_not_only_the_last(make_routine, monkeypatch):
-    """F566: the failure line must name what STARTED the collapse, not just what ended it.
-
-    On 2026-09-26 seven runs across five routines all reported `Endpoint failure: nano gpt:
-    timed out.` — the fourth rung — while every one of them began with a 503
-    `auth_unavailable` on its configured model. The operator reading that sees a timeout at a
-    provider they never chose, and the auth fault they could actually fix appears nowhere.
-    The engine has the fact: `_switch_to_fallback` sees the first failure before any other.
-    """
+    """F566: the failure line must name what STARTED the collapse, not just what ended it."""
     d = make_routine("firstrung")
     server = _catalog_server(d.parent)
     _wire(monkeypatch, server, {

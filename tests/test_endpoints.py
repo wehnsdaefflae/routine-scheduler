@@ -560,12 +560,6 @@ def test_anthropic_one_shot_claims_placement_on_its_smallest_block(monkeypatch, 
     """A one-shot call (`cacheable=False` — an `llm` action, the archival digest, a refusal
     classification) sends a prefix that will never be sent again, so a cache WRITE costs
     1.25x for a read that never comes.
-
-    Sending NO marker did not prevent that: the subscription proxy (CLIProxyAPI) places its
-    own breakpoints — tools, system, last message — on any request carrying none, and every
-    archival call's whole input was billed as a cache write (2.94M tokens over four). So the
-    call carries exactly ONE marker, on the first block in evaluation order: the proxy leaves
-    placement alone, and only that small prefix can be written.
     """
 
     keyfile = tmp_path / "anthropic.env"

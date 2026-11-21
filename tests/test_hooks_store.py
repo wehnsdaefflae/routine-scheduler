@@ -1,16 +1,4 @@
-"""HOOKS as one mechanism (D152, campaign step 2) — the RECORD and the STORE.
-
-The operator's order: implement hooks as a single mechanism unifying reports/messages,
-consequence reminders and run injections, with run↔sub-run communication as a case of it.
-Step 2 builds the mechanism BEHIND the existing surfaces: nothing a routine sees changes, and
-every current path writes through the one store as well as its own.
-
-What is pinned here is the mechanism's own shape — the five fields and nothing beside them,
-one spelling for an addressee, which delivery moment can change control flow, a vocabulary no
-mechanism may invent a value outside of, and a stream that reads back in order and forgives a
-row from a newer build. That the three live paths actually write through it, and that their
-own surfaces are unchanged by doing so, is test_hooks_mirror.py.
-"""
+"""HOOKS as one mechanism (D152, campaign step 2) — the RECORD and the STORE."""
 
 from __future__ import annotations
 
@@ -83,13 +71,7 @@ def test_a_row_from_a_newer_build_still_reads():
 
 
 def test_no_mechanism_invents_a_vocabulary_value(tmp_path, make_routine, scripted):
-    """The companion to "no mechanism adds a field": no mechanism adds a VALUE either.
-
-    Every row the three live paths write must spell its trigger, its delivery and its source
-    with one of the declared vocabularies — otherwise the one store answers "what hooks exist"
-    in three dialects and the question is no better off than with three stores. Asserted over
-    rows the real paths produced, not over constructed ones.
-    """
+    """The companion to "no mechanism adds a field": no mechanism adds a VALUE either."""
     home = tmp_path / "routines"
     (home / ".control").mkdir(parents=True)
     reports.file_report(home, routine="builder", run_id="builder:1", title="t",

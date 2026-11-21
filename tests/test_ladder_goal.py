@@ -1,24 +1,4 @@
-"""What a supervisor is TOLD the run is for — `engine/laddergoal.py` (F803).
-
-Its own file because `tests/test_ladder_trigger.py` is over the house size bar and may only
-shrink, and because the defect this covers is one a reader needs the reasoning for.
-
-## The defect
-
-`ladder._goal` probed `ctx.routine` for `instruction`, then `task`, then `name`, and
-`ladder._stopping` probed it for `done_when` and `finish_line`. **`RoutineConfig` declares none
-of those four fields**, and `config/base._Config` sets `extra="ignore"`, so an undeclared key
-cannot survive as an attribute either. Every rung ever dispatched therefore judged drift against
-the routine's two-word DISPLAY NAME, with an EMPTY list of stopping conditions — while `_goal`'s
-own docstring promised "the instruction it was started with, never a paraphrase: a supervisor
-judging drift against a summary of the goal cannot see drift INTO that summary".
-
-It survived a green suite because `test_ladder_trigger._Routine` defined all three attributes,
-so the readers were proved against a shape production never produces. Same class as
-R2348/R2352 in the same module (the fake said `subs`, so did `ladder.py`, and every rung died
-of an AttributeError behind green tests). `test_the_reader_cannot_be_fooled_by_a_fake_again`
-below pins the invariant against the REAL config class, so no fake can hide it a third time.
-"""
+"""What a supervisor is TOLD the run is for — `engine/laddergoal.py` (F803)."""
 
 from __future__ import annotations
 

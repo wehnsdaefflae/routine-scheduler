@@ -1,13 +1,4 @@
-"""Where a report's `detail` is cut, and where it is kept whole (D177 / F660).
-
-The split under test: the `reports.jsonl` ROW stores the detail whole, and only the MESSAGE
-delivered into the target's inbox is clipped — because that text rides in another run's prompt,
-and the ledger is cheap disk. The operator's words, 2026-10-11: *"the ledger is cheap disk, the
-prompt is the scarce resource, and R2436's lost question would have been recoverable"*.
-
-These claims live in their own module (with `rsched.report_detail`) rather than in
-`test_reports`, which is over the house size bar and may only shrink.
-"""
+"""Where a report's `detail` is cut, and where it is kept whole (D177 / F660)."""
 
 from __future__ import annotations
 
@@ -45,15 +36,6 @@ def test_the_name_every_caller_knows_still_resolves():
 def test_an_over_long_detail_says_it_was_cut_everywhere_it_lands(tmp_path):
     """F660: a `detail` past DETAIL_MAX was sliced bare — no marker in the text, no word to
     the filer — so a truncated report was indistinguishable from a complete one.
-
-    Measured on the live ledger 2026-10-10: 273 rows end at exactly 4000 characters,
-    mid-word. The cost is not cosmetic. R2436 (scheduler-builder -> self-audit) ended
-    `"Changing what "` and its own text said the cut-off part was the one question back to
-    the reader and the reason the thread could not close — so the exchange became unclosable
-    from the ledger.
-
-    D177 then moved WHERE the cap bites: the row keeps the detail whole, the DELIVERY is cut,
-    and the marker names the row that holds the rest.
     """
     loop, home = _loop(tmp_path, slug="self-audit")
     target = bare_routine(home, "routine-improver")
@@ -101,10 +83,6 @@ def test_the_schema_states_the_cap_a_filer_has_to_write_within():
     one day and two more exist solely to re-send them, and `self-audit` carries a local reminder
     whose whole purpose is hand-counting characters before every report — a workaround for a
     number the schema can simply print.
-
-    The number in the `detail` description is pinned to the constant that enforces it: a prose
-    figure nothing checks is the next thing to go stale, and this one is read by every run on
-    every turn.
     """
     from rsched.engine.actionschema import ACTION_SCHEMA
 

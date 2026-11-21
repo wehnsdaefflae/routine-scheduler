@@ -1,13 +1,5 @@
 """What both credential-screen test modules share: the seeded credential values, the factories
 that build a seeded instance and a client over it, and the two request helpers.
-
-FACTORIES rather than fixtures, deliberately. Importing a fixture by name into a second module
-makes every test parameter that uses it a redefinition of the imported name (ruff F811), so the
-two modules declare three-line fixtures of their own over these functions instead. The LOGIC is
-single-sourced, which is what matters: the two modules test one interface from two sides —
-which paths may be screened at all (`test_credential_screen_bounds.py`) and what a screen of an
-admitted path reports (`test_credential_screen.py`) — and a seeding that drifted between them
-would make one of the two quietly stop testing what it says.
 """
 
 from __future__ import annotations
@@ -32,12 +24,7 @@ ALL_VALUES = (CENTRAL_VALUE, SCOPED_VALUE, ACCESS_VALUE, MULTILINE_VALUE)
 
 
 def seed_stores(monkeypatch, tmp_path: Path) -> Path:
-    """Point every credential source at tmp and seed each with a distinctive value.
-
-    `scoped_path` derives from `secrets_path`, so one patch moves both secret scopes; the OAuth
-    store is patched beside them. Returns the store directory, which a test denies access to
-    when it wants a coverage failure.
-    """
+    """Point every credential source at tmp and seed each with a distinctive value."""
     store_dir = tmp_path / "store"
     monkeypatch.setattr(secrets, "secrets_path", lambda: store_dir / "secrets.env")
     monkeypatch.setattr(conn_store, "connections_path",

@@ -1,11 +1,4 @@
-"""`wait` covers BACKGROUNDED calls, not only child runs (engine/waitop.py).
-
-scheduler-builder used `wait` 8 times on one `background: true` call while no child run existed,
-each answered at once with "no sub-workflows have been spawned"; and with children it never woke
-on a landing, so a gate verdict back in two minutes sat unread through a 20-minute timeout ("The
-wait burned 20 minutes"). The engine knows what is in flight, so a wait waits for it — a guard
-whose fix is mechanical applies it.
-"""
+"""`wait` covers BACKGROUNDED calls, not only child runs (engine/waitop.py)."""
 
 from __future__ import annotations
 

@@ -1,22 +1,4 @@
-"""F871: when a request crosses the slow threshold, the daemon samples ITSELF while it stalls.
-
-The console's 10-30 s waits are a blocked process, not slow handlers: `/api/llm-tasks` — an
-`async def` returning an in-memory snapshot and doing no I/O — recorded a worst of 34,396 ms,
-and unrelated endpoints finished in the same second to within 20 ms. The case no existing
-evidence explains is the QUIET one: 33 of 79 server-side slow rows had `in_flight = 0` and
-still took a median 2,700 ms, 24 of them on `/api/health/blocked`, whose handler measures
-1.4 ms warm. `in_flight` cannot narrow it by construction (an http middleware never sees a
-websocket scope), and `/api/debug/threads` can — but only while somebody is holding a browser
-open inside the stall, which at 18:07 nobody is.
-
-So the reading is taken by the daemon, from its own OS thread, WHILE the request is still in
-flight. The thread is the design: anything scheduled on the event loop cannot run during a
-blocked loop, so it would sample an already-drained pool — the 2026-09-12 misreading with a
-timer attached.
-
-What is pinned here is the snapshot's CONTENT, not that a write happened: a test whose subject
-is a side effect passes vacuously on an empty file.
-"""
+"""F871: when a request crosses the slow threshold, the daemon samples ITSELF while it stalls."""
 
 from __future__ import annotations
 
@@ -59,11 +41,7 @@ def _body(path: Path) -> dict:
 
 @pytest.fixture
 def watched(tmp_path):
-    """A bare app with a routines home and a fast watch — the unit the stall is measured on.
-
-    `create_app` is not needed to prove the sampler: what it samples is the PROCESS, and the
-    middleware's own arming is proven end-to-end in the HTTP test below.
-    """
+    """A bare app with a routines home and a fast watch — the unit the stall is measured on."""
     app = FastAPI()
     server = tmp_server(tmp_path)
     app.state.server = server
@@ -74,12 +52,7 @@ def watched(tmp_path):
 
 
 def test_the_snapshot_names_the_trigger_both_pools_and_the_stacks(watched):
-    """The reading the item exists for: who held the pool while the request waited.
-
-    Both pools, because reading anyio's limiter alone during the 2026-09-12 stall was reading a
-    nearly idle pool while the loop's default executor was saturated — `api_debug` keeps them
-    together and this is the same reader.
-    """
+    """The reading the item exists for: who held the pool while the request waited."""
     app, server = watched
     token = app.state.slow_watch.arm("GET", "/api/health/blocked")
     try:
@@ -108,12 +81,7 @@ def test_the_snapshot_names_the_trigger_both_pools_and_the_stacks(watched):
 
 
 def test_the_reading_is_taken_off_loop_while_the_request_is_still_waiting(watched):
-    """The sampler's own thread is IN the snapshot it writes.
-
-    That is the proof the reading was taken during the stall rather than after it: the walker
-    can only see itself mid-walk. A loop-scheduled sampler could not have produced this row at
-    all, because a blocked loop runs no callbacks.
-    """
+    """The sampler's own thread is IN the snapshot it writes."""
     app, server = watched
     token = app.state.slow_watch.arm("GET", "/api/llm-tasks")
     try:

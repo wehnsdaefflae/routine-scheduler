@@ -1,10 +1,6 @@
 """The general-rules layer: routine.yaml's `rules:` as the state, the when-lines the prompt shows
 for them, the library-global `read_rule`, authoring via `write_rule`, and the mid-run
 control.json hand-off.
-
-The invariants under test: a rule has exactly ONE copy (the library — nothing is ever written
-into a routine dir), the held SET is config only the user changes, and the PROSE is changeable
-only by a routine holding the rule-authoring capability, under its own approval dial.
 """
 
 from types import SimpleNamespace
@@ -210,9 +206,6 @@ def test_a_revision_that_changes_nothing_is_refused_before_it_commits(tmp_path, 
     2026-11-02 (R3148): its predicate — is the replacement identical to the anchor? — is
     invisible to any regex, so it had to hold on every write_rule whether the hazard was
     there or not (final tally 15 holds, 3 would_have, 9 didnt).
-
-    Both directions, because the guard must bite only on the no-op: a revision that really
-    changes a clause still writes.
     """
     written: list = []
     # a rule the LINTER accepts: the guard under test sits beside the lint gate, so a

@@ -1,12 +1,4 @@
-"""The agent desktop's in-guest control agent (deploy/desktop-guest/agent), its pure half.
-
-The agent runs inside the VM against X11 and AT-SPI, neither of which exists here, so what is
-held here is everything that decides WHAT it does before a process starts: the xdotool / wmctrl
-argv each request becomes, the window-geometry parsing (wmctrl and xdotool report a window a
-title bar too low under a reparenting manager — the reason it reads xwininfo), the overlays'
-geometry, which accessibility nodes become numbered elements, and the two guards on the door.
-The live half was exercised against a booted guest; docs/desktop-sessions.md says how.
-"""
+"""The agent desktop's in-guest control agent (deploy/desktop-guest/agent), its pure half."""
 from __future__ import annotations
 
 import sys

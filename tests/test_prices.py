@@ -1,11 +1,4 @@
-"""The notional cost of a completion (endpoints/prices.py) — one source per route, no guesses.
-
-A subscription transport reports `cost: 0.0` for every call, so before this the instance could
-not say what a run cost at all. The rules pinned here are the ones a "helpful" change would
-break: a price is never invented for a model no source prices, a token class whose rate is not
-published leaves the whole figure unpriced rather than partial, and a provider's own reported
-bill is taken at its word.
-"""
+"""The notional cost of a completion (endpoints/prices.py) — one source per route, no guesses."""
 
 from __future__ import annotations
 

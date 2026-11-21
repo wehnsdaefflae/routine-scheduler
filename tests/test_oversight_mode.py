@@ -1,11 +1,4 @@
-"""Steps 2 and 3 of the ladder: the fourth child-run MODE and the delivery CHANNEL.
-
-Both are small on purpose — three dict entries and three set memberships — and both are tested
-because their failure mode is silent. A mode missing from one of the three tables falls through
-to a default that reads as "child run", which is exactly the drift `engine/child.py`'s own
-docstring says those tables exist to prevent; a via missing from one of the three inbox sets
-produces a message that is either never consumed or consumed as the USER speaking.
-"""
+"""Steps 2 and 3 of the ladder: the fourth child-run MODE and the delivery CHANNEL."""
 
 from rsched.engine import child, inbox
 
@@ -14,12 +7,6 @@ from rsched.engine import child, inbox
 def test_oversight_is_a_mode_with_both_names():
     """Fails if OVERSIGHT is added to the constants but missed in a rendering table — the
     surface where it would then read as a generic "child run" and nobody would notice.
-
-    TWO tables, not three: D246 deleted `MODE_SHOUT`, whose only caller was the `wait`
-    observation's headline, because it was a second mode vocabulary rendering the same exit the
-    turn-boundary hook renders — and contradicting the one-headline rule the hook follows. The
-    headline both paths now share is `finished_headline`, which names the mode through
-    `mode_noun`, so this table is the one that has to carry every mode.
     """
     assert child.OVERSIGHT == "oversight"
     assert child.mode_noun(child.OVERSIGHT) != child.mode_noun("nonsense-mode")

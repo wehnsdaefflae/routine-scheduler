@@ -1,17 +1,6 @@
 """The `create_routine` action (D58 + D92): registration + schema, the structural
 root-conversation gate, and the TWO-STEP preview→confirm flow ending in real
 materialization through workflows.scaffold against the seeded library.
-
-Routine creation is initiated from a CONVERSATION only — the handler mirrors detach's
-root-conversation gate, and the engine only surfaces the kind to a root conversation
-(loop.allowed_tools injection), so a scheduled routine never sees it.
-
-D92 (2026-08-17): the first call stores a draft in the conversation's state/ and returns a
-preview; materialization requires the USER to have spoken since. The tests simulate a later
-leg by rewriting the draft's recorded pid — each conversation reply runs as its own process,
-so "pid differs" IS "a later reply" — and simulate a blocking ask answered mid-reply by
-bumping `ctx.user_replies`, which R1310 is: the same leg may confirm once the user has
-answered inside it.
 """
 
 import json

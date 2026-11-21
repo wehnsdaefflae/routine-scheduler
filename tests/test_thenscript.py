@@ -1,10 +1,4 @@
-"""`then_script`: a write or edit and the script that checks it, in ONE action.
-
-Of 3,459 write_file/edit_file actions in 160 fleet runs, 1,089 were followed directly by a run of
-the file just changed — 536 of them a `script` — each a whole model turn re-reading ~175k tokens
-of context. The riding script must pass exactly the gates it would pass alone: these tests hold
-the validation, the hold seam, the skip on a failed change and the single observation to that.
-"""
+"""`then_script`: a write or edit and the script that checks it, in ONE action."""
 
 from __future__ import annotations
 

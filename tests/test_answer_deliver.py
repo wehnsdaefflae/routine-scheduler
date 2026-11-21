@@ -1,10 +1,4 @@
-"""An UNDELIVERED answer's two exits — `deliver` and `settle` (2026-11-09).
-
-Both act on exactly one state, `pickup: never`, and refuse every other with what IS true: an
-answer a run reads tonight needs neither, and an unanswered question has nothing to deliver.
-`settle` archives the pair the way a run's consumption does and starts nothing; `deliver`
-starts exactly one run, through the same seams the answer route and Run now use.
-"""
+"""An UNDELIVERED answer's two exits — `deliver` and `settle` (2026-11-09)."""
 
 import pytest
 import yaml

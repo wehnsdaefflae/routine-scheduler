@@ -1,36 +1,5 @@
 """F609: a decision the operator already RECORDED is settled — not a gap, and never re-asked
 without a reason.
-
-The row that proves the defect (`.control/pending-creations/pc-20261002-223218-c0137c.json`,
-written 2026-10-03, status null — never triaged). `freelance-radar` holds `outbound-mail`, whose
-`requires:` names `fau-mail:send`, so every save raises `fau-mail` back into its utils list;
-`fau-mail` declares `FAU_USER` and `FAU_PASSWORD`; the routine sends only Gmail. The operator
-denied both secrets and his settings were accepted (web, 2026-10-01 05:11). The surface read that
-denial back as state `denied` with severity `blocks` and a fix of
-`{"kind": "clear_grant", "entity": "secret:FAU_PASSWORD"}` — and `library_watch._resolve`
-collects exactly the `blocks` rows, so his own settled answer was filed as library drift: a
-decision reported as blocked work, carrying a proposal that would revert him, blamed on whichever
-commit happened to move the library HEAD (`f43bfce8`, which touched neither the routine nor
-either secret).
-
-The three criteria are the row's own, and each is read here against the behaviour rather than the
-wording:
-
-1. a node denied by an accepted settings decision is SETTLED, not a gap — no severity `blocks`,
-   no `clear_grant` proposal (`test_a_declined_secret_is_a_settled_note_with_no_offer`), and so
-   never a drift row (`test_a_declined_secret_is_never_filed_as_library_drift`, plus the
-   withdrawal that retires the rows already queued);
-2. the cited cause must be a change that actually TOUCHED the entity, or the row must cite no
-   cause at all. F604 did that (`library_drift.trigger`, b1e59993, 2026-10-21 — three weeks
-   AFTER the row complaining about it), so this file verifies it rather than claims it:
-   `test_the_row_names_no_commit_that_did_not_touch_the_entity`;
-3. a re-ask needs a reason the previous answer stopped applying
-   (`test_a_re_asked_gap_says_what_changed_since_the_answer`). Keying on the gap's fingerprint
-   decides WHETHER to ask again; it never said WHY, so a widened reason came back looking like
-   the question he had already answered.
-
-The watcher's own invariants live in `test_library_watch.py` and the F604 keying in
-`test_library_drift.py`; this file reuses their world and covers neither again.
 """
 
 from __future__ import annotations
@@ -71,15 +40,7 @@ def _unrelated(lib, name: str = "note.md") -> None:
 # ---- criterion 1: a recorded decision is a STATEMENT, not a gap ------------------------------
 
 def test_a_declined_secret_is_a_settled_note_with_no_offer(tmp_path, monkeypatch):
-    """The source of all three halves, in one row of the read model.
-
-    `blocks` said the routine cannot do the thing; what is true is that the operator decided it
-    may not have the credential, and F756 lets the call proceed without the name rather than
-    refuse it. So nothing here is UNMET, and the rule the surface already states covers it: a row
-    reporting a deliberate act carries no `fix`, because the only "fix" for one is to undo it and
-    offering that reads as a defect report on a routine set up exactly as intended
-    (`surface_nodes._node`, docs/rules-permissions.md).
-    """
+    """The source of all three halves, in one row of the read model."""
     monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {"FAU_PASSWORD": "x"})
     server = _server(tmp_path)
     write_util(server, "fau-mail", secrets="FAU_PASSWORD")
@@ -169,12 +130,6 @@ def test_a_drift_row_queued_for_a_declined_secret_is_withdrawn(tmp_path, monkeyp
 def test_the_row_names_no_commit_that_did_not_touch_the_entity(tmp_path, monkeypatch):
     """F604's half, verified rather than rebuilt (b1e59993, 2026-10-21 — after the row that
     reported it was written, which is why the artefact carries the old wording).
-
-    The quoted row named `f43bfce8`, whose own summary — "removed=1 (routine-improver stale
-    memory note), withheld=2 (sprind webhook token files, unmirrored), weightloss
-    google-fit.json.php now redacted at source" — touched neither the routine nor either secret.
-    Naming an innocent commit is worse than naming none: it sends the reader to a diff that
-    cannot explain the row.
     """
     server, lib, routines = build_world(tmp_path, monkeypatch)
     watch = LibraryWatch(server)
@@ -195,9 +150,6 @@ def test_a_re_asked_gap_says_what_changed_since_the_answer(tmp_path, monkeypatch
     """Settled must not mean silenced — a wider claim on the same entity is a question he has not
     read. But the card said nothing about WHY it was back, so a re-ask he was right to receive
     was indistinguishable from the defect: the same routine, the same secret, asked again.
-
-    The fingerprint decides WHETHER to ask (`library_drift.fingerprint`, F604). This is the other
-    half: the record states which of its parts moved since the answer it is not covered by.
     """
     server, lib, routines = build_world(tmp_path, monkeypatch)
     watch = LibraryWatch(server)

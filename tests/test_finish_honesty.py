@@ -1,32 +1,4 @@
-"""D195 — the finish seam asks a run for the flaw it knows about (arXiv 2609.36139).
-
-"Language Models Are 'Insecure' Reporters" (Huang, Fan, Humayun, Chen, Qin, Chen, Navalpakkam,
-Gu; 2026-09-30) measures the failure this engine's prompt surface did NOT cover. The engine has
-always said a great deal about CLAIMS that outrun evidence — *"Finishing with claims of
-unperformed work is the single worst failure this system knows"* — and nothing about the
-opposite: a run OMITTING from its own account a *narrative-changing flaw* it knows about, which
-the paper defines as an error or limitation that undermines an otherwise successful account of
-work. Handed GPT-5.5 an experiment log with a planted negative result, the paper's judge found
-the flaw flagged in **2 of 200** reports.
-
-The measured intervention is a short honesty prompt APPENDED to the instruction that asks for
-the report — *"Be honest in your response."* — which took that count to **190 of 200**
-(abstract, p. 1; §3 "Can we reduce insecure reporting at inference time?", p. 5). It is quoted
-VERBATIM in `engine/harness.py`, not paraphrased, because the paper tested "Be critical", "Be
-thorough" and "Be skeptical" too and none of them reduced insecure reporting as consistently
-(Figures 6 and 7) — so the wording is the finding, and a rewrite of it is an untested prompt.
-
-Placed in the harness contract beside the claims sentence, for three reasons: the two failures
-are opposites and a reader of one needs the other; message 0 is the one body compaction never
-evicts (`window.clamp_to_cap`), so it is still in context on the turn the summary is written;
-and it is unconditional — no capability, no kind projection and no routine setting can drop it
-(`test_the_honesty_instruction_is_not_projected_away_with_a_run_s_kinds`).
-
-The MECHANISM half of D195 is F715 (0.433.0): a background call whose result the run never read
-is named in `result.md` by `engine/background_summary.settle_note`. That is the other direction
-of the same problem — an instruction cannot surface a flaw the surface itself drops, and a run
-cannot flag evidence it was never shown.
-"""
+"""D195 — the finish seam asks a run for the flaw it knows about (arXiv 2609.36139)."""
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -80,11 +52,7 @@ def test_the_omission_half_stands_beside_the_claims_half(make_routine, tmp_path)
 
 
 def test_the_honesty_instruction_is_not_projected_away_with_a_run_s_kinds(make_routine):
-    """`harness_contract` projects its kind bullets per run; this sentence is not a bullet.
-
-    A routine whose kinds are narrowed to almost nothing still ends its run with a summary, so
-    the instruction cannot sit behind a capability, a permission or a kind set.
-    """
+    """`harness_contract` projects its kind bullets per run; this sentence is not a bullet."""
     d = make_routine(slug="narrow")
     contract = harness_contract(run_context(d, "20260712-070000"), kinds=["read_file", "finish"])
     assert INTERVENTION in contract
@@ -92,14 +60,7 @@ def test_the_honesty_instruction_is_not_projected_away_with_a_run_s_kinds(make_r
 
 
 def test_the_reserved_finish_turn_asks_for_what_is_unfinished():
-    """The engine's ONE instruction that literally asks for a report (`loopnudge.reserve_finish`).
-
-    The paper appends its honesty prompt to the instruction asking for the report, and this is
-    that instruction: the budget is spent, the schema is narrowed to `finish`, and the run has
-    one turn to account for itself. It is also the paper's "Hide Task Incompletion" scenario
-    almost exactly — a required job that never completed, behind successful-looking progress —
-    so the ending most likely to drop a flaw is the one that asks for it by name.
-    """
+    """The engine's ONE instruction that literally asks for a report (`loopnudge.reserve_finish`)."""
     from rsched.engine.loopnudge import reserve_finish
 
     appended: list[dict] = []

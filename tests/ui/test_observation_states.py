@@ -1,18 +1,4 @@
-"""An action row's OUTCOME is visible at a glance, and a HELD row is the loudest thing there.
-
-Operator, 2026-09-28: *"different util exit codes should change the color of the response in the
-ui. also if tool calls are held because of a reminder, this also needs some visual sprucing up."*
-
-These load the real transcript renderer in the real browser and assert the class the stylesheet
-keys off, plus — for the two rows the request is actually about — that the computed style really
-differs from an ordinary row. A test that only checked the class would pass over a stylesheet
-that never shipped the rule.
-
-The negative case is the one that earns its place: an ordinary nonzero exit must NOT be styled as
-an error. `grep -q`, `test -f` and `diff` all answer with exit 1, and the `shell` action documents
-a nonzero exit as frequently being the answer — colouring those red is the F506/F523 mistake, made
-twice already, and a comment saying so does not prevent a third time.
-"""
+"""An action row's OUTCOME is visible at a glance, and a HELD row is the loudest thing there."""
 from playwright.sync_api import expect
 
 # One observation payload per state the vocabulary distinguishes.
@@ -57,12 +43,7 @@ def test_each_observation_state_carries_its_own_class(ui, ui_page):
 
 
 def test_a_held_row_is_visibly_louder_than_an_ordinary_one(ui, ui_page):
-    """The request was for VISIBLE difference, so assert the rendered style, not the class.
-
-    A held action is the only row in a transcript that is not history: it did not run, and the
-    run is deciding again. If the stylesheet ever loses that rule the class assertions above
-    would still pass while the operator sees nothing.
-    """
+    """The request was for VISIBLE difference, so assert the rendered style, not the class."""
     ui_page.goto(f"{ui.url}/#/routines")
     ui_page.wait_for_selector("h1")
     ui_page.evaluate(_FIXTURE, [

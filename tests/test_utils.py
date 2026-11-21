@@ -1,10 +1,4 @@
-"""Util library: real uv-run of utils (catalog, run, selftest, composition). Uses uv.
-
-Real runs use OFF/permissive sandbox policies: OFF where the test targets observation
-shaping or catalog logic, PERMISSIVE where the whole run chain (uv, the gu dispatcher)
-should pass through the real jail when the kernel offers one (test_landlock.py owns the
-enforcement assertions themselves).
-"""
+"""Util library: real uv-run of utils (catalog, run, selftest, composition). Uses uv."""
 
 import shutil
 
@@ -356,10 +350,6 @@ def test_missing_connection_is_named_as_a_requestable_entity(tmp_path):
     broken, it is ungranted — the repair route must name the one-click
     `connection:<provider>` request, the way a missing fs-write root already does. The
     observed failure was an agent explaining the missing binding in prose and moving on.
-
-    Driven through the helper, not a subprocess: whether the util exits nonzero depends on
-    the ambient environment (a real GOOGLE_ACCESS_TOKEN makes it succeed), and that has
-    nothing to do with the routing rule under test.
     """
     from rsched.engine.exec_env import _unbound_connection_request
 

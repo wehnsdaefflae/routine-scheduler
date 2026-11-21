@@ -1,10 +1,4 @@
-"""The reverse reading: who depends on a library document, and does a change break them?
-
-The case these exist for is the one the library's own design creates: one copy of every util
-and rule, reaching every holder at its next run with no migration. A revision that is correct
-for the routine asking can silently break three others, and until now the approval question
-named none of them.
-"""
+"""The reverse reading: who depends on a library document, and does a change break them?"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -80,17 +74,6 @@ def test_holders_reaches_through_the_calls_tree(tmp_path):
 def test_a_new_secret_declaration_names_who_it_breaks(tmp_path, monkeypatch):
     """The headline case: routine-improver revises a util, adds a secret, and a routine nobody
     touched stops working at its next run.
-
-    Who BREAKS is `undecided` alone. The holder that already GRANTED the entity is unaffected,
-    and the one that DECLINED it is reported by the sibling test below rather than here: since
-    D222 it appears in the join, worded as a decline instead of a break.
-
-    F609 had taken it out of the join entirely — rightly for the routine page, which must not
-    offer to revert the operator's own decision, but it also emptied the approval's break list of
-    a routine that genuinely will not get the credential. His answer (2026-10-30) widened `_unmet`
-    back and put the distinction in the WORDING, which keeps this module's promise intact: the
-    approval question and the routine page still read one function forwards twice, rather than
-    acquiring a second rule about when a decline counts.
     """
     monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {"NEW_PIN": "x"})
     server = _server(tmp_path)
@@ -113,19 +96,7 @@ def test_a_new_secret_declaration_names_who_it_breaks(tmp_path, monkeypatch):
 
 @pytest.mark.usefixtures("empty_store")
 def test_a_declined_holder_is_named_as_declined_and_never_as_broken(tmp_path, monkeypatch):
-    """D222, the operator's answer (2026-10-30) to the cost F609 left behind.
-
-    F609 stopped a recorded decline reading as a gap, which was right — the surface no longer
-    offers to revert his own decision. But `_unmet` collects exactly the gap severities, so the
-    authoring question's break list stopped naming a routine that declined a secret a util NEWLY
-    declares, and that routine genuinely will not get that credential. He chose option (b):
-    *"Widen library_impact._unmet to include the `denied` note, so the routine appears — worded
-    as 'declined, so this util will not work there' rather than as broken, which informs you
-    without proposing to revert your decline"*.
-
-    So the row is BACK in the join and its WORDING carries the distinction, rather than a second
-    rule deciding when a decline counts: one function, read forwards, twice.
-    """
+    """D222, the operator's answer (2026-10-30) to the cost F609 left behind."""
     monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {"NEW_PIN": "x"})
     server = _server(tmp_path)
     write_util(server, "signal")

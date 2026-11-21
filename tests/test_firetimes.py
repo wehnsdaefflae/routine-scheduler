@@ -1,10 +1,6 @@
 """firetimes — when a cron fires, and the one rule croniter does not keep: a fixed wall-clock
 time the clock repeats when daylight saving ends fires ONCE (Vixie cron's rule), while an
 interval cron keeps firing through the repeated hour.
-
-The fixture night is 2026-10-25 in Europe/Berlin: at 03:00 CEST (01:00 UTC) the clock goes
-back to 02:00 CET, so every wall time from 02:00 to 02:59 happens twice — first at UTC+2, then
-an hour later at UTC+1.
 """
 
 from __future__ import annotations

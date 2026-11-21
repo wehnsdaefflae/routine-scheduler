@@ -1,22 +1,4 @@
-"""A message element's JSON is LIT, and the concepts it names are LINKS.
-
-Operator, 2026-09-30: *"i want the action JSON in a message element to be syntax highlighted.
-also if reminders or rules fire it needs to be nicely highlighted, formatted, and link to the
-specific rule or reminder. in general i want all concepts in the message elements to by
-hyperlinked to their respective item: utils, permissions, rules, reminders, anything"*
-
-Two properties matter and both are asserted against the real renderer in the real browser:
-
-1. The action-json fold is highlighted AND still copies back as the exact source. A highlighter
-   that dropped or re-ordered a character would make the fold useless for its actual purpose —
-   a reader goes there to reproduce a call — so the text content is compared to the JSON the
-   fixture put in, byte for byte.
-2. A concept is linked from the action's own STRUCTURED FIELD and nowhere else. The util link
-   must point at that util's library page, and the args beside it must NOT be swept into the
-   anchor; the rule link must point at the rule's page. `read_rule name=list` is the catalog,
-   not a rule, so it must stay unlinked — the one negative case that keeps the rule from being
-   "link anything that looks like a name".
-"""
+"""A message element's JSON is LIT, and the concepts it names are LINKS."""
 import json
 
 from playwright.sync_api import expect

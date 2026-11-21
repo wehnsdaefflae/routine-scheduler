@@ -1,15 +1,5 @@
 """Three edges of the completion cycle: re-fitting after a switch, who gets classified, and
 what a turn leaves in the prompt.
-
-1. The prompt is compacted ONCE per turn, under the window of the model that then failed. A
-   chain step down to a smaller member used to post the same prompt unchanged and burn one of
-   its two oversize retries proving it could not fit — llmsectest-weekday:20260922-060001
-   handed a 156,656-token prompt to a 32,768-token fallback and died on the second attempt.
-2. The refusal classifier is a serial `tool_call` round-trip on the retry path. It ran on every
-   non-JSON *validation* failure as well as on prose: 784 `refusal · classify reply` calls in
-   21 days against 8 refusals. Only PROSE can be a refusal.
-3. The re-fit in (1) can COMPACT the list mid-turn, so the turn's retry debris cannot be found
-   by a length taken at the top of the turn.
 """
 
 from types import SimpleNamespace

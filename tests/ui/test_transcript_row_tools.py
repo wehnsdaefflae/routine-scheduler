@@ -1,29 +1,5 @@
 """A RUN's transcript rows carry the affordances a conversation's bubbles always had, and a
 `view_image` row shows the file under the action and an answer in the result.
-
-Two operator items, one renderer:
-
-F217 (handed 2026-11-06, passed over by two runs) — *"A run transcript's messages carry NO copy
-button and nothing anywhere carries report-as-bug — copy shipped for conversations only."* The ⧉
-helper existed in `components/chat.js` and only chat mounted it; a run's rows had none, and
-nothing anywhere could file a row as a bug.
-
-R3357 (asked during `bahnbonus-seat-position:20261111-210421`, turn 29) — a `view_image` row put
-the FILE in the result element ("--- state/x.png (image/png) — shown to you below; look at it
-now.") and nothing in it answered the question the image was opened for. He asked for the link
-under the ACTION ("part of what was *done*") and the reading in the RESULT.
-
-These load the REAL run page in the REAL browser, because every claim here is about what a
-person sees: a hover-revealed control, which element a link sits in, and what the result cell
-says when the engine recorded no reading of its own. An attribute assertion would pass over a
-control that renders nowhere.
-
-THE RESULT CELL'S HONEST LIMIT, pinned below rather than papered over. On the vision-util path
-the observation CARRIES the answer (`via: "vision-util"` + `text`), so the row shows it. On the
-direct multimodal path the image is attached to the prompt and the model's reading arrives in its
-NEXT turn — the observation holds no answer at all — so the row says exactly that and points at
-the turn that does. `test_the_direct_path_does_not_invent_an_answer` is the test that keeps a
-later change from filling that cell with something nobody read off the image.
 """
 
 from __future__ import annotations
@@ -86,12 +62,7 @@ EVENTS = [
 
 
 def _seed(ui, ui_page, *, serve_png: bool = True) -> None:
-    """The run on the page, with the authenticated run-file route answering real PNG bytes.
-
-    The route is STUBBED for the same reason tests/ui/test_view_image_thumbnail.py stubs it:
-    what changed is the renderer, and the thumbnail's difficulty is that an `<img src>` cannot
-    carry the Authorization header — the bytes arrive through `apiBlobUrl` as a `blob:` URL.
-    """
+    """The run on the page, with the authenticated run-file route answering real PNG bytes."""
     run_dir = ui.seed_run("uir", TS, "finished", summary="done")
     (run_dir / "transcript.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in EVENTS), encoding="utf-8")
@@ -160,14 +131,7 @@ def test_a_row_can_be_reported_as_a_bug_into_the_owning_routine(ui, ui_page):
 
 
 def test_a_rows_address_names_the_run_the_mount_gave_it(ui, ui_page):
-    """The address is only as good as what the MOUNT passes, and nothing else tests that.
-
-    `rowAddress` prefers `opts.runId`, falls back to `opts.slug` and names `opts.sub` when it
-    has one — so a view that mounts the transcript without them yields "routine uir, turn 1",
-    which cannot say WHICH run or whose turn 1 (a sub-run's turns are its own). That is what
-    `views/run.js` passed until F217 was verified. Read straight off the helper, because the
-    defect is in the arguments a caller supplies, not in the rendering.
-    """
+    """The address is only as good as what the MOUNT passes, and nothing else tests that."""
     _seed(ui, ui_page)
     got = ui_page.evaluate("""async () => {
       const {rowAddress} = await import('/static/components/row-tools.js');
@@ -275,12 +239,6 @@ def test_the_direct_path_does_not_invent_an_answer(ui, ui_page):
 def test_the_answer_pointer_is_visible_without_expanding_anything(ui, ui_page):
     """The defect R3357 was RAISED about, reintroduced one element over — and the reason this
     test exists at all: `to_have_count(1)` passes on an element nobody can see.
-
-    The pointer was appended to the observation's own `<details class="obs-collapse">`, which
-    starts COLLAPSED (`obsBody`), so the one line saying where the image's reading is was
-    invisible until the reader expanded the fold — exactly what the thumbnail did before F559
-    moved it out. It rides the TURN instead, beside the rule-fire strip, which is this
-    renderer's own place for something a reader must see without expanding anything.
     """
     _seed(ui, ui_page)
     row = _turn(ui_page, 2)
@@ -302,13 +260,7 @@ def test_the_vision_utils_description_is_the_answer_where_it_ran(ui, ui_page):
 
 
 def test_the_row_reads_at_both_widths(ui, ui_page):
-    """LOOK AT IT, at the two widths the console is used at: desktop 1280 and phone 390.
-
-    The assertions are what a screenshot cannot settle — a `.btn` renders as a blank pill in
-    this container (no 500-weight face), so a button is verified by its COMPUTED TEXT, never by
-    eye — and `RSCHED_UI_SHOTS` (set only when a human is going to look) also writes the two
-    PNGs for that look. Nothing here depends on the variable being set.
-    """
+    """LOOK AT IT, at the two widths the console is used at: desktop 1280 and phone 390."""
     import os
     from pathlib import Path
 

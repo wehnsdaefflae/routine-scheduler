@@ -1,8 +1,5 @@
 """statemap: the PHASE graph derived from a routine's stage modules — nothing parsed
 from prose, so every routine with stage modules has a diagram, unconditionally.
-
-Naming (D193): the concept is a `phase`; `stages/` is the file layout it comes from. The
-module keeps its own older filename — see its docstring and CLAUDE.md "Phase, stage, state".
 """
 
 import json
@@ -137,19 +134,7 @@ def test_phase_stats_empty_without_transcript(tmp_path):
 
 
 def test_stage_coverage_counts_a_stage_the_run_only_declared_via_phase_json(tmp_path):
-    """A stage worked WITHOUT re-reading its module still counts as entered (F563).
-
-    `phases_entered` is appended by fileops only when a run performs a `read_file` on
-    `stages/<name>.md`, so the raw signal measures module RE-READS, not stage work. A
-    routine whose recipe the model already holds routes by writing `state/phase.json`
-    and never re-opens the module — and reported every stage skipped: measured across
-    the fleet on 2026-09-26, 24 of 73 runs reported >=60% of declared stages skipped,
-    with llmsectest-weekday reporting 0 of 7 entered on three runs of 404-423 turns.
-
-    So a phase the run RECORDED for itself is coverage evidence too. This does not make
-    phase.json drive the diagram's `current` (test_phase_graph_current_from_latest_run_status
-    still owns that boundary) — it only stops a worked stage being reported as skipped.
-    """
+    """A stage worked WITHOUT re-reading its module still counts as entered (F563)."""
     d = tmp_path / "r"
     (d / "stages").mkdir(parents=True)
     for stem in ("orient", "gather", "act", "record"):

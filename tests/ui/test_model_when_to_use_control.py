@@ -1,14 +1,4 @@
-"""The "when to use" note is EDITABLE on the model's own card, and what is typed persists.
-
-D279(a). The field is the operator's only way in: `list_models` returns the note to a run
-choosing a `model`, but nothing writes it except this control. A field that renders and silently
-drops its value on save is worse than no field, because the advice reads as recorded — so what
-is pinned here is the round trip through the real browser and the real save path, read back from
-the config file the daemon loads.
-
-The API-level half (the field's default, the serve shapes, the blank-drop rule, and that
-nothing in the engine routes on it) is `tests/test_model_when_to_use.py`.
-"""
+"""The "when to use" note is EDITABLE on the model's own card, and what is typed persists."""
 
 from playwright.sync_api import expect
 

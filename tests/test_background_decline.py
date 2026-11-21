@@ -1,25 +1,4 @@
-"""The D39 secret gate on a BACKGROUNDED call — the two answers, and which one defers.
-
-Backgrounding a credential-using call used to skip the gate entirely, which relocated a
-security decision out of the run's reach. F633 moved it onto the STARTING turn
-(`engine/actionroute._gate_for_background`), and the reason is mechanical rather than
-preferential: `secretgate.gate_*_secrets` files a BLOCKING question, and a background thread
-has no turn to block on. So the flag defers the WORK, never the DECISION.
-
-What that decision answers is the half F756 changed, and the two cases now differ:
-
-* **UNDECIDED** — nobody has answered, so there is nothing to defer but the question itself.
-  The call does not start; the observation on the asking turn carries `pending_secrets`.
-* **DECLINED** — the user has answered. A decline protects the CREDENTIAL, not the util
-  (F756), so the name is scrubbed from the call's environment and the call proceeds, in the
-  background exactly as in the foreground. Before F756 this same grant refused the call
-  outright, which is how one declined name disabled every call of a util — including calls
-  needing none of it.
-
-These live apart from tests/test_background_actions.py because that file is at its size
-ratchet ceiling and may only shrink; the pair moved here together so the two answers stay
-side by side, which is the whole point of them.
-"""
+"""The D39 secret gate on a BACKGROUNDED call — the two answers, and which one defers."""
 
 import yaml
 

@@ -1,20 +1,4 @@
-"""The always-on prompt's section TEXTS, captured once at boot — the operator's option B.
-
-His authorization, verbatim: *"Also store the always-on section texts ONCE at boot in the run
-dir, so the whole bar becomes clickable and truthful — a new persistence of prompt text
-(~60-250 kB per run), touching no byte of what is sent and no cache test"*.
-
-Every bound in that sentence is a test here, because each one is what makes the write safe:
-
-1. the file lands in the RUN DIR and carries every composed section's text;
-2. **not one byte of what is sent changes** — the capture reads the tuples the composer already
-   built, and `tests/test_prompt_segments.py` holds the request itself to byte identity;
-3. ONCE per leg, not per turn — a second turn adds nothing;
-4. a leg that RE-COMPOSES (a resume) overwrites it, so the file describes the prompt the current
-   leg is sending rather than an older one;
-5. the capture is BEST-EFFORT: a run whose capture cannot be written still boots, and the view
-   then says "text not recorded" — which is where every run recorded before this shipped is.
-"""
+"""The always-on prompt's section TEXTS, captured once at boot — the operator's option B."""
 
 from __future__ import annotations
 

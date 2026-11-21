@@ -1,23 +1,4 @@
-"""The health EVENT STREAM, served — `GET /api/health/events` (R2764).
-
-The documented way to inspect gate and fire events from inside a run was to read
-`.control/health-events.jsonl`, and from inside a run that raises:
-
-    PermissionError: [Errno 13] Permission denied:
-        '/home/mark/routines/.control/health-events.jsonl'
-
-The `.control` DIRECTORY is not listable for uid 1000 even though the file itself is 0644, so
-the stream is unreachable for EVERY routine run on this instance — not a per-routine grant
-problem, and nothing a run can fix for itself.
-
-The web process already reads that exact file on every `/api/health/blocked` call
-(`readmodels/health_stream`, the ONE parser), so the reachable path exists and is proven: what
-was missing is a route that serves the EVENTS rather than one 7-day fold of fourteen of them.
-`blocked_fleet` answers "what did the fleet owe and not deliver" — it drops every event outside
-`BLOCKED_EVENTS` (a gate decision, a run start, a commit that landed) and collapses what remains
-into one row per (event, subject). Neither is the raw record a reader is after when asking what
-happened at 03:00.
-"""
+"""The health EVENT STREAM, served — `GET /api/health/events` (R2764)."""
 
 import json
 

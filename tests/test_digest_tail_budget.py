@@ -1,21 +1,4 @@
-"""The digest's history tails are bounded in CHARACTERS, and say so when they clip.
-
-Goal b5 step 3. The digest is the largest section of the composed prompt (29,122 chars over 37
-live captures, 2026-11-13) and four history tails carried 69% of it. Each was already capped —
-in LINES. A note line is a paragraph and a ledger entry is a whole run summary, so a "10-line"
-tail measured 5,508 chars at the median and an index reached 23,069.
-
-What these tests hold is the PROPERTY, not a number (`engine/digesttail.TAIL_BUDGET` owns the
-number, in one place, with the measurement behind it):
-
-1. every history tail stays within the budget, however large its source;
-2. a clipped block SAYS it was clipped and names the file that holds it whole — a run that
-   cannot tell a clipped block from a complete one has to read the source to find out, which
-   is the cost being removed;
-3. the NEWEST history survives when the budget bites (notes and ledger), because a digest's
-   purpose is to carry what just happened;
-4. nothing is clipped when it already fits — no marker, no behaviour change, byte for byte.
-"""
+"""The digest's history tails are bounded in CHARACTERS, and say so when they clip."""
 
 from __future__ import annotations
 

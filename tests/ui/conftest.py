@@ -1,11 +1,6 @@
 """Playwright UI harness — the REAL console (FastAPI + static frontend) served by uvicorn
 on an ephemeral port, backed by fixture homes and a stub runner: no scheduler, no engine
 subprocess, no LLM. Tests drive the browser against the same JS the daemon serves.
-
-The browser signs in by pre-seeding localStorage with the fixture token (api.js reads
-`rsched_token`); the `.setup-complete` marker next to the fixture config suppresses the
-first-launch redirect to Settings. JS runtime errors fail the test via the `ui` fixture's
-collector — a page that renders but throws is a broken page.
 """
 
 from __future__ import annotations
@@ -63,32 +58,7 @@ BROWSER_GROUP = "browser"
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(items):
-    """Mark every item under this directory: `ui`, `xdist_group`, and the rerun shield.
-
-    Applied here rather than written on each test because a marker anyone can forget is a
-    marker that stops meaning anything: every test in this directory needs a browser, and
-    that is a fact of the directory rather than of the test.
-
-    `ui` is what the default `-m "not ui"` deselects, so the fast gate stays fast.
-
-    `xdist_group` puts the whole directory in ONE work unit, which `--dist loadgroup`
-    (tests/conftest.py switches it on whenever browser tests are selected) sends to a single
-    worker. Since the suite moved onto the shared Chrome sidecar, parallel workers do not
-    each get a browser — they share one, and contending for it is what the rerun shield had
-    been absorbing.
-
-    `flaky` reruns ONLY on failure, so an intermittent blip passes on retry while a real
-    regression still fails all attempts (F120; reruns=4/2s since F261). `rerun_except` exempts
-    what fails identically on every attempt: a wedged sidecar, and — F834 — a node pytest-timeout
-    KILLED at the 300 s ceiling, which never finished, so no retry clears it. The shield re-ran
-    such nodes 3-4x: 201 of 448 worker-minutes, and two release gates into a `timeout` verdict.
-
-    tryfirst, because xdist's own worker-side hook reads `xdist_group` to build the nodeid
-    suffix the scheduler groups on. For an explicit path argument this conftest is an INITIAL
-    conftest and therefore registered BEFORE that hook, which pluggy would then run first —
-    the marker would not exist yet and the grouping would silently degrade to one unit per
-    test across every worker.
-    """
+    """Mark every item under this directory: `ui`, `xdist_group`, and the rerun shield."""
     for item in items:
         item_path = getattr(item, "path", None)
         in_ui = bool(item_path) and (item_path == _UI_DIR or _UI_DIR in item_path.parents)
@@ -124,19 +94,7 @@ SIDECAR_CONNECT_TIMEOUT_MS = 60_000
 
 @pytest.fixture(scope="session")
 def browser(playwright):
-    """Attach to the shared Chrome sidecar; never launch or close a browser.
-
-    A wedged sidecar answers /json/version normally while CDP never attaches, so nothing
-    outside this connect can see it — name it here, with the command that clears it.
-
-    The `rerun_except` on the directory's rerun shield is what keeps a down sidecar cheap, and
-    the mechanism is worth stating: pytest CACHES a session-fixture failure, so the tests after
-    the first get the cached error instantly — unless a rerun is scheduled, which clears that
-    cache and re-executes the fixture. One recorded partition paid 30.6 + 15.0 + 27.7 + 20.8 +
-    15.1 s for a single test that never ran a line, and then again for every other test in the
-    partition. Exempting this failure from reruns turns 276 connects back into one, which is
-    also why it can afford to be patient.
-    """
+    """Attach to the shared Chrome sidecar; never launch or close a browser."""
     return browsersource.acquire(playwright, HOW_TO_RUN)
 
 
@@ -159,9 +117,6 @@ class StubRunner:
     """Records fire/resume calls and answers like an idle daemon — no process is ever
     spawned. Only the part of the web layer's runner surface the browser suite reaches is
     implemented; a test that drives abort or a resume adds that method here.
-
-    Signatures MIRROR the real Runner's, keyword-only parameters included: a double that
-    accepts a call the real one would refuse lets the console ship that call.
     """
 
     def __init__(self):
@@ -206,11 +161,7 @@ class UiHarness:
                       expires: str = "", asked: str = "20260714-070000",
                       request: list[str] | None = None,
                       extra: dict | None = None) -> Path:
-        """Drop a durable decision record the way the engine files one.
-
-        `extra` carries the optional keys the engine writes alongside the question —
-        config_patch / config_target for the Decisions page's apply bridge.
-        """
+        """Drop a durable decision record the way the engine files one."""
         pending = self.routines / slug / "questions" / "pending"
         pending.mkdir(parents=True, exist_ok=True)
         record = {"qid": qid, "question": question, "mode": mode,
@@ -359,17 +310,7 @@ def ui(tmp_path, monkeypatch, make_routine, library_template, test_tls) -> UiHar
 
 
 def _let_sockets_close(server, limit_s: float = 1.0) -> None:
-    """Give the page's websockets a moment to finish closing before the server shuts down.
-
-    The page (and its context) is torn down BEFORE this fixture, so the browser is closing the
-    bus socket and any screen socket as the server is told to exit. uvicorn's shutdown then
-    sends every websocket a 1012 close — and on one whose close handshake the browser has
-    already begun, its websockets-sansio protocol raises `InvalidState: connection is closing`
-    in the server thread. pytest reports that as an ERROR at teardown of a test that passed
-    (test_browser_screen.py's frame tests hit it in most runs, before and after the desktops
-    landed). Waiting until the websocket connections are gone — bounded, so a socket the
-    browser never closes costs one second, not a hang — takes the race away.
-    """
+    """Give the page's websockets a moment to finish closing before the server shuts down."""
     deadline = time.monotonic() + limit_s
     while time.monotonic() < deadline:
         try:
@@ -405,19 +346,7 @@ def _expect_timeout():
 
 def until(cond: Callable[[], object], *, what: str = "condition", page: object = None,
           timeout_s: float = 10, every: float = 0.05) -> None:
-    """Poll `cond` until it is truthy, or fail naming what never happened.
-
-    The one waiter for anything this suite observes OUTSIDE the DOM — a routine.yaml the
-    console just PATCHed, a question file an answer just filed. `expect()` covers the DOM;
-    nothing covers the disk, and a fixed sleep before a disk assert is precisely what flakes
-    under load: a PATCH that lands in 1.2 s reds a test that slept 800 ms and then read it.
-
-    Pass `page` when the condition can only be advanced by PLAYWRIGHT — a `page.route`
-    handler's bookkeeping, say. The sync API dispatches its events on a greenlet loop that
-    runs only inside a Playwright call, so a plain `time.sleep` would spin while nothing
-    happened; `wait_for_timeout` pumps that loop. A condition the SERVER advances needs no
-    page: the fixture's uvicorn is a real thread and moves on its own.
-    """
+    """Poll `cond` until it is truthy, or fail naming what never happened."""
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         if cond():
@@ -470,17 +399,7 @@ def ui_page(ui, page):
 
 @pytest.hookimpl(wrapper=True)
 def pytest_runtest_makereport(item, call):
-    """Attach what the browser was doing to any browser-test failure.
-
-    Without it a red reads `Locator expected to be visible … resolved to visible <h2>` and
-    nothing else, and telling a real regression from a load flake costs a hand-run gate cycle
-    (measured: ~6 per incident). Three facts answer it and all three are gone the moment the
-    context closes, so they are collected here rather than by whichever runner happens to be
-    used: the URL with the rendered text, the REQUESTS STILL IN FLIGHT with their age, and how
-    long this test's own uvicorn took to accept. The last two are aimed at the largest recorded
-    failure class by far — 70 of 232 rows are a `Page.goto` timeout, which a body dump alone
-    cannot tell apart from a slow fixture boot.
-    """
+    """Attach what the browser was doing to any browser-test failure."""
     report = yield
     if report.when == "call" and report.failed and _LIVE_PROBES:
         probe = _LIVE_PROBES[-1]

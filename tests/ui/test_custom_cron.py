@@ -1,11 +1,4 @@
-"""The schedule editor's CUSTOM cadence — the one a reader writes as cron.
-
-It was a read-only display: a stored cron the friendly choices could not express showed as
-text with "pick one to replace it", so "06:00 and 14:00" could be kept or thrown away but never
-changed, and the routine PATCH refused the custom spec a page save sent back. Custom is now a
-choice like the others: its field edits the cron, the accept stores it as written, and entering
-it from another cadence starts from that cadence's cron.
-"""
+"""The schedule editor's CUSTOM cadence — the one a reader writes as cron."""
 
 from playwright.sync_api import expect
 

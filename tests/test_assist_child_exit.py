@@ -1,22 +1,4 @@
-"""The `child-exit` HOOK POINT — the run-tree moment a rule can reach (D152 step 6).
-
-`hooks/points.py` has carried four points with an empty `fires` since the registry shipped in
-0.458.0: `spawn`, `child-exit`, `run-end`, `restart`. The operator's brief put that traffic
-first — *"Messages between runs, their children, and the user should implement hooks"* — and
-this is the first of the four to fire: the rule layer reaches it at the turn boundary where a
-child's hand-back is delivered to its parent (`engine/control.announce_finished_subruns`).
-
-What these defend, beyond "it fires":
-
-- **ORDER.** The note lands AFTER the hand-back message, never before. A rule commenting on a
-  hand-back the model cannot yet see is worse than no comment: it reads as a claim about
-  something absent.
-- **The GUARD.** A parent with four children must not read one rule's line four times. The
-  once-per-run assist budget covers this moment like every other.
-- **The PAYLOAD coupling.** `child-exit` changes no control flow, so it carries the free
-  payloads and never `hold` — the same line `hooks/points.ACTION_POINTS` derives from
-  `HOLDING_POINTS`.
-"""
+"""The `child-exit` HOOK POINT — the run-tree moment a rule can reach (D152 step 6)."""
 
 from __future__ import annotations
 

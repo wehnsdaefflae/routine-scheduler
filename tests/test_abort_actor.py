@@ -1,16 +1,4 @@
-"""An aborted run NAMES the actor that stopped it (F751).
-
-The defect: the engine caught `RunAborted` and finished with "Run aborted by the user/daemon." —
-a disjunction, so the record attributed the stop to nobody. The specimen, fau:20261016-125013,
-was launched, aborted at turn 0 while carrying six jobs forward, and its whole account of who
-did it is those two words.
-
-Pinned here: each actor's finish text and its machine-readable pair on the finish event (`actor`
-+ `cause`, the latter in `runner_reap.classify_cause`'s vocabulary so the health stream stays
-countable by one filter); the honest fallback when nothing was recorded; the breadcrumb's pid
-stamp (a resume reuses the run dir, so a foreign mark must never speak for a later leg); and
-that every door writes the breadcrumb BEFORE it signals — afterwards there is no moment left.
-"""
+"""An aborted run NAMES the actor that stopped it (F751)."""
 
 from __future__ import annotations
 

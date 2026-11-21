@@ -1,10 +1,4 @@
-"""A contract names only the task (P2) — the fixed vocabulary in `workflows/taskcontract.py`.
-
-Every line below is REAL-SHAPED: taken from, or written in the shape of, the live fleet's
-recipes as measured on 2026-11-06, so the check is held to the sentences it has to judge and not
-to toy ones. Both directions are pinned, because the failure that would switch this check off is
-a false positive on a product line — a watchlist, a manifest, an evaluation ledger's rows.
-"""
+"""A contract names only the task (P2) — the fixed vocabulary in `workflows/taskcontract.py`."""
 
 from __future__ import annotations
 

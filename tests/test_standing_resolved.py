@@ -1,12 +1,4 @@
-"""A STANDING condition that is over leaves the blocked-work list (2026-11-19).
-
-The fold windows a week, and a standing condition's watcher files one row a day while it holds
-— so once it stopped holding, its row stood on the panel for the rest of the week: an overhead
-alarm on a recipe already revised, a due-soon marker already deleted, an obligation already met.
-`web/operator_conditions` asked "does it still hold?" of the operator's rows only; it now asks
-it of every standing condition, of the reader that decides that condition, and a resolved row
-leaves `standing_rows` and the table (it stays in `rows`, marked, for the record).
-"""
+"""A STANDING condition that is over leaves the blocked-work list (2026-11-19)."""
 
 import json
 from datetime import UTC, datetime, timedelta

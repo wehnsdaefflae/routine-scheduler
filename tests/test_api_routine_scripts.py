@@ -1,16 +1,4 @@
-"""The run rail's SCRIPTS section, server half (web/api_routine_files.py).
-
-Operator order 2026-11-01: "a routine's scripts should have a section in the right routine
-run sidebar". The catalog the rail shows is `rsched.scripts.list_scripts` — the SAME reader
-the engine uses to tell a run what its `scripts/` hold (engine/capabilities.py) — so the
-sidebar cannot drift from what the run was told it could call. That sharing is the contract
-these tests pin: a new description written for the console would be a second source of truth
-for the same bytes.
-
-Why the route is its own lazy read rather than a field on `/api/runs/{run_id}`: that payload
-is fetched by every run page at mount, and most readers never open the section. The run
-detail stays the size it was.
-"""
+"""The run rail's SCRIPTS section, server half (web/api_routine_files.py)."""
 
 from __future__ import annotations
 

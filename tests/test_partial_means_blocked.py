@@ -1,33 +1,4 @@
-"""D204 — `partial` is for a blocker the run cannot remove, never for a shortfall of its own.
-
-Operator, 2026-10-23, verbatim: *"Routines should finish partially instead of fully okay, only
-if they're blocked by sth they cannot unblock themselves. Apply this to you and report it as a
-requirement for ALL routines"*.
-
-The engine's own prose said the opposite in four places at once, and the fleet followed it. In
-the 14 days to 2026-10-23, 232 runs finished `ok` and 4 `partial` — every one of those four
-chosen by the run, none forced by the engine. `routine-improver:20261017-130356` gave "the
-budget went to the instrument" as its reason; `self-audit:20261022-223237` finished `partial`
-three times while saying nothing had blocked it, citing the harness's "honest partial" line.
-
-The four surfaces, all of which a run reads before it writes its own status:
-
-1. `engine/harness.py` closed the honesty paragraph with *"an honest `partial` beats an
-   overclaimed `ok`"* — read beside the sentences that ask a run to name its own flaws, that is
-   an instruction to downgrade the status whenever there is a flaw to name. The honesty half is
-   the measured D195 intervention and stays; only the status advice changed.
-2. `engine/kindprose.py`'s finish bullet defined ok as "everything this run could do is done",
-   so any shortfall of the run's own read as not-ok.
-3. `engine/actionschema.py`'s `status` description said the same thing in the schema the model
-   validates against.
-4. `library-seed/workflows/general-task.py` and `converse.py` each named a shortfall of the
-   run's own — a missing ledger entry, a mid-plan handover — as `partial`.
-
-The shared rule `evidence-discipline` is the definition all of them must agree with: `partial`
-only when something the run cannot unblock itself stopped work it could otherwise have done.
-This file holds the engine to that, in both directions — the new meaning is present, and the
-two old definitions cannot come back anywhere in the package or the seed library.
-"""
+"""D204 — `partial` is for a blocker the run cannot remove, never for a shortfall of its own."""
 
 import re
 from pathlib import Path
@@ -94,12 +65,7 @@ def _paragraph(text: str, needle: str) -> str:
 
 
 def test_the_harness_paragraph_no_longer_pairs_a_known_flaw_with_partial(make_routine):
-    """The honesty paragraph asks for the flaw and then says what the status is NOT for.
-
-    `self-audit:20261022-223237` quoted the old closing clause as its authority for three
-    partial finishes with nothing blocking it — the clause sat two sentences after "name the
-    flaw", so naming one read as a reason to downgrade.
-    """
+    """The honesty paragraph asks for the flaw and then says what the status is NOT for."""
     d = make_routine(slug="d204")
     contract = harness_contract(run_context(d, "20261023-130002"),
                                kinds=["read_file", "finish"])
@@ -152,13 +118,7 @@ def test_the_schema_status_description_says_partial_means_blocked():
 
 
 def test_every_status_surface_says_an_ok_finish_waits_on_nothing_outside_the_run(make_routine):
-    """R3566 — the three surfaces agree that an `ok` finish's conditions are the run's OWN.
-
-    D204 restricted `partial` to a blocker; it left open what an `ok` may be made to wait for,
-    and runs filled the gap with outside acts they had already asked for. Each surface is
-    checked for the same two halves, so the clause cannot survive in a form that only forgives
-    (reachability without honesty) or only warns (honesty without reachability).
-    """
+    """R3566 — the three surfaces agree that an `ok` finish's conditions are the run's OWN."""
     bullet, desc = _finish_bullet(), _status_description()
     contract = harness_contract(run_context(make_routine(slug="r3566"), "20261118-140002"),
                                 kinds=["read_file", "finish"])
@@ -186,11 +146,7 @@ def test_every_status_surface_says_an_ok_finish_waits_on_nothing_outside_the_run
 
 
 def test_no_engine_prose_defines_the_status_by_the_run_s_reach():
-    """Both retired definitions are gone from the whole package and the seed library.
-
-    A sweep rather than three assertions: the wording was duplicated across the harness, the
-    kind bullet, the schema and two seed patterns, and the next copy will be somewhere else.
-    """
+    """Both retired definitions are gone from the whole package and the seed library."""
     roots = [REPO / "src" / "rsched", SEED]
     hits: list[str] = []
     for root in roots:

@@ -1,17 +1,4 @@
-"""What a BLANK model role means, said once per role and said correctly.
-
-The defect this file pins was found by LOOKING at the shipped page (0.430.0, which added the
-`supervisor` row): every role's blank option was built from one template, `— system default
-(<system model>) —`, so the supervisor row claimed the system model while its own description
-beside it said "blank = main" and `config.base.supervisor_role` resolved it to main. Two
-statements of one default, disagreeing, side by side — and the uncensored row promised a
-fallback that does not exist at all (`endpoints.for_uncensored`: an unset role means referral
-OFF, there is no system_model behind it).
-
-So the blank label is per role, taken from the code that resolves it, and the supervisor's
-follows the `main` picker live — a label naming the model main had when the row was drawn is
-the same defect one edit later.
-"""
+"""What a BLANK model role means, said once per role and said correctly."""
 
 from playwright.sync_api import expect
 

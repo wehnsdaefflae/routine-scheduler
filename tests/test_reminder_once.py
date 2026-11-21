@@ -1,11 +1,4 @@
-"""A consequence reminder holds ONCE PER REMINDER per run, never once per action string.
-
-After its first hold the caution is in the run's context, so a reworded action it also matches
-learns nothing from a second hold — keyed on the string, it was held again (scheduler-builder
-20261105 T242: "Changing the command changed its string, so both fired again. Re-emitting
-verbatim"; ~39 hold re-emits over four self-audit runs). The resume rebuild of the same ledger
-is pinned in tests/test_guard_scope.py.
-"""
+"""A consequence reminder holds ONCE PER REMINDER per run, never once per action string."""
 
 from __future__ import annotations
 

@@ -1,9 +1,4 @@
-"""MODEL TRIALS (rsched/trials.py) — "run this routine on catalog model X for its next N fires".
-
-A trial is config the operator accepted; everything after that is DERIVED: it is active while
-fewer than `runs` of the routine's runs have recorded its id in their usage record, every fire
-while it is active is armed (trial.json + `--model`/`--effort`), and it stops applying by itself.
-"""
+"""MODEL TRIALS (rsched/trials.py) — "run this routine on catalog model X for its next N fires"."""
 
 from __future__ import annotations
 

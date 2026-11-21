@@ -1,18 +1,5 @@
 """The machine check for CLAUDE.md's live-refresh rule: "a live refresh on a bus event
 fetches only what that event can change".
-
-`llm_task` / `llm_process` fire several times a second while a run works and cannot change a
-routine's state, a decision, a schedule or a run list — every view is supposed to ignore them.
-The rule lived only in prose, and three views broke it in three different ways: the Decisions
-page refetched its whole question set on EVERY event with no filter and no timer; the watch
-ribbon dragged a week-schedule computation along at 20 s; the dashboard's own guard was the
-only one that had it right. The cost lands on the daemon, which is answering for the runs the
-console is watching (2026-09-12: one config-shaped read every 600 ms, every request queued
-20-50 s).
-
-So: mount a view, dispatch a storm of those two kinds at it, and assert the console asks the
-daemon for NOTHING. That is the rule exactly — not "no path more than once", which would fight
-views that legitimately refetch on a run event.
 """
 
 from __future__ import annotations

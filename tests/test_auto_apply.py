@@ -1,21 +1,5 @@
 """The AUTONOMOUS apply (D191 step 3): a `config_patch` the routine's own `config_confirm`
 dial permits lands with no click.
-
-The operator, 2026-10-19: *"build the server surface + D191's apply route: a decision's
-config_patch may name {"server": {...}} with its own declared field list, applied autonomously
-only for fields on that list, everything else still a click"*. Step 1 built the dial, step 2
-the surfaces; this is the half that makes a permitted patch apply.
-
-Two halves, and the seam between them is the point:
-
-- the ENGINE never writes config. A permitted patch is QUEUED (`rsched/autoapply.py`) and the
-  run is told on that turn, so it does not wait for an answer it will not get.
-- the WEB layer applies, through the one validated writer (`api_routine_patch.apply_updates`),
-  re-judging the dial at the boundary. R2702: a check living only in the caller's restraint is
-  not a boundary.
-
-The states these tests exist to forbid: a config change that neither applied NOR asked, and a
-patch that applied although the dial did not permit it.
 """
 
 from __future__ import annotations

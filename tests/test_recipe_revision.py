@@ -1,29 +1,4 @@
-"""D200 — the finish seam asks every finishing run for its own RECIPE REVISIONS.
-
-The operator's requirement (2026-10-19): *"In the future I want recipes to suggest a change in
-their recipes themselves when they finish."* His answer to where it lives: **the engine finish
-seam — every finishing run is asked, like D195's known-flaw prompt** — over a general rule (which
-reaches only routines whose config holds it) and over per-recipe text.
-
-Two halves, and both are pinned here because either alone is useless:
-
-1. **A finishing run IS ASKED** — the ask is on the prompt surface of every routine run, in the
-   digest's FINISH block (`engine/finish_digest.py`), which is the never-evicted system message
-   and the block that already says what a finish owes. Not in the harness contract: that body is
-   the always-on ENGINE CONTRACT held to a shrink-only budget (`tests/test_prompt_budget.py`),
-   where new prose is paid for by cutting prose.
-2. **What it answers LANDS where the operator can see it** — the constraint the decision row
-   records is that a scheduled run holds no `write_recipe` (vodafone-outage-claims' own d17 asked
-   this of itself on 2026-10-20 and the engine refused the edit), so the lines become ONE
-   standing proposal on the Decisions page (`rsched/pending.py`, the surface that already shows
-   what a run proposes). Approving it ARMS the revise leg that already exists
-   (`engine/revise.py`): the proposing run is resumed with its recipe writable and makes the
-   edit itself — the "grant the capability at that moment" half of the same constraint.
-
-A run that ALREADY holds recipe self-write is asked the same question and files no card: it can
-make the edit, so a proposal would duplicate it. That branch is pinned too — the seam must not
-break or duplicate self-editing.
-"""
+"""D200 — the finish seam asks every finishing run for its own RECIPE REVISIONS."""
 
 from __future__ import annotations
 
@@ -98,11 +73,6 @@ def test_a_detached_background_task_is_neither_asked_nor_files_a_card(make_routi
     ask was gated on `is_conversation` alone (false for a dir under `background_home`) and the
     card only on `ctx.depth`. His words, 2026-10-30: *"this is a bug never suggest recipe
     improvements for anything else but routine runs"*.
-
-    BOTH seams are asserted together on purpose: suppressing the ask while leaving the card
-    reachable would still file one for any task whose prose happens to carry the marker, and
-    suppressing the card alone would leave every task answering a question about a document it
-    does not have. `asks_for_revisions` is the single predicate they share.
     """
     d = make_routine(slug="bg-c-20261029-080013-cd837685")
     ctx = run_context(d, "20260712-070000", server=server_for(d))
@@ -163,15 +133,6 @@ def test_a_real_revision_that_merely_starts_like_a_null_one_is_filed(line):
 def test_a_null_revision_with_its_reason_files_nothing(line):
     """His instruction, 2026-11-07: *"if a routine decides it doesn't need to change its recipe,
     I don't want a "no change" message /decision, I want no message"*.
-
-    R3086's fix matched the closed null set against the WHOLE line, which only ever held for the
-    bare wording. A run complying with the ask writes its verdict AND why — "none — the recipe
-    served this run as written; …" — because the ask asks what THIS run showed. So four of the
-    five cards filed between 2026-11-06 and 2026-11-07 were null ones that got through:
-    `freelance-hunter` twice (`pc-20261106-035912-25f373`, `pc-20261107-034039-63e52e`),
-    `moltbook-heartbeat` (`pc-20261106-182114-88aa94`) and `uncensored-model-radar`
-    (`pc-20261107-035802-22ca7c`). The verdict is the line's FIRST CLAUSE; the rest is its
-    reason, and a reason never makes a null verdict into a proposal.
     """
     assert recipeproposal.extract(f"Done.\n{MARKER} {line}") == []
 

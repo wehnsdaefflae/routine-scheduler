@@ -1,11 +1,6 @@
 """Routine-scoped secrets (D103, operator decision 2026-08-26 — R497): the second store
 scope, its injection into a run's util subprocesses, its exemption from the exposure gate,
 and the write API.
-
-The invariant under test throughout: a scoped secret is OWNED by its routine — implicitly
-exposed to its runs, invisible to every other routine, shadowing a central value of the same
-name — while the declared-only rule (a util gets a var only if its header names it) is
-untouched by any of that.
 """
 
 from __future__ import annotations

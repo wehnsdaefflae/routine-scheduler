@@ -1,17 +1,4 @@
-"""`deploy/backup.sh` turns a run cut short into progress, never into the next run's debt.
-
-From 2026-10-24 the nightly unit was killed at its time limit every night. The script deleted the
-killed run's half-built folder FIRST, inside the next run's limit — and on the sshfs share an
-`rm -rf` is one round trip per file, so that delete alone cost 13 to 73 minutes and the next run
-was killed too. Three properties break that loop, each driven through the real script the way
-`tests/test_backup_snapshots.py` drives it (same HOME, same root on a second filesystem):
-
-- a run CARRIES ON in the folder an interrupted one left, and still ends with exactly the home;
-- every delete (a same-day rerun's old copy, retention, a killed run's leftovers) happens only
-  after the night's snapshot took its date and the completion stamp was written;
-- every run stamps its ATTEMPT first, which is how `daemon/backup_watch` tells a killed night the
-  morning after (tests/test_backup_watch.py).
-"""
+"""`deploy/backup.sh` turns a run cut short into progress, never into the next run's debt."""
 from __future__ import annotations
 
 import shutil

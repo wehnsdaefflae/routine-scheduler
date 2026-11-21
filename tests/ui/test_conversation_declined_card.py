@@ -1,15 +1,4 @@
-"""A CONVERSATION's declined access, cleared from its own page (F783).
-
-The gap was a PAGE, so these tests load what the operator sees. A `deny_forever` on the
-Decisions page writes a `{entity: false}` tombstone into the conversation's own routine.yaml and
-the engine then refuses that entity and stops asking — and the only editor that removed such a
-row was the ROUTINE page's "Declined access" block, which no conversation has. One mis-click
-denied a capability for the life of the thread.
-
-The router shipped first (`web/api_conversation_grants.py`, pinned in
-tests/test_conversation_grants.py); a write surface with no card is not the gap closed, which is
-why the assertions here are on the VISIBLE row and on the press that clears it.
-"""
+"""A CONVERSATION's declined access, cleared from its own page (F783)."""
 
 import yaml
 from playwright.sync_api import expect

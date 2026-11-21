@@ -1,16 +1,5 @@
 """Once-only guards fire once per GUARD SCOPE — the whole run for a routine, the current reply
 for a conversation — and a resumed leg rebuilds them from the transcript (engine/guardscope.py).
-
-Every one of them used to be a fresh set at loop construction, so each resumed leg — after a
-restart, an operator resume, a parked question answered after the process died — started them
-empty: a hold the run had already confirmed stopped the same action again, a rule assist fired
-a second time, the pre-finish deferral recurred and the verifier challenged a line it had
-already challenged. The owner's decision: "Routines: rebuilt from the transcript on resume, so
-once really means once per run. Conversations: each new reply starts fresh, since each reply is
-a new task."
-
-A leg here is interrupted the way a crash or a restart leaves one: the endpoint dies mid-run,
-the finish is the engine's and unauthored, and the next leg resumes the same run dir.
 """
 
 from __future__ import annotations

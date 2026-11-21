@@ -1,17 +1,4 @@
-"""Curating a GLOBAL reminder this routine does not hold (D186 / R2530).
-
-The live set is "every curated reminder that REACHES this routine, plus its own". A
-`reach: listed` global row is in no non-listing routine's live set by construction — so a
-curator that does not list it could never name an id `delete` would accept, and the row was
-permanent unless the operator removed the file by hand. `rules-review`'s recipe assigns it
-exactly that act ("a dead shared one you delete yourself"), so the recipe and the engine's
-lookup contradicted each other for every listed shared row.
-
-The fix resolves `rid` against the SHARED STORE when the op names `scope: global` and the live
-set misses. Nothing about AUTHORITY moves: the scope-mismatch guard, `grants.reminder_denial`,
-the global approval step and the library commit all still run on the resolved target — which is
-what the last two tests here pin.
-"""
+"""Curating a GLOBAL reminder this routine does not hold (D186 / R2530)."""
 
 import json
 
@@ -107,12 +94,7 @@ def test_the_capability_dial_refuses_the_op_before_resolution_is_reached(tmp_pat
 
 @pytest.mark.parametrize("reach", ["listed", "universal"])
 def test_resolution_from_the_shared_store_still_asks_for_approval(make_routine, scripted, reach):
-    """The blast-radius gate is unchanged — including for a row the run never held.
-
-    The note proves BOTH halves at once: the op got past resolution (an unresolved id would
-    have come back "is in the shared store" / "is live for this run" instead) and then stopped
-    at the approval, with the library untouched.
-    """
+    """The blast-radius gate is unchanged — including for a row the run never held."""
     # ask_timeout_min=0: the approval is never answered, so the wait is pure dead time —
     # 60 s of wall clock EACH in every release gate (F739). Timing out at once exercises the
     # same path (file the question, continue on the default, the store untouched) and the

@@ -1,33 +1,4 @@
-"""R3085: a chat message's corner controls must not become part of the text you select.
-
-The operator reported, from conversation c-20261029-080013, that the copy button on a chat
-message's code block "copies the glyph, not the code" — he clicked it and got `⧉`.
-
-**Clicking is not where that can happen, and this file says so with a test rather than with a
-claim.** `static/md.js` renders every fence as `<pre><code>…</code></pre>` (lines 102 and 147,
-the only two places it emits a `<pre>`), and `chat.js`'s `fenceBtns` reads `code.textContent`
-with `pre.textContent` only as a fallback for a `<pre>` that has no `<code>` child — which that
-renderer never produces. `tests/ui/test_flows.py::test_code_fence_copy_button` already asserts
-the clipboard equals exactly the fence's source after a click, and it passes.
-
-What CAN put the glyph in his clipboard is the other way of copying: every one of these controls
-is a CHILD of the thing it acts on (deliberately — each is pinned to a corner, `views.css`), so
-dragging across the code block or the message and pressing ⌘/Ctrl-C selects the buttons' text
-along with the content. Nothing in the DOM excluded them, and `user-select: none` is the
-one-property fix: a control stays clickable and focusable, it simply stops being TEXT that a
-selection can take.
-
-**Where each control lives, because a test that looks in the wrong bubble proves nothing.** ⧉
-`copy-fence` sits in any `<pre>`, so a user message with a fence has one. ⧉ `copy-msg` is on
-every bubble, and so is ↩ `refer-btn` — which runs and finish banners share
-(`views.css:351`), so the fix lands there too. ⑂ `branch-msg`, ⟲ `rewind-msg` and ⚑ `flag-msg`
-are a REPLY's only —
-returns null without its callback and an integer turn (`chat.js:137,148,162`) — so they exist
-only on `.msg.assistant`, and that is why these tests seed a finished run with a reply instead
-of reading a freshly composed message. Every check asserts the control is PRESENT before it
-asserts anything about it: a selector that matches nothing would otherwise make this whole file
-pass over a console that had lost the fix.
-"""
+"""R3085: a chat message's corner controls must not become part of the text you select."""
 
 from __future__ import annotations
 

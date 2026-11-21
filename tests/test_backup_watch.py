@@ -1,12 +1,4 @@
-"""Nothing in this product read backup state, so three weeks of no backup passed in silence.
-
-`rsched-backup.service` failed every night from 2026-09-12 to 2026-10-01 (F602). A grep for
-`rsched-backup` / `backup-completed` over `src/` and `static/` returned zero hits: the indicator was
-ABSENT, not broken. Two mechanisms close it, on purpose independent — the unit's own `OnFailure=`
-ntfy push, which still works when this daemon is down, and the daemon's `backup_watch`, which reads
-the completion stamp and files `backup_stale` into the health stream the console already renders.
-Each is tested here for the one property that makes it worth having.
-"""
+"""Nothing in this product read backup state, so three weeks of no backup passed in silence."""
 
 from __future__ import annotations
 
@@ -124,14 +116,7 @@ def test_rsched_mirror_is_read_before_the_default_root(tmp_path):
 
 
 def test_a_fresh_local_tier_never_masks_a_stale_offbox_one(tmp_path, monkeypatch):
-    """R3204 step 4, and the reason the two tiers are judged apart.
-
-    `newest_stamp` takes the freshest stamp across its roots — correct for one tier with a
-    leftover root beside it, and wrong the moment there are two REAL tiers: the local snapshot
-    completes every night in minutes, so it would report `ok` for an off-box copy that has not
-    completed for weeks. The off-box tier is the one that survives losing this box, which makes
-    its staleness the more serious of the two and the one that must reach the operator.
-    """
+    """R3204 step 4, and the reason the two tiers are judged apart."""
     local = _stamp(tmp_path / "local", NOW - timedelta(hours=2))
     offbox = _stamp(tmp_path / "offbox", NOW - timedelta(days=19))
     monkeypatch.setattr(backup_watch, "backup_roots", lambda env=None: [local, offbox])

@@ -1,18 +1,4 @@
-"""The age line on a Messages card, in a real browser (F753).
-
-The server's claim is tested in tests/test_item_first_seen.py; this is the operator's half:
-the page LOADS, and what it shows about an item's age is readable and honestly qualified.
-
-Two readings have to be distinguishable on screen, because the whole finding is about false
-precision in a date:
-
-* a floor — the item already existed when stamping began, so no true first sight exists and
-  the card says "or more" / "or earlier" rather than a bare date;
-* an exact sighting — the instance watched the item arrive and the date is a real one.
-
-The REPORT carries its genuine filing time from `.control/reports.jsonl`, which nothing
-rewrites, so its card reads exactly.
-"""
+"""The age line on a Messages card, in a real browser (F753)."""
 
 import json
 

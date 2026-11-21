@@ -1,16 +1,4 @@
-"""The between-runs prompt-cache gap, on the page someone opens (F507/D163).
-
-The readmodel can be right and the operator still never see it: the Stats tab is where this
-measurement is supposed to answer "what does this routine cost me". So the section is loaded
-through the real page here, and the two things that make the number HONEST are pinned as UI,
-not just as arithmetic:
-
-- a fire whose turn 1 could not be read shows as UNDETERMINED — never silently absent, never
-  folded into cold. A partial measurement that renders as a complete one is the one failure
-  this table must not have;
-- the headline names the warm re-write it does NOT price, so the premium cannot be read as the
-  whole bill.
-"""
+"""The between-runs prompt-cache gap, on the page someone opens (F507/D163)."""
 
 import json
 

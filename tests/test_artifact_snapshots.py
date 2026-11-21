@@ -1,16 +1,4 @@
-"""⟲ rewind puts a conversation's FILES back, not only its transcript.
-
-A scheduled routine's dir is a git repo the engine autocommits at every run end, so its
-deliverables have a history. A CONVERSATION is not versioned: `artifacts/` holds exactly what
-the newest reply left there. So a rewind used to take the transcript back to a chosen turn and
-leave the files as the discarded replies wrote them — the conversation saying one thing and its
-deliverables another, which is the error nobody notices until they act on the wrong file.
-
-What is pinned here: a reply's close-out snapshots `artifacts/`, a rewind restores the newest
-snapshot at or before the turn it kept, what was live is copied aside first (a rewind is itself
-an act someone may regret), the store is bounded, and a conversation that produced no files pays
-nothing at all.
-"""
+"""⟲ rewind puts a conversation's FILES back, not only its transcript."""
 
 from __future__ import annotations
 

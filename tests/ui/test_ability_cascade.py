@@ -1,13 +1,4 @@
-"""Unticking an ability card switches off that ability and no other (components/abilities.js).
-
-The panel ran a "deactivation cascade" after every untick: drop each held doc the mapping no
-longer covers. An untick switches no capability off, so the only docs it ever found were the
-ones ALREADY short of a requirement — a library change gave one a requirement the mapping
-lacks, and its own card carries the "switch on" that fixes it — and it unticked those too,
-toasting "also switched off" as if the untick had done it. A doc requires actions and utils
-alone (grants.normalize_capabilities), and nothing on the cards can switch a required one off,
-so the cascade had nothing left to do but that.
-"""
+"""Unticking an ability card switches off that ability and no other (components/abilities.js)."""
 
 from __future__ import annotations
 

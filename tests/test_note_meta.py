@@ -1,10 +1,4 @@
-"""D268: a note's `stale_after` and `verified` as DATA — declared, rendered, merged, judged.
-
-The failure these guard against is the silent one. A sub-field absent from `KIND_FIELDS` is
-stripped by `normalize_action` with no error at all, so the first test here is that the fields
-survive the contract rather than that they render nicely; and a note WITHOUT them must keep
-behaving exactly as it does today, which is every note on the instance.
-"""
+"""D268: a note's `stale_after` and `verified` as DATA — declared, rendered, merged, judged."""
 
 from __future__ import annotations
 

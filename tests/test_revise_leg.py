@@ -1,10 +1,4 @@
-"""The NARROW revise leg (engine/reviseleg.py): an approved recipe-revision card buys an EDIT.
-
-Each test pins one half of what the leg is NOT any more — a whole run that re-orients, owes the
-recipe's accounting again, carries the routine's full toolset and budget, and closes out as the
-run's new verdict over the summary of the work it was resumed after. And one control: the run
-view's checkbox (a FULL revise leg) and an ordinary resume keep everything they had.
-"""
+"""The NARROW revise leg (engine/reviseleg.py): an approved recipe-revision card buys an EDIT."""
 
 from __future__ import annotations
 

@@ -1,18 +1,5 @@
 """`GET /api/credential-names` — the names of every stored credential, and never a value
 (D171, operator decision 2026-10-08, option b).
-
-The endpoint exists so `rsched export` can scrub credentials out of the off-box mirror WITHOUT
-reading the stores the sandbox hides from it. That makes one property load-bearing above all
-others: no response may ever carry a credential VALUE. Every store below is therefore seeded
-with a distinctive value and the whole response body is asserted free of all of them — a
-by-value assertion, because a by-key one would pass against a handler that happened to serve
-`{"CENTRAL_API_KEY": "s3cr3t-central-value"}`.
-
-The second property is the TIER: the export runs inside a util, under the routine token
-(`RSCHED_API_TOKEN`), and that token is refused the whole `/api/settings` subtree plus every
-routine's own secret names (`app.ROUTINE_TOKEN_DENIED_READS`). An endpoint placed under either
-would be a 403 for its only caller, so the tier is pinned here rather than left to the route's
-spelling.
 """
 
 from __future__ import annotations

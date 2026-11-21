@@ -1,15 +1,4 @@
-"""`rsched postdeploy`'s status READ — what kind of nothing came back, and asking again (0.563.0).
-
-On 2026-11-20 the command ran ten seconds after a restart, while reconnecting console tabs held
-every `/api/*` request for 17-20 s. Its one 10 s read gave up and `served-identity` said "no
-answer … check you are on the right host" about a daemon that was up, on the right host, and
-serving the build just deployed — a FAIL that sent the operator to look for the wrong defect.
-
-The read now names WHY it got nothing (`cli_postdeploy._status`), the command asks again while
-the why is one a minute can change (`await_status`), and the verdict words each why as its own
-next move (`postdeploy.NO_ANSWER`). Unlike `test_postdeploy_cli.py`, the transport is exercised
-here for real — against sockets this test opens on 127.0.0.1, never a live instance.
-"""
+"""`rsched postdeploy`'s status READ — what kind of nothing came back, and asking again (0.563.0)."""
 import json
 import socket
 import threading

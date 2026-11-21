@@ -1,18 +1,4 @@
-"""D188 — the turn says which model answered it, on the page.
-
-Operator, 2026-10-16: "we need to see with each turn which model was used". The engine has
-stamped the resolved model per turn for some time (`usage.model`), and nothing in static/ ever
-read it: the turn row showed token counts with a tooltip naming the serving PROVIDER, so the
-one fact an audit of a model switch needs was in the file and on no surface.
-
-What is asserted here is the TEXT A READER SCANS, never a data-* attribute or a class. A
-previous release shipped two adjacent rows both reading "approval" and the whole browser suite
-passed because every test reached its target by attribute.
-
-The second test is the direction that rots silently: a run recorded BEFORE the field existed
-has no model on its turns, and the row must then say nothing at all — "null" or "undefined" on
-a year of archived runs is worse than the blank the reader already understood.
-"""
+"""D188 — the turn says which model answered it, on the page."""
 
 from __future__ import annotations
 

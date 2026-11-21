@@ -1,24 +1,6 @@
 """F696 — ASSET/PROCESS SKEW: `/static` is served live from disk while every Python object in
 this process stays at the build it booted with, so a release landing mid-day puts NEW javascript
 in front of an OLD process and nothing says so.
-
-The specimen is the operator's R2546: 'i set up everything on the conversation creation page and
-yet once the conversation was started, most of the settings were gone'. Every layer was correct
-at HEAD — the composer sent all 17 fields, `ComposerForm` declared all 17 — but the daemon
-serving the console had booted at 07:34:53, the two halves landed together at 08:47, and the
-conversation was created at 13:42:08 inside that window. The browser's new fields were
-accepted-and-discarded.
-
-Why the comparison lives on the SERVER. Nothing in an asset says which build it came from, so
-the console cannot name the build it is running; and the process never restarted during the F696
-window, so `/api/status`'s `build` never changed either — a console comparing successive readings
-of it would have seen nothing all day. The server is the only party that knows BOTH the build it
-booted with and the build the checkout serving /static is at NOW, so it compares them and reports
-the verdict.
-
-Sibling: `rsched.engine.buildskew` (F677) covers the same release landing mid-RUN against held
-Python objects. That half is lazy imports; this half is static assets, which were not versioned
-against the process at all.
 """
 
 from __future__ import annotations
@@ -34,11 +16,7 @@ MOVED = "392379e 2026-10-19"       # what the checkout is at once the release la
 
 @pytest.fixture
 def status_of(tmp_path, monkeypatch):
-    """`/api/status` from an app that booted at the first stamp and now reads the second.
-
-    The stamp is patched BEFORE the app is built, because the boot half really is read at boot —
-    which is the whole asymmetry under test.
-    """
+    """`/api/status` from an app that booted at the first stamp and now reads the second."""
     def _status(*stamps: str) -> dict:
         reads = list(stamps)
         monkeypatch.setattr(assetskew, "read_stamp",

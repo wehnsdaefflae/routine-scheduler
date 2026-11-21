@@ -1,14 +1,4 @@
-"""A control is reachable and operable from the keyboard, and says what it does.
-
-`util.tagChip` renders the console's filter chips (the Routines state filter, the Messages type
-and status chips, the Library's tag filter and its section counts) and every tag editor's "×"
-as clickable SPANS — keeping the chip's own look, which a <button> would trade for the
-browser's. But a span with a click handler is not focusable and has no role: none of them could
-be reached with Tab or pressed with Enter, and a screen reader announced them as plain text.
-The same held for a lane row on the Routines table, which expands on a click in its cell. They
-now carry the button role, a tab stop and Enter/Space activation (`util.asButton`); a filter
-chip says whether it is on, a lane whether it is open.
-"""
+"""A control is reachable and operable from the keyboard, and says what it does."""
 
 from __future__ import annotations
 

@@ -1,37 +1,4 @@
-"""A release that declares its own remainder must ADDRESS it to someone — the docs/limits.md gate.
-
-Around 0.444.0 (2026-10-23) release entries began declaring their own incompleteness explicitly,
-which is better practice than the silence before it. But a declaration is not a route. Of the
-nine remainders declared between 0.444.0 and 0.445.2, the ONE given a report id — R2844,
-`_OPENING_STOP` splitting on ASCII sentence stops only — was fixed in 0.447.2 the next day; two
-more named a route (a `docs/designs.md` entry, the question id `q-20260912-121159-40`); six
-carried no route at all, and two of those six went wrong SILENTLY: a credential watch covering
-one provider of three looks like a credential watch, and a command "never run against a live
-instance" is the one artefact whose whole purpose is to be run against a live instance. A search
-for `Known limit` across the tree found the changelog and nothing else: no doc, no test, no
-module comment. The mechanism that turns a known limit into a fix is being ADDRESSED TO SOMEONE,
-and the changelog addresses nobody — it is a record, not an inbox, by design and rightly.
-
-So a limit clause ships with ONE of three dispositions, chosen on the spot:
-
-1. **a report** — `reported as R2844`: a defect someone owns (the path that worked in 24 hours);
-2. **a decision or a question** — `raised as D219`, `Still open: q-20260912-121159-40`, or a
-   `docs/designs.md` entry when the work is already decided (that file has its own reader and its
-   own test): a judgement call does not belong in a defect queue;
-3. **an entry in `docs/limits.md`** — known, undecided and unbuilt, with the evidence and one
-   line on what would make it matter; or `Accepted permanently: <reason>` written into the clause
-   itself, when the honest answer is that nobody will ever build it.
-
-Prose alone is the failure this repo has measured twice: `docs/designs.md` had no reader for 33
-days, and the ≤350-line bar "was advice, and the tree drifted" until `tests/test_file_size.py`.
-Hence a check rather than a sentence.
-
-Two things are deliberately NOT policed, and both are stated rather than silent. A clause quoted
-as a `code token` is prose ABOUT this convention, not a declaration — R2596's lesson, where a
-tombstone comment quoting its own marker reddened `main` itself. And a remainder declared in
-words this file does not know is not caught: the vocabulary is closed, it is written out in
-`docs/limits.md`, and using it is how you declare a limit.
-"""
+"""A release that declares its own remainder must ADDRESS it to someone — the docs/limits.md gate."""
 
 from __future__ import annotations
 

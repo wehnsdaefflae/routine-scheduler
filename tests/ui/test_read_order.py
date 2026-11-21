@@ -1,14 +1,4 @@
-"""An older read never paints over a newer one.
-
-A page that reloads on more than one trigger — a bus tick, a click, a filter — has more than one
-read in flight whenever the daemon is slow, and responses do not come back in the order they
-were asked for. Whichever answered LAST used to win, so a read that started before a change
-could land after the read that showed it and quietly put the old state back — with nothing
-left to correct it until some later trigger happened along.
-
-Each test holds one response (captured at request time, so it carries the state of that moment)
-until a newer read has rendered, then lets it land.
-"""
+"""An older read never paints over a newer one."""
 
 from __future__ import annotations
 

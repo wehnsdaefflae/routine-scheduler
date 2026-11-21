@@ -1,11 +1,4 @@
-"""A notification click reaches the decision whichever console windows are open.
-
-sw.js's click handler took ANY window (`includeUncontrolled: true`) and called navigate() on
-it — which a window the worker does not control rejects, unhandled: the click focused a tab
-and never reached the decision. The handler is exercised here in the page, against a stand-in
-worker scope, because a real notification click cannot be driven over CDP: the shipped sw.js
-text is evaluated with `self` bound to a fake that records what the handler asked for.
-"""
+"""A notification click reaches the decision whichever console windows are open."""
 
 from __future__ import annotations
 

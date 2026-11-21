@@ -1,8 +1,4 @@
-"""The between-runs prompt-cache gap read model (rsched.readmodels.cache_gap) — F507/D163.
-
-What a turn-1 usage row means (cold / warm / no cache traffic at all), the premium priced from
-the engine's own recorded price table, and the route wiring that puts it on the Stats tab.
-"""
+"""The between-runs prompt-cache gap read model (rsched.readmodels.cache_gap) — F507/D163."""
 
 import json
 

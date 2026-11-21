@@ -1,11 +1,4 @@
-"""The colour-theme toggle (auto / light / dark) in the REAL console.
-
-The whole palette turns on one CSS mechanism: every token is `light-dark(light, dark)` and the
-theme is chosen by the root's `color-scheme` alone (base.css) — `data-theme="light"` sets
-`color-scheme: light`, which makes both `light-dark()` AND the browser's own page canvas go light.
-So the ONE thing that must hold is: picking light actually computes a light `color-scheme` and a
-light surface. This surface had no test at all, which is how "light does nothing" reached the user.
-"""
+"""The colour-theme toggle (auto / light / dark) in the REAL console."""
 
 from __future__ import annotations
 

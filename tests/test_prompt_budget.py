@@ -1,21 +1,5 @@
 """The ENGINE'S always-on prompt, held to a shrink-only budget — the same ratchet the file-size
 bar is (test_file_size.py), over the one body every turn of every run re-sends.
-
-Harness² (arXiv 2610.14224) caps its always-on text and tells its editors "if you add always-on
-text, cut something else to pay for it": every word there is paid at every step, and the
-commonest failure of long runs is reasoning until the budget is gone. On this instance the
-always-on body is mostly the engine's own: measured on 2026-10-25 the harness contract, the
-action schema and its example were 60-85% of a run's first prompt, identical for every routine,
-while the routine's own recipe was a median 5%. Nothing ever counted it, so it only grew.
-
-The budget is the engine CONTRACT — `harness`, `schema` and `example` from
-`composer.system_sections` — composed for one fixed routine holding every grantable kind, so a
-new kind's prose counts too. A change that grows it fails here; `python tests/test_prompt_budget.py
---update` lowers the ceiling after a cut and REFUSES to raise it. Raising it is a deliberate edit
-of `prompt_budget.json` with the reason in the commit — the cost lands on every turn of every
-run. A run's own sections (workflow, capabilities, digest) are recorded per run instead
-(`quality.prompt_chars`, engine/runrecord.py), because their size is the routine's, not the
-engine's.
 """
 
 from __future__ import annotations

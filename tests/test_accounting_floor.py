@@ -1,21 +1,4 @@
-"""The accounting's CONTENT floor: a placeholder evidence clause is not an account.
-
-MEASURED, on `birthday-admin:20261022-080004` (F748). That run finished `ok` carrying
-`d1 met: test`, `d2 met: test`, `d3 not due: test`, `g1 distance: test` — twenty entries of
-those shapes — behind a 47-character summary. The accounting check verified that an entry
-EXISTED for each id and that its verdict parsed; nothing looked at what came AFTER the verdict,
-so a placeholder satisfied the account and the run's status said every line was met.
-
-The floor is calibrated on the fleet, not invented. Over every routine's transcripts for the
-14 days to 2026-10-23, 286 finishes carried 2 093 accounting entries; the evidence clause (the
-text after the verdict word) ran p0.5 = 4 chars, p1 = 9, p2 = 50, median 240 — and EVERY entry
-under 9 characters was one of birthday-admin's `test` placeholders. The shortest LEGITIMATE
-entries in that corpus were vodafone-outage-claims' `not due` lines: `no filing` (9 chars, two
-words), `no letter due`, `no letter to archive`, `no letter was due (d5)`. A plain character
-floor around 30 would have refused all of those, so the rule is TWO WORDS plus a small
-vocabulary of words a real account never consists of alone. Both directions are pinned here:
-the birthday-admin shapes refused, the vodafone shapes accepted VERBATIM.
-"""
+"""The accounting's CONTENT floor: a placeholder evidence clause is not an account."""
 
 from __future__ import annotations
 
@@ -129,9 +112,6 @@ def test_a_finish_whose_accounting_is_a_placeholder_is_set_aside(make_routine, s
                                                                  monkeypatch):
     """End to end, the specimen's own turn: the finish is deferred once, the refusal names the
     entry, and the run finishes when it accounts for the lines.
-
-    The verifier is stubbed — this is the ACCOUNTING rung's test, and a live judge would
-    consume a scripted reply for a verdict it says nothing about.
     """
     from rsched.engine import verifier
 
@@ -215,13 +195,6 @@ def test_the_transcript_reads_the_accounting_renderers_from_their_own_module():
     """The extraction the ratchet forced (static/components/transcript.js was at its ceiling):
     the renderers moved out, so the import has to come back in — a no-build ES module that
     calls a function it does not import is a ReferenceError in the browser and nowhere else.
-
-    The import follows the CALLER, which is the whole property worth pinning: F776 split the
-    per-kind observation chain out of transcript.js into `obs-text.js`, taking the
-    `accountingGaps` call (the finish-gate rung that names an incomplete accounting) with it,
-    while `accountingLine` stayed with the `stopping_update` row that renders it. Each module
-    must import what IT calls and nothing it does not — so this reads the caller of each
-    renderer rather than assuming both live in one file.
     """
     from pathlib import Path
 
@@ -244,15 +217,6 @@ def test_the_transcript_reads_the_accounting_renderers_from_their_own_module():
 # ---- what the console COUNTS -------------------------------------------------------------------
 
 def test_a_placeholder_entry_is_still_counted_by_its_verdict():
-    """DELIBERATE: `accounting_counts` is a RULER, not a gate.
-
-    It feeds the `met_rate` completeness signal (readmodels/change_signals.py), which compares
-    runs of the same routine across releases, and the one-shot run-record backfill (honoured
-    2026-11-12) re-derived it from an old run's `status.json` — so discounting placeholders here
-    would have silently re-scored every historical run, and the records it wrote still stand,
-    which is exactly what `COUNTED_SINCE` exists to prevent. The finish guard
-    is where a placeholder is stopped; no new run can land one. The runs that already did stay
-    counted the way they were counted then.
-    """
+    """DELIBERATE: `accounting_counts` is a RULER, not a gate."""
     assert runrecord.accounting_counts(["d1 met: test", "d2 unmet: test"]) == \
         {"owed": 2, "met": 1, "unmet": 1, "not_due": 0}

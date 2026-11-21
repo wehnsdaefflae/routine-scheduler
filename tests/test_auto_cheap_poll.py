@@ -1,23 +1,4 @@
-"""The ENGINE-SERVED CHEAP POLL (F785, the engine half of D217).
-
-F785 measured 2,651 fleet turns that "do nothing but re-ask whether something finished (a
-release gate's status, a child's subruns table)", each re-sending the whole prompt to the main
-model to read a one-line answer, and noted that `role_swap` (D185) already existed and that
-nothing used it. The operator's answer to D217 was "Both — the automatic cheap poll AND a real
-tool_call model to swap to"; this is the first half, so the ENGINE serves the repeat poll on the
-routine's `tool_call` model without the run asking, and restores the main model when the run
-stops polling.
-
-What these tests pin, in the order the engine meets them:
-1. the no-op is a real no-op — a routine with no distinct cheap model must not be swapped
-   anywhere and must not be told anything (31 of 32 routines today);
-2. detection is CONSERVATIVE — one re-check never changes models under a run;
-3. the second consecutive repeat is served cheap, and the run is told once;
-4. the restore is automatic and happens on the first action of a different class;
-5. the two ways this layer must stand down: the engine's own stuck-escape turn, and a run
-   steering its own model with `role_swap`;
-6. it never clobbers a `main` someone else re-pointed (the operator's console switch).
-"""
+"""The ENGINE-SERVED CHEAP POLL (F785, the engine half of D217)."""
 
 from types import SimpleNamespace
 
@@ -48,14 +29,7 @@ def _land(loop, action: dict, times: int = 1) -> None:
 
 
 def _poll_stretch(loop, times: int = 3) -> None:
-    """The servable band: a poll CLASS repeating while the action itself varies.
-
-    This is the only shape that can be served cheap, and the reason is a collision with the
-    loop's own stuck counter rather than a choice made here — see
-    `test_a_byte_identical_poll_can_never_be_served` below. `wait` on successive children is
-    the honest example: each turn asks "has it finished?" of the same class, and no two turns
-    are the identical action.
-    """
+    """The servable band: a poll CLASS repeating while the action itself varies."""
     for n in range(1, times + 1):
         sidefields.land(loop, {"say": "still waiting", "kind": "wait", "n": n})
 
@@ -137,19 +111,7 @@ def test_polls_chained_inside_one_reply_count_like_turns():
 
 
 def test_a_byte_identical_poll_can_never_be_served():
-    """THE LIMIT OF THE AUTHORIZED SHAPE, pinned so no reader has to discover it twice.
-
-    For a poll whose action never varies — `subruns` takes no fields at all, and an
-    identity-class `script`/`util` poll IS its canonical string — the class depth and the
-    byte-identical streak are the SAME number. `SERVE_FROM` (the second consecutive repeat,
-    which is what D217 authorized as conservative) therefore always coincides with
-    `wrongturn.WARN_STREAK`, where the loop warns the run it is stuck and sheds the provider
-    schema for its next reply. The escape turn must stay on the main model, so the servable
-    band for a byte-identical poll is EMPTY: the mechanism correctly does nothing.
-
-    That is a real shortfall, not a tuning preference, and closing it needs a WINDOWED rule
-    (a poll class seen twice within N turns) — an operator decision this layer does not take.
-    """
+    """THE LIMIT OF THE AUTHORIZED SHAPE, pinned so no reader has to discover it twice."""
     assert autoswap.SERVE_FROM == WARN_STREAK, (
         "SERVE_FROM and WARN_STREAK no longer coincide — re-measure which band is servable "
         "before changing this test")

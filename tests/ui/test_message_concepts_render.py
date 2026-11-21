@@ -1,17 +1,4 @@
-"""A LOOK at the rendered message element — the screenshot a reader would see.
-
-The two tests beside this one assert classes, hrefs and lossless text. None of that proves the
-result is LEGIBLE: a highlighter whose key colour equals its background passes every assertion
-above and renders an unreadable block. So this one opens the fold, captures it, and checks the
-two things a render can fail that the source cannot:
-
-1. the token colours actually DIFFER from the surrounding text colour (a palette that resolved
-   to `inherit` for every class would look exactly like the old plain blob), and
-2. the fold does not overflow its own box at phone width, where a 40-line action is widest.
-
-It writes the capture to the gate's artifact dir so a human can look at it too, which is the
-point of the exercise.
-"""
+"""A LOOK at the rendered message element — the screenshot a reader would see."""
 import json
 import os
 from pathlib import Path

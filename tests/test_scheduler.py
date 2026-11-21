@@ -132,12 +132,6 @@ async def test_due_lane_cron_arms_the_chain_and_fires_member_zero(make_routine, 
 def _stub_engine(monkeypatch, script: str):
     """Replace the engine subprocess with a bash stub. The stub runs with cwd=<routine dir>;
     $1 is the run ts (script references runs/$TS/...).
-
-    The signature MIRRORS engine_cmd's, server argument included: a stub that silently stops
-    matching the real one is how F394 happened (the F393 split moved engine_cmd, `from …
-    import` froze the old reference, and the patch quietly stopped taking). The real
-    engine_cmd now refuses a source-less ServerConfig outright, so the same slip fails loudly
-    instead of running the fixture against production.
     """
 
     def cmd(server, target, run_ts, *, resume=False, models=None, efforts=None):
@@ -637,9 +631,6 @@ async def test_fire_refuses_a_routine_whose_role_names_an_absent_model(
     stored when that WAS a catalog name, and after the rename each run died on its first turn
     resolving it: `EndpointError: model 'Sonnet' is not in the catalog`, rc=1, no finish, no
     summary, an `orphaned_run` and nothing saying why.
-
-    The refusal must land BEFORE `_claim_run_dir`, so there is no run dir and no status.json to
-    explain: a run that cannot possibly reach its first turn should never be born.
     """
     d = make_routine(slug="staler")
     cfg = _with_roles(d, main="Sonnet")
@@ -683,16 +674,7 @@ async def test_a_stale_role_refuses_every_fire_reason_and_records_each(
 
 async def test_a_role_the_run_may_never_resolve_does_not_refuse_the_fire(
         make_routine, tmp_path, monkeypatch):
-    """The refusal must not cost more than the failure it prevents.
-
-    `trials.roles_problem` names EVERY stale role and is right to — `rsched validate` and the
-    console want the whole truth. But `tool_call` and `uncensored` resolve only if the run makes
-    such a call, and `uncensored` only when a refusal is referred, which is rare. Live evidence
-    at the time this was written: `folder-reorg` had carried a stale
-    `uncensored: gemma-4-26b-a4b-uncensored` for weeks while every one of its runs finished fine.
-    A fire guard over all roles would have taken a working routine dark to prevent a death that
-    was not happening.
-    """
+    """The refusal must not cost more than the failure it prevents."""
     d = make_routine(slug="reorgish")
     cfg = _with_roles(d, main="Sonnet medium", uncensored="gemma-4-26b-a4b-uncensored")
     _stub_engine(monkeypatch, "sleep 0.2")
@@ -793,16 +775,6 @@ async def test_a_paused_lane_skip_says_so_in_the_health_stream(make_routine, tmp
     """F573: a global pause SKIPS a due lane fire, and nothing makes it up (D237) — and until
     this event existed, the only witness was a `log.info` line in a journal the audit cannot
     read.
-
-    Measured cost of the silence: a 65-minute pause on 2026-09-26 (04:05-05:10 local) spanned
-    the 05:00 fire of a WEEKLY lane, `grp-3235d2ee` "Instance · Weekly · Research". Its two
-    members went dark for eight days with no event of any kind, and the run that finally
-    noticed had to prove it from the absence of a lock file. A pause sized in minutes cost a
-    week, which is the part no reader could have seen.
-
-    This test fails if the skip goes unrecorded, and it asserts on the DETAIL rather than on
-    the event name alone: the reader has to learn which lane lost a fire, or the event is a
-    notification that something unspecified happened.
     """
     import json
 
@@ -852,15 +824,7 @@ def test_the_blocked_fleet_fold_can_see_a_paused_lane_skip():
 
 
 async def test_abort_while_queued_releases_the_slug(make_routine, tmp_path, monkeypatch):
-    """Aborting a run that is still QUEUED must leave nothing behind in `runner.active`.
-
-    The regression (2026-09-14): `_supervise` early-returned on `run.cancelled`, skipping
-    `runner_reap.reap` — the only caller of `runner.active.pop`. The run stayed registered
-    forever, which silently disabled the routine (`resume` refuses while it is active) AND
-    wedged the restart drain (`active_states` reads the same dict, so the daemon believed
-    runs were live and never restarted) — and the restart was the only thing that could have
-    cleared it.
-    """
+    """Aborting a run that is still QUEUED must leave nothing behind in `runner.active`."""
     d1 = make_routine(slug="holder")
     d2 = make_routine(slug="queued")
     cfg1, _ = load_routine(d1)
@@ -922,18 +886,7 @@ def test_classify_cause_separates_the_deaths_that_need_different_investigations(
 
 
 def test_a_sigkill_at_sixty_megabytes_is_not_diagnosed_as_an_oom(make_routine, tmp_path):
-    """F569: `oom_kill` is a DIAGNOSIS, and rc=-9 alone does not support it.
-
-    F348 added the peak-memory sample precisely because "a peak near the host's RAM is the
-    kernel-OOM signature" — but the peak was never compared to anything, so every SIGKILL got
-    the OOM verdict and the number rode along as decoration. On 2026-09-26 a conversation was
-    reaped twice with `peak memory VmHWM=61716 kB` and `=64492 kB` beside `rc=-9`: 60 MB on a
-    12-core host, which is emphatically not memory pressure. The resumed leg is then TOLD
-    "likely out-of-memory" as fact and spends its opening avoiding a cause that never happened.
-
-    A peak this small means the signal came from somewhere else (a supervisor stop, a deploy, a
-    manual kill) — which is `signal_kill`, an investigation that looks at who sent it.
-    """
+    """F569: `oom_kill` is a DIAGNOSIS, and rc=-9 alone does not support it."""
     assert runner_reap.classify_cause(-9, vm_hwm_kb=61716) == "signal_kill"
     assert runner_reap.classify_cause(-9, vm_hwm_kb=64492) == "signal_kill"
     # a genuine OOM signature survives: a peak in the gigabytes keeps the memory verdict

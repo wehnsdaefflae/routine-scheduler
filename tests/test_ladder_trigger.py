@@ -1,19 +1,5 @@
 """Step 4 of the escalation ladder: the TRIGGER — when a rung fires, what it is shown, what
 comes back, and the two guarantees that decide whether the mechanism is safe to ship.
-
-The two that are tests rather than guidelines, both from measured behaviour in this repo:
-
-1. **A healthy run is never told it is being watched.** A `continue` verdict injects NOTHING.
-   Budget warnings once rode every observation past 85% and runs converged at the ceiling
-   whether or not their job was done — a repeated signal in a prompt becomes the thing the run
-   optimizes against. `escalate` asks that question at the ONE place a message is filed.
-2. **Oversight may never fail the worker.** A supervisor that crashes, returns prose, times out
-   or cannot be started at all leaves the run exactly as it was. The run was doing real work;
-   losing its supervision is strictly better than losing the run.
-
-And the arithmetic that makes the ladder affordable: the interval is closed by the rung that
-READ it, so no two rungs ever judge the same turns, and the worker's own turn counter does not
-move while a rung runs.
 """
 
 import json
@@ -107,14 +93,7 @@ class _Sub:
 
 
 class _Loop:
-    """The slice of EngineLoop the ladder touches.
-
-    The sub-run manager is `subruns` — the name the REAL loop carries (`engine/loop.py:154`,
-    and every working caller in `engine/actionroute.py`). This fake said `subs` and so did
-    `ladder.py`, which is the only reason every rung on every run could die of an
-    AttributeError for months behind a green suite (R2348/R2352). If a change makes this
-    attribute disagree with `engine/loop.py` again, fix the production code, never this line.
-    """
+    """The slice of EngineLoop the ladder touches."""
 
     def __init__(self, ctx, subs, says=(), instruction=""):
         self.ctx = ctx
@@ -172,13 +151,6 @@ def test_a_nonsense_turn_interval_falls_back(tmp_path, bad):
 def test_a_rungs_turn_cap_is_a_sublinear_read_plus_a_constant_judge(interval, expected):
     """The cost formula the operator chose over the design's `oversight_turns = n`
     (2026-10-02), and the reason it is a FORMULA: every routine that opts in inherits it.
-
-    A rung's cost has a READ term (the interval's `say` lines, growing with `n`) and a JUDGE
-    term (assemble one directive, fixed). `= n` prices both as scaling — the 2×-the-worker
-    ceiling the design itself calls the objection that decides the feature. A fixed cap prices
-    both as fixed, starving the read at large `n` into `oversight_no_directive`: supervision
-    that silently does nothing. `n // 2 + 1` still grows, so a long interval is never starved,
-    while holding the per-rung worst case at ~0.5× and the whole m=3 ladder at ~1.5×.
     """
     assert ladder.oversight_turns_for(interval) == expected
 
@@ -288,14 +260,7 @@ def test_a_rung_runs_as_an_oversight_child_on_the_supervisor_role_with_a_pinned_
 
 
 def test_an_absent_supervisor_pattern_skips_the_rung_rather_than_degrading_it(tmp_path):
-    """The HARD SKIP (operator, 2026-10-02 — option 1 + 3 together).
-
-    `childrun.materialize_to_disk` catches every failure and degrades an unknown slug to the
-    builtin fallback recipe. For an ordinary child that is the right trade; for a rung it is the
-    worst outcome in the design — a generic child, instructed to "orient, do the work, record",
-    holding authority over a live run. So the rung is skipped, countably, and the worker is left
-    exactly as it was.
-    """
+    """The HARD SKIP (operator, 2026-10-02 — option 1 + 3 together)."""
     ctx = _Ctx(tmp_path, library=False)
     subs = _Subs(_Sub(summary=json.dumps(_directive())))
     ladder.escalate(_Loop(ctx, subs), "interval",
@@ -429,14 +394,7 @@ def test_nothing_in_the_ladder_can_end_the_run(tmp_path):
 
 
 def test_a_mechanism_that_raised_is_not_recorded_as_a_rung_that_declined(tmp_path):
-    """A RAISE and a DECLINE are different facts and must never share an event.
-
-    This is the property R2348/R2352 was filed on: `ladder.py` dispatched through `loop.subs`,
-    an attribute the real loop has never had, and filed the AttributeError as
-    `oversight_skipped` — the same record the legitimate "deep or budget-spent tree" case
-    writes. So every rung on every run died and read, on every surface, exactly like a healthy
-    ladder declining to fire. The two events below must stay distinct whatever else changes.
-    """
+    """A RAISE and a DECLINE are different facts and must never share an event."""
     class _Exploding(_Subs):
         def _start_child(self, action, *, mode, prefix, overrides=None):
             raise AttributeError("'EngineLoop' object has no attribute 'subs'")

@@ -1,12 +1,5 @@
 """No fire is ever made up (D237, operator 2026-11-05): "Remove all catch-up: a fire missed for
 any reason (pause, restart, crash) is skipped."
-
-Until then three mechanisms made up a missed fire: boot made up a routine's last due fire under
-`schedule.catchup: run_once` and a scheduled lane's under the lane's own `catchup` (against a
-watermark, `.control/lane-fires.json`), and lifting the global pause made up a lane's (D156) or
-a routine's (D183) dropped fire while it was still early in its own cadence. These tests pin
-the reversal from the outside, through the two moments a make-up used to happen — a boot after
-downtime and the resume of a pause — so a rebuilt make-up anywhere on either path fails here.
 """
 
 from __future__ import annotations

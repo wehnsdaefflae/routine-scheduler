@@ -1,16 +1,4 @@
-"""A STANDING CONDITION is filed once per window; an INCIDENT is filed every time.
-
-`cost_trend_degraded` is read at RUN END, and a run ends once per finish — so a resumed run
-filed one row per resume: 26 rows over 5h36m from llmsectest-weekday:20261008-040001, 22 from
-the next day's, 173 of the live stream's 1,289 rows for an event only 80 runs had produced.
-An operator reading that sees a fleet problem where there are a handful of readings.
-
-Deduping the payload cannot collapse them — each finish appends its own usage row, which shifts
-the window the trend is read over, so those 22 rows carried six distinct `detail` strings. The
-suppression is therefore on the CLOCK, per (event, routine), in the one writer, so no call site
-can forget it; and it governs only the events named in `REPEAT_COOLDOWN_HOURS`, because a
-failure or a refusal that happened twice is two facts.
-"""
+"""A STANDING CONDITION is filed once per window; an INCIDENT is filed every time."""
 
 from __future__ import annotations
 

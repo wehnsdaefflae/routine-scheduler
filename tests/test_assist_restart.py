@@ -1,26 +1,4 @@
-"""The `restart` HOOK POINT — the last dead one, and the only one fired OUTSIDE a run (step 9).
-
-`hooks/points.py` has carried `restart` with an empty `fires` since the registry shipped in
-0.458.0. Steps 6-8 wired the three that had a turn loop to fire them (`child-exit`, `spawn`,
-`run-end`); this one has none — the daemon is exiting, the engine is a separate process about
-to be killed, and the party that knows a restart is happening is the one on its way out.
-
-What these defend, beyond "it fires":
-
-- **THE SITE IS THE ONE SEAM EVERY GRACEFUL EXIT REACHES.** `web/appwiring`'s lifespan shutdown
-  half, which uvicorn runs on any SIGTERM it handles — a deploy, `systemctl restart`, a
-  container replacement — and where `restart.mark_graceful_exit` already writes F746's
-  breadcrumb. `restart.trigger_shutdown` (the daemon's own self-update path) runs it too.
-- **IT IS NOT A SECOND COPY OF THE RESUME NOTE.** `daemon/reap_resume` files an inbox message
-  and is the better channel where it applies — but only for a run the next boot RE-OPENS. A leg
-  whose resume is refused (cap spent, routine paused, cause never established) gets nothing,
-  and those are exactly the cases where nothing records what happened.
-- **A PARKED RUN IS NOT BEING CUT.** A run waiting on a person was not working, so telling its
-  next leg that work was cut would be a claim about something that did not happen.
-- **THE EXIT IS NEVER DELAYED OR FAILED BY IT.** A diagnostic written on the way out that can
-  raise would be worse than no diagnostic: it would turn a clean shutdown into a hang or a
-  traceback, in the one moment nothing is left to catch it.
-"""
+"""The `restart` HOOK POINT — the last dead one, and the only one fired OUTSIDE a run (step 9)."""
 
 from __future__ import annotations
 

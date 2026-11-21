@@ -1,8 +1,5 @@
 """Routine-page Triggers: rows render (URL, fire ledger); the list is a SETTING — added,
 edited and removed in the draft, saved by the page's one accept. DOM and disk both asserted.
-
-What the server mints is identity — a trigger's id and a webhook's token — so a trigger new in
-the draft has no URL until it is accepted. Its row says so.
 """
 
 from playwright.sync_api import expect

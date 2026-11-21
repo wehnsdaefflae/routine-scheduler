@@ -1,30 +1,4 @@
-"""F723 — a CANCELLED background call's row, and the kill confirmation that names what it killed.
-
-Two misrenders on one seam, both of the worst kind: loud but FALSE. The reader is not shown a
-gap, they are shown a sentence that is wrong.
-
-* `kill handle=bg1` rendered as **"sub-workflow #undefined terminated"**. The kill branch read a
-  sub-workflow NUMBER (`o.n`) from an observation that carries a background HANDLE instead, so
-  the one confirmation a cancelling run gets named nothing — and named it in the vocabulary of
-  the other namespace, which the same action deliberately keeps separate (D176 option (a): `n`
-  stays sub-workflows, `handle` addresses a background call).
-* A cancelled background call's own observation row (`background.cancel` records one, rather than
-  dropping it, so the record does not stop mid-sentence) fell through every background branch —
-  `started`, `abandoned`, `unread` — into the ORDINARY util branch, where it rendered
-  `undefined → exit undefined` and carried no state at all. The row existed and said nothing
-  true: not that the call was cancelled, not which handle, and not the one distinction the engine
-  works hardest to keep (`stopped_work`) — whether the WORK was really stopped or only its
-  delivery.
-
-The engine's vocabulary is used as it stands, and the three endings it distinguishes are each
-pinned here, because a surface that folds them cannot tell a run that chose to drop a result from
-a run that ran out of turns (`background.cancel`'s own docstring makes that the reason the payload
-says `cancelled` rather than `abandoned`).
-
-These load the REAL renderer and the REAL stylesheet in the real browser and assert the rendered
-TEXT — the lesson test_background_chip.py's unread case paid for: that row's class assertion
-passed the whole time it was misreading, because the class was never what was wrong.
-"""
+"""F723 — a CANCELLED background call's row, and the kill confirmation that names what it killed."""
 from playwright.sync_api import expect
 
 # Action/observation PAIRS, so the action row's own brief can be asserted too: a kill that
@@ -71,11 +45,7 @@ def _open(ui, ui_page):
 
 
 def test_the_kill_confirmation_names_the_handle_it_cancelled(ui, ui_page):
-    """The defect verbatim: `kill handle=bg1` read "sub-workflow #undefined terminated".
-
-    A run cancelling a background call gets exactly ONE confirmation, and it must name the thing
-    it stopped. "#undefined" names nothing, and "sub-workflow" names the wrong namespace.
-    """
+    """The defect verbatim: `kill handle=bg1` read "sub-workflow #undefined terminated"."""
     _open(ui, ui_page)
     assert ui_page.evaluate(_FIXTURE, [[_ACT_KILL_HANDLE, _KILL_HANDLE]]) == 1
     row = ui_page.locator("#cx .obs-collapse").first
@@ -115,11 +85,7 @@ def test_the_kill_confirmation_says_whether_the_work_stopped(ui, ui_page):
 
 
 def test_a_cancelled_background_row_says_it_was_cancelled(ui, ui_page):
-    """The row that fell through to the util branch: `undefined → exit undefined`, no state.
-
-    It must state the truth a reader needs — that the call was cancelled, which handle it was —
-    and it must never render an exit code it does not have.
-    """
+    """The row that fell through to the util branch: `undefined → exit undefined`, no state."""
     _open(ui, ui_page)
     assert ui_page.evaluate(_FIXTURE, [[_ACT_UTIL, _STOPPED]]) == 1
     row = ui_page.locator("#cx .obs-collapse").first

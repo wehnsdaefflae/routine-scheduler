@@ -1,8 +1,4 @@
-"""The unified budget primitive (engine/budget.py): Budget + BudgetLedger + allocate.
-
-The RunContext integration (budget_spent/budget_warning/tokens_remaining/child_budgets) is
-exercised end-to-end in test_loop.py; here we pin the primitive itself and the exact wording
-the loop's BUDGET tail and finish summaries quote."""
+"""The unified budget primitive (engine/budget.py): Budget + BudgetLedger + allocate."""
 
 from rsched.engine.budget import Budget, BudgetLedger
 

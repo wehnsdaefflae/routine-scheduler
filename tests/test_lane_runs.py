@@ -2,12 +2,7 @@
 advance passes — fire → wait for terminal → apply on_failure → fire the next — and the
 chain health events an audit reads (F316). A chain fires each member exactly ONCE, in the
 lane's order (D90).
-
-Only the TEMPORAL axis is here. What a lane's members may do and which stores they share is
-each member's own config and has nothing to do with the order they fire in; the chain neither
-reads it nor changes it.
-
-FakeRunner + mk_run mirror tests/test_schedule_once.py; on-disk fixtures, asyncio_mode=auto."""
+"""
 
 from __future__ import annotations
 
@@ -371,9 +366,6 @@ async def test_a_pending_restart_holds_the_next_member_when_nothing_else_runs(tm
     against a 10s quiet window — so a pending restart could never be reached between members.
     Live: a request dropped at 08:25 restarted at 13:35, five hours of runs against code the
     release had already replaced and reported as shipped.
-
-    What is held is the DAEMON's own next member, and only while nothing else is active. The
-    member fires on the new code at the first tick after boot.
     """
     from rsched.daemon import restart
     from rsched.daemon.lane_runs import LaneRunManager

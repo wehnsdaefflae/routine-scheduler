@@ -1,22 +1,4 @@
-"""Several questions in ONE `ask_user`, and the CLASS each filed record carries (D212a).
-
-Measured on 282 real question records before this existed: `mode: blocking` was used 0 times,
-0% of answers arrived within an hour (median latency 2.97 h) — so "surfaced during the run"
-can never mean "the run's process waits". What the store DID show is batching: 37% of runs
-(60 of 163) already ask more than one question, up to 6, and the operator answers in sittings
-that dispose of several at once. The asking side paid a turn and a card per question; one
-action, one dispatch, N records is the win.
-
-The CLASS is the operator's hybrid rule, verbatim — "Both axes: subject decides the default,
-the run may override it when the work is genuinely blocked":
-
-* a question carrying a typed access `request` defaults to `blocking`,
-* a plain question defaults to `closing`,
-* `blocks_work: true` overrides to `blocking`, per question.
-
-It is orthogonal to `mode`, which keeps its own meaning (the process waits, with the ask
-timeout) — a batch never blocks the process, whatever class its questions carry.
-"""
+"""Several questions in ONE `ask_user`, and the CLASS each filed record carries (D212a)."""
 
 import json
 

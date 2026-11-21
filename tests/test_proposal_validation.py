@@ -1,21 +1,4 @@
-"""Every WRITER of a proposed setting validates it — not only the recommender.
-
-F610, from the operator's audit: "Proposed settings carry invalid vocabulary and fail only when
-the operator clicks accept — three different fields in one day." `patterns/recommend.py`
-validated what the system model proposes; the other call sites of the settings writer
-(`patterns/drafts.write` — the page's "follow this pattern", the pattern-diff half of
-"Recommend for this routine") did not, so a value the accept route refuses was STORED as a
-pending change and 400d on the click — and the accept is whole-draft, so it took every other
-change the person kept down with it. The pattern STORE was blind the same way: `store.problems`
-checks a pattern's field NAMES and its folder grants, never its VALUES, so a pattern carrying
-invalid vocabulary was storable and then offered to every routine that followed it.
-
-The check belongs to the WRITER, not to each caller: a call site added later is validated by
-construction instead of by whoever remembers. These tests pin both halves — the refusal (with
-the offending key NAMED, per the project's teaching-refusal rule), and the over-strictness that
-a refusal invites: every pattern this repo SHIPS must still be followable, which rules out
-judging `triggers` and `finish_line` through the routine patch model that does not own them.
-"""
+"""Every WRITER of a proposed setting validates it — not only the recommender."""
 import json
 from pathlib import Path
 

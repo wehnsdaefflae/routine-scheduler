@@ -1,20 +1,4 @@
-"""WHO MAY CALL a util, which is not who HOLDS it.
-
-The operator, 2026-11-18, looking at `code-search`'s editor: *"noone holds this util?! that's
-not true"*. The panel said "no routine holds this yet — a change here reaches nobody" over a
-util every routine on the instance can call, and that the engine reaches for itself: the
-`code_search` and `websearch` ACTION KINDS are rewritten into that util call (D290,
-`engine/kindaliases.py`) before any gate sees them.
-
-The emptiness was real and its reading was inverted. `holders` answers "who holds a RESERVED
-grant", and the library reserves a util only where a permission doc's `requires.utils` names
-it — 7 of today's 56. `reach` is the second fact, beside the holder list rather than merged
-into it, because a holder is a routine the BREAK analysis can reason about and an open util's
-needs enter no routine's surface (`readmodels/surface._held_utils`).
-
-The sibling cases live in test_library_impact.py; these are the reach ones, split out because
-that file was at the 350-line bar.
-"""
+"""WHO MAY CALL a util, which is not who HOLDS it."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -55,18 +39,7 @@ def _permission(server, slug: str, utils: list[str]) -> None:
 
 @pytest.mark.usefixtures("empty_store")
 def test_a_util_no_doc_reserves_reaches_every_routine_rather_than_nobody(tmp_path):
-    """The operator's case, 2026-11-18: *"noone holds this util?! that's not true"*.
-
-    The Library tab told him a change to `code-search` "reaches nobody" — while every routine
-    in the fleet can call it, and the engine rewrites the `code_search` ACTION KIND (D290) into
-    exactly that util call before any gate sees it. `holders` answers "who holds a RESERVED
-    grant", which is empty for every open util in the library, and the page read that emptiness
-    as "nobody is affected" — the most dangerous reading available, since the same computation
-    gates DELETION.
-
-    Only a util some permission doc RESERVES has holders at all; one no doc reserves is callable
-    by all of them, so the reach is the whole fleet.
-    """
+    """The operator's case, 2026-11-18: *"noone holds this util?! that's not true"*."""
     server = _server(tmp_path)
     write_util(server, "grep-ish")
     _routine(server, "a")

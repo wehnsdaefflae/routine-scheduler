@@ -1,8 +1,4 @@
-"""Graceful self-restart: the restart state machine, sentinel helpers, and runner/scheduler wiring.
-
-No process is ever exited here — trigger_shutdown is patched so the state machine is tested in
-isolation from signals.
-"""
+"""Graceful self-restart: the restart state machine, sentinel helpers, and runner/scheduler wiring."""
 
 import asyncio
 import json
@@ -133,15 +129,7 @@ def test_scheduler_defers_restart_while_parked(tmp_path, monkeypatch):
 
 
 def test_a_background_task_holds_the_drain_like_any_other_run(tmp_path):
-    """A detached task counts as ACTIVE, so the restart waits for it.
-
-    It was excluded on the premise that `start_new_session=True` carries the engine child past
-    the daemon's SIGTERM. No deployment honours that: under Docker the daemon's exit ends tini
-    (PID 1) and the kernel SIGKILLs the PID namespace, and the systemd unit's default
-    `KillMode=control-group` kills the cgroup. So the drain fired at the first idle gap —
-    exactly when only a background task was running — the task died at rc=-9 and its owner was
-    told "[background task was cancelled]" with a `daemon_restart` cause.
-    """
+    """A detached task counts as ACTIVE, so the restart waits for it."""
     server = server_config(routines_home=tmp_path)
     runner = Runner(server, EventBus())
     rd = tmp_path / "scrape" / "runs" / "ts"

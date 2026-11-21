@@ -1,12 +1,4 @@
-"""A live `grants` config PATCH rebuilds the base policy — with everything it was built with.
-
-`switches._adopt("grants")` carried its OWN copy of `load_policy`'s arguments and carried two
-of the five, so the rebuild silently dropped `recipe_unlocked` and `admin` (both default False)
-and the `is_subrun` / `run_history="none"` wrapper a child's policy gets. An operator clicking
-a grant on the Decisions page while routine-improver had its recipe unlocked revoked the
-unlock mid-run; a child of any live run — children read the ROOT control.json, so they adopt
-the parent's patch too — lost its child scope. Both seams now call ONE builder.
-"""
+"""A live `grants` config PATCH rebuilds the base policy — with everything it was built with."""
 
 from types import SimpleNamespace
 

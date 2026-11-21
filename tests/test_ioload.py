@@ -1,9 +1,4 @@
-"""The web layer's I/O threads and the live-stream ceiling derived from them (web/ioload.py).
-
-The point of these tests is the BOUND, not the constants: the pool is installed and then shown
-to queue a job it has no thread for, and the gate is filled and then shown to refuse. Both are
-driven by events, never by sleeping against a real clock.
-"""
+"""The web layer's I/O threads and the live-stream ceiling derived from them (web/ioload.py)."""
 
 from __future__ import annotations
 
@@ -20,13 +15,7 @@ from rsched.web import ioload
 
 
 def test_the_ceiling_reserves_threads_no_stream_poll_can_ever_hold():
-    """MAX_LIVE_STREAMS is DERIVED, so the invariant cannot be broken by editing one number.
-
-    `run_stream` awaits its two reads sequentially, so one live tail occupies at most one pool
-    thread at an instant; a ceiling of MAX_LIVE_STREAMS therefore leaves SLOW_IO_RESERVE threads
-    the SSH / provider-probe / rmtree callers can always get. This asserts the relation, not a
-    literal: the two tests below are what demonstrate that either number binds anything.
-    """
+    """MAX_LIVE_STREAMS is DERIVED, so the invariant cannot be broken by editing one number."""
     assert ioload.MAX_LIVE_STREAMS == ioload.POOL_WORKERS - ioload.SLOW_IO_RESERVE
     assert ioload.MAX_LIVE_STREAMS + ioload.SLOW_IO_RESERVE <= ioload.POOL_WORKERS
     assert ioload.SLOW_IO_RESERVE >= 6     # the six slow call sites named in the module docstring
@@ -39,11 +28,6 @@ def test_the_ceiling_reserves_threads_no_stream_poll_can_ever_hold():
 async def test_the_installed_pool_is_what_to_thread_runs_on_and_queues_past_its_size():
     """`install_pool` makes `asyncio.to_thread` use OUR named pool, and the size it is given
     actually limits concurrency: with two workers, two jobs run and a third WAITS in the queue.
-
-    This is the half a constant cannot prove, and nothing here waits on a clock: three jobs are
-    submitted, each blocks on an Event, and the job itself signals back onto the loop when it
-    gets a thread. The test then observes that only TWO ever did while the third sat in the
-    pool's queue — which is what "the number binds concurrency" means.
     """
     loop = asyncio.get_running_loop()
     # restored by assignment, not set_default_executor: that setter raises TypeError on None,
@@ -144,15 +128,7 @@ def test_the_default_ceiling_is_the_derived_one():
 
 
 class _WatchedGate(ioload.StreamGate):
-    """A gate that SAYS when the server took its slot and when it gave it back.
-
-    The server accepts the handshake BEFORE it takes the slot (`streams.serve`: a refusal must
-    reach the browser as a close code, not a bare 1006), so the client's connect returning proves
-    nothing about the slot yet; and TestClient's exit CANCELS the server task right after sending
-    the close, so a task that has not processed the close yet dies with CancelledError. Both were
-    a race these tests lost under a loaded parallel run (2026-10-25, on main as well). Waiting on
-    these events — never on a clock — is what makes them deterministic.
-    """
+    """A gate that SAYS when the server took its slot and when it gave it back."""
 
     def __init__(self, ceiling: int) -> None:
         super().__init__(ceiling)
@@ -196,11 +172,6 @@ def test_a_live_socket_holds_a_slot_for_its_whole_life(api_client):
 def test_a_socket_past_the_ceiling_is_closed_busy_and_the_slot_is_reusable(api_client):
     """Through the app: at the ceiling, a correctly ticketed socket is admitted and then closed
     CLOSE_BUSY with an honest reason — and once a slot frees, the next socket is served.
-
-    This is the behaviour 0.376.0 left out, asserted where it happens rather than by reading a
-    constant. The ceiling is reached by HOLDING a slot the way a live socket does (one TestClient
-    websocket at a time: two nested sessions share one portal and tear each other down), so what
-    the socket meets is the real `serve` path with the gate full.
     """
     from rsched.web import streams
 

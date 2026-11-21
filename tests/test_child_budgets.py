@@ -1,12 +1,5 @@
 """The child-run budget keys: `max_child_runs` / `max_child_depth`, and the migration that
 carries every existing config over (D241 increment 2).
-
-The keys are RENAMED, not aliased — an alias is how two names for one thing survive
-indefinitely, which is the whole subject of D241. That makes the migration load-bearing rather
-than tidy, and the test below that matters most is the one which shows WHY: an unmigrated
-`max_subruns` does not fail. `config/routine_scrub` drops an unknown budget key with a problem
-line, so a ceiling the operator deliberately lowered would silently return to the default of 8,
-with nothing but a loader warning to show for it.
 """
 
 from __future__ import annotations

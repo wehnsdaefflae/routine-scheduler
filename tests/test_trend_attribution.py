@@ -1,23 +1,4 @@
-"""WHOSE regression is it — this routine's, or the host's? (F568)
-
-The cost-trend alarm fired three times naming a routine for a host-wide outage it did not
-cause (`llmsectest-weekday:20260927-060004`, `library-sync:20260928-000003`, F574). D181 tuned
-the SENSITIVITY of that alarm (`BALLOON_RATIO` 1.5 → 2.7, pinned by tests/test_balloon_ratio.py);
-this file pins the ATTRIBUTION half, which nothing touched: before a finding names a routine, the
-same window is read across the FLEET, and a degradation shared by the routines that ran beside it
-is reported as a condition of the HOST.
-
-Two failures are possible here and both are worse than the bug:
-1. stopping naming anyone — a real single-routine regression must still be named, so
-   `test_an_isolated_regression_is_still_named` and `test_half_the_fleet_is_not_a_majority`
-   are as load-bearing as the host case;
-2. a false host verdict on a quiet night — two routines at 3 a.m. are not a fleet, which is
-   what HOST_MIN_PEERS is for, and a window too thin to tell the cases apart says SO
-   (`test_too_few_comparable_routines_says_so`) instead of guessing either way.
-
-The numbers in `trend_attribution` are measured off this instance's own stream; the measurement
-is quoted in that module's docstring beside each constant.
-"""
+"""WHOSE regression is it — this routine's, or the host's? (F568)"""
 
 from __future__ import annotations
 
@@ -90,9 +71,6 @@ def test_a_degradation_shared_by_the_fleet_is_a_host_condition():
     """THE case from F568: three other routines ran the same window and degraded with the
     subject. The finding is then about the HOST and says so, and it does not pin the outage
     on the routine whose run happened to read it.
-
-    `llmsectest-weekday` and `library-sync` were each named for one of these on 2026-09-27/28;
-    an operator read three accusations of three routines for one condition of the box.
     """
     att = _attribute(degrading=3, steady=1)
     assert att["scope"] == "host", att
@@ -105,12 +83,7 @@ def test_a_degradation_shared_by_the_fleet_is_a_host_condition():
 
 
 def test_a_host_finding_names_no_routine_at_all():
-    """`backup_stale`'s idiom (health_events.py): an instance fact carries no `routine`.
-
-    That is what stops the row reading as an accusation — and it is also what collapses the
-    three rows into one, because `health_cooldown` keys its window on (event, routine) and
-    every host row shares the same empty key whichever routine detected it.
-    """
+    """`backup_stale`'s idiom (health_events.py): an instance fact carries no `routine`."""
     att = _attribute(degrading=3, steady=1)
     routine, detail, fields = event_payload("subject", _trend_verdict(), att)
     assert routine == ""
@@ -125,11 +98,7 @@ def test_a_host_finding_names_no_routine_at_all():
 
 
 def test_an_isolated_regression_is_still_named():
-    """A fix that stops naming anyone is worse than the bug it replaces.
-
-    Four comparable routines ran the same window and none degraded, so the degradation is
-    this routine's own and the finding says that — with the fleet reading as its evidence.
-    """
+    """A fix that stops naming anyone is worse than the bug it replaces."""
     att = _attribute(degrading=0, steady=4)
     assert att["scope"] == "routine", att
     assert att["peers_compared"] == 4 and att["peers_degraded"] == 0
@@ -142,14 +111,7 @@ def test_an_isolated_regression_is_still_named():
 
 
 def test_half_the_fleet_is_not_a_majority():
-    """HOST_SHARE is a STRICT majority, and the boundary is where this kind of fix goes wrong.
-
-    Measured on this instance's own stream (134 flagging moments, 217 actors, 1,738 depth-0
-    runs, 2026-10-21): the share of comparable routines degrading alongside a flagged routine
-    ran median 0.11, p90 0.36, p95 0.40, max 0.50. Exactly half has HAPPENED; more than half
-    never has. So 2-of-4 must stay the routine's own finding, or the rule would rewrite real
-    history as host conditions.
-    """
+    """HOST_SHARE is a STRICT majority, and the boundary is where this kind of fix goes wrong."""
     att = _attribute(degrading=2, steady=2)
     assert att["share"] == HOST_SHARE == 0.5
     assert att["scope"] == "routine", "a tie is not a majority — see the measurement"
@@ -159,12 +121,7 @@ def test_half_the_fleet_is_not_a_majority():
 
 
 def test_too_few_comparable_routines_says_so():
-    """An honest "cannot attribute, N routines in the window" beats a false accusation.
-
-    This is the 2026-09-27/28 night itself: at those three firings exactly ONE other routine
-    had comparable runs in the window, so neither verdict was available. 7 of this instance's
-    134 flagging moments (5.2%) are this case.
-    """
+    """An honest "cannot attribute, N routines in the window" beats a false accusation."""
     att = _attribute(degrading=1, steady=0)
     assert att["peers_compared"] == 1 < HOST_MIN_PEERS
     assert att["scope"] == "unattributable", att
@@ -189,8 +146,6 @@ def test_a_routine_with_no_fleet_around_it_is_unattributable():
 def test_a_peer_needs_comparable_runs_on_both_sides_to_vote():
     """A peer with one run in the window, or with no history before it, is not evidence —
     MIN_RUNS on both sides, the same floor `regression_flag` applies to the subject.
-
-    Without this, a host verdict could rest on routines that never ran the window at all.
     """
     fleet = _subject()
     fleet += _series("thin-inside", PEER_BEFORE, volume=CHEAP) + _series(
@@ -226,11 +181,6 @@ def test_an_unstamped_run_cannot_place_a_window():
 def test_one_host_condition_files_one_row_for_the_whole_fleet(tmp_path):
     """F568's complaint in one test: three routines detecting ONE host condition must not
     file three findings naming three routines.
-
-    A host row carries no `routine`, so `health_cooldown`'s (event, routine) window — 12 h for
-    `cost_trend_degraded` — is shared by every host row whichever routine read it. The second
-    and third detections inside that window are dropped, and what the operator reads is one
-    finding about the box.
     """
     home = tmp_path / "routines"
     (home / ".control").mkdir(parents=True)

@@ -1,10 +1,4 @@
-"""The Messages page's headline number says whom it is waiting on (components/backlog-chips.js).
-
-On 2026-10-18 the active chip read 100 and one of those items was the operator's to act on;
-the rest could only fall when another routine acted. The chips split the worklist by owner,
-name the operator's share as "you", count reports still in transit apart, and an owner chip
-lists exactly that owner's live items — of every type, since the page opens on summaries.
-"""
+"""The Messages page's headline number says whom it is waiting on (components/backlog-chips.js)."""
 
 import json
 

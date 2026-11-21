@@ -1,33 +1,4 @@
-"""D227: a run is told what is LEFT — remaining turns, minutes and (when limited) tokens.
-
-THE DECISION (operator, 2026-10-31, D227), verbatim: "Why not just remaining turns, minutes,
-tokens (if limited)?" — so the line carries REMAINDERS and nothing else: no cost figure, no
-usage breakdown, no history, no new action. "(if limited)" is literal: an unlimited axis prints
-nothing for itself rather than the word "unlimited" twice, and a run with no ceilings at all
-(a conversation, by default) gets no line.
-
-THE MEASUREMENT behind it, from the run that raised it (2026-10-30): wall clock since the run id
-265 min against a 240-min ceiling, engine `elapsed_s` 144 min, 121 of those minutes dead in a
-container recreate — so a run pacing by the clock read "stop, you are 25 min over" with 96 min
-left. Nothing in the prompt carried the number; the workaround was hand-reading
-`runs/<id>/status.json` — a turn spent, and a run reaching into engine internals for a fact
-about itself. After a context archive it is worse: the run loses its own turn history too.
-
-WHY A PER-TURN TAIL AND NOT THE CONTRACT. `engine/composer.py` says it of itself: the harness
-contract and the state digest are "composed ONCE at run start; the messages array then grows
-turn by turn". A number that changes every turn would be FROZEN at turn 1 there and a lie on
-every later turn — worse than the absence it fixes. `EngineLoop._tails` is the per-turn surface,
-and it already carries the budget WARNING, so the fact rides beside the event it belongs with.
-
-THE TWO CONSTRAINTS the decision carries, both pinned below:
-1. the contract insists budgets are "a CEILING and a runaway BACKSTOP — never a pace, and never
-   a ration", so this line must read as a FACT — numbers, with nothing telling the run to pace;
-2. `window_turns + turns_left == max_turns` stays visible (F564/D155), and a resumed leg's FRESH
-   window must not read as if its budget were already spent. Hence the remainder is printed
-   beside the ceiling it is a remainder of (the house form `engine/harness._subrun_allowance`
-   already uses: "a remaining count with no total is as unplannable as a total with no
-   remainder"), and a re-based window says so.
-"""
+"""D227: a run is told what is LEFT — remaining turns, minutes and (when limited) tokens."""
 
 from __future__ import annotations
 
@@ -154,13 +125,7 @@ def test_an_unlimited_token_budget_costs_the_prompt_nothing_end_to_end(make_rout
 
 
 def test_the_measured_cost_per_turn_is_what_the_decision_was_about():
-    """D227 is a decision about the PROMPT'S SIZE, so the cost is pinned, not estimated.
-
-    This tail is sent once per turn for the whole run, so its price is bytes x turns —
-    the measurement nobody had when the decision was put. `tests/prompt_budget.json` cannot
-    see it: that ratchet measures the ONCE-composed sections (harness + schema + example,
-    `composer.system_sections`), and this rides the messages array instead. Hence this test.
-    """
+    """D227 is a decision about the PROMPT'S SIZE, so the cost is pinned, not estimated."""
     two_axes = _line(_block())                                   # the common run: no token cap
     three_axes = _line(_block(), ceiling=500_000, tokens=412_345)
     resumed = _line(_block(turn=348, base_turn=327, max_turns=200, turns_left=179))

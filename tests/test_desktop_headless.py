@@ -1,20 +1,4 @@
-"""F649: a desktop nobody is watching needs no VNC server.
-
-The operator's order, 2026-10-16: "give the desktop a headless mode a routine can select, so a
-desktop-driving run needs no VNC-backed display when nobody is watching." The guest session
-already ran `Xvnc` — an X server that IS a VNC server — so "headless" here means *no RFB port
-at all*: `Xvfb` gives the same display, the same XFCE and the same accessibility bus, and the
-agent (which grabs from $DISPLAY, not from the VNC stream) is untouched.
-
-What is pinned here is the SELECTION PATH, end to end, in the places a test can reach it:
-the header a routine sets, the kernel command line the broker writes, the marker the guest's
-boot script leaves (and REMOVES), the display server the session script then chooses, and the
-two places that must not advertise a screen that cannot connect.
-
-What no test here can prove: that a real Cloud Hypervisor guest comes up on Xvfb. That needs a
-booted VM, which the gate has no way to run — it is named in the release notes as the one part
-verified by reading rather than by execution.
-"""
+"""F649: a desktop nobody is watching needs no VNC server."""
 
 from __future__ import annotations
 

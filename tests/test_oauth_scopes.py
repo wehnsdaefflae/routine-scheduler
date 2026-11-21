@@ -1,11 +1,4 @@
-"""A provider's consent scopes as an edited LIST, and Google Health as its own connection.
-
-Two defects drove it (2026-11-09). Editing `GOOGLE_OAUTH_SCOPES` meant retyping a write-only
-48-entry secret before a reconnect on another card, so llmsectest-weekday's Drive and Docs calls
-403'd for want of two scopes nobody could see were missing. And the Google Health API refuses a
-token carrying ANY scope outside its own, so deficit-coach's Health calls could never succeed on
-the one shared Google token whatever was added to it.
-"""
+"""A provider's consent scopes as an edited LIST, and Google Health as its own connection."""
 
 from __future__ import annotations
 

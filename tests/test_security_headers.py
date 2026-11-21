@@ -1,23 +1,4 @@
-"""The console's Content-Security-Policy, as it is actually sent (D219).
-
-The policy is NARROW on purpose, and this file is where that narrowness is pinned. A blob
-iframe INHERITS the console's policy, so a `script-src` would stop every HTML artifact's inline
-scripts from running (`components/blobtab.js` opens them sandboxed, and the artifact panel frames
-them the same way); `index.html` carries one inline theme script; `el()` sets `style=` everywhere.
-So the two directives shipped are the two that cost the console nothing it does: no viewer uses
-`<embed>` or `<object>` (a PDF renders in an `<iframe>`, which `object-src` does not govern), and
-every frame the console builds is its own origin or a blob of it — the relayed noVNC screens
-(`/browser-view`, `/desktop-view`, served from this origin precisely so they are same-origin), the
-Help pages under `/docs`, and the artifact frames.
-
-The widening that becomes possible once artifacts are served from their own route (a hashed theme
-script, `style-src`, a `frame-src` naming the relay) is a LATER increment:
-`test_the_policy_carries_no_other_directive` is what makes adding one a deliberate act with a
-test to change, rather than a one-line edit that silently breaks every HTML artifact.
-
-The header string is written out LITERALLY here instead of imported from the module that sends
-it: a test comparing a constant with itself pins nothing.
-"""
+"""The console's Content-Security-Policy, as it is actually sent (D219)."""
 
 from __future__ import annotations
 

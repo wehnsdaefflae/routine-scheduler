@@ -1,24 +1,5 @@
 """Where a RELATIVE action path lands — the contract the action schema states and the
 resolver did not keep.
-
-A run whose working directory was its routine dir, with the source repo among its granted
-read roots, ran `read_file path=docs/designs.md` and got `[Errno 2] No such file or
-directory: '<routine dir>/docs/designs.md'`; the same read by absolute path worked.
-`paths.resolve_rel` consulted the extra roots only as a permission check on an ABSOLUTE
-path, so a relative one could never land in a granted root — while the schema prose mounted
-in every run's prompt promised "path relative to your working directory (or an allowed
-root)".
-
-The rule pinned here (`paths.resolve_rel(..., prefer_existing=True)`, which
-`run_context.resolve_action_path` passes for every file action — read, write, edit, delete,
-move, mkdir, view_image): the first root holding the path, else the first root holding its
-PARENT directory (what makes a CREATING write symmetric), else `base / rel`. `base` comes
-first in every pass, so nothing that already worked moves.
-
-The seals are unaffected and stay tested where they live: resolution still only ever returns
-a path inside a root, so `_write_gate` sees what it always saw. The one gate whose REACH this
-widens is the overwrite gate — a file outside the working dir can now be named relatively —
-so that it still fires is pinned below.
 """
 
 from __future__ import annotations

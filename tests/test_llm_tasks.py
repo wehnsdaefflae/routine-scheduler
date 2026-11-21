@@ -130,13 +130,7 @@ def test_daemon_sink_marshals_onto_loop():
 # threads were visible in one conversation's panel.
 
 def test_running_task_past_the_ceiling_is_abandoned(monkeypatch):
-    """A: the age backstop — every path, not just the ones we can name.
-
-    A task that has been `running` longer than any real call can take is not in flight; it is
-    the residue of a process that never reported back. It is marked abandoned so the ordinary
-    linger can then prune it, rather than being deleted outright — the panel should be able to
-    show WHY it went away for one linger, not have rows vanish.
-    """
+    """A: the age backstop — every path, not just the ones we can name."""
     clock = [1000.0]
     monkeypatch.setattr(m.time, "monotonic", lambda: clock[0])
     tc = TaskCenter(FakeBus())
@@ -163,13 +157,7 @@ def test_age_backstop_never_touches_a_live_call(monkeypatch):
 
 
 def test_an_abandoned_call_carries_its_cause_and_prunes(monkeypatch):
-    """B: the cause — an abandoning caller says so, instead of leaving the task to age out.
-
-    `engine/archival.py:settle()` abandons an in-flight archival thread by design (the run is
-    over and the digest stands). It reports through the ordinary channel: the engine's
-    `instrument.abandon_open_calls` writes the call's `failed` record (tests/test_instrument.py),
-    the tailer ingests it, and the task ends with the cause instead of `running` forever.
-    """
+    """B: the cause — an abandoning caller says so, instead of leaving the task to age out."""
     clock = [1000.0]
     monkeypatch.setattr(m.time, "monotonic", lambda: clock[0])
     bus = FakeBus()

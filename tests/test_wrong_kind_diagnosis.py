@@ -1,22 +1,4 @@
-"""A `kind` that is not a kind at all: what the refusal tells the run.
-
-The validator's sentence is accurate and useless — `kind: 'note' is not one of [...]` followed
-by all 34 current kinds — and it is the ONE field where the right answer cannot be read off the
-list, because the thing the run actually wanted is not in it.
-
-MEASURED on this instance's health stream, 2026-11-07 (`wrong_turn_detected`, reason
-`schema_rejected`), two runs in one evening, each losing a turn:
-
-* `tv-show-tracker-seedbox-manager:20261107-170000` turn 27 — `kind: 'note' is not one of [...]`.
-  `note` is a FIELD that rides any action (and costs no turn); the run wanted to leave one and
-  sent it as an action instead.
-* `deficit-coach:20261107-230003` turn 10 — `kind: 'code-search' is not one of [...]`.
-  `code-search` is a UTIL; the call shape is `kind="util", name="code-search"`.
-
-Both are exactly diagnosable: no action kind contains a hyphen (every one uses underscores), and
-the contract knows its own field names. `engine/renamedkinds.py` already does this for a kind
-that was RENAMED — this is the same courtesy for a kind that never existed.
-"""
+"""A `kind` that is not a kind at all: what the refusal tells the run."""
 
 from __future__ import annotations
 
@@ -90,11 +72,6 @@ def test_a_one_word_util_name_is_diagnosed_from_the_catalog(tmp_path):
     nothing. `wrong_turn_detected` on this instance, all time to 2026-11-10: 14 invalid-kind
     rejections across 9 routines and 23 days, of which `websearch` was 8 — the most frequent
     single shape, and the one the hyphen rule could not catch. 34 of 57 utils have no hyphen.
-
-    The SPECIMEN moved in 0.545.0 and the hole did not: `websearch` is an action KIND now
-    (D290), so the first test in `unkind_diagnosis` — is this kind unknown? — is false for it
-    and no diagnosis is owed. `immich` stands in: one word, no hyphen, not a kind, and still
-    exactly the shape the heuristic alone cannot see.
     """
     loop = _catalog(tmp_path, "immich", "code-search")
     text = unkind_diagnosis({"kind": "immich", "args": ["album list"]}, loop)

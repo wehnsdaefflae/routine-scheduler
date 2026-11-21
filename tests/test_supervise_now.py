@@ -1,23 +1,5 @@
 """F750: a person must be able to start a supervisory run by hand WHILE the run it would
 supervise is live — the whole point of a supervisor is to act on a run in flight.
-
-The friction this fixes, measured: two UI toasts on 2026-10-16 (11:18:24 and 11:58:56), both
-"routine fau is busy", the operator pressing run-now with the brief "rung" while
-`fau:20261016-125013` was live. The busy rule (`runner.fire_blocker`) is RIGHT for that door —
-one run per (home, slug), and two concurrent runs of one routine would race its state —
-so this does not exempt the manual fire. It opens the door the ladder already has: a rung runs
-IN-PROCESS at the live run's own turn boundary (`ladder.escalate` → an OVERSIGHT child), which
-is exactly "a supervisory run against a run in flight" and costs the worker no turns of its own.
-
-Three properties are the whole contract, and each is a test below:
-
-1. **It does not depend on a knob the operator never set.** `ladder.enabled` is off by default
-   on every routine; a person asking to supervise THIS run gets the rung whatever the config
-   says. The request is the authorization.
-2. **It is honoured at the next turn boundary and consumed once.** A request is not a mode:
-   one ask, one rung.
-3. **It cannot fail the worker.** The hard skip (an absent supervisor pattern) still skips, and
-   the operator is told so on the surface he asked from rather than by silence.
 """
 
 import json
@@ -108,10 +90,6 @@ def test_a_live_run_can_be_asked_for_a_supervisory_rung(api_client, make_routine
     """THE WEB DOOR, end to end. The endpoint lives here rather than in `tests/test_api.py`
     because that file is 3,011 lines against the repo's 350-line bar and may only shrink; the
     item's own tests are the right home for it anyway.
-
-    It must record the shape `switches.person_asked` reads — a `supervise_now` object carrying a
-    `ts`, which is what makes it an edge trigger rather than a mode — and refuse a terminal run,
-    which has no turn boundary left to honour the ask at.
     """
     from conftest import mk_run
     from rsched.paths import atomic_write_json, read_json

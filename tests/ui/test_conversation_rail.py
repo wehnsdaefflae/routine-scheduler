@@ -35,23 +35,7 @@ def _write_handle(conv_dir, *, port: int, pid: int = 999_999_999) -> None:
 
 
 def test_the_rail_grows_no_browser_section_even_with_a_live_session(ui, ui_page):
-    """The rail carries NO browser preview, and a live session does not bring one back.
-
-    Operator, 2026-10-01: "we wanna remove the browser preview in the sidebar. it is redundant
-    now that we have the browser preview chip" — F561. The rail used to grow a `browser`
-    section from the `browser-session` util's persisted handle (D86 / R262 pt2): a status chip,
-    the url line, the blob-rendered screenshot and a ✕ hitting the stop endpoint. The permanent
-    read-only dock (#browser-dock, components/browserdock.js) shows the shared browser live on
-    every page, so the rail copy was a second view of the same thing — and a staler one: it
-    kept reading "● RUNNING" over an empty preview box after `browser-session stop` had
-    returned `{"stopped": true}`, because its rows came from persisted handles on an 8 s timer
-    rather than from the screen.
-
-    A live-looking handle is written here deliberately: the section was CONTENT-driven, so the
-    only way to prove it is gone rather than merely empty is to supply exactly what used to
-    reveal it. The stop endpoint itself is untouched and still covered by
-    tests/test_api_browser.py.
-    """
+    """The rail carries NO browser preview, and a live session does not bring one back."""
     _slug, conv_dir = start_conversation(ui, ui_page, ASK)
     srv = socket.socket()
     try:

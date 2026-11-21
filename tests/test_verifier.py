@@ -1,12 +1,5 @@
 """Claim verification: a second model checks each `met` the finish ACCOUNTING claims against
 the run's own transcript (`engine/verifier.py`).
-
-The accounting proves a run ANSWERED for every line it owes; it cannot prove the answer is true.
-Most of what is pinned here is the two ways the check could be worse than the problem it solves:
-**false blocks** (so it is fail-open at every level — an unavailable endpoint, an unparseable
-answer, an unmentioned claim and an uncertain judge all ACCEPT) and a **livelock** (so a line is
-challenged at most once per run, after which the model's verdict stands and the disagreement is
-recorded instead). An enforcement that can hang a run is not enforcement.
 """
 
 from __future__ import annotations

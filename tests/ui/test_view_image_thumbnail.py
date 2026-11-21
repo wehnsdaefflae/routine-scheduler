@@ -1,18 +1,4 @@
-"""An image the RUN looked at is shown to the person reading the transcript.
-
-Operator, 2026-10-01: *"i still want images that the system looks at previewed in the message as
-thumbnail. make sure this is being worked on!"* — the standing ask behind F559.
-
-A `view_image` observation had no case in the transcript renderer's per-kind chain, so it fell
-through to the `result — {json}` dump: the MODEL was shown the picture and the person was shown a
-path. The image is the evidence for everything the run says next, and it was the one thing not
-displayed.
-
-These load the REAL transcript renderer in the REAL browser against a stubbed authenticated file
-route, because the thumbnail's whole difficulty is that an `<img src>` cannot carry the
-Authorization header: the bytes arrive through `apiBlobUrl` and the element gets a `blob:` URL. A
-test that only asserted the element existed would pass over a thumbnail that never loaded.
-"""
+"""An image the RUN looked at is shown to the person reading the transcript."""
 from playwright.sync_api import expect
 
 # a 1x1 transparent PNG, byte-for-byte (the same one the attachment tests use)

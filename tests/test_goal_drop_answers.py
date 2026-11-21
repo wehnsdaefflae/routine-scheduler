@@ -1,20 +1,5 @@
 """A CARRIED goal is dropped on the words that withdrew it, even when those words were spoken
 to an EARLIER run (F911).
-
-The grounding check reads `goals.person_texts(transcript_events(run_dir))` — this run's
-transcript. An operator answer that withdrew an obligation is in the answered-questions store,
-not in the transcript of the run that reads it, so a drop quoting it verbatim was refused as
-"not later user words": a goal the operator withdrew could not be retired by the words that
-withdrew it, and every later digest presented an obsolete obligation.
-
-Reported by folder-reorg (R3513, folded by scheduler-builder in R3569) with
-`q-20261112-170537-84-2` — *"Yes, drop b19 — it is withdrawn"*, a settled answer whose drop was
-refused.
-
-The fix is scoped deliberately: only a goal whose grounding lies in an earlier run
-(`heard == -1`, what `obligations.carried` stamps) may be grounded in the store, and only on
-answers this routine's own runs received. A goal set from words in THIS run keeps the index
-ordering that makes `after=` mean "later than the words it came from".
 """
 
 from __future__ import annotations

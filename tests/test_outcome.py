@@ -1,12 +1,4 @@
-"""The OUTCOME contract — what a routine exists to produce, declared, measured every run, judged.
-
-freelance-radar met every Done-when line it had for four months while 89 applications won zero
-interviews: every judge read the routine's own account. These tests pin the three halves that
-replace that account with a number — the declaration (config/outcome.py), the measurement at
-every run's end (engine/outcome.py) and the series it builds against cost
-(readmodels/outcome_series.py) — and the setup-surface row that fails `rsched validate` for a
-routine missing any of them (readmodels/surface_outcome.py).
-"""
+"""The OUTCOME contract — what a routine exists to produce, declared, measured every run, judged."""
 
 from __future__ import annotations
 

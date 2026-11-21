@@ -1,26 +1,4 @@
-"""F715 — what a run's SUMMARY says about a background call NOBODY READ (authorized by D195).
-
-`engine/background.settle` has always distinguished two losses in the TRANSCRIPT: a call that
-LANDED with no turn left to read it (`unread: true`, its real result recorded) and one still
-RUNNING whose result is gone (`abandoned: true`). Only the second reached `result.md` — so a run
-that backgrounded a call, finished before reading it, and drew its conclusions from evidence it
-never saw said NOTHING about that on the one surface the operator and the next run actually read.
-
-D195's mechanism half: an honesty instruction lifts flaw-flagging where the model CAN see the
-flaw, and its one non-improving scenario is the hidden pending tool call — exactly this. A run
-cannot flag what it was never shown, so the ENGINE says it.
-
-These tests sit beside `test_background_actions.py` rather than inside it because that module is
-AT its size-ratchet ceiling (1063 lines in `tests/size_ratchet.json`) and a file over the house
-bar may not grow — the same rule that put the wording in `engine/background_summary.py`.
-
-DETERMINISM, not sleeps. "Landed but never read" is a race if it is built out of timings: the
-call must finish AFTER the last turn boundary (so `collect` cannot deliver it) and BEFORE
-`settle` gives up (so it is not `abandoned`). Here the backgrounded handler blocks on an Event
-that the FINISH turn's own scripted reply sets — the scripted endpoint runs a callable reply —
-which forces the order: boundary (nothing to collect) → model call releases the work and waits
-for it → finish → `settle` sees it landed. No sleep decides anything.
-"""
+"""F715 — what a run's SUMMARY says about a background call NOBODY READ (authorized by D195)."""
 
 import threading
 from types import SimpleNamespace
@@ -103,12 +81,7 @@ def test_both_losses_in_one_run_are_two_lines_not_one():
 
 @pytest.fixture
 def gated_util(monkeypatch):
-    """A `util` dispatch whose calls are driven by EVENTS, never by sleeps.
-
-    `args=["gate"]` blocks until `release` is set and then announces it has landed;
-    `args=["hang"]` blocks until the test's teardown releases it, so it is still running when
-    `settle` looks. Everything else returns at once.
-    """
+    """A `util` dispatch whose calls are driven by EVENTS, never by sleeps."""
     import rsched.engine.executor as executor_mod
 
     gate = SimpleNamespace(release=threading.Event(), landed=threading.Event(),

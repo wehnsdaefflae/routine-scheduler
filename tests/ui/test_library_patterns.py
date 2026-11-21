@@ -1,9 +1,5 @@
 """The Library's settings patterns: every pattern, what it carries in words, who follows it —
 and the one lever the Library owns over them, delete.
-
-A pattern is never edited: a different set of values is saved as a NEW pattern from a routine
-page. Deleting one never touches a follower's values — they were always the routine's own — and
-the confirmation says so before anything is removed.
 """
 
 from __future__ import annotations

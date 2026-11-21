@@ -1,11 +1,6 @@
 """Queued proposals on the REAL Decisions page (F328): a scheduled run's proposal shows what
 would be created, one click materializes it through the same scaffold path, and discarding tells
 the proposing routine so its next run stops waiting.
-
-The FINISHED band rides the same queue and is the odd one out: its subject has already changed
-state (a routine whose finish line is reached has stopped running, derived from its finish-line
-document), so neither button is what stops it. The tests at the foot pin exactly that, because a
-card implying "click to stop it" would describe the wrong mechanism.
 """
 
 from __future__ import annotations

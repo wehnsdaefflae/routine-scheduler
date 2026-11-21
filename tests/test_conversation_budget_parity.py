@@ -1,20 +1,4 @@
-"""A conversation can set the same ceilings a routine can — D216 (c).
-
-The operator ordered the remaining parity gaps *"All four, in the order (c), (b), (a), (d)"*, and
-(c) is this: `max_cost` and `ask_timeout_min` reached NEITHER conversation surface, and the
-header's save sent three keys of the six, so two more were frozen at create.
-
-`max_cost` is the one that matters most and the reason it is first: a conversation is created with
-every ceiling at -1 (`conversations.CONVERSATION_BUDGETS`), so the one run type with a human
-driving it, unlimited turns and unlimited tokens was also the only one with NO spend backstop —
-while a routine has had a dollar ceiling since F758. `ask_timeout_min` is meaningful here for the
-opposite reason: a conversation's medium IS questions, and that field decides how long a blocking
-one waits before the reply continues on its stated default.
-
-Nothing in the ENGINE changes: both keys are already in `DEFAULT_BUDGETS`, `BudgetsPatch`
-validates against that dict rather than a copied list, and the ceilings are read per reply from
-the conversation's own config. This is a surface gap, and these tests pin it closed at both ends.
-"""
+"""A conversation can set the same ceilings a routine can — D216 (c)."""
 
 from __future__ import annotations
 

@@ -1,22 +1,5 @@
 """F793: a live row some SETTLED report's prose claimed to dispose of — the third way work is
 lost from this ledger.
-
-F770 shipped the predicate (`report_threads.undisposed_claims`) and gave it ONE reader: the
-filing observation (`engine/admin_handlers.py`), which warns and deliberately does not refuse.
-So the claim is evaluated once, at filing time, in front of the one party who already believes
-the row is closed — and never again. A run that does not act on its own observation strands the
-row exactly as before: it stays open in the ledger and invisible to everyone, because the report
-that was supposed to dispose of it reads as settled and nobody is looking behind it.
-
-R2886 is the specimen and it is the reason the fix could not reach its own motivating row: it was
-filed 2026-10-24, the detector shipped 2026-10-25. It opened "Closing R2313. Both halves disposed
-of", carried `answers: "R2743"` + `closes: true` + no `settles`, and R2313 was still the oldest
-live row on the instance 20 days later.
-
-The narrowing is deliberate and tested below: only a SETTLED claimant counts. While the claiming
-report is itself open its thread is alive, the row is in somebody's worklist, and the filing
-warning is still in front of the author who can add the field. The stall becomes permanent at the
-moment the claimant reads as settled.
 """
 from __future__ import annotations
 

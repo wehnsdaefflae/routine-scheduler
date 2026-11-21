@@ -225,13 +225,6 @@ def test_the_skipped_stage_count_is_compared_only_since_its_own_ruler_moved():
     `stages/<name>.md` counted as entering. The same work then skipped fewer stages (measured
     2026-09-26: 24 of 73 fleet runs reported >=60% of their declared stages skipped,
     `llmsectest-weekday` 0 of 7 entered on three consecutive runs of 404-423 turns).
-
-    Without the cutoff the bias is ONE-WAY and points the wrong way: a run that orients faster
-    re-reads fewer modules, so a release that improved orientation would read as making the
-    fleet LESS complete — and `config-optimizer` adopts and drops models on these verdicts.
-    0.402.0 did NOT move this ruler: it changed what the finish's claim check DOES with an
-    unentered stage (a judge's hint rather than an objection, F620/R2228), not what the number
-    counts, so the cutoff stays at the release that last moved the count itself.
     """
     old, new = _run(1, engine="0.366.9"), _run(2, engine="0.366.10")
     old["quality"]["stages_skipped"] = new["quality"]["stages_skipped"] = 3

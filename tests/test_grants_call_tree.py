@@ -1,23 +1,4 @@
-"""The reserved-util gate over a call's `calls:` TREE, not just its name.
-
-`capabilities.utils` is advertised as the switch for a reserved channel — the messengers, the
-darknet, the shared browser, the remote machines. It gated the util NAME the model put in the
-action and nothing else, while `utils_run.util_needs` unions every `calls:` callee's
-`secrets:`, `net:` and `fs:` into the caller's one jail and one env, and the library root is on
-PATH for every util. So an UNGATED util naming a reserved sibling is a second, unaudited door
-into that channel: it receives the sibling's credentials and can exec it.
-
-Live in the library: `rephrase-as-human` and `voice-rewrite` name `remote`, exec `gu remote`,
-and inherit its `RSCHED_MACHINE_KEYS` — the bound machines' private SSH keys — while holding
-none of the `remote-machines` permission that reserves it.
-
-The edge is refused for what it CONFERS, not for existing: the callee carries credentials, or
-the caller really execs it. `captcha-fetch` names `browser-session` only to print "use `gu
-browser-session start --stealth`" in an error message, and `browser-session` declares no
-secrets — closing an ungated page fetcher to 24 routines over an unused line would be the gate
-costing more than it protects. The denial names the EDGE, because a refusal reading "remote is
-off" for a call the run made to `rephrase-as-human` is unactionable.
-"""
+"""The reserved-util gate over a call's `calls:` TREE, not just its name."""
 
 from __future__ import annotations
 

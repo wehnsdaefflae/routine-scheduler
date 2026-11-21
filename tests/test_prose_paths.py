@@ -1,26 +1,4 @@
-"""A path a SOURCE file's prose points at must exist.
-
-`test_doc_claims.py` already proves this for every guide under `docs/`. Nothing proved it for
-the prose inside the code, and that is where it broke: `web/assetskew.py` spent its existence
-telling the reader that the skew verdict is rendered by `static/components/notices.js` — a file
-this repo has never had. The renderer is `skewbanner.js`. Found by a read-only cruft sweep
-(2026-11-11), not by a test, which is the gap this module closes.
-
-Why it matters more than a typo: a docstring's job here is to hand the next reader the other
-half of a mechanism that spans the server and the console. A pointer to a file that does not
-exist costs that reader the search, and then costs them their confidence in the paragraph
-around it — which is the paragraph explaining why the design is the way it is.
-
-The check is deliberately narrow, because a wide one would be noise:
-  * only a path in BACKTICKS — prose names modules bare ("see assetskew") and that is fine;
-  * only a path with a DIRECTORY, so a bare `foo.py` or a filename in running text is ignored;
-  * resolved against the five rootings this tree's prose actually uses, the same set
-    `test_doc_claims.py` resolves against (repo, package, package namespace, static, tests);
-  * `docs/designs.md` is the one allowed exception, by the same reasoning that excuses it
-    there: it is the decided-work queue, so its entries name code that does not exist yet.
-
-At the time of writing: 385 citations across 556 source files, zero missing.
-"""
+"""A path a SOURCE file's prose points at must exist."""
 
 from __future__ import annotations
 

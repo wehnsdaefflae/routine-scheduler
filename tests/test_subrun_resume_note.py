@@ -1,24 +1,4 @@
-"""F778: what a RESUMED leg is TOLD about the children that died with its earlier leg.
-
-F732 made the dead children VISIBLE (`subruns` lists their directories, `wait`/`kill` refuse
-them with the reason). It did not change what the resumed leg is told at boot, and that note
-said the opposite of the truth: *"these child tasks were RUNNING when the run was interrupted
-and did NOT survive the restart (results lost): … Re-issue any you still need."*
-
-Measured cost, 2026-10-25: `scheduler-builder:20261025-140002` died at turn ~285 with two live
-children holding ~1,400 s of real build work each. Their work was on disk the whole time under
-`sub/<n>/`; the resumed parent was told it was lost and had to find it by hand.
-
-What is pinned here:
-  * the note never says the results are lost, and never tells the leg to re-issue blindly;
-  * it names each dead child's DIRECTORY, what landed in its `artifacts/`, and how far it got;
-  * it names the child's surviving `instruction.md` — the original brief a re-brief needs —
-    and only when that file really exists (a promise the disk cannot support is worse than
-    no offer: a failed salvage must not read as a successful one);
-  * it states that RE-ADOPTION is impossible, with the reason (a child is a thread in the
-    parent's process — docs/child-runs.md § Process model), so a leg does not go looking;
-  * no orphans means no note at all.
-"""
+"""F778: what a RESUMED leg is TOLD about the children that died with its earlier leg."""
 
 from __future__ import annotations
 

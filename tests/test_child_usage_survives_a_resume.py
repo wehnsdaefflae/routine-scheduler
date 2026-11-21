@@ -1,23 +1,4 @@
-"""A CHILD RUN's spend survives its parent's resume, and an orphan's is recovered (R3112).
-
-`token-lab` measured (Exp #24, zero model calls, verified to the token on two of this builder's
-runs) that `status.json`'s `usage.out` understates a run that spawned children — one run by 40 %.
-The report's own reading was that the fold happens at REAP, so a child nobody waited for is
-attributed nowhere. Re-measuring found two different, narrower causes, both pinned here:
-
-1. **A resume rebuilds `usage_base` from the transcript and skipped `subrun_end`.** A child IS
-   folded into the parent's live counter at collection (`subruns._collect` → `ctx.add_usage`), so
-   within one leg the accounting is right — but `history.prior_usage` summed only assistant
-   actions, llm/decide observations and compactions, so every child collected in an EARLIER leg
-   vanished at the resume boundary. Measured on `scheduler-builder:20261029-140004`: two children
-   exited at 16:03 and 16:08 carrying 420,211 output tokens between them, both before the leg's
-   finish at 16:15; the resumed leg reported 343,918 out for a tree that cost about a million.
-
-2. **An ORPHANED child's spend was written as `{}`.** A child that did not survive the
-   interruption is never collected, and the resumed leg's marker recorded `usage: {}` while the
-   real figure sat in `sub/<n>/transcript.jsonl` — 193,930 output tokens for sub/1 of
-   `scheduler-builder:20261030-140004`.
-"""
+"""A CHILD RUN's spend survives its parent's resume, and an orphan's is recovered (R3112)."""
 
 from __future__ import annotations
 

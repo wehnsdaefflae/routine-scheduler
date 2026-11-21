@@ -1,19 +1,5 @@
 """The INFERENCE injection carries the catalog's model NAMES, so a util can serve the `llm`
 action's `model` field (D288, goal b6).
-
-The asymmetry this closes was measured, not guessed. `decision_env_for_routine` has carried a
-`models` catalog since 0.544.0 — every configured decision model by NAME, with its endpoint and
-provider id — precisely so a util can honour `decide`'s `model` override. The inference half
-carried `roles` and `endpoints` only. So a util could reach what a ROLE resolves to but could not
-resolve `claude-opus-5` from the name `opus`, which is what the `llm` action's `model` field
-accepts: 7 of the 18 live `llm` action calls on this instance (2026-11-15) pass one.
-
-While that gap stood, "one util covers both capabilities" was nominal: a caller migrating off the
-action would silently lose the model override, and the kind could not be removed without taking
-something away. The keys discipline does NOT widen — keys still ride for ROLE endpoints only
-(`test_the_catalog_does_not_widen_which_keys_ride`), so naming a catalog model on an endpoint the
-routine has no role on tells the util the model EXISTS and lets the call fail visibly against a
-missing key, rather than routing around the operator's own `secret:` decision.
 """
 
 from __future__ import annotations
@@ -65,11 +51,7 @@ def test_the_injection_carries_every_catalog_model_by_name():
 
 
 def test_the_catalog_is_shaped_exactly_like_the_decision_halfs():
-    """One shape for both injections: a util reading one has learned to read the other.
-
-    The decision half shipped first (0.544.0) and its shape is the precedent, so this is
-    asserted against the decision builder's real output rather than against a copied literal.
-    """
+    """One shape for both injections: a util reading one has learned to read the other."""
     from rsched.config.decisionconf import DecisionEndpointConfig, DecisionModelConfig
 
     server = _server(
@@ -107,13 +89,7 @@ def test_a_model_on_no_configured_endpoint_is_left_out_rather_than_offered():
 
 
 def test_the_catalog_does_not_widen_which_keys_ride():
-    """The keys discipline is unchanged: ROLE endpoints only.
-
-    `qwen` sits on `omen`, which no role of this routine resolves to. Its NAME reaches the util
-    (so a call can be formed and fail visibly) while its KEY does not — a blob of every
-    endpoint's key would route around the operator's own `secret:<NAME>` decision, which is not
-    a widening a run gets to make for him.
-    """
+    """The keys discipline is unchanged: ROLE endpoints only."""
     env = routine_env.llm_env_for_routine(
         "r", {"main": "opus"}, _server(endpoints={"omen": _ep("omen", key_var="OMEN_AGENT_KEY"),
                                                   "otari": _ep("otari", kind="anthropic",

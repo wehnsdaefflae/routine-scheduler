@@ -1,27 +1,5 @@
 """D152 step 9: every report surface READS the hook stream, and `reports.jsonl` is its
 projection.
-
-Step 4 made the hook the source of the WRITE; step 7 moved the first decision onto the stream
-while still returning the ledger's answer. This step moves the READ — `reports.read_reports`,
-the one seam about twenty modules go through — so nothing in the engine decides anything from
-the projection any more.
-
-What these tests pin, in the order the risk lies:
-
-1. **The property the whole step rests on**, measured against the LIVE stores: folding the
-   stream equals folding the ledger, as LISTS — same reports, same order, same keys. It is the
-   one check that would have caught the mirror-era gap, and it is the reason there is a repair
-   migration at all.
-2. **The repair is exact and narrow.** 8 of 5,334 live rows were filed on 2026-10-19, between
-   the mirror and the source, and their hooks never carried `answers`/`closes`/`settles`/
-   `supersedes`. Six settled exchanges would have read as OPEN from the stream. The repair
-   recomputes those records through the declared inverse, touches nothing else, and refuses to
-   guess where an `(id, event)` key names two rows.
-3. **The fall-back cannot be silent.** A read that finds no report rows in the stream serves the
-   ledger and files `hook_stream_unreadable` — a projection quietly serving a console whose
-   store was supposed to be retired is the state this campaign exists to end.
-4. **The memo is vouched for by BOTH stores**, or a page would keep serving a fold from before
-   the newest filing.
 """
 
 from __future__ import annotations
@@ -61,16 +39,7 @@ def _watch(monkeypatch) -> list[dict]:
 @pytest.mark.skipif(not (LIVE / ".control" / "reports.jsonl").is_file(),
                     reason="no live stores on this host")
 def test_the_live_stream_carries_every_live_report_in_the_ledgers_order():
-    """Over the real stores: the stream names every report the ledger does, in its order.
-
-    Measured when this shipped: 5,334 hooks, 5,334 ledger rows, 2,868 reports on both sides,
-    identical id sequences. This is the WEAKER half of the property on purpose — the stronger
-    one (equal row for row and key for key) holds only once the mirror-era repair has been
-    applied, and that happens at daemon boot, so asserting it here would red every gate run
-    between this commit and the next restart. The strong claim is pinned in the test below,
-    which applies the pure repair first; what belongs HERE is the claim that is true of the
-    live stores at any moment, and it is the one that catches a LOST or UNBACKFILLED row.
-    """
+    """Over the real stores: the stream names every report the ledger does, in its order."""
     ledger = fold_rows(read_jsonl(reports_path(LIVE)))
     stream = fold_rows(stream_rows(LIVE))
     assert [r["id"] for r in stream] == [r["id"] for r in ledger], "the ids or their order"
@@ -94,11 +63,6 @@ def test_a_report_only_the_ledger_has_is_still_served_and_the_shortfall_is_filed
                                                                                 monkeypatch):
     """THE rule that cannot lose a report: an id the stream's fold lacks is served from the
     projection, and the shortfall is filed as a DIVERGENCE (the store is behind, not gone).
-
-    This is the shape ~24 test fixtures and the operator's own hand-edits write: a row appended
-    to `reports.jsonl` with no hook. Dropping it would silently un-owe a reply, empty a backlog
-    count and take a finding off the Decisions page — none of which announce themselves. So the
-    read serves it, and says that it had to.
     """
     home = _home(tmp_path)
     assert file_report(home, routine="a", run_id="a:1", title="t1", detail="d") is not None
@@ -112,11 +76,7 @@ def test_a_report_only_the_ledger_has_is_still_served_and_the_shortfall_is_filed
 
 
 def test_the_read_is_fingerprinted_on_both_stores(tmp_path):
-    """`sources` names the stream AND the ledger, so either one changing invalidates the memo.
-
-    The stream is what is read; the ledger is the fall-back and what outside readers fold. A
-    memo vouched for by one of them would serve a stale answer after the other changed.
-    """
+    """`sources` names the stream AND the ledger, so either one changing invalidates the memo."""
     home = _home(tmp_path)
     assert sources(home) == [hookstore.hooks_path(home), reports_path(home)]
 
@@ -135,11 +95,6 @@ def test_a_filing_is_visible_to_the_very_next_read(tmp_path):
 def test_the_served_read_comes_from_the_stream_not_the_file(tmp_path):
     """The claim of step 9, made falsifiable in the one direction the never-lose rule leaves
     open: a report the STREAM has and the projection does not IS served.
-
-    Before step 9 this was impossible — the read parsed `reports.jsonl` and nothing else, so a
-    hook with no ledger row was invisible to every surface. Nothing in production writes such a
-    store either (the projection is appended in the same call); it is written here precisely
-    because it is the state that distinguishes the two readings.
     """
     home = _home(tmp_path)
     assert file_report(home, routine="a", run_id="a:1", title="t1", detail="d") is not None

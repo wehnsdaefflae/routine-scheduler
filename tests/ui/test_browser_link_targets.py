@@ -1,14 +1,4 @@
-"""WHERE each way into the browser screen opens it (D194).
-
-The operator's call, verbatim: "clicking the 'Browser' from the right side chip should open it
-in a new tab. clicking it in the left sidebar should open it in the current tab." Two call sites
-reach one target and the difference between them is the whole item, so both are pinned here —
-the dock's title (read beside something else, so taking over the tab costs what he was reading)
-and the sidebar entry (ordinary navigation).
-
-One place decides it, `mountScreenDock`'s `newTab` option, so the dock's title and the
-unreachable note's "open the full page" can never disagree.
-"""
+"""WHERE each way into the browser screen opens it (D194)."""
 
 import re
 

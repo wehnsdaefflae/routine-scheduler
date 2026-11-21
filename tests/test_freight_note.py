@@ -1,19 +1,4 @@
-"""Freight that lands MID-RUN is named to the RUNNING run — not only to the next leg's boot.
-
-F529's first half shipped the READ (`inbox.queued_freight`) and one CLOCK: a leg's boot
-digest names what that leg may not consume (`engine/composer.state_digest`). Boot is the
-wrong clock for the incident the row is about. A decision answered while a run is at work
-writes its words into `inbox/` as `web-audit` freight, which `LIVE_MESSAGE_VIAS` excludes by
-design (D92/D93 — that freight belongs to the routine's next FRESH run), and a run that has
-already booted gets no second boot: the operator answered D157/D158/D159 between 02:34 and
-02:58 into a run that had composed its digest at 00:15, and the run went on describing those
-decisions as open. His words: *"i answered your questions. for the second time btw. did my
-answers get lost the first time?!"*
-
-So the same rule gets the clock it was missing: at every TURN BOUNDARY, freight this run may
-not consume is NAMED, once per file, as an appended engine note. Named, never delivered —
-nothing is consumed, nothing is marked read, and the next fresh run still gets all of it.
-"""
+"""Freight that lands MID-RUN is named to the RUNNING run — not only to the next leg's boot."""
 from __future__ import annotations
 
 from conftest import finish, write_file

@@ -1,17 +1,4 @@
-"""F770: a report whose PROSE says it closes a row, while no field disposes of that row.
-
-R2886 opened with "Closing R2313. Both halves disposed of" and argued it for paragraphs. Its
-fields carried `answers: "R2743"` and `closes: true` and NO `settles` — so it closed its own
-chase and left R2313 exactly where it was: open, and from then on the oldest live row on the
-instance, which the backlog vitals line kept reporting for a row both its sender and its reader
-believed was disposed of.
-
-The asymmetry is what makes it durable: the sender reads its own prose and is satisfied, while
-the recipient sees a row still live and cannot close it (the engine correctly refuses — a row is
-disposed of only for the routine it was delivered TO). Nothing compared a report's TEXT against
-the ids its fields dispose of, so the gap between "said" and "did" was invisible from both sides
-at once. The engine says so on filing, where the author is the only one who can still fix it.
-"""
+"""F770: a report whose PROSE says it closes a row, while no field disposes of that row."""
 from __future__ import annotations
 
 import pytest

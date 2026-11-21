@@ -1,23 +1,4 @@
-"""F716. A whole-model-chain failure is work that was due and did not happen.
-
-`model_chain_exhausted` fires when EVERY member of a role's fallback chain failed hard or was
-cooling (`engine/degrade.py`), so the turn could not be taken at all. Until now it reached no
-blocked-work surface: the only signal was one routine's failed run page, and when the cause is
-the host's shared proxy the failure is never one routine's. On 2026-10-19 five
-`model_chain_exhausted` plus three `run_failed` events were all claude-proxy HTTP 503
-`auth_unavailable`, killing legs of `scheduler-builder` (twice) and `bahnbonus-seat-position` —
-eight events in one day, and nothing a person clicks said the chain was down.
-
-That is the same shape as every other member of `BLOCKED_EVENTS`: a run page can show a run that
-failed, but it cannot show that the FLEET's models stopped serving, and `readmodels/health_stream`
-is the only in-product reader of the stream — an event left off this fold is read by the nightly
-ssh recipe or by nobody.
-
-These tests also pin the two prose counts that had ALREADY drifted when this was written
-(`docs/architecture.md` said "the eight events" and `docs/run-analytics.md` "Ten health events"
-while the set held 17), because a written-out count is a claim about a `len()` and nothing
-checked this one — the same defect class `tests/test_doc_counts.py` exists for.
-"""
+"""F716. A whole-model-chain failure is work that was due and did not happen."""
 
 import json
 import re

@@ -1,9 +1,4 @@
-"""Decision-model transports (endpoints/decisions*.py) and their config (config/decisionconf.py).
-
-The two wire protocols are pinned from their published shapes — OpenAI's Decisions guide and
-TypeSafe's System One reference / OpenRouter's Jev tutorial — with the HTTP call replaced, so the
-body each adapter sends and the answers it reads back are checked without a network.
-"""
+"""Decision-model transports (endpoints/decisions*.py) and their config (config/decisionconf.py)."""
 
 from __future__ import annotations
 

@@ -1,15 +1,4 @@
-"""Abort names a RUN, and the runner's active map is keyed per HOME (D247).
-
-`runner.active` was keyed by slug alone across the three run homes, so a routine, a
-conversation and a background task sharing a slug were ONE entry: the second to fire was
-refused as an "overrun" of the first, and `abort(slug)` stopped whichever of them the map
-happened to hold. Both are properties of the KEY, so both are proved here.
-
-The run id is NOT unique across the homes either — it is `slug:run-ts`, and two homes claim
-their run dirs independently, so the same slug firing in the same second yields the same run
-id twice. `abort` therefore takes the home the web route already resolved, and refuses rather
-than guess when it is not given and two homes answer to the id.
-"""
+"""Abort names a RUN, and the runner's active map is keyed per HOME (D247)."""
 
 import asyncio
 import json
@@ -43,10 +32,6 @@ def _state(run: ActiveRun) -> str:
 def test_two_homes_one_slug_both_active_and_abort_hits_only_one(tmp_path, monkeypatch):
     """The first increment: a routine and a conversation named alike both run, and aborting
     the routine's run leaves the conversation's running.
-
-    Fired through `fire()` — the keying has to hold on the production path, not just in a
-    hand-built dict. Only the supervisor is stubbed out, so no engine process is spawned and
-    both runs stay in the queued state `abort` closes out itself.
     """
     server = _server(tmp_path)
     runner = Runner(server, EventBus())

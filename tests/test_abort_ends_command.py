@@ -1,19 +1,4 @@
-"""A util, script or `shell` command ends WITH its run when the run is aborted.
-
-The defect (found 2026-10-01): the daemon aborts a run by SIGTERMing the engine's process group
-and SIGKILLing it `runner_state.KILL_GRACE_S` later. The engine's SIGTERM handler only raises an
-abort flag, read at turn boundaries. A jailed command runs in a session of its own, so neither
-signal reaches it — and `run_jailed`'s `proc.wait(timeout=...)` did not look at the flag. The
-engine was SIGKILLed while it waited; the command ran on with no deadline at all, since the
-engine had been its clock. Reproduced against a real engine run on the production host: a
-`shell` `sleep` outlived its aborted run with PPID 1 while status.json stayed `running`.
-
-Pinned here: the wait asks the run's own abort check (`RunContext.aborted`, installed by the
-loop — the SIGTERM flag OR a child run's kill event) and ends the group through
-`procgroup.terminate`; the observation says so in words and in a field; an ended call is
-neither a util failure (no repair route) nor a reliability tick; and a run that is already
-stopping starts nothing.
-"""
+"""A util, script or `shell` command ends WITH its run when the run is aborted."""
 
 from __future__ import annotations
 
@@ -139,10 +124,6 @@ def test_both_riders_report_an_abort_with_what_was_printed(tmp_path, make_routin
 def test_a_venv_build_the_abort_ended_reports_the_abort(tmp_path, make_routine):
     """The build before a script is a jailed call too; ended by the abort, it reports the
     abort's code and the runner's own words — not a failed dependency install.
-
-    The script DECLARES a dependency, which is what gives it a build phase at all: since F764
-    a script whose PEP 723 block declares none runs on the daemon's interpreter and no venv is
-    attempted (`scriptenv`), so an abort would land on the script instead.
     """
     routine = make_routine(slug="abort-build")
     (routine / "scripts").mkdir()

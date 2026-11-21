@@ -1,19 +1,4 @@
-"""The FOLD and the OPEN-THREAD CAP — one thread per problem-class per owner.
-
-Two defects with one shape, both fixed by giving the ledger an operation it never had
-(0.345.0, docs/items.md § Reports):
-
-- **F492** — routing a row to its owner produced a report that merely NAMED the original, so
-  the original kept its empty `target`, the next triage pass called it untriaged, and routed it
-  again. Six rows were routed twice inside two days.
-- **D110** — the `problem-routing` rule told every holder to "add your evidence to the OLDEST
-  open one rather than opening another", which the append-only ledger could not do. Live
-  reports went 28 → 50 in the eleven days after that shipped.
-
-`supersedes` is the operation; the cap is what makes a run reach for it. They are tested
-together because neither is defensible alone: a cap with no way to consolidate loses findings,
-and a fold nothing pushes a run toward goes unused.
-"""
+"""The FOLD and the OPEN-THREAD CAP — one thread per problem-class per owner."""
 
 from __future__ import annotations
 
@@ -107,11 +92,7 @@ def test_the_fold_is_recorded_on_the_row_and_reaches_the_read_model(home):
 
 
 def test_the_first_fold_wins(home):
-    """A row belongs to exactly one thread — the ledger's re-routing defence.
-
-    Without this, the second triage pass that named the same rows (R1558 after R1525) would
-    move them into its own thread and the first carrier would be answering for nothing.
-    """
+    """A row belongs to exactly one thread — the ledger's re-routing defence."""
     handle_report(_loop(home, "freelance-radar"), {"title": "a"})
     handle_report(_loop(home, "self-audit"), {"target": "global-utils-review", "title": "first",
                                               "supersedes": ["R1"]})
@@ -328,11 +309,6 @@ def test_supersedable_names_each_row_once(home):
 def test_each_unusable_id_says_why_and_a_folded_one_names_the_live_row(home):
     """R3364: one refusal, three causes, three different moves — and the FOLDED cause carries
     the live row of that thread, to the END of the chain.
-
-    The specimen is `routine-improver:20261111-020001` turn 128: a hand-off naming a row
-    another report had already folded was refused, and nothing in the refusal said which row
-    was live. The caller learns this precondition only at the moment it is refused, so the
-    refusal is the only place the answer costs it no extra turn.
     """
     rows = [{"id": "R1", "superseded": {"by": "R2"}},     # folded, and its carrier folded again
             {"id": "R2", "superseded": {"by": "R3"}},

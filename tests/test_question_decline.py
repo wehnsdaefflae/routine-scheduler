@@ -1,19 +1,4 @@
-"""The Decisions page's first-class NO — `POST /questions/{qid}/decline` (R2197).
-
-A decision could be answered, snoozed or deferred, and none of those is a refusal: the answer
-route closes an item only by saying something, a snooze leaves it open in every run's digest,
-and a defer releases a parked run onto its default with the record still open. So an operator
-who had read a proposal and did not want it could only type prose — and the routine that asked
-had to parse a sentence to find out.
-
-What is asserted here is the three halves of "done": the click files a refusal (the route), the
-item leaves the open set AS DECLINED rather than as prose (the read model), and the asking run
-is handed `declined` as a VALUE (the engine's answer pair + the digest line). The last one is
-the half that has no UI: without `decline.carry` the value is dropped for every question that
-is not an access request, which is the whole class this verb is for.
-
-Its own file because `tests/test_api.py` is at its size ceiling (tests/size_ratchet.json).
-"""
+"""The Decisions page's first-class NO — `POST /questions/{qid}/decline` (R2197)."""
 
 import pytest
 

@@ -1,28 +1,4 @@
-"""The operator's standing order of 2026-11-13: prose names the CAPABILITY, never a tool.
-
-> "we should have a standing order *FOR MONTHS* saying that recipes don't mention utils by name"
-
-He said it reading a report of mine that priced a contract change at "31 routines and 14
-patterns to migrate" — a cost that only exists because nothing had ever enforced the order.
-So the thing owed is ENFORCEMENT, not the sentence again: the order was already written in
-this repo (`engine/kindprose.py`'s rule-authoring prose, this routine's own permission note)
-and bought nothing, because no check failed when prose broke it.
-
-The two halves carry different weight, and these tests hold that asymmetry:
-
-* the LIBRARY (patterns, workflows, rules, playbooks, permissions) names no tool today —
-  measured over every file on 2026-11-13 — so a breach there is NEW and fails the lint,
-  which is what stops the order being broken by whatever the library hands a routine at
-  creation;
-* 13 of 31 LIVE recipes already name one (28 findings), so there it is a `recipelint` note.
-  Failing `rsched validate` for thirteen routines nobody asked to break is how a check gets
-  switched off in a week — `recipelint`'s own charter says exactly that.
-
-What must NOT be a finding is the reason this check can be narrow: a tool's name in ordinary
-prose ("the mail account", "a git history") is English, and the catalog's own meta-verbs
-(`util name=list`, `util name=search`) are how a run asks what exists — the OPPOSITE of
-naming a tool. The live fleet produced one false positive of that kind and it is pinned here.
-"""
+"""The operator's standing order of 2026-11-13: prose names the CAPABILITY, never a tool."""
 
 from __future__ import annotations
 
@@ -68,11 +44,7 @@ def test_the_action_call_form_counts_too(tmp_path: Path) -> None:
 
 
 def test_a_tool_word_in_prose_is_not_a_finding(tmp_path: Path) -> None:
-    """The narrowness that keeps the check alive: only a CALL names a tool.
-
-    A linter that fired on the word would fire on every recipe that mentions mail, a git
-    history or a browser, and would be switched off — so the subject is the call form.
-    """
+    """The narrowness that keeps the check alive: only a CALL names a tool."""
     (tmp_path / "main.md").write_text(
         "# r\n\nCheck the mail account, read the git history, open the browser.\n"
         "Use whatever reaches the mailbox.\n")
@@ -80,12 +52,7 @@ def test_a_tool_word_in_prose_is_not_a_finding(tmp_path: Path) -> None:
 
 
 def test_asking_the_catalog_what_exists_is_not_naming_a_tool(tmp_path: Path) -> None:
-    """The one false positive the live fleet produced, pinned.
-
-    `util name=list` and `util name=search` are the catalog's meta-verbs: prose telling a run
-    to look up what exists is how it names a capability and lets the catalog answer with the
-    tool. self-audit's evidence stage was the hit on 2026-11-13.
-    """
+    """The one false positive the live fleet produced, pinned."""
     (tmp_path / "main.md").write_text(
         "# r\n\nRun `util name=list` for the catalog, or `util name=search` to find one "
         "by need.\n")
@@ -135,11 +102,7 @@ Render it with `gu doc`.
 
 
 def test_the_live_library_is_clean_so_the_check_can_be_fatal() -> None:
-    """The measurement the severity rests on, held as a test.
-
-    If the library ever acquires a tool name, this fails — which is the point: the order is
-    enforceable there precisely because nothing breaches it yet.
-    """
+    """The measurement the severity rests on, held as a test."""
     home = Path("/home/mark/.local/share/routine-scheduler-libraries")
     if not home.is_dir():  # the library is not part of the repo's own test fixtures
         return
@@ -149,13 +112,7 @@ def test_the_live_library_is_clean_so_the_check_can_be_fatal() -> None:
 
 
 def test_a_workflow_pattern_is_held_to_it_because_it_becomes_a_recipe() -> None:
-    """The half 0.540.0 missed: a WORKFLOW's prose is what create_routine materializes.
-
-    `create_routine` builds a new routine's recipe from the library workflow it names, so a
-    tool named in a workflow is inherited by every routine ever built from it — the one place
-    where one breach becomes many. Proven against the library's own `general-task.py`, which
-    lints clean today: appending a single call form must make it fail.
-    """
+    """The half 0.540.0 missed: a WORKFLOW's prose is what create_routine materializes."""
     home = Path("/home/mark/.local/share/routine-scheduler-libraries")
     src_path = home / "workflows" / "general-task.py"
     if not src_path.is_file():  # the library is not part of the repo's own test fixtures

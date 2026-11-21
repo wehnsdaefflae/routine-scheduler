@@ -1,16 +1,5 @@
 """A util grant carries the util's OWN declared secrets (F562) — one operator decision for
 one capability.
-
-The defect these pin: granting `util:<name>` left every secret that util declares `undecided`,
-so the routine's first call hit the exposure gate and filed a SECOND blocking access request
-for the same capability. `bkm-foerder-steward:20260925-062318` did exactly that; R2106
-(`suedlink-wlf`) is the same shape from the permissions side.
-
-The fix widens the REQUEST, not the interpretation (`engine/grantsecrets.py`): the access
-request also carries `secret:<NAME>` per declared secret, so every exposure is still an
-explicit grant row and `secretgate.secret_state` keeps answering about ROWS — the last test
-here pins that, because the cheaper variant (infer `granted` from an adjacent util grant) is
-the silent credential carry the design rejected.
 """
 
 from __future__ import annotations
@@ -206,10 +195,6 @@ def test_the_exposure_gate_still_answers_about_rows_never_about_a_util_grant(tmp
     answer `granted` whenever some held `util:` grant declares the name would be fewer lines —
     and would make a util grant SILENTLY carry credentials while answering about rows that do
     not exist (R2702: enforce at the boundary, never infer from an adjacent grant).
-
-    So: a bare `util:probe` grant leaves the secret UNDECIDED (the half-usable state F562
-    reported), and it is the widened request's own `secret:` id that settles it — after which
-    the gate has nothing left to ask, which is the second blocking request not being filed.
     """
     secrets.set_secret("PROBE_TOKEN", "t")
     home = _lib(tmp_path, probe=_util(declares="PROBE_TOKEN"))

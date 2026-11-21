@@ -1,23 +1,4 @@
-"""A conversation's DECLINED access — listed and cleared from its own surface (F783).
-
-A Decisions-page `deny_forever` writes a `{entity: false}` tombstone into the answering
-subject's own routine.yaml (`web/grants_apply.apply_forever` → `config.routine.record_grants`),
-and the engine then refuses that entity and stops asking for it. That is the same mechanism for
-a routine and for a conversation — but only the ROUTINE page ever had the editor that REMOVES
-such a row (`static/views/routine-config-access.js`, "Declined access"), and `grants` was absent
-from `CONVERSATION_PATCH_FIELDS`, so even an API caller was refused. One mis-click denied a
-capability to that conversation for the life of the thread.
-
-The surface under test is therefore a parallel ROUTER over the same `grants:` mapping, which
-clears ONE entity rather than replacing the map. Both choices are load-bearing and pinned here:
-
-* one entity, not a wholesale replace — the routine page can replace the map safely because it
-  is a DRAFT form the operator accepts, while a conversation's capabilities panel writes on
-  click, so a replace would drop a row written between the page's load and the press; the rows
-  a Decisions click writes into that same mapping include `secret:` ALLOW-forever grants;
-* clearing only ever LOOSENS a denial (back to undecided/requestable) and can grant nothing,
-  which is why this route needs no capability cascade — and the write is still operator-only.
-"""
+"""A conversation's DECLINED access — listed and cleared from its own surface (F783)."""
 
 from __future__ import annotations
 
@@ -121,12 +102,6 @@ def test_a_withheld_secret_is_listed_and_clearable_here_unlike_on_the_routine_pa
     """A `secret:NAME: FALSE` row is a denial too — `engine/secretgate.secret_state` reads it as
     denied and the util call is refused — and this surface is the only one that can clear it for
     a conversation.
-
-    The routine page leaves secret rows out of its *Declined access* block
-    (`static/components/declined-access.js: declinedIds`) because it ALSO carries a *Secret
-    exposure* dial that can put a withheld name back to "ask on first use". A conversation has
-    no such dial (its own-secrets card is the private `secrets.d` store, a different thing), so
-    filtering them here would reproduce this very finding for the secret class.
     """
     server = _server(tmp_path)
     c_dir = _conversation(server, grants={"secret:NTFY_URL": False, "util:signal": False})

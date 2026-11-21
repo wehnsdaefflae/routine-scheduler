@@ -1,9 +1,5 @@
 """The prompt-cache read share: the one reading that separates a healthy append-only run
 from one re-writing its prefix every turn, and the health event that surfaces it.
-
-The failure this guards is SILENT by construction — reads stay non-zero (the static
-system+tools prefix keeps hitting), the run's token count falls, and the extra cost lands
-as a subscription weighting rather than a bill. Only reads ÷ writes shows it.
 """
 
 from __future__ import annotations

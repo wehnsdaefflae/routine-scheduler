@@ -1,27 +1,4 @@
-"""The Decisions page's PROPOSALS group, driven in a real browser (R2425).
-
-The page is an inbox sorted by urgency, and every group caption promised a CONSUMER waiting on
-the operator. For a standing proposal — a routine filing an idea it had, a config patch it
-noticed — "Deferred — the next run picks these up" is literally false: the filing run has
-ended and nothing picks the answer up on a clock. Those items now land in their own group,
-below everything that waits, with no urgency affordance at all.
-
-What is asserted here is what a person SEES on the page:
-
-* the group exists, with the caption in the operator's own words;
-* it renders BELOW the consumer groups and ABOVE Settled;
-* the card carries NO expiring chip, NO relative age (`.rel` / `[data-when]`, which the
-  console's time ticker rewrites every 30 s into "3w ago" — lateness, on an item that cannot
-  be late) and no countdown;
-* the count is not in the console's coral "waiting on a person" colour (`.q-group-count` keeps
-  its `settled` modifier, the same muted treatment Settled gets);
-* it has its own filter chip, like every other group.
-
-The predicate is DERIVED from what /api/questions already returns — a deferred routine
-question whose asking run has ENDED (or whose run dir is gone, so the row carries no
-`run_state`). Nothing was added to the question record, so a proposal is seeded here exactly
-as the engine files one: a pending record whose `asked` names no live run.
-"""
+"""The Decisions page's PROPOSALS group, driven in a real browser (R2425)."""
 
 from playwright.sync_api import expect
 
@@ -115,11 +92,6 @@ def test_the_predicate_is_derived_from_the_payload_the_api_already_sends(ui, ui_
     """`waitsOnYou` asked directly, for the rows the page cannot easily seed: a conversation's
     question and a detached task's question are read when that surface resumes, so they are
     never proposals however old their run is. Blocking and meta always wait.
-
-    This also pins what the derivation CANNOT see: a routine's deferred ask whose run has
-    ended reads as a proposal even if that routine is scheduled to run in an hour — the
-    payload carries no schedule. That is the honest limit of deriving it client-side, and it
-    is asserted rather than left to be rediscovered.
     """
     ui_page.goto(f"{ui.url}/#/questions")
     verdicts = ui_page.evaluate(

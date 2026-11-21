@@ -69,14 +69,7 @@ def test_ro_root_denies_write(tmp_path):
 
 @needs_landlock
 def test_ls_root_lists_its_entries_but_refuses_their_contents(tmp_path):
-    """The third rights class the run-history depth is built on (D207, `rundepth`).
-
-    Landlock has no deny rule, so a readable tree with an unreadable hole in it cannot be
-    expressed by subtraction — only by mounting the parent LIST-ONLY and the permitted
-    children readable. This is the kernel property that makes that shape work: beneath an
-    `ls` path the NAMES are enumerable (so `ls .` and a glob still work, which every jailed
-    command and every `cd` needs) while an `open()` of a file there is refused.
-    """
+    """The third rights class the run-history depth is built on (D207, `rundepth`)."""
     tree = tmp_path / "routine"
     (tree / "runs" / "20260101-000000").mkdir(parents=True)
     (tree / "runs" / "20260101-000000" / "status.json").write_text("{}")

@@ -1,17 +1,4 @@
-"""The charges, and which reading may refuse a selection (b9, the operator 2026-11-19).
-
-`test_memgate_workers.py` holds the FAST charge against the cgroup it runs in. This module holds
-the two things that were wrong about the BROWSER charge until 0.557.1, each pinned by the
-specimen that exposed it:
-
-1. it was 3,584 MB — the uitest container's whole 4 GiB CEILING standing in for a hold, where
-   the stage's measured peak is 1,797-1,876 MB;
-2. it was read against the ENGINE HOST's `MemAvailable`, although the stage runs in the uitest
-   container's own cgroup, which the host's figure does not bound.
-
-Either one alone refused three release gates' ui stage on 2026-11-19 with quality and fast
-already green.
-"""
+"""The charges, and which reading may refuse a selection (b9, the operator 2026-11-19)."""
 from __future__ import annotations
 
 import pytest

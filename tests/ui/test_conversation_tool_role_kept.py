@@ -1,16 +1,4 @@
-"""A conversation's deliberately chosen tool-call model survives a chat-model switch (F784).
-
-The composer exists to let a conversation run a DIFFERENT tool-call model from its chat model
-(`static/views/conversations-new.js`: it seeds `tool_call` from the main picker, then overrides
-it when its own tool-call picker is set). The conversation header's model `apply` then sent
-`models.tool_call = <main>` on every save, so the first time the operator switched the chat
-model that choice was silently gone — the composer's picker undone by the surface next to it.
-
-Nothing records WHICH it was, and nothing needs to: the seed makes a seeded role equal to main,
-so a stored `tool_call` that DIFFERS from `main` can only have been chosen. These tests pin
-both halves of that rule, plus the case the hand-over did not name — clearing main back to the
-system default must not drop a chosen tool role either.
-"""
+"""A conversation's deliberately chosen tool-call model survives a chat-model switch (F784)."""
 
 import yaml
 from playwright.sync_api import expect
@@ -24,11 +12,6 @@ from .helpers import start_conversation
 def _two_models(ui, *names: str) -> None:
     """The ui harness ships ONE catalog model, so nothing can be switched TO. Add the ones a
     test needs, each with a window wide enough that modelOption does not disable its option.
-
-    THREE matter for the chosen-role test: with only `m` and `m2`, switching main TO `m2`
-    while `m2` is the chosen tool role passes under the DEFECT as well — the clobber writes
-    the value the assertion wants. The switch has to land somewhere else (`m3`) for the
-    assertion to be able to fail.
     """
     for n in names or ("m2",):
         ui.server_cfg.models[n] = ModelConfig(name=n, endpoint="dummy", model=n,

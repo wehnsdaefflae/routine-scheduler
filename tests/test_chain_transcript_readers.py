@@ -1,11 +1,4 @@
-"""A CHAINED turn through the readers of a transcript (D203, engine/chain.py).
-
-One turn now carries several `assistant_action` events, all stamped with the same `turn` and
-every one but the first marked `chained: n`. Everything that reads a transcript keys on those
-two facts, so this file is what says each reader still means what it says: a resume replays the
-whole chain into paired messages, a cut "through turn N" keeps all of it, and the phase rail
-counts TURNS rather than actions.
-"""
+"""A CHAINED turn through the readers of a transcript (D203, engine/chain.py)."""
 from __future__ import annotations
 
 import json

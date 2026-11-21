@@ -1,15 +1,4 @@
-"""`deploy/backup.sh` keeps DATED SNAPSHOTS: one folder per night, unchanged files hard-linked.
-
-The single converging mirror it replaced copied damage over the last good copy within a night —
-a run that wrecked state at 01:00 was mirrored at 03:30, and a deleted conversation lived only
-until the next run. Every run now writes `<root>/snapshots/<YYYY-MM-DD>` with `rsync
---link-dest` against the newest complete snapshot, under a temporary name it renames only once
-every home copied, and then prunes to 14 daily + 8 weekly. Each property here is one the shell
-can break without a sound: a half snapshot kept or linked against, the snapshot just written
-pruned, a gigabytes-large mirror copied instead of moved. So each is driven through the real
-script, against a throwaway HOME and a root on a second filesystem — the script refuses a root
-on its home's device (the unmounted-share guard), which is why the root lives on /dev/shm.
-"""
+"""`deploy/backup.sh` keeps DATED SNAPSHOTS: one folder per night, unchanged files hard-linked."""
 from __future__ import annotations
 
 import os
@@ -310,10 +299,6 @@ def test_a_share_that_stopped_hard_linking_is_called_out(home, root):
     """The alarm the du line existed for, now carried by the df delta: a share unable to
     hard-link makes rsync COPY, so its used space grows by a full snapshot while the transfer
     stays small.
-
-    Driven through the two alarm bounds rather than by writing real bytes — a first version of
-    this test wrote 32 MiB per home into the /dev/shm root and filled the tmpfs, which failed the
-    script for a reason that had nothing to do with what is being tested.
     """
     _plant(root, "2026-09-30")
     stub = ('#!/bin/sh\n'

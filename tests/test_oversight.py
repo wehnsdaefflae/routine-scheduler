@@ -1,11 +1,4 @@
-"""The oversight ladder's pure half: what travels UP (the dispatch) and what comes DOWN.
-
-These tests are deliberately about CONTENT, not about flags. The design's whole claim is that
-"the discrepancy between a worker's 'verifying the output' and a histogram showing 14 read_file
-/ 0 write_file is a finding no single self-authored account can produce" — so a test that only
-asserted `dispatch["histogram"] is not None` would pass on a dispatch that lost the very
-discrepancy the feature exists to surface. Each test below names the wrong behaviour it fails on.
-"""
+"""The oversight ladder's pure half: what travels UP (the dispatch) and what comes DOWN."""
 
 from __future__ import annotations
 

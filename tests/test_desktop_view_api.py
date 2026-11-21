@@ -1,11 +1,4 @@
-"""The agent-desktop fleet as the console sees it: `/api/desktops` and its stop route.
-
-The broker keeps its fleet view behind a second secret no routine is granted, because the view
-carries each desktop's screen token — the key to a keyboard on that routine's computer. These
-tests pin that the console does not undo that on its own side: the routes ask the broker with
-BOTH credentials, and a run's RSCHED_API_TOKEN can neither read the fleet nor stop a desktop,
-nor reach the relayed screens.
-"""
+"""The agent-desktop fleet as the console sees it: `/api/desktops` and its stop route."""
 
 from __future__ import annotations
 

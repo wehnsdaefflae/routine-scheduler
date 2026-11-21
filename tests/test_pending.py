@@ -1,14 +1,4 @@
-"""Queued creation from a scheduled run (F328).
-
-R353 is the case these exist for: routine-improver reached a run holding a fully designed,
-user-approved routine plus the lane it belonged in — and could not materialize either, so the
-design was hand-carried back to the operator to paste in. The restriction to conversations was
-right — a scheduled run has no user to design WITH — and the missing piece was a QUEUE.
-
-Two invariants: the engine still never writes `routine.yaml` (a run only ever leaves a proposal
-under `.control/pending-creations/`), and the proposing routine learns the outcome the ordinary
-way, from a message its next run drains.
-"""
+"""Queued creation from a scheduled run (F328)."""
 
 from __future__ import annotations
 
@@ -69,9 +59,6 @@ def test_one_standing_proposal_per_ask_however_often_a_run_repeats_it(server, sc
     — so a scheduled routine re-proposing on its next fire is the normal case. Without one
     rule at the write, the operator comes back to three identical cards of which two can only
     409, and `notify_proposer` tells the routine about a proposal it no longer has.
-
-    The rule was written twice by hand (goal-reached, library-drift) and not at all for the two
-    kinds a RUN files, which is exactly the half that repeats every run.
     """
     ask = {"target": "fau-comms-steward", "name": "FAU comms steward",
            "prompt": "Watch the comms inbox and stage replies.", "workflow": "general-task"}

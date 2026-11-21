@@ -1,21 +1,6 @@
 """The images this deployment builds and pulls, and the rsched service's health probe — read as
 files, because there is no CI and the images are built on the host, so whatever can be held
 without a Docker daemon is held here.
-
-Four promises, each one an edit can break with nothing failing until a rebuild on the host does:
-
-1. EVERY IMAGE A BUILD READS IS PINNED BY DIGEST and keeps its tag beside it. A tag moves, so a
-   rebuild took whatever had been pushed that day and two builds of one commit could differ with
-   nothing in the repository to say why. Each FROM is pinned, a `COPY --from` may name only a
-   stage (or it would pull an image no FROM pins), and the images compose pulls are pinned too.
-2. Every RUN is BASH WITH PIPEFAIL (hadolint DL4006). Under /bin/sh the NodeSource
-   `curl … | bash -` this image used to run exited 0 on a failed download.
-3. NODE 24 LTS, from exactly ONE place: the official image's own install, copied out. The claude
-   CLI's package declares `engines.node >=22`, and a second Node from apt would put two versions
-   behind one name — which one a caller gets would depend on its PATH.
-4. The HEALTHCHECK probes a path the real app serves WITHOUT a token — no credential belongs in
-   compose or the image — on the port compose publishes, with a tool the image installs, and
-   gives a whole boot (re-sync, migrations, seed sync) before a miss counts.
 """
 from __future__ import annotations
 
@@ -263,10 +248,6 @@ def test_the_claude_cli_is_pinned_like_every_other_dependency():
     one kind of failure that cannot be bisected, which is why every FROM above is pinned by
     digest and uv by version (hadolint DL3016, SD2.6). This one is also a native binary placed by
     a postinstall, i.e. the part most likely to change under us.
-
-    The pin is an ARG so a build can override it, and the ARG carries the default: an ARG with no
-    value would make `npm install pkg@` a syntax error at build time, which is a worse failure
-    than the drift.
     """
     dockerfile = ENGINE.read_text(encoding="utf-8")
     installs = [line for line in dockerfile.splitlines() if "npm install -g" in line]
@@ -287,10 +268,6 @@ def test_the_installer_syncs_the_venv_the_service_actually_runs():
     `uv sync` in the repo populates `<repo>/.venv` — a venv the service never opens — and then
     prints "venv synced". A first install reported success and left the service to build its own
     environment on first start; a sync after a dependency change updated the wrong one (SD2.6).
-
-    The installer must therefore sync INTO the unit's path, and must read that path from the unit
-    rather than repeating it, because two copies of one path drift silently and this one is only
-    exercised on a fresh host.
     """
     install = INSTALL.read_text(encoding="utf-8")
     unit = UNIT.read_text(encoding="utf-8")

@@ -1,12 +1,4 @@
-"""The agent desktops' broker (deploy/desktop-broker): who is calling, what it may mount.
-
-Every desktop is one routine's, and every caller holds the same bearer token, so the broker
-learns WHICH routine is calling from what that routine's own sandbox lets it do: write a
-one-time file into its working directory (identity), write into a folder (a read-write share)
-or list it (a read-only share). These tests hold that proof logic, the util's half of it (the
-digest must be computed the same way on both sides of the container boundary), the share
-refusals, and the HTTP routing — with the VM fleet stubbed, since a VM needs KVM.
-"""
+"""The agent desktops' broker (deploy/desktop-broker): who is calling, what it may mount."""
 from __future__ import annotations
 
 import importlib.util

@@ -1,26 +1,5 @@
 """`do_nothing` (D186): a run fired on a schedule states, as a first-class action, that
 nothing was due — and WHY.
-
-Before this kind existed a run that found nothing due had two options: `finish`, which is
-right and is still right, or an invented action — a `read_file` of something it did not need,
-a `util list` it had already seen — to have done SOMETHING. The operator decided the run
-should be able to say it plainly instead, with the reasoning attached.
-
-THE REASONING IS `say`, not a new field. `say` already rides every kind, the transcript
-already renders it for every kind (static/components/transcript.js), and the console already
-publishes it. What `say` does NOT have anywhere else is a non-emptiness check — the schema
-sets no minLength and `KIND_FIELDS` never lists it among a kind's required fields — so this
-kind, whose entire content is its reasoning, enforces one of its own.
-
-THE FABRICATION GUARD IS THE DESIGN DECISION (the brief's open question). A run that does
-nothing but `do_nothing` has established nothing, so it must not be able to ground a top-level
-`finish(ok)` that the guard would otherwise refuse. `do_nothing` is therefore a NON-GROUNDING
-action: it dispatches, it is observed, it is in the transcript — and `loop.executed_actions`,
-the counter the guard reads, does not count it. The opposite choice would have turned the
-guard off with one word: `do_nothing` then `finish(ok)` would pass with no work behind it,
-which is exactly the hallucinated-completion shape the guard exists to refuse. An IDLE run
-still finishes — `finish(ok)` is unaffected after any real action, and the guard was never a
-bar against ending a run, only against claiming an unobserved one.
 """
 
 from conftest import finish, write_file

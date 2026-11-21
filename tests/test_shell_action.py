@@ -1,16 +1,5 @@
 """The `shell` ACTION KIND (0.287.0) — what the move off the reserved util bought, and what
 it must not have cost.
-
-Two contracts are pinned here and they pull in opposite directions:
-
-- GATING got stronger. `capabilities.utils` is an exception list, so the old reserved util was
-  only ever gated because a permission doc happened to name it; a gated KIND is projected out
-  of the schema a run is sent, so a routine without the capability cannot even generate the
-  call. Both halves are asserted: the denial and the ungeneratability.
-- The SANDBOX must be unchanged. The retired util declared `fs: roots` + `net: outbound` — the
-  widest terms available — so its jail was exactly the run's granted roots, and it received no
-  store secret because it declared none. `run_shell` reproduces all three. A regression here
-  would turn a gating improvement into a sandbox hole, so the jail inputs are pinned directly.
 """
 
 from pathlib import Path
@@ -134,14 +123,7 @@ def test_a_signalled_child_reaches_the_health_stream(shell_ctx, tmp_path):
 
 
 def test_a_signalled_child_tells_the_author_too_not_only_the_operator(shell_ctx, tmp_path):
-    """F622: the same kill must reach the run that made the call, in words with a next move.
-
-    The health event above is the OPERATOR's surface. The author read `exit: -9` with empty
-    output — indistinguishable from an ordinary crashed command — and a run told that RETRIES:
-    conversation c-20261002-194128 re-ran `classify_candidates` at turn 93 and again at turn
-    95, six minutes apart, with an identical 5,103,384 kB high-water mark. Everything needed
-    to prevent that was already measured at the moment of death and spent on one surface.
-    """
+    """F622: the same kill must reach the run that made the call, in words with a next move."""
     shell_ctx.server.routines_home = tmp_path / "rhome"
     obs = dispatch({"kind": "shell", "command": "kill -9 $$"}, shell_ctx)
     assert obs["exit"] < 0
@@ -288,14 +270,7 @@ def test_a_strict_mode_refusal_becomes_an_observation_not_a_crash(shell_ctx, mon
 
 
 def test_the_deadline_is_not_a_signal_and_raises_no_kernel_kill_event(shell_ctx, tmp_path):
-    """The complement of the test above, and the reason `TIMEOUT_EXIT` is positive.
-
-    `util_killed` exists to catch the cgroup OOM killer, so an operator reads it to decide
-    whether a ceiling is too low. A deadline is not a kill by the kernel and must not land
-    there — the util kind exited -1 for a timeout until 0.366.2, `_note_if_killed` reads any
-    negative status as "killed by signal N", and routine-improver's three timeouts on
-    2026-09-23 were filed as three SIGHUPs, a signal nothing in this system sends.
-    """
+    """The complement of the test above, and the reason `TIMEOUT_EXIT` is positive."""
     shell_ctx.server.routines_home = tmp_path / "rhome"
     obs = dispatch({"kind": "shell", "command": "sleep 30", "timeout_s": 1}, shell_ctx)
     assert obs["exit"] == utils_run.TIMEOUT_EXIT  # positive, so it is not read as a signal

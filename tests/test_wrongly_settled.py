@@ -1,22 +1,4 @@
-"""`rsched reports --wrongly-settled` — which rows a NON-OWNER disposed of (R3246).
-
-D182 (0.425.0) closed the gate in `report_threads.disposable`: `answers` and `settles` dispose
-of a row only for the routine it was DELIVERED to, which nothing enforced before. Measured over
-the 2,110-row ledger before that fix, 492 rows were disposed of by someone who was not their
-owner, 317 of them never routed to anyone — so they left triage with no owner having read them.
-The operator's own bug report R2552 vanished that way 14 seconds after he filed it.
-
-Leaving those rows settled is deliberate and is not undone here: re-deriving them would hand
-triage hundreds of rows at once. But "do not re-open them" and "nobody can ever see which ones
-they were" are two different decisions, and only the first was made — until this verb the only
-artefact that knew the number was a docstring comment. So this is a READ: no row re-opens, no
-read-model verdict changes, and the listing is built from the same predicate the WRITE gate
-refuses with, so the two can never disagree about who owns a row.
-
-The ledger rows here are written through `reports.file_report` directly, which carries no
-disposal gate — that is where the historical rows came from, and it is the only way to produce
-the shape `handle_report` now refuses.
-"""
+"""`rsched reports --wrongly-settled` — which rows a NON-OWNER disposed of (R3246)."""
 
 from __future__ import annotations
 

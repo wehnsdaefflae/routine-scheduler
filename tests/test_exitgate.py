@@ -1,13 +1,4 @@
-"""Declared informational exit codes (F711) — the `informational-exits:` header line.
-
-The defect: `candidate_gate.py` documents exit 2 as "a poll in progress is not a usage
-mistake" (F648), status polls of a detached release gate return it many times in a row, and
-the repeat-failure detector counted every one of them — firing `fix-the-cause` twice in one
-run on healthy behaviour. A rule that fires on healthy behaviour trains a run to dismiss it.
-
-What is pinned here: three consecutive polls returning the DECLARED code do not trip the
-detector, and a real non-zero still does.
-"""
+"""Declared informational exit codes (F711) — the `informational-exits:` header line."""
 
 import json
 

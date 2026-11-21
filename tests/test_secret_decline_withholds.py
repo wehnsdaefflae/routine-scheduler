@@ -1,23 +1,4 @@
-"""A per-secret DECLINE withholds THAT SECRET — it does not refuse the whole util (F756).
-
-The live specimen, measured by `llmsectest-weekday:20261023-040002` and called a bug by the
-operator: he granted the `GMAIL_*` secrets to `gu mail` and declined the `FAU_*` ones forever.
-The engine then refused EVERY call of that util — including `--account default`, which needs no
-FAU credential. The grant UI let him express per-secret intent the enforcement could not honour.
-
-The rule these tests pin: **a secret decline protects the CREDENTIAL, not the util.** The
-declined name is scrubbed from the child environment exactly as a `?`-declared optional one is
-(F290), the call proceeds, and the observation says how many were withheld because he declined
-them. A util that genuinely cannot work without it fails INSIDE, visibly, with its own message —
-which is what `_exposable` already accepts for a declared-but-unset secret. Forbidding a util is
-a `util:` grant or a reservation, never a secret row.
-
-Three invariants ride along, because moving a refusal must not move a credential:
-
-* the declined VALUE never reaches the child env on any path (`scoped_env` is the seam);
-* a denial still enumerates nothing in what the model reads (R17);
-* an UNDECIDED secret is not a decline — that call still does not run.
-"""
+"""A per-secret DECLINE withholds THAT SECRET — it does not refuse the whole util (F756)."""
 
 from __future__ import annotations
 
@@ -263,14 +244,7 @@ def _vision_library(tmp_path, monkeypatch, *, grants: dict):
 
 def test_the_engine_s_own_call_is_refused_where_the_run_s_is_withheld_from(tmp_path,
                                                                           monkeypatch):
-    """D213's two meanings, over ONE declined row and one declaring util.
-
-    `vision_describe` is the engine's call — the run asked to SEE a file, not to run the
-    vision util — so it is REFUSED and the util never runs. `withheld_for_util`, the gate
-    every call the RUN wrote goes through, answers about the same util and the same row by
-    withholding that one name, leaving the call to proceed. Both sides are asserted here so
-    neither can be "made consistent" by moving one of them without reading this.
-    """
+    """D213's two meanings, over ONE declined row and one declaring util."""
     from rsched.engine import mediaops
     from rsched.engine.secretgate import withheld_for_util
 

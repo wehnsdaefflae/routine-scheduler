@@ -1,18 +1,4 @@
-"""Who may DISPOSE of a report row — `answers` and `settles` belong to the recipient (D182).
-
-The engine's own prose says `answers` is "the id of a report you RECEIVED", and the grammar of
-`answers`/`settles`/`supersedes` was validated thoroughly — but never the RELATIONSHIP. So a row
-left the ledger whenever any report named it, its own sender's included. Measured over the live
-2,110-row ledger before this landed: 492 disposals were made by someone who was not the row's
-owner, 317 of them of rows never routed to anyone, which means they left triage with nobody
-having read them. The operator's own bug report (R2552) vanished that way 14 seconds after he
-filed it, while its follow-up stayed visible.
-
-The gate is a WRITE precondition, in the handler, where the author can be told what to do
-instead. The read model is deliberately untouched: the rows already disposed of this way stay
-settled, because re-deriving them would hand triage hundreds of rows at once — which is the
-operator's own instruction with the fix ("migrate them as-is").
-"""
+"""Who may DISPOSE of a report row — `answers` and `settles` belong to the recipient (D182)."""
 
 from __future__ import annotations
 

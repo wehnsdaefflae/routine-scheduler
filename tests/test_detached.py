@@ -1,8 +1,4 @@
-"""DetachedManager lifecycle: intake→fire, deliver (idempotent), wake race, reconcile, gc.
-
-Uses a FakeRunner (records fire/resume, writes a real status.json on fire — no subprocess)
-and on-disk fixtures, mirroring tests/test_scheduler.py. asyncio_mode=auto is set, so the
-async tests run directly."""
+"""DetachedManager lifecycle: intake→fire, deliver (idempotent), wake race, reconcile, gc."""
 
 import os
 

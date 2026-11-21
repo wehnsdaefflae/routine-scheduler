@@ -1,31 +1,4 @@
-"""R3108 increment one: when a classifier cannot decide a provider failure STRUCTURALLY, say so.
-
-Three places decide retry, failover and prompt-window policy by matching ENGLISH SENTENCES in a
-provider's error body: `endpoints/base.py`'s `transient_402`, `engine/overflow.py`'s
-`_OVERFLOW_HINTS`/`_NEVER_OVERFLOW_STATUS`, and `engine/degrade.py`'s `_FAILOVER_REASONS`. Both
-failure modes are measured: on 2026-10-16 conversation `c-20261016-075101` died twice in 30 s
-logging `model_chain_exhausted … after 0 rungs` while the condition cleared itself, and on
-2026-09-21 the Anthropic overflow shape matched none of the openai-flavoured hints, so
-`self-audit:20260921-000321` 400'd four times with its prompt growing 1,017,305 → 1,045,385
-while the engine failed over. `overflow.py`'s own comment states the mode: *"a hint list that
-misses a vendor silently DISARMS this whole guard for it"*.
-
-THIS INCREMENT CHANGES NO POLICY. Nothing about which errors are retried, failed over or shrunk
-moves; every existing decision comes out identical (pinned below in
-`test_no_existing_decision_changed`). What it adds is the one number nobody has: how often a
-structured decision is actually UNAVAILABLE on this instance — which is what tells the next
-increment whether the prose lists were ever load-bearing. Removing the prose matching is a later
-increment.
-
-Two seams file the event, and the FIRST one is the reason the hook is not on `_log_failover`:
-
-(a) `_switch_to_fallback`, where every hard failure's class is computed. The specimen above died
-    as `model_chain_exhausted … after 0 rungs`, and that branch never reaches `_log_failover` —
-    hooking the log would have missed exactly the case that motivated the item.
-(b) `_recover_oversize_prompt`'s "not ours" return, where BOTH overflow nets have declined. A
-    400 that quotes a token count and is still not read as an overflow is either a vendor shape
-    the hint list misses or a correctly-excluded rate limit, and `declined_by` says which.
-"""
+"""R3108 increment one: when a classifier cannot decide a provider failure STRUCTURALLY, say so."""
 
 from __future__ import annotations
 
@@ -172,25 +145,6 @@ def test_what_increment_two_moved_and_what_it_did_not():
     IS the policy change the operator decided on 2026-10-17 — *"replace the prose checks
     completely"* — so the three verdicts that MOVED are recorded here, each with its reason,
     rather than the pin being deleted. Every other verdict still comes out identical.
-
-    UNCHANGED, now on a declared basis: a status-classified failure keeps its class, the
-    Anthropic overflow is still an overflow (its `error.type` says so, where before it was the
-    phrase "prompt is too long"), a rate limit quoting two token counts is still declined, and
-    an undecidable failure is still the honest `other`.
-
-    MOVED, deliberately:
-    * "m refused the turn" and "empty completion x2" as free-standing TEXT are now `other`. Both
-      classes are the ENGINE's own finding and are declared at the raise (`ErrorSignal(engine=…)`
-      — pinned in `tests/test_structural_error_class.py`); read out of prose instead, they
-      classified any provider body that happened to quote the engine's own words.
-    STILL DECLINED, and measured as such: UNKNOWN_400 declares `too_large` — a code in none of
-    the tables — and states its limit as "limit 32000", which is not the "<actual> tokens >
-    <maximum>" shape `errorsignal.TOKEN_PAIR_RE`/`TOKEN_MAX_RE` read. So the structural rule
-    reaches no verdict on it either, and it files `no_hint_match`. The honest statement of the
-    change is therefore narrower than "every vendor is now covered": a vendor whose body
-    declares an UNKNOWN code AND words its figure in an unparsed shape is still declined, and
-    the count says so. What the change removes is the dependence on English wording for the
-    shapes that DO declare — and the false positives the old exclusion list could not stop.
     """
     assert degrade._failover_reason(EndpointError("HTTP 429 rate limit")) == "rate_limit"
     assert degrade._failover_reason(EndpointError("HTTP 401 bad api key")) == "auth"

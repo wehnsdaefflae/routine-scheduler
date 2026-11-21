@@ -1,13 +1,4 @@
-"""The console's modals are keyboard dialogs (components/dialog.js and its users).
-
-dialog.js replaced every native confirm()/prompt() and promised "keyboard-first (Enter
-confirms, Esc or an overlay click cancels)" with focus trapped inside. Three ways it broke that
-promise, and one modal that never made it: Enter pressed on the focused CANCEL button ran the
-destructive action; one click on the dialog's own text moved focus to the page behind, after
-which Escape and the Tab trap went silent; the dialog had no accessible name, so a screen
-reader announced an unnamed dialog over a delete. The directory picker (dirpicker.js) had its
-own overlay with none of it — no dialog role, no focus on open, no focus back on close.
-"""
+"""The console's modals are keyboard dialogs (components/dialog.js and its users)."""
 
 from __future__ import annotations
 

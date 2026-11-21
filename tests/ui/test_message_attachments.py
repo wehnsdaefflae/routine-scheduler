@@ -1,20 +1,4 @@
-"""A file attached to a routine's inbox message, in the browser (D275).
-
-Operator, 2026-11-07: *"I wanna be able to add an attachment to a routine's inbox message
-field"* — and, asked how far it should go, 2026-11-08: *"page too: also serve it back for
-viewing/downloading on the Messages page"*. So both halves are claims a test has to make: the
-composer takes files, and the queued message shows them back.
-
-It is written against the REAL console and the REAL server — nothing here is stubbed — because
-the two things that can silently fail are exactly the two a shallow test passes over: a
-multipart POST whose files never reach disk, and a thumbnail whose `<img>` exists while its
-bytes never arrived (an `<img src>` cannot carry the Authorization header, so the bytes come
-through `apiBlobUrl` and the element gets a `blob:` URL). `naturalWidth` is therefore the
-assertion: it is non-zero only if the browser decoded an actual image.
-
-A new module rather than a case in test_routine_page.py: that file sits AT its size ratchet
-(492/492, tests/test_file_size.py).
-"""
+"""A file attached to a routine's inbox message, in the browser (D275)."""
 
 from __future__ import annotations
 

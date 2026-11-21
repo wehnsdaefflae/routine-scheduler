@@ -1,31 +1,4 @@
-"""A script without the util-library handle is told WHY, and told it about the right file.
-
-F801, reported from outside by `llmsectest-weekday` (R3052). A helper that shelled out to
-`gu tts say` died with a bare `FileNotFoundError: 'gu'`, and the reporter's conclusion was that
-this host has no util front end at all — a reasonable reading of the only evidence it had.
-
-The helper HAD declared `calls: tts`. But the engine reads the header of the script it RUNS, and
-what ran was a bridge (`scripts/project_run.py`) that declared nothing. Two files were plausible
-and only one was consulted, which is the whole failure mode — so the note names THE FILE WHOSE
-HEADER WAS READ. "this script declares no callees" would send the author back to the file they
-are already looking at, which in a bridge topology is the wrong one.
-
-THE SECOND SHAPE, found by the test that was meant to merely confirm the first. Which failure a
-caller meets depends on the host:
-
-1. `gu` is not on PATH at all → a bare OSError naming the handle. What R3052 reported.
-2. `gu` IS on some inherited PATH but no `GLOBAL_UTILS_HOME` was folded in → the dispatcher
-   itself exits 2 with `gu: library home <default> does not exist — run deploy.sh from the
-   claude-utils-library repo`, which reads as a broken INSTALL and sends the author to deploy a
-   library that is already deployed. This host produces shape 2, so a note that only covered
-   shape 1 would have missed every real caller here.
-
-Both are the same cause — no `calls:` line, so no handle — and the note says so explicitly,
-including that the message above it is not a broken install.
-
-This lives in its own file rather than in `tests/test_scripts.py` because that file sits at its
-`tests/size_ratchet.json` ceiling and may only shrink.
-"""
+"""A script without the util-library handle is told WHY, and told it about the right file."""
 
 from __future__ import annotations
 

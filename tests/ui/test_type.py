@@ -1,15 +1,4 @@
-"""The three type roles as the BROWSER resolves them, in the REAL console.
-
-`tests/test_stylesheet_tokens.py` reads the stylesheet files: it proves no token names a serif
-face and no rule spells a face of its own. That is the static half. This is the half it cannot
-reach — that the stylesheet the daemon SERVES is the one with the fix in it, and that a prose
-element on a real page therefore computes a sans stack. A token corrected in the repo while the
-console serves a cached or frozen copy would pass the file check and still show the operator a
-serif (0.418.1 shipped a NEW stylesheet for exactly that reason: "a frozen stylesheet means a
-NEW stylesheet, not an inline style").
-
-Operator, 2026-10-12: "you need to make sure not to use serif fonts in the webui."
-"""
+"""The three type roles as the BROWSER resolves them, in the REAL console."""
 
 from __future__ import annotations
 
@@ -27,12 +16,7 @@ def _serif_in(stack: str) -> list[str]:
 
 
 def test_no_console_surface_computes_a_serif_stack(ui, ui_page):
-    """Every type role, as resolved by the browser on a loaded page.
-
-    The probe asks the live document for each token's value AND for the computed `font-family`
-    of a real `.prose` element, so a serif reaching the user through the cascade — a token, a
-    late rule, a stale served sheet — fails here whatever its source.
-    """
+    """Every type role, as resolved by the browser on a loaded page."""
     ui_page.goto(f"{ui.url}/#/routines")
     ui_page.wait_for_selector(".topbar")
     resolved = ui_page.evaluate(

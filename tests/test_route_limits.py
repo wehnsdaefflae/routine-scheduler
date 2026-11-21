@@ -1,11 +1,4 @@
-"""A gateway model is sized by its ROUTE, never by the model's public figure.
-
-An Otari gateway serves normalised names and its `aliases:` send each to a provider: a
-CLIProxyAPI subscription login, OpenRouter, Nano-GPT, Anthropic's own API. The window and output
-maximum belong to that route — the Codex Plus login serves `gpt-5.6-luna` at 372,000 tokens where
-the public catalog says 1,050,000 — so discovery reads the gateway's routing file, takes each
-route's figures from that route's own catalog, and leaves a route that publishes none UNKNOWN.
-"""
+"""A gateway model is sized by its ROUTE, never by the model's public figure."""
 
 from __future__ import annotations
 

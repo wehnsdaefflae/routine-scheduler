@@ -1,10 +1,4 @@
-"""The RESERVED FINISH TURN — its cause on the record, and its guard edges.
-
-A fifth of the fleet's runs end here (90 `budget_exhausted` in 21 days) and nothing said WHICH
-budget tripped: `loopnudge` appended the violation to the message list alone and the health
-event carried the model's summary. Reconstructing the cause from status.json worked for 22 of
-the 90 — turns and wall clock only, because those are the two that block carried.
-"""
+"""The RESERVED FINISH TURN — its cause on the record, and its guard edges."""
 
 import json
 from types import SimpleNamespace
@@ -64,13 +58,7 @@ def test_the_violation_is_a_transcript_event_not_only_a_message(make_routine, sc
 
 
 def test_a_non_finish_on_the_reserved_turn_is_not_executed(make_routine, scripted, tmp_path):
-    """"This is your LAST turn — the engine executes nothing else" was only a promise.
-
-    The reserved turn narrows the GRAMMAR to `finish`, but a provider without constrained
-    decoding can emit any kind and the executor ran it. It is now refused at the dispatch
-    seam and the loop force-finishes as before — the same ending, minus the action, and
-    still exactly ONE completion past the cap.
-    """
+    """"This is your LAST turn — the engine executes nothing else" was only a promise."""
     from rsched.engine.transcript import read_events
 
     d = make_routine(slug="reservedkind", budgets={"max_turns": 2})

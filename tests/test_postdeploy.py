@@ -1,20 +1,4 @@
-"""`rsched postdeploy` — the checklist a deploy session never had (R2428, rsched/postdeploy.py).
-
-Read 2026-10-01's releases as a dataset: only 0.374.0 came from a scheduled detector; everything
-else came from a human mid-deploy. Nine of them say "found while deploying". The four this command
-checks for each really happened and each really went unnoticed:
-
-* `rsched-backup.service` failed 19 nights unnoticed — the indicator was ABSENT (0.374.3, F602);
-* a deploy script drove the WRONG HOST's Docker daemon (0.374.0);
-* the nightly backup failed on a root-owned proxy file (0.373.1);
-* and a deploy that does not relaunch the process is the commonest silent failure of all
-  (`docker compose up -d` never reloads bind-mounted code).
-
-More deploy TESTS would have caught none of them: each was a property of the live instance, not of
-a fixture. So the deliverable is a command the operator runs, and these tests prove the command —
-hermetically, over the pure checks in `rsched/postdeploy.py`, with the one live read
-(`/api/status`) stubbed at the seam `cli_postdeploy` keeps it behind.
-"""
+"""`rsched postdeploy` — the checklist a deploy session never had (R2428, rsched/postdeploy.py)."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -112,10 +96,6 @@ def test_a_backup_record_that_cannot_be_read_at_all_fails_and_never_passes():
     """THE specimen. The cause was not a broken indicator; it was the absence of one — a grep for
     `rsched-backup` over src/ and static/ returned zero hits, so nothing could tell a healthy
     instance from an unbacked one, and nineteen nights passed.
-
-    This is the one place the command diverges from `daemon/backup_watch`, which calls an
-    unreadable stamp `unknown` and claims nothing: that is right for a health event filed off a
-    5-second tick, and wrong for a person standing at the box he just deployed.
     """
     check = backup_freshness("unknown", "no readable .rsched-backup-completed under any root")
 
@@ -305,13 +285,7 @@ def test_the_record_row_keeps_every_verdict_by_name():
 
 
 def test_a_whole_session_renders_exactly_this_block():
-    """The operator-visible output, pinned BYTE-FOR-BYTE — because this output is the product.
-
-    Everything in this item is about a session that left no trace and had no fixed shape, so the
-    shape is a test rather than a description: a column of verdicts that scans, the address and
-    its provenance first, and a last line naming what to act on. A change to the layout has to
-    come here and be seen.
-    """
+    """The operator-visible output, pinned BYTE-FOR-BYTE — because this output is the product."""
     checks = [served_identity("http://127.0.0.1:8321", _status(), "config bind/port"),
               build_skew(_status(version="0.443.0"), "0.444.0", "/home/mark/git-repos/rsched"),
               backup_freshness("ok", "last complete snapshot 2026-10-23T01:12:00+00:00"),

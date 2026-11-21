@@ -1,11 +1,4 @@
-"""F655 end to end: a RETRIED call is visible where the call is visible.
-
-The chain under test is the whole one the operator's 11-minute silence broke — an adapter that
-uses the shared `with_retries` loop, wrapped by `InstrumentedEndpoint`, recording to a sink and
-folded by the `TaskCenter` the dock mirrors. The record is on the SAME call id, because a retry
-is the same call: one `started` row used to cover up to three attempts of 600 s, and nothing
-anywhere said which attempt was running or what had ended the one before.
-"""
+"""F655 end to end: a RETRIED call is visible where the call is visible."""
 
 from __future__ import annotations
 

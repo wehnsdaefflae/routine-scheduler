@@ -1,22 +1,4 @@
-"""An `accounting` field that arrived ABSENT is named as absent — never as incomplete content.
-
-MEASURED on `birthday-admin:20261022-080004` turns 83-96 (F805). Turn 83 finished with a
-complete nine-entry accounting and was rejected on a CLAIM objection against d4; from turn 84 on
-every finish payload in the transcript carries `accounting: null` — turns 84, 85, 86, 87, 88, 89,
-90, 91 and 95 — and each was rejected with the same sentence, "your accounting is incomplete: no
-entry for d1, d2, d3, d4, d5, d6, d7, d8, g1". The run's own words at turn 85: "the accounting
-array appears to have been present but the engine reports it as missing all entries;
-re-submitting identically". It escaped only by rebuilding the list one entry at a time (turn 92
-one entry, 93 two, 94 all nine, accepted at 96) — roughly ten turns at full prompt price.
-
-The CAUSE is a transport defect the engine already repairs where it can (`engine/paramsalvage.py`:
-a `</summary>` closer the model mismatched swallows every parameter written after it, measured on
-this same run). What had no fix is the DIAGNOSIS: `accounting.parse` flattens a missing key, a
-`null` and an empty list all to `{}`, so every owed id read as `missing` and the refusal spoke
-about CONTENT the run could still see in its own reply. One sentence naming the absence would
-have saved those turns, so absence is its own finding here — exclusive with `missing`, because an
-entry that was never received is not an entry that is wrong.
-"""
+"""An `accounting` field that arrived ABSENT is named as absent — never as incomplete content."""
 
 from __future__ import annotations
 
@@ -115,9 +97,6 @@ def test_a_finish_whose_accounting_field_did_not_arrive_is_told_exactly_that(mak
                                                                             monkeypatch):
     """The specimen's own payload (`accounting: null`), end to end: deferred once, with the
     absence named, and the run finishes when the field arrives.
-
-    The verifier is stubbed — this is the ACCOUNTING rung's test, and a live judge would consume
-    a scripted reply for a verdict it says nothing about.
     """
     from rsched.engine import verifier
 

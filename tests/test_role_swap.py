@@ -1,20 +1,4 @@
-"""The RUN-CHOSEN ROLE SWAP (D185): a run drops itself to the cheap model and climbs back.
-
-The operator chose the run-chosen trigger on 2026-10-16 out of four — not a stage-based rule and
-not a turn-count rule, because either is wrong for a run whose hard thinking comes late. So the
-run itself asks, and it asks on a SIDE FIELD (`role_swap`) riding any action: a dedicated action
-kind would spend one full turn of the expensive model asking to become cheap, which is the very
-cost the feature exists to save.
-
-What these tests pin, in the order the engine meets them:
-1. the field reaches the engine at all — declared in ACTION_SCHEMA, kept by `normalize_action`,
-   kept by the capability projection (an undeclared sub-field is stripped SILENTLY);
-2. the semantic check refuses a non-position inside the schema-retry cycle, so a typo costs no
-   turn;
-3. the applier re-points the `main` role, which is what makes the next completion cheap, and
-   climbs back to the model the routine configured;
-4. the run is TOLD, in the one voice the engine speaks with, so the swap is on the transcript.
-"""
+"""The RUN-CHOSEN ROLE SWAP (D185): a run drops itself to the cheap model and climbs back."""
 
 from types import SimpleNamespace
 

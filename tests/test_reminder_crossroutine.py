@@ -1,19 +1,4 @@
-"""D152-C step 2 — a hook may be set for ANOTHER routine, and the target decides its fate.
-
-Step 1 made the TRIGGER a named kind. The second genuine novelty of D152 option C is the
-AUTHORITY: routine A can leave a caution on routine B. That is the same shape a `report` has —
-A writes into B's own store, B reads it on its next run — with one addition a report does not
-need: B meets the hook on every fire, so B must be able to dispose of it (keep it, remove it,
-mute it for this run) and A must not be able to override that disposition.
-
-Red-first for step 2. The invariants under test:
-
-- a hook carries `owner` (the routine that SET it) and lives in the TARGET's local store;
-- `owner` defaults to the holding routine, so every pre-step-2 record is its own owner and
-  nothing changes for it;
-- the target's disposition is recorded in the target's own store and is what the next run reads;
-- the owner cannot rewrite a disposition the target made.
-"""
+"""D152-C step 2 — a hook may be set for ANOTHER routine, and the target decides its fate."""
 
 import json
 
@@ -117,13 +102,7 @@ def test_a_muted_hook_stays_in_the_store_but_leaves_the_live_set(tmp_path):
 # --- F697: a mute lasts exactly one run ----------------------------------------------------
 
 def test_a_mute_expires_with_the_run_that_made_it(tmp_path):
-    """The defect F697 names: a mute was documented as run-scoped and stored as permanent.
-
-    `dispose` wrote `disposition="mute"` and `active` filtered every muted record out of EVERY
-    later run's live set, so the hook never fired again — and because a disposition is only
-    ever an answer to a fire, its holder could never take the mute back. A permanent silence is
-    `remove` (which also records the refusal); `mute` is the reversible one.
-    """
+    """The defect F697 names: a mute was documented as run-scoped and stored as permanent."""
     home = tmp_path / "lib" / "reminders"
     store.save_local(tmp_path, [_rem(rid="rem-f", owner="watcher")], {})
     muting = "builder:20261018-130004"

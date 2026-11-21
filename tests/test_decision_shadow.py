@@ -1,41 +1,4 @@
-"""D287 step 1: a decision model answers the SAME typed question, beside the chat model.
-
-The operator's answer (2026-11-14): *"Reroute the refusal classifier AND cascade the finish
-verifier: a typed screen over each claim, with the prose judge called only on the claims it
-flags (184 calls, 24.5 s average, $11.15/month, all at the moment every run is trying to
-end)"*.
-
-WHY THE MEASUREMENT COMES FIRST, in his own decision's words: every option he was offered said
-*"measured in parallel before it replaces anything"*, and the reason is in the row — on an
-underdetermined question, permuting the options moved `jev`'s probability mass by ~10 points
-while the argmax never changed. **A system reading only the verdict sees perfect consistency
-and learns nothing about the instability underneath.** So the swap is not step 1; the evidence
-that the swap is safe is step 1.
-
-AND THE OPERATOR'S OWN CONSTRAINT MAKES IT MANDATORY HERE. `engine/refusal.py` quotes him
-(2026-08-22, after a marker-list approach failed): *"only an LLM classification subcall
-(tool_call model, schema'd verdict) may decide the non-obvious cases either way"*. Changing
-which model decides a refusal is a behaviour change on a path his words govern — so this
-increment changes NO verdict. The chat model still decides; the decision model answers the same
-question beside it and both answers are recorded.
-
-WHAT IS RECORDED, and where: one row per comparison in `.control/decision-shadow.jsonl`,
-following `workflow-usage.jsonl`'s precedent — a DURABLE instance-wide measurement stream that
-survives run retention, which matters because the question is "do these agree over hundreds of
-calls", not "did they agree in this run".
-
-THE FOUR PROPERTIES THIS FILE PINS, each of which the swap would be unsafe without:
-1. the shadow never changes the verdict the chat model gave;
-2. a shadow failure — no decision model configured, an endpoint error, a malformed answer —
-   never touches the run, because a MEASUREMENT that can fail a run is worse than no
-   measurement (`refusal.is_refusal` already treats its own classification as best-effort);
-3. both answers AND the probability are in the row, so agreement, disagreement and the
-   confidence underneath are all computable later;
-4. the evidence goes through `decisions.evidence_text`, the one helper whose docstring records
-   that structured evidence was refused five times by the live provider until it was announced
-   as text — and 0.535.2's fix in the dead `openai` adapter is exactly the mistake this
-   instrument must not repeat.
-"""
+"""D287 step 1: a decision model answers the SAME typed question, beside the chat model."""
 
 from __future__ import annotations
 

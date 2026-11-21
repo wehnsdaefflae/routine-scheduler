@@ -1,10 +1,4 @@
-"""Every answered decision says WHO reads it and WHEN — or that nobody will (2026-11-09).
-
-Two conversation answers sat unread for seven weeks while the Decisions page called them
-"answered · queued", exactly as it called answers a run would read that night. `pickup` is the
-difference, and `never` is the one state that hands a decision back to the operator — so it
-must be stated only when it is KNOWN, never because a clock had not been computed yet.
-"""
+"""Every answered decision says WHO reads it and WHEN — or that nobody will (2026-11-09)."""
 
 from datetime import UTC, datetime
 from types import SimpleNamespace

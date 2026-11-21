@@ -1,28 +1,4 @@
-"""F530 — the relayed browser screen must authenticate the way an IFRAME actually asks.
-
-The operator, one release after the relay shipped: *"all of the browser preview elements you
-added to the webui show `{"detail":"missing or invalid token"}`"*. That string is this app's
-own 401 body, rendered inside the frame.
-
-Three facts, and each one alone is fatal:
-
-1. The DOCUMENT request carried no credential. `frameSrc()` put the ticket inside noVNC's
-   `path` parameter — which is for the websocket — so `/browser-view/vnc.html?…` arrived as a
-   naked GET and `require_auth` refused it.
-2. Even ticketing the document is not enough: noVNC then fetches its OWN siblings
-   (`app/ui.js`, `app/styles/base.css`, the images) with no query string at all, because the
-   page builds those paths itself. Every one of them would 401.
-3. A stream ticket lives 60 seconds. A browser session is watched for minutes or hours, so any
-   short-TTL credential in the URL dies mid-session and the screen goes blank later instead
-   of immediately — which is worse, because it looks intermittent.
-
-So the screen gets its own credential: a cookie, set by an authenticated endpoint, scoped to
-the relay's path, carried automatically by every sub-resource the frame requests, and living
-as long as a watched session plausibly does.
-
-These tests speak in requests the BROWSER makes — naked GETs — rather than in requests the
-console makes with a bearer header, which is the distinction the shipped bug turned on.
-"""
+"""F530 — the relayed browser screen must authenticate the way an IFRAME actually asks."""
 
 from __future__ import annotations
 

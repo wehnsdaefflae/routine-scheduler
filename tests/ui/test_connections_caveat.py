@@ -1,14 +1,4 @@
-"""The connect/reconnect button does not hand the operator to the provider's opaque refusal.
-
-R3061: re-authorizing a Google connection on this instance showed Google's own error page
-("Access blocked: Authorization error — device_id and device_name are required for private IP",
-naming our app and 192.168.0.128) instead of a consent screen, because the instance's public_url
-is a LAN address and Google refuses a private-IP redirect_uri before consent. authorize-start now
-returns a `caveat`; the card states it and asks, rather than opening a doomed tab silently.
-
-A WARNING, not a block: confirming still opens the provider's tab (the operator may be on a
-tunnel this check cannot see). Cancelling opens nothing.
-"""
+"""The connect/reconnect button does not hand the operator to the provider's opaque refusal."""
 
 import re
 
@@ -22,12 +12,7 @@ from .conftest import until
 
 
 def _route_oauth(ui_page, caveat: str):
-    """Serve authorize-start with `caveat` and record every window.open the card attempts.
-
-    The record lives IN THE PAGE (read back with `_opened`): the consent tab must never open in
-    the shared browser, and a page-side array is what the sibling suite's `window.open = () =>
-    null` stub already does, one step further.
-    """
+    """Serve authorize-start with `caveat` and record every window.open the card attempts."""
     def oauth(route):
         req = route.request
         if req.url.endswith("/authorize-start"):

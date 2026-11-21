@@ -137,15 +137,7 @@ def test_one_utils_entry_shows_its_whole_usage_block(util_ctx):
 
 
 def test_a_flag_only_list_answers_with_the_catalog_not_a_util_named_like_the_flag(util_ctx):
-    """A FLAG is not a util name: `list args=["--json"]` must list the catalog.
-
-    `lstrip("-")` mapped the flag onto a real util's name, so `--json` answered with the
-    `json` util's entry and `--git` with `git`'s — under the SAME header the full catalog
-    uses, so nothing said the question had been swapped. The engine's own prose teaches
-    appending `--json` for structured output, which is what made this reachable by reading
-    the instructions correctly. A flag chooses the OUTPUT SHAPE; the target is the first
-    non-flag arg, so `list <name> --json` still answers for `<name>`.
-    """
+    """A FLAG is not a util name: `list args=["--json"]` must list the catalog."""
     d = util_ctx.server.libraries_home / "utils" / "json"
     d.mkdir(parents=True)
     (d / "main.py").write_text('"""json — one verb-dispatched tool.\n\n'

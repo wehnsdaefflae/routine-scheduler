@@ -1,21 +1,4 @@
-"""The never-grantable credential stores, enforced where grants are actually MADE.
-
-`entities.NEVER_GRANTABLE` has always promised that the instance's config dir (the console
-token plus the central secrets store), `~/.credentials` and `~/.ssh` can be granted to no
-routine "by design". The promise had exactly ONE enforcer — the runtime access-REQUEST
-validator — so it was true of what a run asks for and false of what an operator types into
-the routine page's Filesystem-roots panel. That is how the config dir became a live read AND
-write root on a routine that audits configuration: one prompt injection away from the
-operator's token, every routine's scoped secrets and every OAuth refresh token.
-
-Two enforcers now, on purpose asymmetric:
-
-- the PATCH edge REFUSES a new one with a 400 naming the path and the reason;
-- the LOADER REPORTS one already in a file and keeps it. Dropping would break the two live
-  routines whose actual job is auditing and exporting the server's configuration — a root
-  that vanishes from under their next run fails them with nothing naming the cause. Loud
-  beats silent in both directions; which one is louder is what differs.
-"""
+"""The never-grantable credential stores, enforced where grants are actually MADE."""
 
 from __future__ import annotations
 
@@ -51,10 +34,6 @@ def test_the_guard_names_credential_files_not_the_config_directory():
     configuration read exactly it, and the guard's own advisory asks them to narrow their
     grant to it. F635: the advisory then refused the narrower path, so the one wording every
     door speaks was false about the door it was written for.
-
-    Both directions are the point. Nothing was opened up — the directory is STILL ungrantable,
-    because it contains the credential entries — but a path that holds no credential is now
-    clean on its own, with no prior grant and no allowance.
     """
     # The config dir is asked for, never spelled: conftest's `_hermetic_home` redirects
     # RSCHED_CONFIG into the test's tmp dir, and the guard resolves the credential files THERE

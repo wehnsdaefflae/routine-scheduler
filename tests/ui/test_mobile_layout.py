@@ -1,20 +1,4 @@
-"""The console at 390px — the layouts that break only on a phone.
-
-test_mobile_nav.py owns the ONE invariant that holds the bottom bar together (the document
-never scrolls sideways) and asserts it per TOP-LEVEL route. This file owns what that route list
-cannot reach:
-
-* the widgets that widen a document only once they carry real content — a `<select>` whose
-  options are model names, a provider error printed verbatim as an account status;
-* the DETAIL routes (a conversation, a run, a library document), which are where those widgets
-  live and which no route-level test visited;
-* and the phone layouts themselves: a five-column table stacked into cards, a bottom bar whose
-  glyphs must be distinguishable without their labels, a breadcrumb that must not wrap, an idle
-  dock that must not sit on the page.
-
-Everything here clips against the width the test emulated, never against `window.innerWidth` —
-an overflowing document inflates that value, so a guard written with it agrees with the bug.
-"""
+"""The console at 390px — the layouts that break only on a phone."""
 
 from __future__ import annotations
 
@@ -52,16 +36,6 @@ def test_the_answer_placeholder_is_not_clipped_on_a_phone(ui, ui_page):
     `answerform.js` builds its field with `rows="1"`, and at this width the placeholder
     "your answer… (Ctrl+Enter sends)" wraps to two lines. A one-row box clipped the second, so
     the reader saw "your answer… (Ctrl+Enter" and the word "sends)" was unreadable.
-
-    MEASURED before the fix, which is the only reason this is a defect rather than an opinion:
-    the field rendered **39px tall while its placeholder needed 64px**.
-
-    Not cosmetic in the way a cut label usually is: the placeholder exists to teach the send
-    chord AT THE MOMENT OF USE, and it was teaching half of it. The operator changed that chord
-    on 2026-11-11, which is exactly when a half-legible hint costs the most.
-
-    The box is measured against the text it must hold (`scrollHeight`), not against a pixel
-    count: a fixed expectation would pass on a font change that re-broke the clip.
     """
     # The RUN view's live-question card (`run.js:345` → `answerform.questionPanel`), which takes
     # the DEFAULT placeholder. The Decisions page passes its own short one and `control:

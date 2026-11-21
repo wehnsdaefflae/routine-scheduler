@@ -1,27 +1,11 @@
-"""Is THIS INSTANCE's config flyable? (R2196 — rsched/conformance.py)
-
-The suite proves the code correct against fixtures and never asked whether the config this
-instance runs on can fly. The property that killed eight routines at turn 0 on 2026-09-14 —
-`Astra high`'s only fallback was `Opus high`, both on the `cliproxy` endpoint, so one expired
-credential took the whole chain out — is checkable with NO network call at all, and nothing
-checked it.
-
-So these tests build that exact shape out of fixture config and assert the check names it. They
-are hermetic: no live config is read anywhere here (`tests/production_guard.py` forbids it), and
-the production reading happens only in `rsched validate`, which is where the live config is
-already read.
-"""
+"""Is THIS INSTANCE's config flyable? (R2196 — rsched/conformance.py)"""
 
 from helpers import server_config
 from rsched.conformance import chain_problems, system_model_problems
 
 
 def _server(models: dict, endpoints: dict, **attrs):
-    """A ServerConfig whose catalog is exactly what the test declares.
-
-    `models` maps catalog NAME → (endpoint name, fallback names); `endpoints` maps endpoint
-    name → (base_url, key_var). Those two pairs are all `conformance` reads.
-    """
+    """A ServerConfig whose catalog is exactly what the test declares."""
     from rsched.config.modelconf import EndpointConfig, ModelConfig
 
     eps = {name: EndpointConfig(name=name, kind="openai", base_url=url, key_var=key)
@@ -214,10 +198,6 @@ def test_a_single_domain_chain_prints_a_note_and_never_changes_the_exit_code(
     setup and recipe notes and leaves the exit code alone; making it fatal is the operator's
     call. A check that turned that judgement into a failed command would be switched off
     inside a week (the reasoning `cmd_validate` already gives for the recipe notes).
-
-    The exit code is compared WITH and WITHOUT the shared domain over the same routine, so the
-    assertion is about this check's contribution and not about whatever else that routine's
-    validation says.
     """
     from rsched import cli_validate
     from rsched.config.modelconf import EndpointConfig, ModelConfig

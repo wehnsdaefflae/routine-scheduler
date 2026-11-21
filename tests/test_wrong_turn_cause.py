@@ -1,11 +1,4 @@
-"""The wrong-turn fold's CAUSE masking — what makes one mistake one row.
-
-`readmodels/wrong_turns.cause()` turns a validator's rejection message into the key the fold
-groups on: the values are masked out, the shape is kept. Its own correctness is a separate
-responsibility from recording the event (`test_wrong_turn_event.py`), and it has one input the
-event tests never produce — a detail the RECORDER truncated. `engine/completion.py` keeps
-`str(exc)[:200]`, so a long message arrives cut, often mid-value.
-"""
+"""The wrong-turn fold's CAUSE masking — what makes one mistake one row."""
 
 from __future__ import annotations
 

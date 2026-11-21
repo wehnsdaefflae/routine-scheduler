@@ -1,26 +1,4 @@
-"""The suite REPORTS ITS OWN SLOW TAIL — because its stated expectation was never checked.
-
-`pyproject.toml`'s `timeout = 300` carries the expectation in its own words: *"the slowest
-legitimate test (a jailed runner's 30 s SIGTERM grace) takes well under a minute. What it
-catches is a test that will never finish"*. So between "well under a minute" and 300 s there is
-a **299-second blind spot**, and F739 lived in it: `test_remind_global_resolution.py`'s two
-parametrized cases filed a blocking approval nobody answered, `interact.handle_ask` polled all
-the way to the test routine's inherited `ask_timeout_min: 1`, and the file went from ~130 s to
-0.38 s — **~120 s off every release gate the fleet runs**, with no production code changed. The
-deadline was never the defect; the test's own budget was. Nobody knows how long it had been
-doing that, because nothing recorded it.
-
-The aggregate the gate already captures (`quality 0.4 s / fast 179.1 s / ui 959.7 s`) cannot
-localise anything: 179 s is the same number whether it is 2,150 tests at 80 ms or 2,148 at 25 ms
-plus two at 60 s. pytest's own `--durations` is the universal first step for exactly that, and it
-was off — `durations` appeared nowhere in `pyproject.toml`, `tests/` or `CLAUDE.md`.
-
-This pins the instrument, not a budget. No test is given a deadline here and none is excused: a
-flat per-test cap can never go green (the 30 s SIGTERM-grace test is legitimate) and "a gate red
-on arrival is a gate someone deletes". What a measurement buys is the per-test numbers in every
-gate log, from which a ratchet over the TAIL can later be derived from evidence instead of
-chosen — the way `tests/size_ratchet.json` governs file length today.
-"""
+"""The suite REPORTS ITS OWN SLOW TAIL — because its stated expectation was never checked."""
 
 from __future__ import annotations
 

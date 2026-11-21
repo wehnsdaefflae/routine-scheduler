@@ -10,12 +10,7 @@ from rsched import paths
 
 
 def test_read_yaml_parses_with_libyaml(tmp_path, monkeypatch):
-    """The C parser is part of the contract, not an optimisation to drop quietly.
-
-    Measured on the deployment over the 35 live routine.yaml files (87 KB): 583 ms with the
-    pure-Python SafeLoader against 59 ms with CSafeLoader. Every config read-modify-write on
-    the request path pays it, on a daemon whose slow-request log is already GIL-bound.
-    """
+    """The C parser is part of the contract, not an optimisation to drop quietly."""
     seen: dict[str, object] = {}
     real = yaml.load
 
@@ -149,12 +144,6 @@ def test_resolve_rel_still_refuses_a_path_outside_every_root(tmp_path):
 def test_resolve_rel_never_falls_back_to_an_ancestor_of_base(tmp_path):
     """A root CONTAINING `base` is an ancestor, not an alternative — `base` is the more
     specific place for that name.
-
-    This is the job-workspace contract (`run_context.work_dir`): while a job is open the run
-    works in `jobs/<id>/`, a fresh directory with no `state/`, while the ROUTINE's own dir —
-    which `resolve_action_path` always appends as a root — always has one. Without this,
-    `write_file state/progress.md` from an open job landed in the routine's state/ instead of
-    the workspace's (caught by tests/test_jobops.py).
     """
     routine = tmp_path / "routines" / "fau"
     (routine / "state").mkdir(parents=True)

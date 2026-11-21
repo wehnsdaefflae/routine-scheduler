@@ -1,14 +1,5 @@
 """Side table-of-contents (toc.js): the page's h2 sections listed in the navigation rail, with
 click-to-jump; hidden where the rail has no room for words.
-
-The index used to park in the RIGHT margin, which by the rails' arithmetic needs 1900px — the
-navigation rail takes 212px off the left and the reading column 1240px, so a 1440px laptop had a
-zero margin and no index at all on pages up to twenty-six thousand pixels tall. It now rides the
-rail itself, between the destinations and the rail's foot, so 1425 is the width that must show
-it. Below 1181px the rail is a 68px icon strip and below 861px a bottom bar: no room either way.
-
-This file owns what the TOC DOES. That the chrome around it is positioned by base.css at all
-lives in test_global_chrome.py.
 """
 
 from playwright.sync_api import expect

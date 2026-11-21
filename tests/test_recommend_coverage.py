@@ -1,19 +1,5 @@
 """The recommender's semantic COVERAGE: every field it may propose is either checked against
 the accept route's own validator or named on a decided allowlist.
-
-R2884, measured on 0.447.3: `_semantic_problem` checked four of the 23 keys in
-`fields.GOVERNABLE` and the other 19 were offered untested — so a value the SYSTEM generated
-was refused on a settings page the person never typed into. Both values the operator actually
-hit (`deliberation`, `capabilities`) have validators on the accept route that the recommender
-never consulted. The accept is whole-draft, so one refused field 400s every other change the
-person kept: that is how `connections: {"fau-mail": {...}}` cost ewsan-bohrdaten-steward all
-nine of its proposed settings.
-
-This is the `runrecord.BEHAVIOUR` / `NOT_BEHAVIOUR` idiom applied to that coverage: a new
-governable field must be CHECKED or DECIDED, never silently offered untested. The checked set
-is read from the dispatch tables `_semantic_problem` and `valid` actually use, never from a
-second hand-kept list — a list that agreed with itself while the coverage drifted is the
-defect this test exists to catch.
 """
 from rsched.patterns import fields
 from rsched.patterns.recommend import (

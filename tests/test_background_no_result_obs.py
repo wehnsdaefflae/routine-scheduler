@@ -1,18 +1,4 @@
-"""The two background ends that produce NO result must render as words, not as a raw dict.
-
-WHY ITS OWN FILE. `tests/render_guard.py` renders every observation the two dispatch seams
-RETURN, which is what makes a handler test prove its own wording. These two payloads are
-written straight to the transcript by `background.settle` and `background.kill` — they pass
-through no seam, so the guard never saw them and the hole stayed open: `kind`/`handle`/
-`started_turn`/`note` and no `name`, no `exit`. A backgrounded `script` or `util` is in
-`obs_floor.OWN_ERRORS`, so floor 1 declines them as well, and the per-kind chain's
-`obs['name']` raised. Measured live: conversation c-20261026-095411 lost a 25-minute
-background `script` to a daemon restart (R2970) and its RESUMED leg, which re-renders the
-stored observation, read `KeyError: 'name' at engine/observations.py:305` and a JSON dump
-instead of the sentence naming what it had lost.
-
-`test_background_actions.py` is at its size-ratchet ceiling, so the pin lives here.
-"""
+"""The two background ends that produce NO result must render as words, not as a raw dict."""
 
 from __future__ import annotations
 

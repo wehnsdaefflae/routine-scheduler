@@ -29,14 +29,6 @@ def test_concurrent_decision_answers_keep_every_marker(tmp_path):
 def test_the_same_answer_filed_twice_queues_one_message(tmp_path):
     """F772: answering ONE audit decision wrote two byte-identical inbox messages a second
     apart, so the next run read the same answer twice. Nothing in this path was idempotent.
-
-    The cause is a console race (`static/views/questions.js:436` defers a repaint only while
-    an INPUT/TEXTAREA/SELECT holds focus, never for a BUTTON, so answering repaints the list
-    mid-POST, replaces the locked form with a fresh enabled one, and the card still reads
-    unanswered — measured over `.ui-traces/`: 60 doubled click pairs in two days, none under
-    400 ms, so not one was a double-fire). This is the floor under it: the stem is derived
-    from the feedback's own content, which is the same mechanism a report delivery already
-    uses to make a re-delivery replace its queued message.
     """
     (tmp_path / "inbox").mkdir()
     same = Feedback(kind="decision", target="D215", choice="Both: the guidance now")

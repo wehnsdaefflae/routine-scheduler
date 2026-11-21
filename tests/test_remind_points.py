@@ -1,15 +1,4 @@
-"""The REMINDER LAYER through the hook-point registry (D152 step 4).
-
-The registry has said since 0.458.0 that the `reminder` mechanism fires at eight points, and
-`points.TRIGGER_POINTS` mapped every one of `reminders.KINDS` to a point. Nothing read either:
-`engine/remind.py` matched with `reminders.matching(...)` at four sites, so the table described
-the layer without governing it — a second opinion that reads as fact, which is the failure the
-registry's own docstring names.
-
-These pin the reading. Two of them are regressions for defects the routing itself exposed: a
-table nobody consults can hold a point whose payload would DROP the only mechanism firing
-there, and that is exactly what `run-start` and `prose` did.
-"""
+"""The REMINDER LAYER through the hook-point registry (D152 step 4)."""
 
 from __future__ import annotations
 

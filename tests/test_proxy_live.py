@@ -1,8 +1,4 @@
-"""Opt-in subscription calls against an explicitly configured trial proxy.
-
-Never reads production configuration or executes returned actions. Run with
-RSCHED_LIVE_TESTS=1, RSCHED_PROXY_URL, RSCHED_PROXY_MODEL and CLIPROXY_API_KEY.
-"""
+"""Opt-in subscription calls against an explicitly configured trial proxy."""
 
 import os
 import struct

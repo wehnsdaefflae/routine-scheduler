@@ -1,18 +1,4 @@
-"""The Decisions page's first-class NO, driven in a real browser (R2197).
-
-A decision could be answered, snoozed or deferred — none of which is a refusal — so an
-operator who had read a proposal and did not want it could only type prose. This asserts the
-claim the UI actually makes: there is a button, ONE click declines, the card then says
-DECLINED rather than "answered", and the refusal is on disk as a value.
-
-Two traps this project has paid for, both exercised here:
-
-* A control that must not exist for some users is asserted ABSENT (`to_have_count(0)`), never
-  merely invisible — an access request's "no" is the typed decision `deny_now`/`deny_forever`,
-  and a decline button there would post a 400.
-* The settled receipt's question is COLLAPSED by default (`details.q-settled`), so it is
-  clicked open before anything inside it is asserted.
-"""
+"""The Decisions page's first-class NO, driven in a real browser (R2197)."""
 
 import json
 

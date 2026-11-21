@@ -1,20 +1,4 @@
-"""F586 / D160-C, step B2: the INTENT CHANNEL that reaches the call B1 can already stop.
-
-B1 gave `run_jailed` a `cancelled` callback, `CANCEL_EXIT` and the outcome mapping. Nothing
-could SET it: the web had no route and the engine had no reader. B2 is those two halves, and
-what these tests pin is the property the design turns on — **the cancel is keyed by TURN**.
-
-Why that is not a detail. A bare `{"cancel": true}` flag is read by whichever call happens to be
-in flight when the engine next looks. For a cancel clicked just as a long call finishes, that is
-the NEXT call — one nobody asked to stop, ended with an exit code that tells its run a person
-stopped it. The UI's red x renders on one action's row and therefore knows its turn, so the
-intent travels as "stop the call of turn N", matches only while that turn runs, and expires by
-itself when the run moves on.
-
-The second property: `cancel_action` is the ONE control.json intent read mid-turn, because the
-engine is blocked inside the call it must stop. It is still web-written and engine-read — the
-engine remains the single writer of everything under `runs/`.
-"""
+"""F586 / D160-C, step B2: the INTENT CHANNEL that reaches the call B1 can already stop."""
 
 from __future__ import annotations
 

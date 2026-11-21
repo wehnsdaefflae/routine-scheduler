@@ -1,10 +1,4 @@
-"""A CHILD's deferred ask must land where a person reads it.
-
-`interact.handle_ask` filed the decision record under `ctx.routine.dir/questions/pending` —
-which for a child is `runs/<ts>/sub/<n>/`, a directory no surface scans. Four such records
-exist on the live instance (global-utils-review, self-audit, ards, weightloss) and not one was
-ever shown to anyone, while the child was told "the user will see it in the UI".
-"""
+"""A CHILD's deferred ask must land where a person reads it."""
 
 import json
 

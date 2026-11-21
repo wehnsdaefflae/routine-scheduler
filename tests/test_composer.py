@@ -371,10 +371,6 @@ def test_shared_store_notes_reach_the_prompt_and_drain_once(make_routine, tmp_pa
     else shares it and the light channel between them (a channel a run does not know about is a
     channel that does not exist); the state digest carries what a sharer left — once, then
     it is gone.
-
-    Sharing is set the way the system sets it — the store among each routine's OWN
-    `fs_write_roots`. There is no membership list: `sharedstores.sharers()` reads the routines
-    back.
     """
     from rsched.engine.composer import state_digest
     from rsched.engine.harness import harness_contract
@@ -417,13 +413,7 @@ def test_shared_store_notes_reach_the_prompt_and_drain_once(make_routine, tmp_pa
 
 
 def test_capabilities_digest_reports_actual_share_state_not_config(make_routine, tmp_path):
-    """R514. The machine row must state what this run HAS, not what the catalog asked for.
-
-    A share advertised from `MachineConfig.share` alone told a run "files mounted at mnt/gpu/"
-    even when the sshfs mount had failed — and the empty mountpoint directory left behind read
-    exactly like an empty share, so `dir-tree` answered `entries: 0` for a populated box. A
-    share is named only once it is proven live; one that is not gets its reason instead.
-    """
+    """R514. The machine row must state what this run HAS, not what the catalog asked for."""
     from types import SimpleNamespace
 
     from rsched.engine.capabilities import capabilities_digest
@@ -813,13 +803,6 @@ def test_harness_contract_renders_unlimited_token_budget(make_routine, tmp_path)
 def test_the_subrun_allowance_is_what_this_node_has_left(make_routine, tmp_path):
     """D147-A: `max_child_runs` is a CUMULATIVE LIFETIME total for the whole run TREE, so the
     prompt must render what THIS node has left, not the tree total.
-
-    `run_context.sub_counter` is one shared list across the tree, `childrun` increments it and
-    never decrements, and `subruns._cap_reason` gates on it — but the contract told every node
-    "at most 8 subruns", including a child that has started nothing and may have one left. The
-    reported specimen (R1870/F549) spawned three children numbered 5, 7 and 8; all three were
-    refused at their own first spawn and all three finished PARTIAL, each quoting the number it
-    had been promised.
     """
     ctx = _ctx(make_routine, tmp_path, slug="allowance")
     ctx.budgets.max_child_runs = 8
@@ -931,11 +914,6 @@ def _gate_loop(monkeypatch, *, usage, phase="", stages=(), entered=(), stage_mar
                turn=40, turns_left=None, body=6070, remaining=None, real_compact=False):
     """A minimal loop stub for compact_if_needed: 40 messages estimated at 70k tokens
     against a 100k window - between the 0.6 (60k) and 0.8 (80k) thresholds.
-
-    `real_compact` keeps the genuine `maybe_compact`, which is the only way to see whether the
-    caller's cap actually reaches it; the default stub isolates the gate's own decision.
-    `stages`/`entered` are the recipe's declared stages and the ones reached, `stage_mark` where
-    the run stood last turn — None (the default) is a first look, which is never a boundary.
     """
     from types import SimpleNamespace
 
@@ -1000,13 +978,7 @@ def test_compaction_gate_cached_waits_for_80pct(monkeypatch):
 
 
 def test_the_budget_cap_reaches_the_compaction_itself(monkeypatch):
-    """The gate's cap is the CALLER's, not a threshold re-derived inside `maybe_compact`.
-
-    40k estimated tokens against a 100k window is well under the 0.6 context gate, but the
-    ">10% of the remaining token budget" cap (15k here) is what binds — and it used to bind
-    only as far as the decision: the run was told 'compaction imminent', spent the turn, and
-    then `maybe_compact` re-tested its own 0.6 and archived nothing.
-    """
+    """The gate's cap is the CALLER's, not a threshold re-derived inside `maybe_compact`."""
     from rsched.config import ModelRef
     from rsched.engine.window import compact_if_needed
 
@@ -1027,9 +999,7 @@ def test_harness_contract_recipe_line_follows_unlock(make_routine, tmp_path):
     unconditional "READ-ONLY to you" sentence made the improver skip every lens on its own
     self-target despite the include-toggle being on (F165, routine-improver:20260723-112446
     t11/t13).
-
-    And it must give the REAL reason: since 0.261.0 a write root over the routine's own dir
-    unlocks nothing, yet the sentence kept telling the run that one did."""
+    """
     from rsched.grantpolicy import GrantPolicy
 
     ctx = _ctx(make_routine, tmp_path, slug="recun")
@@ -1044,14 +1014,7 @@ def test_harness_contract_recipe_line_follows_unlock(make_routine, tmp_path):
 
 
 def test_a_refused_util_write_names_the_phase_it_failed_in():
-    """A selftest failure means two opposite things and the author needs to know which.
-
-    Three reports from one run (R2036, R2037, R2042) describe six consecutive refusals of large
-    util folds. Every one of them broke at MODULE level — the file did not import — and every
-    observation answered with a line number and nothing about the phase, so that run spent ~20
-    turns debugging its test logic against a file that never loaded. The line number was never
-    the missing information; the phase was.
-    """
+    """A selftest failure means two opposite things and the author needs to know which."""
     at_import = format_observation({
         "kind": "write_util", "name": "doc", "selftest_ok": False, "output":
         'exit 1\nstderr:\nTraceback (most recent call last):\n'

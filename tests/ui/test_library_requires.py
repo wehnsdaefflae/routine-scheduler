@@ -1,11 +1,4 @@
-"""The Library's requires panel offers exactly what a permission doc may require.
-
-The panel kept its own list: it offered memory_read/memory_write (base kinds every routine
-holds — the PUT refused them with a 422) and a "previous runs" select (a SETTING the routine's
-owner chooses, which a doc may never require — refused too), and it left out the capabilities
-the server does accept (shell, write_rule, schedule_run, …). It now offers the server's own
-list, sent by /api/library as `capability_actions` (grants.CAPABILITY_ACTIONS).
-"""
+"""The Library's requires panel offers exactly what a permission doc may require."""
 
 from __future__ import annotations
 

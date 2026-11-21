@@ -1,20 +1,4 @@
-"""D141 — the run gate is reachable from the console, beside the schedule.
-
-The gate itself (F457) has been built and wired into admission for some time:
-`daemon/run_gate.admit` is consulted in `Runner._supervise` before the engine subprocess is
-created, and `PATCH /api/routines/{slug}` has accepted `run_gate` all along. What did not
-exist was any way to SEE or SET it without hand-editing `routine.yaml` — so a feature built
-to save budget was reachable only by someone who already knew it was there, and a routine
-silently not running looked exactly like a routine that was broken.
-
-The operator chose where it goes (2026-09-21): *"On the config page beside the schedule"* —
-a gate decides WHETHER a scheduled fire becomes a run, so it belongs with WHEN it fires,
-under the Schedule section's own save.
-
-These pin the contract that control needs: the current state is readable, a change persists,
-and the same save can carry the schedule and the gate together without either clobbering
-the other.
-"""
+"""D141 — the run gate is reachable from the console, beside the schedule."""
 
 from __future__ import annotations
 

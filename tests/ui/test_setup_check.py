@@ -54,9 +54,6 @@ def test_a_note_renders_without_making_the_strip_look_broken(ui_page, ui):
     """The three severities have to READ apart, or the strip is a wall of equal-looking rows.
     A routine that may rewrite its own instructions is the note case: intended for an
     improver, worth saying out loud everywhere else, and nothing is failing.
-
-    (What each severity MEANS is pinned in tests/test_surface.py — the store cannot be seeded
-    from here, so this asserts what the page can actually show: the row, its class, its wording.)
     """
     path = ui.routines / "uir" / "routine.yaml"
     cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -184,12 +181,6 @@ def test_a_card_verdict_is_a_badge_in_its_state_colour(ui_page, ui):
 def test_a_toggle_states_both_sides_and_when_to_hold_it(ui, ui_page):
     """Operator, 2026-08-30: the descriptions "don't provide actionable information" and "the
     control element is a toggle?! how are you supposed to know what 'on' means?!".
-
-    Neither the doc's TITLE nor its BODY can answer that. A title names a topic ("ask policy —
-    when and how to involve the user"); the body is written to the RUN in the imperative ("read
-    the error before you try again"), which instructs the agent rather than describing anything
-    to the person choosing. A toggle is a COMPARISON, so the row carries both sides plus the
-    decision it actually asks: is this one for THIS routine?
     """
     ui_page.goto(f"{ui.url}/#/routine/uir")
     unfold(ui_page)
@@ -233,23 +224,7 @@ def test_a_rule_toggle_states_both_sides_too(ui, ui_page):
 
 
 def test_no_effect_row_overflows_the_box_it_is_in(ui, ui_page):
-    """The layout half of the same order — "ugly AND broken" (operator, 2026-08-30).
-
-    Three separate faults shipped in one row, and all three are the same shape: text that
-    silently overflows instead of wrapping, which no assertion about CONTENT can see.
-
-    1. A grid item defaults to `min-width: auto`, so a bare `1fr` text column refuses to
-       shrink below its longest line — the sentence was clipped at the card edge.
-    2. The `when` row carried a `.when` class, which is the console's TIMESTAMP class in
-       base.css and brings `white-space: nowrap`; that one row alone never wrapped.
-    3. `.rule-line`'s template did not line up with its children — `190px` was landing on the
-       checkbox — so the description got an `auto` (max-content) column and the name was drawn
-       on top of it.
-
-    scrollWidth > clientWidth is what all three look like from the outside, so that is the
-    assertion. It is made on the REAL page at a real width, because none of it reproduces in
-    a unit test of the component.
-    """
+    """The layout half of the same order — "ugly AND broken" (operator, 2026-08-30)."""
     ui_page.set_viewport_size({"width": 1400, "height": 1000})
     ui_page.goto(f"{ui.url}/#/routine/uir")
     unfold(ui_page)
@@ -288,16 +263,6 @@ def test_cards_keep_real_columns_on_a_phone_viewport(ui, ui_page):
     """The mobile half of "the cards look awful and are broken on mobile" (operator,
     2026-08-31, screenshots). At a phone width the ≤620px grid templates dropped content into
     the wrong column:
-
-    - a stack row's entity auto-flowed into the 9px DOT column, so a value like `detach`
-      wrapped one letter per line down the card;
-    - an available ability's on/off/when block auto-flowed into the narrow CHECKBOX column,
-      wrapping the sentence to one word per line;
-    - the rule row kept the "full description" expander in a ~150px side column that left the
-      effect text a third of the row.
-
-    A crushed column is a box a few px wide, so width is the assertion — made on the real page
-    at a real phone width, because none of it reproduces below the breakpoint.
     """
     ui_page.set_viewport_size({"width": 390, "height": 844})
     ui_page.goto(f"{ui.url}/#/routine/uir")

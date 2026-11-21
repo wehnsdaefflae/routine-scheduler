@@ -1,9 +1,4 @@
-"""reflinks.js turns every item id in maintenance prose into a link — however many digits.
-
-The pattern was capped at four digits while the `R` namespace was about to pass R10000; an id
-past the cap stayed plain text. Evaluated in the browser ESM context against the module the
-console serves.
-"""
+"""reflinks.js turns every item id in maintenance prose into a link — however many digits."""
 
 from __future__ import annotations
 
@@ -29,9 +24,6 @@ def test_an_item_id_past_four_digits_still_links(ui, ui_page):
 def test_a_reference_says_what_the_thing_is_not_only_its_id(ui, ui_page):
     """The operator's requirement, 2026-11-12: *"worst case scenario is content i need to know
     about being referenced only by an identifier"* — so a ref carries the thing's subject.
-
-    The id STAYS in the link text: he names items by id when he answers, and a link whose id
-    he cannot read cannot be quoted back.
     """
     ui_page.goto(ui.url)
     ui_page.wait_for_selector(".topbar")

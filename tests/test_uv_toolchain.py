@@ -1,14 +1,4 @@
-"""Where uv may put a MANAGED PYTHON — the default every jailed subprocess inherits.
-
-R3631 (llmsectest-weekday, 2026-11-20): a run could not obtain a second interpreter.
-`uv venv --python 3.10` dies because `~/.local/share/uv` does not exist and
-`/home/<user>/.local/share` is root-owned, so nothing inside the jail can create it —
-`sandbox._HOME_RW` lists the path, but `landlock` skips a rule path that does not exist and the
-toolchain list has no bootstrap of its own. `~/.cache` IS owned by the daemon user and IS a
-jail-RW toolchain root, and uv creates a missing install dir itself, so the repair is a default.
-Measured on the host before the change: with `UV_PYTHON_INSTALL_DIR` under `.cache/uv/python`,
-`uv venv --python 3.10` downloaded CPython 3.10.21 and produced a working interpreter.
-"""
+"""Where uv may put a MANAGED PYTHON — the default every jailed subprocess inherits."""
 
 from pathlib import Path
 

@@ -1,12 +1,5 @@
 """The ACTION SCHEMA section: a compact field index where the wire enforces the schema, the
 full dump where it does not.
-
-Measured 2026-11-12 over 21 live run captures: the dumped section averaged 28,189 chars of a
-108,666-char prompt, 26,143 of them `description` prose for a schema `endpoint.complete`
-already puts on the wire — enforced, descriptions included. These tests hold the two halves
-that make dropping the copy safe: the index still carries what the FLAT schema cannot (which
-fields belong to which kind), and the full dump comes back for every wire that enforces
-nothing.
 """
 
 from __future__ import annotations

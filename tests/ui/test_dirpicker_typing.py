@@ -1,23 +1,4 @@
-"""The directory picker's opening listing must not overwrite what the reader has typed.
-
-F853. `dirpicker.js` focuses the path field on open — typing a path IS the way in, pinned by
-`test_the_folder_picker_is_a_keyboard_dialog`. But the opening listing is still in flight while
-those first keystrokes happen, and its write-back (`pathInput.value = data.path`) had no guard
-against them: it replaced the reader's text with the daemon's home directory. The next "go" then
-read the field it had just clobbered and browsed the wrong folder.
-
-The existing `latest`/`mine` sequence guard does not cover this. It discards a SUPERSEDED
-listing — one whose own `load()` has been overtaken — so it protects the window AFTER "go" is
-clicked and not the window between typing and clicking, which is the one a reader is in.
-
-WHY THESE TESTS HOLD THE REQUEST INSTEAD OF RACING IT. The symptom in the wild was a flake:
-`test_the_folder_picker_keeps_its_height_whatever_the_folder_holds` was re-run 20 times across
-eight release gates — the most re-run node in the suite — and the gate's own serial re-run lost
-a release cycle to it on 2026-11-07. Its aria snapshot showed the field holding `/home/mark`:
-neither what the test typed nor a prefix of it. A test that waits for a race to happen is the
-same flake with a different owner, so the listing is HELD by `page.route` and released at the
-exact moment that makes the defect certain.
-"""
+"""The directory picker's opening listing must not overwrite what the reader has typed."""
 
 from __future__ import annotations
 

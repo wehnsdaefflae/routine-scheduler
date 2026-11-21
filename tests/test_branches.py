@@ -1,9 +1,4 @@
-"""Conversation branching (F325): fork at a turn, and hand a branch's result back.
-
-The two invariants these exist for: a branch **cannot mutate the original** (that is the whole
-point of copying rather than sharing), and merging is a **hand-back, never a transcript merge**
-(two divergent histories cannot be interleaved into one coherent conversation).
-"""
+"""Conversation branching (F325): fork at a turn, and hand a branch's result back."""
 
 from __future__ import annotations
 

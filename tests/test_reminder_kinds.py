@@ -1,13 +1,4 @@
-"""D152-C step 1 — the reminder's TRIGGER is a named kind, not always the action string.
-
-Today every reminder matches the canonical ACTION rendering before the action runs. The
-operator's decision (D152, option C, 2026-09-27) is that a hook may also watch what came BACK
-(`result`), what the model SAID that turn (`prose`), and the special turns (`turn:first`,
-`turn:finish`, `turn:question`, `turn:answer`, `turn:error`).
-
-The regression that matters most is the first class: every reminder written before this change
-has no `kind` field at all, reads as `action`, and must behave exactly as it did.
-"""
+"""D152-C step 1 — the reminder's TRIGGER is a named kind, not always the action string."""
 
 import json
 

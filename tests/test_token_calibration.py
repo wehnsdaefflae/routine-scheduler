@@ -1,11 +1,4 @@
-"""The token estimate is calibrated against what the provider ACTUALLY counted.
-
-`estimate_input_tokens` is 3.5 UTF-8 bytes per token — a packing guess — and the compaction
-gates compare it against a real window. Running light meant the gate never fired and the
-turn died at the provider instead (self-audit 20260921-000321: four `prompt is too long`
-400s in one run). Every completion already reports the true prompt size, so the ratio is
-measured on the turn that came back and applied to the next one.
-"""
+"""The token estimate is calibrated against what the provider ACTUALLY counted."""
 
 from __future__ import annotations
 

@@ -1,28 +1,4 @@
-"""BALLOON_RATIO is a MEASUREMENT, and this file is what keeps it one (D181).
-
-The threshold was 1.5× from the heuristic's first day — a guess, and a wrong one: over 1063
-adjacent 5-vs-5 windows of this instance's own usage stream (1594 folded depth-0 runs, 210
-actors, measured 2026-10-13) ordinary run-to-run variation in TOKENS ran median 1.04, p75 1.38,
-p90 2.09, p95 2.73, max 7.16. So 20.4% of windows cleared 1.5× with nothing having changed, and
-`cost_trend_degraded` reported normal variation as regression. The operator chose the p95
-(2.7) on 2026-10-15.
-
-On 2026-10-17 the cost half of the heuristic moved from `tokens` (fresh + output, which leaves
-the prompt cache out) to VOLUME — the whole context the model processed — and the band was
-measured again on the backfilled stream: 740 adjacent windows over 76 actors, median 1.10, p75
-1.42, p90 2.04, p95 2.51, max 5.76. 2.7 stays outside it; VOLUME_FLOOR is that measurement's
-median absolute window-to-window change (2,179,949), rounded to 2,000,000.
-
-Two things must stay true, and neither is visible from the constant alone:
-1. the figure stays at or above the measured p95 — a future "let's catch more" tightening
-   walks straight back into the noise band, and nothing but this file would say so;
-2. the largest window the instance has produced still fires, so raising the bar did not buy
-   quiet by going blind.
-
-Every number below is a real window off this instance, not an invented one. The floors
-(TURNS_FLOOR / VOLUME_FLOOR) are met in each ordinary case on purpose: only the RATIO can
-decide them, which is what makes them a test of this constant rather than of the floors.
-"""
+"""BALLOON_RATIO is a MEASUREMENT, and this file is what keeps it one (D181)."""
 
 from rsched.readmodels.run_health import (
     BALLOON_RATIO,
@@ -53,13 +29,7 @@ def _window(**kw):
 
 
 def test_ratio_stays_outside_the_measured_noise_band():
-    """The constant may rise; it may not fall back inside ordinary variation.
-
-    At the p90 (2.09) one window in ten of UNCHANGED routines clears the bar. The chosen
-    figure is the p95 rounded down to one decimal, so ~5% still do — that is what a p95 is,
-    and the absolute floors carry the rest. Anything below this is not a threshold, it is a
-    sampling of the instance's own noise.
-    """
+    """The constant may rise; it may not fall back inside ordinary variation."""
     assert BALLOON_RATIO >= 2.7, (
         f"BALLOON_RATIO={BALLOON_RATIO} is under the measured p95 ({MEASURED_P95}) of "
         f"ordinary adjacent-window variation over {MEASURED_WINDOWS} windows — the band the "
@@ -125,13 +95,7 @@ MEASURED_TURNS_ABSDELTA_MEDIAN = 13   # ordinary |turn-median change| over 1,110
 
 
 def test_one_extra_failure_in_a_window_is_flake_and_two_is_a_pattern():
-    """FAIL_RATE_JUMP's stated reason, as behaviour rather than arithmetic in a comment.
-
-    MEASURED: +0.4 sits at the p99 of ordinary 5-vs-5 variation and flags 40 of 1,412 unchanged
-    windows. It is also the only value distinct from 0.2 — a 5-run fail rate can only move in
-    steps of 0.2, so a threshold of 0.3 flags exactly the same 40 windows while 0.2 flags 201.
-    So this pin is on the STEP, which is what the constant actually selects.
-    """
+    """FAIL_RATE_JUMP's stated reason, as behaviour rather than arithmetic in a comment."""
     ok = _window()
     one_bad = [_rec(status="failed"), *[_rec() for _ in range(4)]]
     two_bad = [*[_rec(status="failed") for _ in range(2)], *[_rec() for _ in range(3)]]

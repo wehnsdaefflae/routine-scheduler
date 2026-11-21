@@ -1,8 +1,4 @@
-"""A gateway that REFUSES the connection is waited out, not failed over (2026-11-19).
-
-Every model route leaves through one gateway (Otari). It restarted for 14 s, and three tries in
-~3 s failed both rungs of Opus's chain — both behind the same refused port — so the run ended.
-"""
+"""A gateway that REFUSES the connection is waited out, not failed over (2026-11-19)."""
 
 import pytest
 

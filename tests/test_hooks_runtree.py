@@ -1,16 +1,4 @@
-"""RUN-TREE hooks — F695 as a case of the one mechanism (D152 step 3).
-
-What these pin is the thing the finding measured: before this, a child could speak to its
-parent only by EXITING, a parent could speak to a child only at spawn time, and
-`control.drain_injections` returned immediately for any `ctx.depth > 0`, so a child drained
-nothing at all. Each test below is one of those seams, plus the two rules the design says fall
-out of the five fields:
-
-1. the run tree is the only addressing scheme — a SIBLING is refused, by name, and told to go
-   through the parent that holds the labels;
-2. nothing here can change control flow — delivery rides a turn boundary the addressee was
-   going to take anyway, so a messaged child stays killable and buys no extra turn.
-"""
+"""RUN-TREE hooks — F695 as a case of the one mechanism (D152 step 3)."""
 
 from __future__ import annotations
 

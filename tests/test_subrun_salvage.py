@@ -1,19 +1,4 @@
-"""F732: a RESUMED run must not lose the children an earlier leg started.
-
-The live registry (`SubrunManager.subruns`) is in-memory, so a resumed leg builds a fresh,
-empty one while `runs/<ts>/sub/<n>/` still holds every child directory — one with a finished
-hand-back in `artifacts/`. The operator asked for SALVAGE, not recovery (2026-10-19): the
-work on disk must be visible and named, and the reassuring sentence "no sub-workflows
-spawned this run" must never be printed over a tree that holds children.
-
-What is pinned here:
-  * a child directory on disk becomes a row, marked `orphaned-by-resume`, carrying its dir;
-  * a LIVE child's row is unchanged, and a child both live and on disk is reported ONCE
-    (the live row wins — it has the thread, the turn count and the summary);
-  * the empty-case prose distinguishes "no record in THIS leg" from "none ever spawned";
-  * `wait` and `kill` REFUSE an orphaned n with prose that says why it cannot be addressed,
-    rather than the generic "no sub-workflow N" that reads as "it never existed".
-"""
+"""F732: a RESUMED run must not lose the children an earlier leg started."""
 
 from __future__ import annotations
 

@@ -88,11 +88,6 @@ def test_the_routine_token_reads_no_wider_than_the_sandbox(tmp_path, make_routin
     three GET subtrees were one curl away from exactly what that jail forbids: any directory
     listing on the host (api_fs's own docstring calls names-only "still reconnaissance"),
     every secret NAME with the utils declaring it, and the daemon's stacks.
-
-    Nothing logged it as a boundary crossing, because it is an authorized GET. The reads a
-    run genuinely uses (the 2026-08-05 rsched-api survey: items, questions, routine cards,
-    the runs index, status, stats) stay open, and the refusal names `read_file` — the way a
-    run reaches a file it may actually read.
     """
     make_routine(slug="apir")
     server = make_test_server(tmp_path, routine_token="routine-tok")
@@ -148,11 +143,6 @@ def test_engine_injects_the_routine_token_for_the_reserved_name(monkeypatch):
     """The util-side override: RSCHED_API_TOKEN resolves to the server's routine_token
     (beating any secrets-store value in the _child_env merge), so utils talk to the API
     on the read-only tier.
-
-    UNCONDITIONALLY, which is the seal itself: the override used to be skipped when
-    `routine_token` was empty, and `scoped_env` then injected the central store's row for
-    the name — which on the live instance was the PRIMARY console token. An empty tier now
-    reaches the util as an empty string and fails visibly against a 401.
     """
     from types import SimpleNamespace
 
@@ -592,10 +582,6 @@ def test_run_file_serves_a_path_under_the_routines_granted_read_roots(client):
     a chip the console could never honour. The operator's ruling (2026-10-08): *"How can the
     file that is read be outside the routine's permitted paths? If the routine can access it,
     the Web UI should also be able to"*.
-
-    The roots are resolved ON THE CALL, never recorded, so revoking the grant stops the serving
-    at once — and the card's `servable` flag comes from the same predicate, so the chip and the
-    route can never disagree again.
     """
     import yaml
 
@@ -1398,16 +1384,7 @@ def test_allow_forever_on_a_capability_entity_rides_the_cascade(client):
 
 
 def test_permissions_put_persists_remove_util_under_its_canonical_source(client):
-    """R2 endpoint-level, two things at once.
-
-    The canonical-source FALLBACK: for a library whose doc does not yet name a gated kind,
-    the SAVE path's floor must carry an explicit opt-in, or the toggle silently reverts to
-    unchecked on save (the pre-0.76.0 bug). Since 0.226.0 remove_util's canonical source is
-    `util-removal`, so that is the doc the fallback keys on.
-
-    And the SPLIT itself: holding `util-authoring` no longer floats remove_util past the
-    floor. While the two were fused, every routine allowed to CREATE a util could also
-    DELETE one — the whole point of separating them is that this save now strips it."""
+    """R2 endpoint-level, two things at once."""
     c, tmp = client
     perms = tmp / "library" / "permissions"
     perms.mkdir(parents=True, exist_ok=True)
@@ -2503,10 +2480,7 @@ def test_patch_routine_applies_permissions_through_the_canonical_resolve(client)
     PATCH routes them to the permissions surface's own two-layer resolve instead of the generic
     top-level merge. Before this, both keys hit RoutinePatch's extra="forbid" and 422'd, so a
     decision could propose every part of a routine's config except its authority.
-
-    Pins the three things that make it safe: the same cascade the editor applies (raise to the
-    held docs' requires, floor back to them), both keys named in `updated` so the Decisions
-    page's honesty gate (R102) sees them as applied, and NO bare unvalidated key left behind."""
+    """
     c, tmp = client
     perms_home = tmp / "library" / "permissions"
     perms_home.mkdir(parents=True, exist_ok=True)
@@ -2659,8 +2633,6 @@ def test_the_file_endpoint_edits_the_recipe_and_nothing_that_has_an_owner(client
     `routine.yaml` through this door bypasses RoutinePatch's extra="forbid", the permission
     floor, the rescan and the live-run signal; `state/finish-line.json` has an
     endpoint documented as its only writer, and the engine owns `.memory/INDEX.md` and LEDGER.
-
-    The recipe stays editable — that is what this endpoint is for, `.memory/` notes included.
     """
     c, tmp = client
     ok = c.put("/api/routines/apir/file",

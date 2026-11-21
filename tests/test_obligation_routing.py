@@ -1,13 +1,4 @@
-"""An obligation says WHO its next move is on, and the owed-work sweep routes it (2026-11-19).
-
-The blocked-work list carried seven routines' `obligation_overdue` rows, and most of them could
-never be cleared by the routine named: a video only the operator can approve, a payment only he
-can make, a host change no sandbox reaches, a film not released yet, a feature another routine
-owes. Each run re-answered "unmet" for them forever. So an unmet goal may say
-`b<n> waits on <who>: <act>` (engine/accounting.py): `operator` → ONE Decisions card he settles
-(done / drop / still wanted), `external` → parked for `EXTERNAL_DAYS`, a routine that runs →
-that routine's move. Only what the routine itself owes stays overdue work.
-"""
+"""An obligation says WHO its next move is on, and the owed-work sweep routes it (2026-11-19)."""
 
 from __future__ import annotations
 

@@ -1,9 +1,5 @@
 """The `decide` action (engine/decideaction.py): its contract, its evidence, its observation,
 and the one rule that keeps it off an instance with no decision model.
-
-The provider call is replaced at the adapter (`OpenAIDecisions.decide`), so a whole scripted run
-exercises the real path — validation, routing, file gathering, usage, rendering — without a
-network.
 """
 
 from __future__ import annotations

@@ -1,22 +1,4 @@
-"""The phone's bottom navigation bar — one file for the whole contract.
-
-F439 was reported as "the bottom bar shows about five of the nine destinations" (eight since
-0.294.0, when Summary folded into Messages) and closed as
-resolved, because its guard counted items against `window.innerWidth`. On a phone that value IS
-the layout viewport, and the layout viewport is exactly what a horizontally-overflowing document
-expands — so the guard measured the symptom's own cause and always agreed with it.
-
-The bar is `position: fixed; inset: auto 0 0 0` (base.css), which resolves against the initial
-containing block, i.e. the LAYOUT viewport. One unbreakable token in a transcript — a commit sha,
-a run id, a base64 blob — widens the document, the layout viewport follows, the bar is laid out
-across that wider box, and the icons past the screen's edge are simply off to the right. So the
-invariant that actually holds the bar together is not about the nav at all:
-
-    the document must never scroll sideways.
-
-Both tests below clip against the width the test itself emulated, never against anything the page
-can influence.
-"""
+"""The phone's bottom navigation bar — one file for the whole contract."""
 
 from __future__ import annotations
 
@@ -78,14 +60,7 @@ def _fits(ui_page, selector: str, width: int) -> int:
 
 
 def test_mobile_bottom_nav_shows_every_destination_over_a_wide_transcript(ui, ui_page):
-    """F439's own assertion, kept — but it is the WEAKER of the two here, and knowing why matters.
-
-    Desktop Chromium under Playwright resolves `position: fixed` against the emulated viewport and
-    does not grow a layout viewport the way mobile Chrome does, so this count stays 9 even on a
-    document that scrolls sideways. It guards the nav's shape (every link present, none hidden by
-    a rule);
-    the test below is what guards the operator's actual symptom.
-    """
+    """F439's own assertion, kept — but it is the WEAKER of the two here, and knowing why matters."""
     _seed_wide_transcript(ui, "uir", "20260904-000353")
     ui_page.set_viewport_size(PHONE)
     ui_page.goto(f"{ui.url}/#/run/uir:20260904-000353")
@@ -142,13 +117,7 @@ FOUR_WINDOW_QUOTA = {
 
 
 def test_the_subscription_quota_chip_cannot_widen_the_dashboard_on_a_phone(ui, ui_page):
-    """The chip carries ONE window, and the document still does not scroll sideways.
-
-    The route test above cannot reach this: the chip renders only when an endpoint reports
-    `has_subscription_quota` AND its quota read succeeds, which no seeded harness produces — so
-    the widest widget on the dashboard was invisible to the suite that exists to catch exactly
-    this. Both API calls are stubbed here for that reason.
-    """
+    """The chip carries ONE window, and the document still does not scroll sideways."""
     ui_page.route("**/api/settings/endpoints", lambda route: route.fulfill(
         status=200, content_type="application/json",
         body=json.dumps({"endpoints": [{"name": "claude-proxy", "kind": "anthropic",

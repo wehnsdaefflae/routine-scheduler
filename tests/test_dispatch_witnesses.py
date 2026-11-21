@@ -1,22 +1,4 @@
-"""What the escalation dispatch may CLAIM about its own evidence (R3320/R3325, `fau`).
-
-The ladder's value is one comparison: the worker's account against the engine's counts.
-`engine/oversight.py`'s header states the premise — *"the party under suspicion must not be
-the only witness"* — and the supervisor prompt is where that premise can be broken by a
-sentence, because a rung reads nothing but the dispatch it is handed.
-
-MEASURED (`fau` filed it twice, R3320 then R3325): the prompt told the supervisor the dispatch
-carried "its own answers to 3 questions". Nothing had asked the worker anything and no turn
-was ever spent doing so — `ladder._worker_answers` returns `turn_records[-3:]`'s `say` lines,
-and `oversight.build_dispatch` already puts EVERY say line of the interval in `says`. So the
-tail is a SUBSET of what the rung was already reading, and the cross-check was one witness
-quoted twice. The failure is invisible by construction: a rung comparing one source against
-itself reports, truthfully as far as it knows, that it compared two.
-
-These live in their own module because `tests/test_ladder_trigger.py` is at its size-ratchet
-ceiling (506) and an over-bar file may only shrink; the helpers come from it by the flat-import
-pattern ten sibling test modules already use.
-"""
+"""What the escalation dispatch may CLAIM about its own evidence (R3320/R3325, `fau`)."""
 
 from __future__ import annotations
 

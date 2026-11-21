@@ -1,30 +1,5 @@
 """The capability refusal a run earns AGAIN — answered from the first refusal instead of being
 dispatched a second time (F762).
-
-MEASURED: `vodafone-outage-claims:20261023-024513` re-emitted a write to its OWN `main.md` at
-turns 17, 18, 19 and 34; `moltbook-heartbeat:20261023-172052` at turns 34 and 35. Every attempt
-was refused by the same gate (`grantpolicy.GrantPolicy.deny`, the recipe clause), whose text
-already names the right route — so the defect is not the wording. It is that nothing of the
-refusal survives the turn: the rejected reply and its correction are dropped as debris the
-moment the turn recovers (`engine/turndebris.py`), leaving the next turn to read the run's own
-reasoning and no refusal at all. The specimen says so itself at turn 18 — *"I have to correct
-myself … I never attempted one"* — and then attempted it again.
-
-Three things this file pins:
-
-* a CAPABILITY refusal leaves a DURABLE line in the prompt, so the turn after it can read that
-  the action was refused and that the refusal holds for the whole run;
-* a second identical attempt is answered as a REPEAT, naming the turn it was first refused at,
-  the permanence, and the route the refusal already names;
-* a refusal that could legitimately succeed later — a schema rejection, a missing field, a
-  transient fault — is NOT memoized and never claims permanence. That distinction is the whole
-  safety of the mechanism: a run making progress through different mistakes must not be told
-  its next attempt is hopeless.
-
-…and one anti-requirement, held as a regression guard: a repeat must never END the run
-(`test_a_repeated_capability_attempt_does_not_end_the_run`). F736 recorded what that costs — a
-rule that killed a run at its second identical rejection would have discarded 396 turns of
-finished work.
 """
 
 from __future__ import annotations
@@ -81,12 +56,7 @@ def _is_correction(call: dict) -> bool:
 
 
 def _turn_asks(ep) -> list[dict]:
-    """The calls that ask for a FRESH turn — every call whose last message is not a correction.
-
-    One per turn (plus the kickoff's), so `_turn_asks(ep)[1]` is the prompt the model reads when
-    it chooses turn 2's action: exactly where a refusal earned at turn 1 either survives or does
-    not.
-    """
+    """The calls that ask for a FRESH turn — every call whose last message is not a correction."""
     return [c for c in ep.calls if not _is_correction(call=c)]
 
 
@@ -239,11 +209,7 @@ def test_a_repeated_capability_attempt_does_not_end_the_run(make_routine, script
 
 
 def _fake_loop(policy: GrantPolicy, turn: int = 0) -> SimpleNamespace:
-    """A loop stub with the two things an engine note needs: a message list and a transcript.
-
-    Both are what the real loop always carries — a note that is appended without being RECORDED
-    would vanish on resume, which is the defect `engine/enginenote.py` exists to prevent.
-    """
+    """A loop stub with the two things an engine note needs: a message list and a transcript."""
     recorded: list[tuple] = []
     transcript = SimpleNamespace(event=lambda *a, **k: recorded.append((a, k)))
     loop = SimpleNamespace(ctx=SimpleNamespace(turn=turn, transcript=transcript),

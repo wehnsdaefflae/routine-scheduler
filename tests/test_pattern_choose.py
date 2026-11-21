@@ -1,8 +1,4 @@
-"""Which settings pattern a routine follows when no pick can be made (decided 2026-11-05).
-
-`patterns/recommend.choose` used to fall back to whichever pattern sorted first — an alphabetical
-accident presented as a recommendation. The neutral `one-job` pattern is the fallback now.
-"""
+"""Which settings pattern a routine follows when no pick can be made (decided 2026-11-05)."""
 
 from __future__ import annotations
 

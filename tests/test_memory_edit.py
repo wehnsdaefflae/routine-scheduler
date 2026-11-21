@@ -1,19 +1,4 @@
-"""memory_write EDIT MODE — `anchor`/`replacement` against an existing note (R2432/R2456).
-
-Revising a mature note meant re-emitting all of it. `vodafone-outage-claims` composed a
-104-line revision of `vodafone-case-state`, was rejected at the 100-line cap, hand-trimmed it
-and composed it again — on a note created by the FIX for the same problem one day earlier
-(R2391 split one topic into four, which buys headroom and does not change the mechanism: each
-note grows back toward the cap and the same rejection returns).
-
-An in-place edit means a run adding facts to a 95-line note never re-emits the note.
-`edit_file` and `write_util` already carry the mode; this is the third caller of the same
-`authoring.anchor_edit` helper, so an anchor failure teaches the same route.
-
-The cap itself is gone (P3: a guard whose fix is mechanical applies it): every refusal it made —
-five tests here once pinned their numbers, R2610/R2753/R2773 — was a run trimming text to fit a
-length nothing else depended on. A note past the advised size now LANDS and is told by how much.
-"""
+"""memory_write EDIT MODE — `anchor`/`replacement` against an existing note (R2432/R2456)."""
 
 from __future__ import annotations
 

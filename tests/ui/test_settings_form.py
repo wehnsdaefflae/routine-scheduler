@@ -1,15 +1,4 @@
-"""The routine page's settings as ONE form: every control edits a draft, one accept saves it.
-
-The page used to save each section on its own button, so a person changing four things pressed
-four buttons and a proposal spanning four sections had nowhere to live. Now the page reads the
-routine's settings as one document, a changed value is marked where it sits (and in the group
-that folds it away), and a single "accept changes" at the foot of the viewport sends every
-change the person kept. A value that departs from the routine's settings PATTERN is marked too —
-as an override, in a different colour, because it waits on nobody.
-
-The disk is the proof throughout: a draft that never reached `routine.yaml` is the bug class
-this file exists to catch; a mark that stays after its change was accepted is the other.
-"""
+"""The routine page's settings as ONE form: every control edits a draft, one accept saves it."""
 
 from __future__ import annotations
 

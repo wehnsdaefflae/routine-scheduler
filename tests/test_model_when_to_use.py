@@ -1,15 +1,4 @@
-"""A catalog model carries a "when to use" note, and `list_models` returns it — D279(a).
-
-A run choosing a `model` for `spawn`/`subtask`/`llm`, or a `role_swap` position, sees a catalog
-of NAMES. Nothing told it that one model is cheap and blunt, that another is the only one here
-with vision, or that a third is rate-limited to uselessness before noon. The operator knows all
-three and had nowhere to write them.
-
-What is pinned here: the field exists and survives the settings round trip, `list_models`
-returns it beside the name, an UNSET note prints nothing at all (an empty value would read as
-"no opinion recorded" where there is simply no field), and — the part that keeps it honest —
-nothing in the engine READS it to decide anything. It is advice, not a routing rule.
-"""
+"""A catalog model carries a "when to use" note, and `list_models` returns it — D279(a)."""
 
 from __future__ import annotations
 

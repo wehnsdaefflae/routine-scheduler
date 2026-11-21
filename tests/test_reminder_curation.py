@@ -1,22 +1,4 @@
-"""D231 — the curator may retire a reminder row in ANOTHER routine's store, running or not.
-
-The operator's answer: "Give rules-review a way to delete/annotate a reminder row in a DISABLED
-routine's store (an engine capability or a census verb), since no report can reach a routine that
-never runs" — with a preference the design turns on: "prefer ANNOTATE-AS-DEAD over DELETE, so a
-row's hold tally survives", because "a deletion loses the tally that proves the pattern was too
-broad".
-
-The four rows four consecutive curation passes (2026-10-29 … 2026-11-01) could not dispose of are
-the fixtures here, tallies and all. The invariants under test:
-
-- an annotated row KEEPS its whole tally and stops firing;
-- the annotation says who retired it, when, and WHY;
-- the holder's own later writes carry the annotation instead of dropping it;
-- a routine without the curator's dial (`reminders: global`) is refused, and the refusal names
-  what is missing;
-- the target routine being `enabled: false` makes no difference — that is the whole point;
-- `op=delete` with a `target` is still there, for a row with no evidence worth keeping.
-"""
+"""D231 — the curator may retire a reminder row in ANOTHER routine's store, running or not."""
 
 import yaml
 

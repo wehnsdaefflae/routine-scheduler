@@ -133,10 +133,6 @@ def test_a_serial_selection_is_not_charged_the_four_worker_price():
     3,584 MB — about four times its own measured hold — and on 2026-11-12 that refused ~12 gate
     calls, including a release gate's whole FAST stage and three child runs that handed back
     built items with no test evidence at all.
-
-    `-n 0` leaves `dist == "no"` and `numprocesses == 0`; the default selection resolves to
-    `worksteal` with 4 (measured on this box, pytest 9.1.1 / xdist 3.8.0). The browser suite is
-    priced by its markers instead, because its cost is the Chromiums rather than the workers.
     """
     serial = types.SimpleNamespace(option=types.SimpleNamespace(dist="no", numprocesses=0))
     fast = types.SimpleNamespace(option=types.SimpleNamespace(dist="worksteal", numprocesses=4))
@@ -177,27 +173,7 @@ def test_the_message_says_which_selection_it_priced(monkeypatch, capsys):
 
 
 def test_the_fast_budget_still_covers_the_worker_count_it_claims_to():
-    """The two halves must move together — nothing has ever checked that they do.
-
-    `memgate`'s own docstring says its needs ARE "the measured peaks of the selections: the fast
-    suite at FAST_WORKERS workers (~250 MB each, plus the controller)". That makes `NEED_MB`
-    arithmetic over a constant in another module, so raising `FAST_WORKERS` without raising
-    `NEED_MB` leaves the guard describing a selection that no longer exists — silently, because
-    a too-small budget does not fail, it merely stops waiting when it should have waited.
-
-    THE FLOOR IS NOW THE MEASURED COST (2026-11-10, goal b8), and the old one was too weak to
-    catch the violation that was live: at ~250 MB per worker the floor was 1,000 MB against a
-    2048 MB budget, so it passed while the fast stage was really HOLDING 3,367 MB — the guard
-    admitted a selection that could not fit in what it waited for. The gate's sampler now
-    records `held_peak_bytes` (anon + swap, what an OOM is decided on), and over every stage
-    carrying it the fast stage's increment above a bare controller is 2.25 GB median and 2.38 GB
-    at its worst — about 600 MB per worker. `memgate.NEED_MB`'s own comment holds the table.
-
-    So this pins the RELATION at a per-worker cost that is read rather than assumed: raising
-    `FAST_WORKERS` without raising `NEED_MB` now fails, which is the whole point of the test —
-    a too-small budget does not announce itself, it merely stops waiting when it should wait.
-    Either number may still be re-tuned, but not alone.
-    """
+    """The two halves must move together — nothing has ever checked that they do."""
     import browsersource
 
     workers = browsersource.FAST_WORKERS
@@ -222,20 +198,7 @@ MEASURED_FAST_HOLD_MB = 3367
 
 
 def test_the_fast_budget_covers_what_the_stage_was_measured_to_hold():
-    """The check whose absence let the budget be wrong for a week, silently.
-
-    The worker-arithmetic test above pins `NEED_MB` against `FAST_WORKERS`, so it catches the
-    two constants drifting apart — but both can be jointly too small, which is what happened:
-    at the assumed ~250 MB per worker the floor was 1,000 MB, the budget was 2,048 MB, the
-    relation held, and the stage was really holding **3.29 GB**. The gate then waited for 2 GB
-    of headroom and admitted a selection needing 3.3 GB, which is a guard that reports safety
-    it has not checked.
-
-    So this asserts the budget against the MEASUREMENT rather than against the other constant.
-    When a future gate records a higher hold, this is the line to raise — and raising it is a
-    decision about `FAST_WORKERS` too, which is why the number lives here under its own name
-    instead of inside the assertion.
-    """
+    """The check whose absence let the budget be wrong for a week, silently."""
     assert memgate.NEED_MB["fast"] >= MEASURED_FAST_HOLD_MB, (
         f"memgate's fast budget is {memgate.NEED_MB['fast']} MB but the fast stage was measured "
         f"holding {MEASURED_FAST_HOLD_MB} MB (held_peak_bytes, the figure an OOM is decided on) "
@@ -276,13 +239,7 @@ def test_a_real_controller_waits():
 
 
 def test_a_unit_tests_config_stub_never_enters_the_wait():
-    """The regression itself, driven through the REAL hook with the REAL stub shape.
-
-    `tests/test_ui_harness.py` pins the distribution logic by calling `pytest_configure` with a
-    stub carrying only `option`. Asserting on `should_wait` alone would not have caught the
-    defect — the defect was in the hook's call site — so this drives the hook and fails if the
-    wait is entered at all, whatever the box's memory happens to be when the suite runs.
-    """
+    """The regression itself, driven through the REAL hook with the REAL stub shape."""
     import conftest as root_conftest
 
     entered: list[str] = []

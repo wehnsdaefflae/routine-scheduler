@@ -1,15 +1,4 @@
-"""The ONE tag rule: a model's `tags` STRING is split, never iterated per character.
-
-The operator saved a playbook on 2026-11-19 and its tags read `e v a l u a` in the Library
-tab. The cause: the system model answered `"tags": "evaluation…"` where PLAYBOOK_SCHEMA says
-array, and both consumers of a model-supplied tag list did `for t in (data.get("tags") or [])`
-— which iterates a string's CHARACTERS. `playbook_distill` capped the result at 6 and
-`conversations.autolabel` at 3, so the artefact is a row of single letters either way.
-
-`ids.tag_list` is the one place that reduces a tag value to the tag alphabet (beside
-`ids.slugify`, the ONE slug rule), and the playbook lint grew the detector that would have
-caught the live row: nothing did, so `rsched lint --kind playbooks` reported pass on it.
-"""
+"""The ONE tag rule: a model's `tags` STRING is split, never iterated per character."""
 
 from __future__ import annotations
 

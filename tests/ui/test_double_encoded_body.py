@@ -1,18 +1,4 @@
-"""F524 — `api()` stringifies the body, so a caller that stringifies too must be REFUSED.
-
-`api(path, {body})` does `JSON.stringify(body)` unconditionally (static/api.js). A caller
-that passes `JSON.stringify({text})` therefore sends a JSON *string* where the endpoint
-expects an object — and nothing anywhere notices. The request is well-formed, the transport
-succeeds, and the server rejects it (or worse, accepts it) at runtime, in one flow, with an
-error that points at the endpoint rather than at the caller.
-
-122 call sites pass a body. The convention is right in all of them today; it is the NEXT one
-that pays. A wrong answer the caller cannot detect is exactly what must be made loud
-(`make-failure-visible`), so `api()` now throws on a body that is already serialized JSON,
-naming the mistake and the fix.
-
-Evaluated as a pure function in the browser ESM context — deterministic, no network.
-"""
+"""F524 — `api()` stringifies the body, so a caller that stringifies too must be REFUSED."""
 
 
 def test_a_pre_stringified_body_is_refused_with_a_teaching_error(ui, ui_page):

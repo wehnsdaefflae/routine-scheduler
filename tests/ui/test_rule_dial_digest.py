@@ -1,23 +1,4 @@
-"""The settings digest names `rule_confirm`, so an override on it shows a difference (D252c).
-
-`components/settings-digest.js`'s capabilities line named four of the five approval dials —
-`confirm` (util approval), `remind_confirm`, `config_confirm` and `revise_confirm` — and never
-`rule_confirm`. The dial itself has existed since the rule-authoring card gained it
-(`components/abilities.js`), and `rule_confirm` is in `grants.APPROVAL_DIALS`, so
-`effective_settings` has always carried the value into the payload the digest reads: the value
-arrived and nothing rendered it.
-
-What that costs is small and exact: the digest is what a changed-field note, an override note,
-a closed "more" menu and the Library's pattern settings render from — so turning rule approval
-DOWN (the one direction that matters, since `always` is every routine's default) showed no
-difference anywhere, and a reader comparing two routines could not see that one of them lets a
-rule change land without the operator's click.
-
-Its own file because `tests/ui/test_ability_settings.py`, where the `config_confirm` and
-`revise_confirm` digest assertions live, is 346 lines against the 350-line bar: four lines of
-slack is not room for a test, and buying one by compacting prose in a file that is nearly at a
-ceiling is how the ceiling stops meaning anything.
-"""
+"""The settings digest names `rule_confirm`, so an override on it shows a difference (D252c)."""
 
 from __future__ import annotations
 

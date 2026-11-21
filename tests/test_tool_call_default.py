@@ -1,24 +1,4 @@
-"""The instance-wide default for the `tool_call` role (D230).
-
-The measured defect: of 32 routines exactly one had a distinct `main`/`tool_call` pair, and that
-one only because the operator hand-applied a config_patch for it. Every other routine's
-`role_swap: cheap` turn resolved `tool_call` through `EndpointRegistry.for_model_chain` to the
-SAME value an unset `main` lands on — the server's `system_model` — so the swap saved nothing
-while the run believed it had. The mechanism worked; there was no instance default for the role
-to resolve through.
-
-So `ServerConfig` carries one: `system_tool_call_model` (+ `system_tool_call_effort`, for
-symmetry with the four per-purpose pairs beside it). It SHIPS EMPTY, and the two halves of that
-promise are pinned here because they are the whole scope:
-
-* empty = today's behaviour EXACTLY — an unset `tool_call` keeps falling through to
-  `system_model` at `system_effort`, so nothing changes for any routine at the release;
-* set = it reaches every routine that has no `tool_call` of its own, and nothing else: the
-  routine's own override still wins, and `main` / `uncensored` / `supervisor` are untouched.
-
-WHICH catalog model it should name is the operator's decision and is deliberately absent from
-this file and from every default in the tree.
-"""
+"""The instance-wide default for the `tool_call` role (D230)."""
 
 from __future__ import annotations
 

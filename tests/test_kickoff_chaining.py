@@ -1,20 +1,4 @@
-"""The kickoff must not teach one-action-per-turn.
-
-F836, measured 2026-11-05 over the 60 most recent fleet transcripts: **1 turn of 8,084 carried
-more than one action (0.01%)**, and 16 of 17 routines had never chained once — while
-`engine/chain.py` has been on for every routine since 0.446.0. The mechanism was never the
-problem (`replyactions.reply_actions` reads actions from a reply's text AND from
-`completion.parsed_rest`); the PROSE was: `composer.kickoff_message` said "Reply with ONE JSON
-action object" — the last instruction a run reads before its first action, and a flat
-contradiction of the harness paragraph that says a reply may carry several.
-
-D236 (operator, 2026-11-05, "Free fix, re-measure") split the candidate: the KICKOFF is a
-one-shot boot message outside the ratcheted engine contract, so it is fixed here at no
-always-on cost; the +297-character when-to-chain paragraph the candidate added to the harness
-was declined, so `tests/test_prompt_budget.py` keeps its ceiling and the chaining rate is
-re-measured on the kickoff fix alone. `tests/test_prompt_anatomy.py` separately pins the kickoff
-into `docs/prompt-anatomy.md`, so the doc cannot go stale either.
-"""
+"""The kickoff must not teach one-action-per-turn."""
 
 from __future__ import annotations
 

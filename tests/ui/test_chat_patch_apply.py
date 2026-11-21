@@ -1,16 +1,5 @@
 """F807/R3060: a blocking question carrying a `config_patch` is ANSWERED AND APPLIED in the
 conversation it was asked in.
-
-A routine filed a blocking `ask_user` with a `config_patch` (added Gmail OAuth scopes) and the
-operator reported he could only answer it on the Decisions page, not inline in the conversation
-he was in, and asked why. The run was waiting there and he was reading there.
-
-The pinned panel above the composer (`static/components/answerform.js` `questionPanel`, fed by
-the state stream's status.json question) is the card the operator reads while a run blocks. It
-rendered the question and the answer form and nothing about the proposal — because the live
-question published into status.json carried no patch at all (`engine/interact.py`), so no
-surface could offer the one control that applies it. Both halves are pinned: the engine's, in
-`tests/test_blocking_patch_surface.py`; the operator's, here, by loading what he sees.
 """
 
 from __future__ import annotations
@@ -56,8 +45,6 @@ def _block_on_a_patch(conv_dir, slug: str, *, patch: dict, target: str = "") -> 
 def test_the_chat_question_card_applies_the_patch_it_proposes(ui, ui_page):
     """The whole of R3060: the card where the question was asked carries the proposal and the
     one control that applies it, and the control WORKS — no second page, no hunting.
-
-    Loads what the operator sees (the rendered panel), not an attribute pointing at it.
     """
     slug, conv_dir = start_conversation(ui, ui_page, ASK)
     _block_on_a_patch(conv_dir, slug, patch={"budgets": {"max_turns": 120}}, target="uir")

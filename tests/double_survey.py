@@ -2,23 +2,6 @@
 double-conformance floor. The rules that judge what this module finds, and the design record of
 why each rule is shaped the way it is, live in tests/test_double_conformance.py; this module only
 reads, and is a helper like tests/class_survey.py, not a test module.
-
-TWO READINGS, because the floor has two directions and each catches a defect the other cannot:
-
-  * `suite_doubles()` against `surface()` — what a double ASSIGNS, against what the real class
-    HOLDS. F644's direction: the ladder's fake loop invented `loop.subs` where the real
-    attribute is `subruns`, and the caller agreed with it. An attribute a double assigns that
-    the real class does not have is the violation.
-
-  * `stand_ins()` — a `SimpleNamespace` that IS a real dataclass, recognised by
-    CONSTRUCTIBILITY rather than by name. F766's direction, and the OPPOSITE one: the stand-in
-    at tests/test_util_guard.py:85 assigned `parsed` and `text`, both real `Completion` fields,
-    and broke on the field it OMITTED (`parsed_rest`, added by F754 after the stand-in was
-    written). No check of assigned names can ever see a missing field; the fix is to stop the
-    hand-built surface existing at all where the real class would have constructed.
-
-Nothing here is imported: 81 test modules are slow to import and many of them need fixtures, so
-every reading is `ast` over the source text.
 """
 
 from __future__ import annotations
@@ -143,13 +126,7 @@ def _declared(cls: ast.ClassDef) -> set[str]:
 
 @cache
 def _collaborator_surface() -> dict[str, frozenset[str]]:
-    """`<name>.x = …` anywhere under `src/rsched`, per convention name.
-
-    The reason this function exists: `loop._recipe_unlocked` is read by
-    `loopsetup.build_base_policy` and assigned at `engine/loopsetup.py:155` — the class's own
-    file never mentions it, so reading only `engine/loop.py` would call a REAL attribute a
-    violation. `self.ctx.turn = …` counts too, hence the second branch.
-    """
+    """`<name>.x = …` anywhere under `src/rsched`, per convention name."""
     found: dict[str, set[str]] = {name: set() for name in IMPERSONATED}
     for path in py_files(SRC):
         for node in _assignments(parse_file(path)):
@@ -218,11 +195,7 @@ def _is_dataclass(cls: ast.ClassDef) -> bool:
 
 
 def _fields(cls: ast.ClassDef) -> tuple[frozenset[str], frozenset[str]]:
-    """(every field, the fields that have NO default) from the class body's annotations.
-
-    `field(default_factory=…)` is a default like any other, so it lands outside the second set.
-    A `ClassVar` is not a field and is skipped — it is not a constructor keyword.
-    """
+    """(every field, the fields that have NO default) from the class body's annotations."""
     every: set[str] = set()
     required: set[str] = set()
     for node in cls.body:
@@ -241,18 +214,7 @@ def _fields(cls: ast.ClassDef) -> tuple[frozenset[str], frozenset[str]]:
 
 @cache
 def scoped_dataclasses() -> tuple[tuple[str, str, frozenset[str], frozenset[str]], ...]:
-    """Every dataclass under SCOPE a namespace could stand in for: (name, module, fields, required).
-
-    TWO classes are left out on purpose, and both exclusions are what keep the detector's false
-    positives at zero rather than at eight (the measurement is in the rules file):
-
-      * one with BASE CLASSES — its full field surface is not readable from its own file, so
-        "would this have constructed?" cannot be answered here;
-      * one with NO REQUIRED FIELD — it is constructible from nothing, so it matches every
-        namespace whose keywords happen to be a subset of its fields and names none of them.
-        `GrantPolicy` (20 fields, none required) is that shape, and it alone would have claimed
-        five `SimpleNamespace(libraries_home=…)` server doubles.
-    """
+    """Every dataclass under SCOPE a namespace could stand in for: (name, module, fields, required)."""
     out: list[tuple[str, str, frozenset[str], frozenset[str]]] = []
     for folder in SCOPE:
         for path in py_files(SRC / folder):
@@ -266,13 +228,7 @@ def scoped_dataclasses() -> tuple[tuple[str, str, frozenset[str], frozenset[str]
 
 
 def stand_ins_in(tree: ast.AST, where: str) -> list[StandIn]:
-    """Every `SimpleNamespace(...)` in one parsed module that a scoped dataclass would have built.
-
-    The rule, whole: a namespace whose keywords are all fields of exactly ONE scoped dataclass
-    and which supplies every field that dataclass requires. `D(**kwargs)` would have worked, so
-    the hand-built surface is a choice, and it is the choice F766 was made of. A call carrying
-    `**rest` is skipped — its real keywords are not readable statically, so it is not claimed.
-    """
+    """Every `SimpleNamespace(...)` in one parsed module that a scoped dataclass would have built."""
     found: list[StandIn] = []
     for node in ast.walk(tree):
         if not _is_namespace(node):

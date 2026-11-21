@@ -1,15 +1,4 @@
-"""The GATE over the limits convention — every declared remainder is ADDRESSED to someone.
-
-The scanner it runs on is `tests/limitscan.py`: parsing the CHANGELOG's declaration vocabulary
-and `docs/limits.md`'s entries is one job (a reusable reader, with its own evidence in its
-docstring), and asserting over them is another. They were one file until it crossed the house
-350-line bar, which may only be answered by splitting along a responsibility — and that boundary
-was already written into the file as a comment.
-
-Why the convention exists, in one line: of nine remainders declared between 0.444.0 and 0.445.2,
-the one given a report id was fixed the NEXT DAY and six carried no route at all. `limitscan`'s
-docstring holds the whole measurement.
-"""
+"""The GATE over the limits convention — every declared remainder is ADDRESSED to someone."""
 
 from __future__ import annotations
 

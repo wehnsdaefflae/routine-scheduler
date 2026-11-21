@@ -1,14 +1,4 @@
-"""A bill the wire REPORTS is the usage's `cost` — on both adapters (0.484.0).
-
-Every model call goes through an Otari gateway, which prices each request itself and returns it
-in the usage block as `cost_usd`, a six-decimal USD STRING (a subscription model there is
-`"0.000000"`, its real bill). The anthropic adapter read no reported cost at all, so a
-pay-per-use Claude model through the gateway was metered only by a reference list price — and
-`claude-opus-5-metered`, the gateway's name for the paid route, found none. The rules pinned
-here: the reported figure is read on both wires (OpenRouter's numeric `cost` first), a missing
-or malformed one is NO figure rather than a zero, a re-asked turn sums it as dollars, and a
-`-metered` id is the same model as its subscription twin for its list price and its window.
-"""
+"""A bill the wire REPORTS is the usage's `cost` — on both adapters (0.484.0)."""
 
 from __future__ import annotations
 

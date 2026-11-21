@@ -1,21 +1,4 @@
-"""A `config_patch`'s VALUES, judged where the record is written (`engine/config_values.py`).
-
-`patch_shape` judges the patch's keys and `patch_nested` the inner keys of its mapping fields,
-so a patch whose names are all real reached the Decisions page unjudged — and the operator found
-out it could not be applied by pressing the button. Measured 2026-11-06 on the Questions page
-(`.ui-traces/20261106.jsonl`, `view=questions`), eleven error toasts in nine minutes:
-
-* `measures: List should have at most 6 items after validation, not 7` ×5, 02:25-02:34 — an
-  `outcome` contract with SEVEN measures. `outcome` is a real `RoutinePatch` field, so
-  `patch_shape` passed it, and nothing looked inside.
-* `models.tool_call: must be a catalog model name` ×4, 02:33-02:34 — a role bound to a model
-  this instance does not serve. `patch_nested` judged the role NAME and stopped there.
-
-Nine wasted *approve & apply* clicks. The checks here mirror `web/config_fields.validate_models`
-and `config/outcome.OutcomeConfig` and are deliberately NO STRICTER than the apply: a filing
-check that refuses a proposal the click would have taken loses a change nobody can see was lost.
-The three properties that encode that are `test_what_the_apply_accepts_is_never_refused_here`.
-"""
+"""A `config_patch`'s VALUES, judged where the record is written (`engine/config_values.py`)."""
 
 from __future__ import annotations
 
@@ -128,15 +111,7 @@ def _ctx(server, routine_dir):
 
 
 def test_a_capability_no_held_permission_requires_is_refused_at_filing(make_routine):
-    """THE 2026-11-06 case, and the one shape where the apply button is not dead but LYING.
-
-    `{"capabilities": {"actions": ["write_recipe"]}}` was applied for `deficit-coach` at
-    03:25:57 and recorded `config_patch_applied: true`; the written file came out
-    `actions: [write_util, revise_util]`, because `floor_capabilities` keeps a gated action
-    only while a HELD permission requires it and the routine held `util-authoring` alone.
-    The asking routine then told the target it had been granted the capability, and the
-    target's next run filed a BLOCKING question asking for a grant it had been told it had.
-    """
+    """THE 2026-11-06 case, and the one shape where the apply button is not dead but LYING."""
     asker = make_routine(slug="improver")
     target = make_routine(slug="coachr")
     server = server_for(asker)

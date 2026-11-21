@@ -1,17 +1,4 @@
-"""A question is BLOCK prose, on every surface that shows one.
-
-A run lays out what it found before it asks — the ask-policy rule and the deliberation contract
-both push it to — so an ordinary deferred question arrives carrying a GFM table of counts, a
-numbered list and a fenced snippet. Rendered with the inline-only subset those reach the page as
-literal pipes and asterisks, in the one place a person has to read carefully enough to decide.
-
-Reported from the live console: a freelance-radar question whose whole evidence table
-(`| sent | 17 |`, `| won | 0 |`) sat on the Decisions page as raw markdown while the **bold** and
-the `code` around it rendered — the tell that the renderer was the inline one, not that markdown
-was off.
-
-md() is a superset of mdInline(), so the block renderer costs nothing anywhere it replaced it.
-"""
+"""A question is BLOCK prose, on every surface that shows one."""
 
 from __future__ import annotations
 

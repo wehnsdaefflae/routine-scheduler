@@ -1,12 +1,4 @@
-"""Static JS md-helper imports are consistent — a call to md()/mdInline() must import it.
-
-Guards the ReferenceError class where a view uses a shared markdown helper from
-/static/md.js without importing it. conversations.js shipped `mdInline()` unimported,
-raising "ReferenceError: mdInline is not defined" in the console whenever a deferred
-question was rendered (surfaced by .ui-traces, 2026-07-16 self-audit). The console is
-no-build vanilla ES modules, so nothing but the browser catches a missing import —
-this test is that catch.
-"""
+"""Static JS md-helper imports are consistent — a call to md()/mdInline() must import it."""
 import re
 from pathlib import Path
 
@@ -32,19 +24,7 @@ def _imported_from_md(text: str) -> set[str]:
 
 
 def _without_comments(text: str) -> str:
-    """The source with comment bodies blanked out, string literals left intact.
-
-    A module that explains WHY it renders with one helper rather than the other names the
-    other one, and `md() is a superset of mdInline()` is a sentence this repo wants written
-    down — but a raw scan reads it as a call and demands an import for a function the file
-    never invokes. Comments are stripped rather than the name being avoided in prose: the
-    check exists to catch a missing import, so it must read what the browser executes.
-
-    Blanked, not deleted, so offsets and line numbers are unchanged. The string states are
-    tracked because `"https://…"` and a regex literal both carry `//`, and treating either
-    as the start of a comment would blank real code — the one direction this check must
-    never fail in, since a swallowed call is a missed import.
-    """
+    """The source with comment bodies blanked out, string literals left intact."""
     out, i, n = [], 0, len(text)
     quote = None                      # the string/template delimiter currently open
     while i < n:
@@ -133,14 +113,7 @@ PANEL_MODULE = "/static/views/settings-common.js"
 
 
 def _panel_section_callbacks(text: str) -> list[tuple[int, str]]:
-    """Every `panelSection(...)` render callback, as (offset, parameter-list).
-
-    The call is `panelSection(view, url, skel, (box, data, reload) => {`, so the callback's
-    parameter list is the last parenthesised group before the arrow. Only the arrow form is
-    matched because that is the only form every section uses; a future `function (…)` callback
-    would go unchecked rather than falsely flagged, which is the safe direction for a guard
-    whose failure mode is a missed ReferenceError, not a blocked commit.
-    """
+    """Every `panelSection(...)` render callback, as (offset, parameter-list)."""
     out = []
     for m in re.finditer(r"panelSection\s*\(", text):
         depth, i, n = 1, m.end(), len(text)
@@ -161,13 +134,6 @@ def _panel_section_callbacks(text: str) -> list[tuple[int, str]]:
 def test_a_settings_section_that_reloads_declares_the_reload_it_was_handed():
     """F536: `panelSection` hands `reload` to its render callback as the THIRD argument, and a
     section that omits the parameter but calls `reload()` throws ReferenceError at runtime.
-
-    `static/views/settings-server.js` shipped `(srvBox, s) => {` while calling `reload()` on the
-    success branch of its restart watcher — so every SUCCESSFUL daemon restart from the console
-    ended in `ReferenceError: reload is not defined` (.ui-traces 2026-09-23, twice in one day),
-    after the toast had already told the operator it worked. Same class as the md-helper guard
-    above, from the other direction: there, a name was used without being imported; here, a name
-    is used without being RECEIVED.
     """
     problems = []
     for path in _js_files():
@@ -198,21 +164,7 @@ SOCKETS_ELSEWHERE = {
 
 
 def test_every_live_stream_is_a_websocket_built_in_api_js():
-    """F606: the operator could not open more than three console tabs — the fourth did not load.
-
-    The arithmetic: a browser allows ~6 HTTP/1.1 connections per origin, every `EventSource`
-    held one for its whole life, and each tab held the global bus plus its live tails — so a
-    few tabs filled the pool and the next page's fetches had no socket at all. The streams are
-    WebSockets now, which the browser counts against a separate, far larger limit.
-
-    Two properties are pinned, both the ones a change could silently break:
-
-    - **no `EventSource` anywhere.** One would take a per-origin connection again, and enough
-      of them bring the wall back with nothing on the page saying why.
-    - **every stream socket is built in `api.js`'s `liveStream()`**, the only place the
-      open-stream gauge (`openStreamCount`) is kept — a socket built elsewhere is one the traces
-      never count. `SOCKETS_ELSEWHERE` names the one other socket and why it is not a stream.
-    """
+    """F606: the operator could not open more than three console tabs — the fourth did not load."""
     offenders = []
     for path in _js_files():
         text = _without_comments(path.read_text(encoding="utf-8"))

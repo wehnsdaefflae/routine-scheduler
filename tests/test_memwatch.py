@@ -1,10 +1,4 @@
-"""D295: the session's hold is BOUNDED rather than predicted, and priced from its own history.
-
-The operator, 2026-11-19: *"b then a — build the RSS watchdog, and price the admission estimate
-from the selection's own history"*. These pins drive `memwatch` directly — its readers, its
-killer and its clock are all injectable for exactly that reason, so the watchdog's behaviour can
-be proven without a process actually being killed.
-"""
+"""D295: the session's hold is BOUNDED rather than predicted, and priced from its own history."""
 
 from __future__ import annotations
 
@@ -58,14 +52,7 @@ def test_an_overrun_is_reported_once_however_long_it_lasts():
 
 
 def test_the_hold_is_read_in_the_same_unit_the_charges_were_measured_in(tmp_path):
-    """The unit that cost gate 1795100129134213629-release its fast stage.
-
-    A SUM of per-process RSS counts each process's shared file-backed pages — interpreter,
-    libraries — once per worker, so a controller plus four xdist workers reads far above what
-    the box actually holds. Measured 2026-11-19: the cgroup held 2,706 MB against a 3,328 MB
-    cap and the summed-RSS watchdog killed the stage anyway at 3,922 passed, zero failures.
-    `memgate.NEED_MB`'s figures are cgroup anon+swap, so the bound is too.
-    """
+    """The unit that cost gate 1795100129134213629-release its fast stage."""
     (tmp_path / "memory.stat").write_text("anon 2097152000\nfile 4000000000\n")
     (tmp_path / "memory.swap.current").write_text("1048576000\n")
     assert memwatch.cgroup_hold_mb(0, tmp_path) == 3000.0, (
@@ -89,17 +76,7 @@ def test_the_cap_is_what_the_session_was_admitted_for_plus_slack():
 
 
 def test_history_may_lower_admission_but_never_the_bound():
-    """The specimen that cost gate 1795100129134213629-release its fast stage, exactly.
-
-    A 0.3-second session had recorded 68 MB under the selection's key, so the next run of that
-    key was priced at 128 MB and capped at the 1,024 MB floor — and the real fast stage held
-    1,056 MB. Killed 32 MB over, at 3,922 passed and zero failures.
-
-    The two questions are asymmetric: "may this start?" is answered optimistically because being
-    wrong costs a wait, while "must this be stopped?" is answered from the CLASS's measured worst
-    case because being wrong costs the gate. So one unrepresentative sample can make the gate
-    quicker to start and can never make it quicker to die.
-    """
+    """The specimen that cost gate 1795100129134213629-release its fast stage, exactly."""
     assert memwatch.cap_mb(128, class_mb=0) == 1024, "the defect: the floor was the whole bound"
     bound = memwatch.cap_mb(128, class_mb=memgate.NEED_MB["fast"])
     assert bound == memgate.NEED_MB["fast"] + memwatch.SLACK_MB

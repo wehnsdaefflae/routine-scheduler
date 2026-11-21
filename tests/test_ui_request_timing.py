@@ -1,29 +1,4 @@
-"""F858: the console records how long its own requests took, and how long the page took to load.
-
-The UI trace store existed to answer "where is the console slow", and held no duration of any
-kind. Measured 2026-11-08 over the whole 14-day retention window of
-`routines_home/.ui-traces/`: 2,016 `click`, 819 `nav`, 654 `stream-close`, 178 `reconnect`, 22
-`error` — and **zero** rows carrying a time any quantity could be read off.
-
-Why the existing instruments did not cover it:
-
-- `trace.js`'s freeze observer (F218) reads the browser's **Long Tasks** API, which fires only
-  for work that BLOCKS THE MAIN THREAD. Time spent *waiting* on a request blocks nothing, so a
-  page that feels slow because its requests are slow produced no event at all — which is why
-  `freeze` has 0 rows in 14 days while the operator reports the console as slow.
-- the server's own `slow_requests` deque (`web/app.py`) keeps the last 50 requests over 2.0 s
-  **in RAM**, so a daemon restart erases it (one happened 2026-11-08T17:56), and
-  `/api/debug/slow` is primary-token-only — no run may read it (403, `app.ROUTINE_TOKEN_DENIED_READS`).
-
-So two kinds are added to the SAME store the other friction evidence lands in: `slow`, one row
-per request over the tracer's floor, carrying the endpoint, the milliseconds, the status and the
-concurrent stream count; and `load`, one row per page load carrying the navigation milestones.
-
-What is pinned here: both kinds survive ingestion with their detail intact, the allowlist is
-still an allowlist, the query string never reaches the store (it can carry what the operator
-typed), and — the one that matters most — the client measures the FETCH alone and never the
-token gate above it, which waits on a human and would book minutes of typing as server latency.
-"""
+"""F858: the console records how long its own requests took, and how long the page took to load."""
 
 from __future__ import annotations
 
@@ -101,14 +76,7 @@ def _authed_fetch_body() -> str:
 
 
 def test_the_fetch_is_measured_without_the_token_gate():
-    """The one mistake this instrument must never make: timing the token prompt.
-
-    `authedFetch` may pause on `requestToken` to ask the OPERATOR for a token — minutes of a
-    human typing, on a phone with no devtools. A clock started before that wait books it as
-    request latency and would make the slowest rows in the store the ones where somebody was
-    signing in. So the start stamp has to be taken AFTER the gate and the observer called right
-    after the fetch returns.
-    """
+    """The one mistake this instrument must never make: timing the token prompt."""
     body = _authed_fetch_body()
     gate = body.index("await requestToken(")
     started = body.index("performance.now()")
@@ -119,13 +87,7 @@ def test_the_fetch_is_measured_without_the_token_gate():
 
 
 def test_the_tracer_imports_the_hook_and_floors_what_it_records():
-    """trace.js owns the policy (api.js only observes), and the floor keeps the pollers out.
-
-    Fifteen `setInterval` pollers run in this console (app.js 30 s, run.js 3 s,
-    conversations.js 20 s …). Recording every request would bury the signal in its own volume,
-    so only requests over the floor become rows — and the floor is a named constant, readable
-    by whoever reads the store.
-    """
+    """trace.js owns the policy (api.js only observes), and the floor keeps the pollers out."""
     text = (STATIC / "trace.js").read_text(encoding="utf-8")
     assert re.search(r'import \{[^}]*onRequestTiming[^}]*\} from "/static/api\.js"', text), text
     floor = re.search(r"const SLOW_REQUEST_MS = (\d+)", text)

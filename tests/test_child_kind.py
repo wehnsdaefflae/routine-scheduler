@@ -1,12 +1,6 @@
 """One name for a child run: the `child` kind with a `mode`, and the three names it retires
 (D241, operator decision 2026-10-17: *"sub-runs / subtasks (why two terms for the same thing?
 fix that)"*).
-
-The decision is about VOCABULARY, so the tests are about vocabulary: that the retired names are
-GONE rather than aliased (an alias is how two names for one thing survive indefinitely), that
-the prompt a model actually reads says one noun, and that the instructions already on this
-instance are carried over — because removing a kind while a live recipe still names it tells a
-run to emit something the schema refuses.
 """
 
 from __future__ import annotations

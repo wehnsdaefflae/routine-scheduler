@@ -1,15 +1,4 @@
-"""A side field written inside `say` as markup (F679).
-
-`say` is published verbatim, and `note` / `remind` / `remind_feedback` are filed by the engine.
-A run writing `<note>…</note>` inside `say` lost both halves — the markup reached the reader as
-prose and the note never reached `state/notes.md` — and nothing told the run. The correction now
-happens inside the schema-retry cycle, so the run re-emits with the text in the field that keeps
-it and nothing is published or lost.
-
-The second half of the contract matters as much: `say` legitimately discusses tags. This repo's
-own docs name `<note>` in prose, and a check that refused any angle bracket would make the
-engine unable to talk about itself.
-"""
+"""A side field written inside `say` as markup (F679)."""
 
 from rsched.engine.actions import validate_action
 

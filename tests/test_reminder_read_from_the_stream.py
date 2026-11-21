@@ -1,26 +1,5 @@
 """The reminder READ is served from the hook stream, with the tallies merged from the store
 (D152 step 4 / goal b4) — the reminder twin of `hooks/reportread`.
-
-WHY THIS IS A MERGE AND NOT A REPOINT, measured on the live instance 2026-11-15:
-
-- `state/reminders.json` carries a per-reminder `stats` block (`fires`, `could_not`,
-  `would_have`, `did`, `didnt`) and a top-level `global_stats` tally about GLOBAL reminders.
-  **150 of the 196 live reminders carry a non-zero tally**, 12 global ids carry one, 3 rows sit
-  in `dead`.
-- `hooks/store.record_reminder` deliberately does not mirror a tally — its own docstring says
-  mirroring a counter would give one number two writers — so the STREAM CANNOT REPRODUCE THEM.
-  A read that simply folded the stream would silently zero every tally, and a tally is what the
-  routine's own evidence about a pattern IS (`remind_feedback` writes it).
-
-So the rule is: **definitions from the stream, tallies from the store, and a reminder the store
-names that the stream's fold does not is SERVED FROM THE STORE with the shortfall filed** — the
-`reportread.folded` rule, with the added requirement that a stream-served definition keeps the
-stored tally. Losing a definition would change what HOLDS a run; losing a tally would destroy the
-evidence that decides whether a pattern earns its interruptions.
-
-The precondition for all of this was goal b9: `reminderproj.drift` reads EMPTY over all 31 live
-routines as of 0.549.0 (0 drifting ids, down from 122), so the two sides agree on definitions
-before either serves.
 """
 
 from __future__ import annotations
@@ -50,13 +29,6 @@ def test_materializing_lets_the_raw_mutation_paths_reach_a_stream_only_reminder(
         tmp_path, monkeypatch):
     """D152/b4 cutover hazard 3: a stream-only definition must gain a real row, because the
     three RAW mutation paths work off the store and silently no-op without one.
-
-    What each of them does to an id that is not on disk, before materialization:
-    `reminders.record` returns the caller's stats unchanged, so every fire goes UNCOUNTED —
-    and the tally is what tunes a pattern; `reminders.dispose` returns "" because `find` sees
-    nothing, so a run cannot even mute a bad pattern it holds. Both are checked here against
-    the real functions, not a stand-in: the point is that the store's own writers now find
-    something to write.
     """
     rd = tmp_path / "r"
     _store(rd, [])
@@ -115,11 +87,7 @@ def test_a_definition_comes_from_the_stream(tmp_path, monkeypatch):
 
 
 def test_a_stream_served_definition_keeps_the_stores_tally(tmp_path, monkeypatch):
-    """The tally is the routine's own evidence about a pattern and the stream cannot hold it.
-
-    150 of 196 live reminders carry a non-zero one, so zeroing them would be the loudest
-    possible regression: `remind_feedback` exists to accumulate exactly this.
-    """
+    """The tally is the routine's own evidence about a pattern and the stream cannot hold it."""
     rd = tmp_path / "r"
     _store(rd, [_rec("rem-1", stats={"fires": 7, "could_not": 1, "would_have": 2,
                                      "did": 3, "didnt": 1})])
@@ -211,15 +179,7 @@ def test_an_unreadable_stream_falls_back_to_the_store(tmp_path, monkeypatch):
 
 
 def test_a_global_definition_is_not_served_as_a_local_one(tmp_path, monkeypatch):
-    """`load_local`'s contract is LOCAL reminders plus the global TALLY — not global definitions.
-
-    Found by measuring the live fleet rather than by a test: the read served 207 definitions
-    where the stores hold 196, and the 11 extras were GLOBAL hooks (`rules-review` 10,
-    `vodafone-outage-claims` 1). The stream's `definitions(routine=…)` answers the wider
-    question — every hook the routine HOLDS — so without this filter a library reminder would
-    land in the list whose writers persist to `state/reminders.json`, duplicating a shared
-    definition into a private file no curation reaches.
-    """
+    """`load_local`'s contract is LOCAL reminders plus the global TALLY — not global definitions."""
     rd = tmp_path / "r"
     _store(rd, [_rec("rem-1")])
     monkeypatch.setattr(reminderread, "stream_definitions", lambda home, routine: {
@@ -233,12 +193,6 @@ def test_a_global_definition_is_not_served_as_a_local_one(tmp_path, monkeypatch)
 def test_load_local_stays_the_stores_reader_or_the_comparator_lies(tmp_path, monkeypatch):
     """`load_local` must NOT become the merged read, and this is the subtlest trap in the
     cutover.
-
-    `reminderproj.stored_definitions` builds the STORE side of the drift comparison by calling
-    `load_local`. Repoint `load_local` at the stream and the comparator compares the stream to
-    itself: `drift` reads EMPTY no matter how far apart the two stores actually are — destroying
-    the very instrument goal b9 was measured with, and silently. So the merged read is its own
-    function (`reminderread.read_local`) and `load_local` keeps answering from the file.
     """
     rd = tmp_path / "r"
     _store(rd, [_rec("rem-1", regex="^stored:")])

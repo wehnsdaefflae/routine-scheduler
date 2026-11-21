@@ -64,10 +64,6 @@ def test_a_string_record_appended_to_a_jsonl_file_stays_one_line(make_routine, t
     which folds this file into its changelog and flips handed rows to `addressed`; a file whose
     integrity depends on whether each append happened to end in a newline is one it cannot tell
     "nothing shipped" from "the row was eaten" in.
-
-    A record-structured file (`.jsonl`/`.ndjson`) gets the separator it needs. An already
-    newline-terminated string is not given a second one — that would leave blank lines a
-    line-per-record reader counts.
     """
     import json
 
@@ -130,22 +126,7 @@ def test_structured_append_is_one_compact_jsonl_line(make_routine, tmp_path):
 
 
 def test_a_truncated_json_body_does_not_read_as_a_clean_write(make_routine, tmp_path):
-    """F588: a body the MODEL generated incomplete is written whole and reads as a success.
-
-    Python's write() is all-or-nothing, so bytes-written EQUALS the payload's length whenever
-    the write succeeded — asserted below, because it is why "report the bytes written" is by
-    itself no fix at all. The difference a run can act on has to come from the BODY: a `.json`
-    whose whole purpose is to parse, and does not. F460's parse gate refuses only an overwrite
-    of a file that parsed BEFORE, so a NEW file — the usual shape of a generated artefact —
-    arrives here ungated and the observation says nothing.
-
-    The specimen, from this instance's own history: `sprind`'s memory note
-    (`.memory/analysis-pipeline.md`, quoted again in R461) — "a single write_file of a full
-    25-key analysis OBJECT gets TRUNCATED (my reasoning + the JSON share the turn's output
-    budget; fails ~>5KB or after long thinking)". The target was `work/<app>/analysis.json`,
-    a NEW file each run: nothing in the observation said so, so the routine had to learn it
-    from downstream breakage and work around it by authoring ≤5KB fragments and merging them.
-    """
+    """F588: a body the MODEL generated incomplete is written whole and reads as a success."""
     import json
 
     ctx = action_ctx(make_routine(), tmp_path)

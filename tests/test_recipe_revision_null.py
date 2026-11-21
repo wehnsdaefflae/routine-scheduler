@@ -1,12 +1,4 @@
-"""A null recipe revision SCOPED to the recipe files nothing (engine/recipeproposal._is_null).
-
-`tests/test_recipe_revision.py` pins the null set and the first-clause read (R3086, 2026-11-07);
-this pins what got past both on 2026-11-15. `freelance-hunter` wrote "RECIPE REVISION: none
-needed in main.md/stages/ — the recipe served as written. …" and it reached the Decisions page:
-the `.` inside `main.md` ended the clause, so the verdict read was "none needed in main", which
-is in no closed set. A full stop now ends a clause only where it ends a sentence, and a null
-verdict may name WHERE nothing changes as long as that scope is files and recipe words alone.
-"""
+"""A null recipe revision SCOPED to the recipe files nothing (engine/recipeproposal._is_null)."""
 
 from __future__ import annotations
 

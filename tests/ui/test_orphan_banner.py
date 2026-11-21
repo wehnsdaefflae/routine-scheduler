@@ -1,11 +1,6 @@
 """The Messages page's ORPHAN BANNERS — the three ways work leaves the ledger without becoming an
 open item anywhere (`readmodels/orphans.py`, `readmodels/prose_closures.py`), shown above the list
 because they are invisible to every filter below it.
-
-Apart from `test_messages_page.py` (the list, its filters, its composer) because the banner is a
-different surface with a different source: `GET /api/items/orphans`, loaded by its own module
-(`static/components/orphan-banner.js`) and judged against the fleet rather than against the item
-index.
 """
 
 import json

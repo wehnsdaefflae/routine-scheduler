@@ -1,11 +1,4 @@
-"""The charts' categorical palette is base.css's --series tokens, so it follows the theme.
-
-components/charts.js hard-coded six hex colours tuned for one old dark plate and painted them
-in BOTH themes — on white, one fell under 3:1 and the pink/violet pair sat under the
-normal-vision separation floor in either. The palette is now --series-1..6 / --series-other,
-each defined per theme with light-dark(); a chart mark and a legend swatch carry a var()
-reference, so a theme switch repaints them with no re-render.
-"""
+"""The charts' categorical palette is base.css's --series tokens, so it follows the theme."""
 
 from __future__ import annotations
 

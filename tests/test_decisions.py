@@ -83,13 +83,7 @@ def test_deferred_ask_carries_config_patch_for_the_bridge(make_routine, scripted
 
 
 def test_config_patch_names_another_routine_as_its_target(make_routine, scripted):
-    """D123/F458: a config_patch may be FOR another routine — config-optimizer's whole job.
-
-    The slug rides inside the patch as `routine`, is validated against the installed routines
-    at ask time, and is popped off so what remains is a clean PATCH body. Before 0.326.0 the
-    Decisions-page apply was hardwired to the ASKING routine, so a proposal for suedlink-wlf
-    rewrote config-optimizer's own budgets and reported success (R1343, R1407).
-    """
+    """D123/F458: a config_patch may be FOR another routine — config-optimizer's whole job."""
     d = make_routine(slug="optimizer")
     make_routine(slug="suedlink-wlf")          # the target must actually exist
     scripted([
@@ -592,12 +586,7 @@ def test_deferred_answer_reaches_the_live_run(make_routine, scripted):
 
 
 def test_a_config_patch_the_apply_would_refuse_is_refused_at_filing():
-    """The exact shape that reached the operator on 2026-09-23 and could not be applied.
-
-    A `config_patch` carried the target check but never a shape check, so a run could invent
-    keys and the Decisions page rendered an apply button that answered 422 — a decision the
-    operator could read and not take. The gate runs where the record is written.
-    """
+    """The exact shape that reached the operator on 2026-09-23 and could not be applied."""
     from rsched.engine.config_bridge import patch_shape
 
     bad = patch_shape({"filesystem": {"read": ["/home/mark/git-repos/routine-scheduler"]}})

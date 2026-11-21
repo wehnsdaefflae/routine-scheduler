@@ -1,29 +1,4 @@
-"""R3108 increment two: retry, window and failover policy decided STRUCTURALLY, not from prose.
-
-Increment one (`tests/test_error_class_undecided.py`) counted how often the three prose lists had
-no structural basis for a decision they made anyway. This increment replaces them, as the
-operator decided on 2026-10-17: *"Good idea! I want you to replace the prose checks completely"*
-— the routine that filed it proposed keeping prose as a fallback and he overrode that.
-
-What each site asks instead is `endpoints/errorsignal.py`: the HTTP status, and the provider's own
-`error.code` / `error.type` / `error.param` / `error.metadata.limit_source` decoded from the body.
-
-The four specimens below are the shapes that cost something, and each test names the wrong answer
-the phrase lists gave it:
-
-* a BILLING error whose message happens to say "maximum context length" — `_OVERFLOW_HINTS`
-  matched it and nothing in `_NEVER_OVERFLOW_STATUS` excluded it, so the run's window would be
-  pinned to a number that was never a context size (the failure mode `overflow.py`'s own comment
-  warns about, from the other direction);
-* a vendor overflow worded in none of the four openai-flavoured phrases — the 2026-09-21 shape,
-  which is why that list had to grow a phrase after `self-audit:20260921-000321` 400'd four times
-  with its prompt growing 1,017,305 → 1,045,385. A list that has to be extended per vendor is
-  disarmed for every vendor not yet seen;
-* a provider body QUOTING the engine's own sentences ("refused the turn", "empty completion") —
-  `_FAILOVER_REASONS` read the engine's vocabulary back out of a stranger's prose;
-* a 402 relayed with no JSON at all — fatal under the prose rule, which is how conversation
-  `c-20261016-075101` died twice in 30 s at `after 0 rungs` while the condition cleared itself.
-"""
+"""R3108 increment two: retry, window and failover policy decided STRUCTURALLY, not from prose."""
 
 from __future__ import annotations
 

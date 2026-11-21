@@ -1,16 +1,4 @@
-"""The fleet's BLOCKED WORK, on a page someone opens (R2653).
-
-`readmodels/health_stream.py` and `GET /api/health/blocked` shipped, and no console ever read
-them: measured at 0.432.0, `health/blocked` had no hit anywhere in `static/`. The endpoint's own
-handler docstring explains that it ships a `vocabulary` payload "so the console renders a label
-it was not compiled with" — UI design for a consumer that did not exist. So a refused fire, a
-stopped lane chain and a capped trigger, none of which produces a run, stayed as invisible as
-they were before the read model: F316's week of missed lane fires passed with zero signal.
-
-ZERO IS THE GOOD READING, which is the whole reason the panel renders when there is nothing to
-show: an absent panel and a healthy one are indistinguishable, and only one reassures. Both
-directions are pinned here, through the real page.
-"""
+"""The fleet's BLOCKED WORK, on a page someone opens (R2653)."""
 
 import json
 

@@ -314,10 +314,6 @@ def test_messages_priority_flag_round_trips(ui, ui_page, make_routine):
 def test_a_settling_reply_names_the_rows_it_finished_on_its_card(ui, ui_page, make_routine):
     """D134 on the surface: a reply that disposes of SEVERAL rows says which ones, and the rows
     it settled read `settled` with it as their `answered_by`.
-
-    Before D134 the card could only ever say "answers R<n>", so a reply that finished three rows
-    showed one of them and the other two went on reading `open` (F497). A closure that answers
-    nobody — the fold-carrier shape — had no way to render at all, because it could not exist.
     """
     make_routine(slug="self-audit")
     control = ui.routines / ".control"

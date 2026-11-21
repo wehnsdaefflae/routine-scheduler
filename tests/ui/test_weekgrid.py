@@ -3,10 +3,6 @@ data refreshes (F230); the routines of one LANE merge onto a single labelled str
 SCHEDULED lane's row chains its members at the LANE's fires (D71/R313); and bars drag: onto a
 sibling to reorder the lane, onto another lane's row to join it, onto the remove strip to
 leave, and along the own row to reschedule.
-
-The strip calls its own rows "lanes" too (`.wg-row` / `.wg-lane-label`) — that is a geometry
-word this component has always used and it is NOT the routine lane, so the assertions below
-read the label's TEXT (a lane's row is prefixed ⛓) rather than any class modifier.
 """
 
 import re
@@ -217,12 +213,7 @@ def test_drag_along_own_row_reschedules(ui, ui_page, make_routine):
     """A horizontal drag on the bar of a routine in NO lane re-times its cron: one day-width
     to the right moves the weekly fixture fire (Mon 07:00 Berlin) to the same instant one day
     later, same cadence.
-
-    The assertion is on the INSTANT the stored (cron, tz) pair fires at, never on the cron's
-    raw fields: the drop is re-timed in the SERVER's zone and the PATCH stores that zone beside
-    the new cron, so the same Tuesday 07:00 Berlin is `0 7 * * 2` on a Berlin host and
-    `0 5 * * 2` on a UTC one. Reading the hour field made this test pass only where the host
-    and the fixture share a zone."""
+    """
     from datetime import timedelta
     from zoneinfo import ZoneInfo
 
@@ -332,10 +323,6 @@ def test_a_lane_name_is_readable_and_its_column_has_one_definition(ui, ui_page, 
     """The strip answers "what fires today", and the name column answers "whose". At a fixed
     120px the fleet's lane names all truncated to their shared prefix — "⛓ Instance · Ni…",
     "⛓ Instance · Tr…", "⛓ Professional …" twice — so four of eleven rows said the same thing.
-
-    The width now has ONE definition (`--wg-names-w` on `.weekgrid`), read by weekgrid.js to lay
-    the SVG out beside the column: the JS constant it used to mirror carried a comment asking
-    the next person to keep the two equal, which is the shape that drifts.
     """
     from rsched import lanes
 

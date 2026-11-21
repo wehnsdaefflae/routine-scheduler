@@ -1,18 +1,4 @@
-"""A one-shot IS a `schedule`-triggered hook — D152 gap 5, the last unused trigger.
-
-`hooks.TRIGGERS` has named four things that make a hook fire since step 1 and three had users;
-`schedule` carried a note instead: *"a time. Nothing uses this yet; the field costs nothing and
-naming it keeps the next mechanism from being a fourth store."* That next mechanism already
-existed AS a fourth store — the one-shot request spool — so the question the campaign exists to
-make answerable, *what hooks exist in this instance*, could not be answered for anything
-time-fired.
-
-What is pinned here: the projection and its EXACT inverse (a projection whose inverse nobody
-wrote is a mirror whatever it is called — `reportinv`'s lesson, applied in the same change this
-time), the four lifecycle facts, and that the arming paths really write the row. The spool stays
-the SOURCE: the daemon reads only it, consumption is what guarantees a one-shot never repeats,
-and a stream write that fails must never stop a one-shot being armed.
-"""
+"""A one-shot IS a `schedule`-triggered hook — D152 gap 5, the last unused trigger."""
 
 import json
 from datetime import UTC, datetime, timedelta

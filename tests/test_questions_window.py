@@ -1,12 +1,4 @@
-"""`GET /api/questions` is BOUNDED (F810, `web/decisions_window.py`).
-
-Measured on this instance on 2026-11-05: the response carried every routine's and every
-conversation's settled archive — 389 rows, 1.08 MB of the ~1.1 MB — and `static/app.js`
-refetches it every 30 s per open tab for a badge that counts none of them. So: open decisions
-whole, always; settled ones only as the window a caller asks for (none by default), newest
-first across the whole instance, projected to the fields their receipt reads, with the total
-said so the page can offer more instead of silently stopping.
-"""
+"""`GET /api/questions` is BOUNDED (F810, `web/decisions_window.py`)."""
 
 import pytest
 

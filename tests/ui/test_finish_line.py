@@ -1,13 +1,5 @@
 """The routine page's GOAL: the finish line (a setting) and what a finished run delivers (the
 recipe's `## Done when`, read-only).
-
-A routine either runs until it is switched off, or it has a finish line — outcomes, each naming
-who decides it is reached (the calendar, the run, or the person), plus an optional date after
-which scheduling stops either way. The finish line is edited in the settings draft and saved by
-the page's one accept. What one finished run delivers belongs to the recipe; the page shows it
-beside the verdict each of the last runs gave it, each verdict a link to its run.
-
-And a run's own page shows THAT run's accounting: what it reported, at its end, for each line.
 """
 
 from __future__ import annotations
@@ -246,12 +238,7 @@ def _seed_date_outcome(ui, date, slug="uir"):
 
 
 def _serve_day(page, day, slug="uir"):
-    """Serve the REAL finish-line read with the scheduler's day set to `day`.
-
-    Only that one field is overridden, so a test proves the client takes the served day
-    verbatim — rather than proving something about the host's own zone, which is the thing
-    neither side may depend on.
-    """
+    """Serve the REAL finish-line read with the scheduler's day set to `day`."""
     def patched(route):
         resp = route.fetch()
         body = resp.json()
@@ -265,11 +252,6 @@ def _serve_day(page, day, slug="uir"):
 def test_a_date_outcome_is_judged_on_the_schedulers_day_not_the_viewers(ui, ui_page):
     """The scheduler judges a date outcome by ITS OWN local day (engine/finishline.today), so
     the payload carries that day and the editor uses it verbatim.
-
-    The editor computed "today" on the VIEWER's clock, which is a different day for the hours
-    between two midnights: at 12:00 UTC it is already the 16th at UTC+14, so a console open in
-    Kiritimati called an outcome dated the 16th reached while the scheduler — the party that
-    actually retires the routine — still had it open. A wrong date is a wrong judgement.
     """
     ui_page.clock.set_fixed_time("2026-07-15T12:00:00Z")
     _seed_date_outcome(ui, "2026-07-16")

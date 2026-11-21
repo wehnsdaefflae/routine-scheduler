@@ -1,21 +1,4 @@
-"""The escalation ladder's SETTINGS surface — the half a person edits.
-
-Until 0.381.3 the ladder was reachable only by editing YAML by hand (operator, 2026-10-03:
-"obviously it needs a complete ui"). The feature was fully visible once it fired and invisible
-until then. These pin the contract the controls depend on:
-
-- the three keys are in the settings VOCABULARY (`patterns/fields`), without which `canonical`
-  RAISES and the page cannot render or compare them at all;
-- they are declared on `RoutinePatch`, without which pydantic drops them before `apply_updates`
-  sees them — a control that saves nothing while the page reports success;
-- `ladder` is CONFIG (routine.yaml) and the two TURN knobs are TUNING (tuning.yaml), which
-  is the authority split the whole design rests on;
-- `oversight_turns` cleared means DERIVED, not zero — and it is a REMOVAL from tuning.yaml,
-  because absence is that knob's one spelling of its derived default;
-- D189 (operator, 2026-10-22) RENAMED both knobs and there is no alias: `rung_height` is the
-  ladder's height in RUNGS (config, the recursion limit) and `ladder_turn_interval` is the
-  turns between escalations (tuning). The old spellings must be refused, not honoured.
-"""
+"""The escalation ladder's SETTINGS surface — the half a person edits."""
 
 from __future__ import annotations
 

@@ -1,18 +1,4 @@
-"""The LLM activity dock while a call is RETRYING — F655, operator-reported.
-
-His case: a resumed run's first call hit the engine's 600 s read timeout, `with_retries` sent it
-again, and the second attempt answered 11 minutes after the first had started. The dock showed
-ONE call in flight the whole time, so a hung run and a slow run were indistinguishable from the
-outside and he had to read the proxy's container log to find out which. What he asked for is
-that a retrying call not look the same as one that is thinking: which attempt it is on, what
-ended the previous one, and that a retry is under way.
-
-Asserted on what RENDERS, never on the class name: F644's third defect was class names that
-matched no CSS rule at all, so two states the code distinguished painted in identical ink and a
-console read of the JS proved nothing. A `retrying` dot with no rule of its own would fall
-through to the neutral grey of an unknown state — which getComputedStyle catches and a DOM
-assertion does not.
-"""
+"""The LLM activity dock while a call is RETRYING — F655, operator-reported."""
 
 from __future__ import annotations
 

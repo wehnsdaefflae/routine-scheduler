@@ -1,15 +1,4 @@
-"""The CLOSING asks on a finish banner, in the browser — D212 increment (b).
-
-The engine selects them (`engine/closingasks.py`, `tests/test_closing_asks.py`); these pin what
-the PERSON sees: the questions his run left him, their options as buttons, under the summary he
-is already reading — and that answering one there goes through the ONE answer route, not a
-second poster built for this surface.
-
-Every assertion about a control first asserts the control EXISTS (`to_have_count(1)`). A browser
-assertion about an element's style or content that does not is a test that passes over a console
-which lost the behaviour — measured 2026-10-31, when a sibling check in another file had been
-passing vacuously for exactly that reason.
-"""
+"""The CLOSING asks on a finish banner, in the browser — D212 increment (b)."""
 
 from __future__ import annotations
 

@@ -1,11 +1,4 @@
-"""The suite's sandbox floor, tested like anything else (see tests/production_guard.py).
-
-A guard nobody exercises is a guard that quietly stops guarding — which is precisely how
-F394 happened one layer up, to an engine stub. So the barrier is pointed at a temporary
-"instance home" and asked to do its job through the same chokepoints the codebase writes
-through: `open`, `paths.atomic_write` (mkstemp + replace), `Path.mkdir`, `Path.unlink`,
-`shutil.rmtree` (whose deletes are `dir_fd`-relative names).
-"""
+"""The suite's sandbox floor, tested like anything else (see tests/production_guard.py)."""
 
 from __future__ import annotations
 

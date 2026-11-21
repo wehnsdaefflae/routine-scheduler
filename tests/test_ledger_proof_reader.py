@@ -1,23 +1,4 @@
-"""A ledger decision's per-option PROOF reaches the Decisions page (R3417).
-
-The step between two routines, and it had nobody on either side of it. `self-audit`'s ledger
-writer now refuses to file a decision without a proof per option — one entry per option, each
-carrying `predicate`, `reads` and `category`, with the five states derived exactly as
-`proofs.answered` derives them. But `web/decisions_read` built its question items from id,
-options, status and detail alone, so a proof on a ledger row reached **no surface at all**: the
-Unproven band shipped in 0.520.0 covered engine-filed asks and not the ledger decisions, which
-are precisely the ones that sit answered-and-unbuilt for weeks.
-
-What done looks like, in this half: an answered ledger decision with an `in_progress` proof
-renders in the Unproven band rather than the Settled one. Only then may `in_progress` leave
-`_DECIDED_STATUSES` — the sequencing D220's closure named, which until now was one step short.
-
-The two properties that keep it safe are tested here as hard as the feature:
-  - a row with NO proof is unchanged, because `proofs.unproven` is False without one and the
-    instance's 157 legacy rows are all in that state. Re-opening them is the F659 regression.
-  - a MALFORMED proof is dropped rather than served: the ledger is another routine's file, and
-    a proof the engine cannot read would park a row in a band no predicate could ever clear.
-"""
+"""A ledger decision's per-option PROOF reaches the Decisions page (R3417)."""
 
 from __future__ import annotations
 
@@ -117,12 +98,6 @@ def test_a_malformed_proof_is_dropped_rather_than_served(tmp_path):
 def test_an_in_progress_row_with_a_proof_is_shown_and_reads_as_unproven(tmp_path):
     """The second half, and the one D220's closure named: `in_progress` stops HIDING a row that
     carries a proof.
-
-    A row self-audit marks `in_progress` is one it says it is already building. Without a proof
-    that is a claim no surface can check, which is why the status hides the row at all. WITH one
-    it is checkable, and the honest place for "answered, and nothing shows it landed" is the
-    Unproven band. Its answer is the ledger's own `resolution`: the marker gate cannot help here
-    because an answer recorded IN a report is older than the report recording it.
     """
     row = _row(tmp_path, {"id": "D903", "title": "Reroute it?", "status": "in_progress",
                           "options": OPTIONS, "proof": _proof(proofs.IN_PROGRESS),

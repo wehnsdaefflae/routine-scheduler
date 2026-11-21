@@ -1,20 +1,4 @@
-"""ONE jailed subprocess runner for the three callable kinds (`utils_run.run_jailed`).
-
-A util, a per-routine script and a `shell` command are three jail COMPOSITIONS and one
-process problem, and the process problem was solved three times by hand. Two of the copies
-had lost a protection the third documents:
-
-- `scripts.run_script` used a plain `subprocess.run(timeout=)`, which never kills the `uv run`
-  GRANDCHILD a `calls:`-declaring script spawns through `gu` — the child keeps the pipes open
-  past the deadline and the engine turn never returns;
-- `shellrun.run_shell` wrote to spool files and then read the WHOLE file back
-  (`capped(out_f.read())`), i.e. exactly the materialization its own comment said the spool
-  files prevent. That is the 2026-09-14 incident (a 1.5 GB decode, five hours of swap-thrash,
-  a physical reset) in a seam `shell` reaches with one `find /`.
-
-So the acceptance test here is structural as well as behavioural: only one module may open a
-capture tempfile, and no call site anywhere may read one whole.
-"""
+"""ONE jailed subprocess runner for the three callable kinds (`utils_run.run_jailed`)."""
 
 from __future__ import annotations
 

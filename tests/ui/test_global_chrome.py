@@ -1,20 +1,5 @@
 """Global chrome: the components mounted OUTSIDE the routed view, and the one property that
 makes them chrome at all.
-
-The navigation rail (index.html) and the bottom-right docks — the LLM activity dock
-(components/taskmanager.js), the browser preview (components/browserdock.js) and the desktop
-preview (components/desktopdock.js) — are siblings of #view rather than children of it, so they
-survive navigation. None positions itself: `position: fixed` comes from base.css and nowhere
-else — on the rail, and on the ONE #docks column the three docks ride. That makes those
-stylesheet blocks the single point of failure, and losing one FAILS SILENTLY — the component
-still builds, still fetches, still updates, and simply lands in the document flow at the foot of
-every page. The 0.277.0 palette migration deleted two such blocks at once; the side TOC was found
-three releases later, the dock twenty, each time by an operator looking at a screenshot.
-
-So the invariant is pinned here rather than left to the eye: each piece of chrome is held to the
-viewport, by its own `position: fixed` or by a fixed ancestor. The side TOC is no longer on the
-list: it rides INSIDE the rail now, where losing its block leaves it stacked in view rather than
-dropped off the foot of the page — test_toc.py owns it whole.
 """
 
 from __future__ import annotations
@@ -214,18 +199,7 @@ def test_a_resize_repaints_the_ribbon_from_the_runs_it_holds(ui, ui_page):
 
 
 def test_the_group_row_says_what_is_happening_not_a_ratio(ui, ui_page):
-    """D157-C: the group row SAYS the state instead of encoding it.
-
-    `${done}/${children.length}` rendered a group of in-flight calls as `0/24` beside a panel
-    header reading `24 running` — the same number counted the opposite way, both correct and
-    neither informative (F572, from the operator's own screenshot). The operator chose: "the
-    group row says what is happening ('24 running') instead of encoding it ('0/24')".
-
-    Driven through the `rsched-bus` events the dock already listens on, so this asserts what the
-    user SEES. Two details of the component the test has to respect: rendering is debounced 80ms,
-    and a periodic `reconcile()` refetches /api/llm-tasks every 10s and would clear injected
-    state — so the assertion uses the auto-retrying `expect`, which settles well inside that.
-    """
+    """D157-C: the group row SAYS the state instead of encoding it."""
     ui_page.set_viewport_size({"width": 1400, "height": 900})
     ui_page.goto(f"{ui.url}/#/routines")
     expect(ui_page.locator(".lt-pill")).to_be_visible()

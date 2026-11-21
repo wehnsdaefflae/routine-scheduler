@@ -1,19 +1,4 @@
-"""A closure with nothing to close is REFUSED, at both entrances (D196).
-
-The operator, 2026-10-18, verbatim: *"Refuse it loudly — a report carrying closes with
-supersedes but no answers/settles is rejected with a message naming what closes needs, which
-changes behaviour for existing callers."* He accepted that break explicitly, so a caller that
-starts failing here is intended and not a regression to soften.
-
-What it used to do: `closes` was NORMALIZED to False. The filing was accepted, nothing recorded
-the closure, and the sender believed a thread was closed that was not — the failure mode that
-leaves a thread open while its sender has moved on. The action layer already refused the shape
-for a RUN (tests/test_reports.py::test_validate_action_closes_needs_answers); this is the other
-entrance, the out-of-band caller that builds its own `Disposal`.
-
-`supersedes` is deliberately NOT one of the faces a closure can have: folding rows makes this
-report their thread, which is the opposite of finishing it.
-"""
+"""A closure with nothing to close is REFUSED, at both entrances (D196)."""
 
 from __future__ import annotations
 
@@ -26,21 +11,7 @@ from rsched.reports import Disposal, file_report, read_reports, reports_path
 
 
 def test_a_runtree_message_is_not_refused_at_all():
-    """SUPERSEDED BY F859 (0.522.0) — this case used to assert a target-aware REFUSAL.
-
-    The refusal was accurate and unactionable, and the clearer wording 0.511.0 shipped did not
-    stop it being paid for: 19 of these refusals across 11 routines by 2026-11-06, then THREE
-    MORE in a single `scheduler-builder` run on 2026-11-08 (turns 67, 223, 110 — all three of
-    the event's all-time fires). `closes` on a run-tree target is INERT: the hook has no ledger
-    row, `runtree.send` never reads the field, so refusing the action changed nothing except
-    costing the turn.
-
-    So the rule moved rather than being softened: the disposal grammar governs ledger rows, and
-    `reportfields.field_problems` returns early for a run-tree target. What a sender is told
-    instead lives in `tests/test_report_runtree_disposal.py` — the hook is delivered, and the
-    observation NAMES any `answers`/`settles`/`supersedes` it ignored, which is the half this
-    refusal never covered (those three validated and were then dropped unread).
-    """
+    """SUPERSEDED BY F859 (0.522.0) — this case used to assert a target-aware REFUSAL."""
     for target in ("parent", "child:ragapi-standup"):
         assert validate_action({"say": "s", "kind": "report", "title": "answering the "
                                 "hand-back", "target": target, "closes": True}) == []
@@ -60,15 +31,6 @@ def test_a_routine_target_still_gets_the_original_sentence():
 def test_the_refusal_tells_an_originating_notice_what_to_do():
     """The shape 10 of 13 measured rejections actually sent: `target` + `closes`, no
     `supersedes` — a run FILING a notice it wants nobody to reply to.
-
-    Measured 2026-11-12 over `.control/health-events.jsonl`: 22 rejections of this one sentence
-    across 11 routines and 18 runs since 2026-10-19, and three runs earned it two or three times
-    WITHIN one run — so the sentence was not teaching on the second reading either. It stated
-    the rule correctly (and the rule is the operator's, D196) while leaving that run with
-    nowhere to go: every face it named belongs to a REPLY, and the run was not replying.
-
-    So the refusal must name the move for an originating notice — leave `closes` out — and both
-    entrances must do it, because the out-of-band caller builds its own `Disposal`.
     """
     for problems in (
         validate_action({"say": "s", "kind": "report", "title": "fixed, no reply needed",

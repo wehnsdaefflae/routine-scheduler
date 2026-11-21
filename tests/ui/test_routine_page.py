@@ -418,9 +418,6 @@ def test_archiving_a_publisher_names_what_it_leaves_behind(ui, ui_page, make_rou
     """Archiving tidies the routine dir and its secrets and CANNOT touch what the routine
     published on another host. That was silent, and a steward card outlived its routine
     three times in two weeks — each one found by the operator's own eyes (R1658, bina).
-
-    The console now says what is still out there and who can retire it, at the one moment
-    anything knows the routine is gone.
     """
     pub = make_routine(slug="hubpub")
     cfg = yaml.safe_load((pub / "routine.yaml").read_text(encoding="utf-8"))

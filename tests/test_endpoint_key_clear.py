@@ -1,24 +1,5 @@
 """PUT /api/settings/endpoints/{name} — the three states of the `api_key` field, and the
 refusal that stops a save leaving an endpoint with no credential at all (D208).
-
-The distinction IS the item. The Settings editor submits the key field blank on every
-unrelated edit, so a blank (or absent) `api_key` must never wipe a stored inline key — while
-an operator who wants the inline key GONE, so the Secrets store takes over, needs a way to say
-so through the API. An explicit JSON `null` is that way, and it is awkward precisely because
-the obvious serialisations throw it away: `model_dump()` puts it in the same bucket as the
-empty string, and `model_dump(exclude_none=True)` — the same trap one layer up, which made a
-routine-settings patch proposing `null` impossible to fire — strips it before any writer sees
-it. The decision is therefore taken from `model_fields_set` plus the attribute itself, and
-`test_the_body_tells_an_absent_key_from_an_explicit_null` pins that mechanism, so a refactor
-back to a plain `str = ""` default fails here instead of in production.
-
-The refusal is bounded by a shape that already lives on this instance: an endpoint carrying an
-inline key whose `key_var` is NOT in the central store (the `anthropic metered` endpoint, and
-every routine's main loop rides it). A refusal keyed on "key_var names a secret that is not in
-the store" would make that endpoint unsavable, so this one is keyed on the RESULT — after the
-save, does any rung of the credential ladder resolve? — and only when this save is what
-changed where the credential comes from. That exemption is what keeps keyless local backends
-(Ollama, vLLM) and endpoints that already resolve nothing savable.
 """
 
 from __future__ import annotations

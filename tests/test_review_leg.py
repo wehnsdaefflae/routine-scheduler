@@ -1,10 +1,5 @@
 """The post-run REVIEW LEG (engine/reviewleg.py): a routine run whose own record shows it had
 something to learn from looks back once, on the same message list, before its close-out.
-
-What these hold: it runs only on a reason and never on a clean run; its notes land and are
-committed with the run; its two note guards (read before revise, delete only to fold); its span
-is left out of the task's overhead measurement; a RECIPE REVISION it names joins the run's one
-D200 card; and every way it can go wrong costs the run nothing but the leg.
 """
 
 from __future__ import annotations

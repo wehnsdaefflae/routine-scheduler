@@ -1,22 +1,4 @@
-"""Archiving a routine names the published state it CANNOT reach (R1658, bina 2026-09-21).
-
-`POST /routines/{slug}/archive` tidies exactly what it owns: the directory moves to `.archive/`
-and the routine's scoped secrets are dropped (D103 — "the routine's OWN secrets die with it").
-Everything the routine published OUTSIDE this machine it has always been silent about, and the
-silence is the defect: the one moment any code knows a routine is gone is the one moment its
-residue could be named, and that moment was being spent saying nothing.
-
-Three slugs proved it in two weeks — `birthday-admin-admin`, a duplicate "Fourty-Four", and
-`bina`, whose steward card outlived it by a day. The hub derives its cards from published store
-directories and has no retire operation, so nothing there expires on its own; and the routine
-could not clean up after itself even in principle, because archiving drops the very credentials
-publishing needs, first.
-
-The scheduler deliberately does NOT reach out and delete anything: it holds no credentials for
-that host, and an outbound publish on an archive request would make the daemon a deploy
-dependency. It REPORTS. What it reports is derived from config the routine already carries, so
-no routine has to declare anything new to be covered.
-"""
+"""Archiving a routine names the published state it CANNOT reach (R1658, bina 2026-09-21)."""
 
 from __future__ import annotations
 

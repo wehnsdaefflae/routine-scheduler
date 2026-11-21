@@ -1,16 +1,4 @@
-"""The rail's count of BLOCKS ONLY THE OPERATOR CAN CLEAR (F796), through the real page.
-
-The blocked-work fold had exactly one reader — the Stats page's panel, inside a 7-day window —
-so a block that waits for a person waited on a page he has no reason to open: `backup_stale`
-ran nineteen unnoticed nights, and a pause that ate eight due fires was found by an audit
-reading the ABSENCE of run directories.
-
-What is pinned here is the distinction, not the panel: a stale backup lights the badge, and the
-stream's loudest events (a turn that came back wrong, 202 of them in three weeks on this
-instance) do not — because a badge that is never dark is the same as no badge. ZERO IS THE GOOD
-READING and the badge is then hidden, which is the one state the Decisions badge beside it
-already proves is right for a count of work waiting on a person.
-"""
+"""The rail's count of BLOCKS ONLY THE OPERATOR CAN CLEAR (F796), through the real page."""
 
 import json
 import re

@@ -1,18 +1,4 @@
-"""A private/LAN redirect_uri is named AS THE CAUSE before the user leaves the console.
-
-The operator re-authorized a routine's Google connection and got Google's own refusal page
-instead of a consent screen: "Access blocked: Authorization error — device_id and device_name
-are required for private IP", naming our OAuth app and 192.168.0.128. Google refuses an
-authorization request whose `redirect_uri` resolves to a private address BEFORE any consent
-screen, so nothing in the console said what was wrong and no routine's Google connection could
-be re-authorized at all.
-
-Our own code knows that redirect_uri (`web/settings/oauth.py` `_redirect_uri`), so the flow says
-so itself: authorize-start still returns the authorize URL — the operator may genuinely need to
-try it, and the detection is an inference about what a provider will do — but it carries a
-`caveat` naming the host, the cause and the remedy, which the card shows for confirmation before
-it opens the provider's tab. A public host carries no caveat: a working flow must stay silent.
-"""
+"""A private/LAN redirect_uri is named AS THE CAUSE before the user leaves the console."""
 
 from __future__ import annotations
 

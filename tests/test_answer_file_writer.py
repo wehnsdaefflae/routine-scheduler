@@ -1,32 +1,4 @@
-"""D143 — the `answer-<qid>.json` shape has ONE writer too.
-
-F499 gave the inbox's FIRST shape a single writer (`engine/inbox.file_message`) and a source
-scan that keeps it single. The directory's SECOND shape never got either half: four modules
-spelled `inbox/answer-<qid>.json` themselves at seven sites — `web/api_questions` (the answer,
-the answer-and-run-now rewrite, the defer marker), `web/api_question_decline`,
-`web/api_patch_applied` and `engine/inbox_questions.revise_answer`.
-
-It cannot share `file_message`: that writer validates `via` against the closed VIAS set and
-produces freight a run's drain consumes, while an answer is the one thing that must NEVER buy
-a run (`daemon/gate_prepare`, the operator's reversal of 2026-09-12) and is matched by qid
-instead. So the answer shape gets its own writer, and `tests/test_policy_inbox_writer.py`
-allow-lists exactly these two.
-
-What the writer holds that seven call sites could not:
-
-* **A record neither reader would consume is refused.** `take_answer` returns None unless the
-  record carries a `text` key or a truthy `defer`; `collect_deferred_answers` logs
-  "unreadable or has no text" and SKIPS such a file without consuming it. A file like that is
-  never read and never drained — it sits in the inbox forever, and (by the same gate rule) does
-  not even admit the run that would have noticed. The write is where that is catchable.
-* **A correction never RESURRECTS a consumed answer.** `update` touches a queued file and
-  creates nothing, so reporting a patch verdict on an answer a run already drained cannot
-  re-file it for the next run. That is the answer-side twin of the drain race
-  `inbox.rewrite_message` exists for: there, re-creating a consumed message delivered the
-  edit twice.
-* **One spelling of the filename**, carried from the qid — which both readers fall back to
-  parsing out of the filename when the record omits it.
-"""
+"""D143 — the `answer-<qid>.json` shape has ONE writer too."""
 
 from __future__ import annotations
 

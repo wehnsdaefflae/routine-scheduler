@@ -1,15 +1,4 @@
-"""The runs table says which WINDOW a resumed run's turn count was budgeted against.
-
-`max_turns` bounds one resume WINDOW (a resume re-bases the budget, engine/boot.py) while a
-run's `turn` keeps counting across every leg. The audit found four runs where the table showed
-a turn count far past the routine's own ceiling — freelance-radar at 348 against max_turns 200,
-with its status.json reporting 179 turns left — and nothing on the page said the two numbers
-measured different things, so the only available reading was that the ceiling had failed
-(F564/D155).
-
-Asserted as TEXT, deliberately: a `data-` attribute pointing at the right number proves
-nothing about what a reader sees.
-"""
+"""The runs table says which WINDOW a resumed run's turn count was budgeted against."""
 
 from __future__ import annotations
 

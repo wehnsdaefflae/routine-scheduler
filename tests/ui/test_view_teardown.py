@@ -1,16 +1,4 @@
-"""A view that is gone must stop asking the daemon for things.
-
-Every poller in the console is armed by a view and has to be disarmed by that view's
-teardown. Nothing in the suite could see a request that fires AFTER navigation, which is how
-the run view shipped a sub-run tree poller it never stopped: its `isLive()` predicate reads a
-state variable frozen at whatever it held when the view was torn down, so leaving a live run
-left a GET /api/runs/<id>/tree every three seconds for the rest of the browser session — one
-more per run page visited, serving a rail nobody could see.
-
-The check is deliberately blunt and route-shaped: mount a view over the stub runner, navigate
-to a page that polls nothing, and assert that the old view's paths go silent. A poller that
-outlives its view fails here whatever arms it.
-"""
+"""A view that is gone must stop asking the daemon for things."""
 
 from __future__ import annotations
 

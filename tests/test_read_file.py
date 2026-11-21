@@ -3,14 +3,6 @@ a binary or oversized file is refused from a stat and an 8 KiB sniff BEFORE anyt
 decoded, and a directory reads as its listing. On 2026-09-14 a run read a 1.5 GB .mkv to
 satisfy the read-before-delete gate; the whole file was decoded into a str twice and the
 3.4 GB host swap-thrashed for five hours until a physical reset.
-
-The write side holds the same line: edit_file refuses what read_file refuses (and a file that
-is not UTF-8 — that decode used to raise out of the handler and end the run), and write_file
-reads the text it replaces only for a format the parse gate checks.
-
-The delete/move side of that chain — a directory read grounding the tree's deletion — is
-tested with the real RunContext in test_fs_actions.py; the head-truncation contract (F204) in
-test_view_image.py.
 """
 
 from __future__ import annotations

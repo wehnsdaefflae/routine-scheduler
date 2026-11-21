@@ -1,17 +1,4 @@
-"""F521 — a run that never entered a stage its recipe DECLARES says so at finish.
-
-R1681, raised by the operator: a run can silently skip a declared workflow stage and
-nothing notices. The engine already observes stage ENTRY (`engine/fileops.py` stamps
-`ctx.phase` when a run reads `stages/<x>.md`), but it kept only the CURRENT phase — so
-the set of stages a run actually visited was never anywhere, and a run that skipped
-half its recipe finished looking identical to one that worked through all of it.
-
-The notice deliberately does NOT refuse the finish. Skipping a stage is often right (a
-gather stage with nothing to gather), and a gate that blocked it would train recipes to
-read modules they do not need. It NAMES the skipped stages instead, the way an `unmet`
-stopping condition carries a residual: in the transcript, in status.json, and in the
-finish observation the model sees.
-"""
+"""F521 — a run that never entered a stage its recipe DECLARES says so at finish."""
 from __future__ import annotations
 
 from conftest import finish
@@ -21,14 +8,7 @@ from test_loop import TS, _server, probe
 
 
 def _with_stages(d, *names: str):
-    """Give the routine a stages/ dir AND a main.md that routes through it in order.
-
-    Both halves matter. The modules are the declared states; main.md's run flow is what
-    ORDERS them (`statemap.module_rank` ranks each module by where main.md first names
-    its `<stem>.md` file). A recipe whose main.md never mentions its own stages leaves
-    every module tied, and the order falls back to alphabetical — which is correct
-    behaviour, and is why a test that asserts flow order has to declare a flow.
-    """
+    """Give the routine a stages/ dir AND a main.md that routes through it in order."""
     stages = d / "stages"
     stages.mkdir(exist_ok=True)
     for n in names:
@@ -44,11 +24,7 @@ def _with_stages(d, *names: str):
 
 def test_a_run_that_skips_a_declared_stage_is_named_at_finish(make_routine, scripted,
                                                               monkeypatch):
-    """THE DEFECT ITSELF: three stages declared, one entered, and the run finishes clean.
-
-    Before the fix this test fails at the final assertion — the run ends with nothing
-    anywhere recording that `analyse` and `record` were never entered.
-    """
+    """THE DEFECT ITSELF: three stages declared, one entered, and the run finishes clean."""
     from rsched.engine import verifier
     monkeypatch.setattr(verifier, "refuted", lambda loop, summary: [])
 
@@ -72,11 +48,7 @@ def test_a_run_that_skips_a_declared_stage_is_named_at_finish(make_routine, scri
 
 
 def test_a_run_that_enters_every_declared_stage_is_silent(make_routine, scripted, monkeypatch):
-    """The other half of the contract: no event when nothing was skipped.
-
-    A notice that fires on a complete run is noise, and noise is what makes a reader stop
-    reading the real ones.
-    """
+    """The other half of the contract: no event when nothing was skipped."""
     from rsched.engine import verifier
     monkeypatch.setattr(verifier, "refuted", lambda loop, summary: [])
 

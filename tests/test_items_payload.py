@@ -1,15 +1,4 @@
-"""What `GET /api/items` WEIGHS — the archive section carries the line it renders (F560).
-
-The finding measured 232,543 bytes for 51 open rows on the live instance, and every reader of
-the endpoint (this routine's own queue script, self-audit's folds) spilled the answer to a file
-and folded it with a helper before it was readable. Measured again 2026-10-19: of the
-`changelog` key's 95,641 bytes, 85,931 were release summaries — 8-20 lines of markdown each,
-of which `static/md.js::summaryLine` renders the FIRST LINE and drops the rest.
-
-So this is not a cap on what the page may show. It is the server stopping shipping what the
-page throws away. An item's own history keeps its full prose, server-side, on its card
-(`addressed`), which is where a reader of one item looks.
-"""
+"""What `GET /api/items` WEIGHS — the archive section carries the line it renders (F560)."""
 
 from __future__ import annotations
 

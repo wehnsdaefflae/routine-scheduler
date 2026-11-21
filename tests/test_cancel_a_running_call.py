@@ -1,19 +1,4 @@
-"""F586 / D160-C, step B1: the ENGINE SEAM for cancelling the one call that is running.
-
-The operator, 2026-09-28: *"i want the option to cancel a util run. just the once currently
-running. via a red x or sth on the message."* D160 settled on C (2026-09-30): a DISTINCT
-`cancelled` outcome — its own exit code and wording — **plus** a transcript event, so an audit
-of the run afterwards sees the human intervention instead of inferring it from a gap.
-
-What these tests pin is the half the decision turns on: **what the run is TOLD.** A run that
-reads "timed out" sensibly retries, and retrying the call a person just stopped is the whole
-behaviour the feature exists to prevent. So a cancel is not a deadline, not an abort, and says
-so in its exit code, in its flag and in its note.
-
-The seam itself is deliberately cheap: `_wait` already polls the run's `aborted` callback every
-`ABORT_POLL_S`, so the cancel rides the same look. No second wait loop in the one function every
-util, script and shell action goes through, and no second writer under `runs/`.
-"""
+"""F586 / D160-C, step B1: the ENGINE SEAM for cancelling the one call that is running."""
 
 import subprocess
 import sys
@@ -54,10 +39,6 @@ def test_the_cancel_code_is_positive_and_its_own():
     """POSITIVE because a negative return code means "killed by signal N" on POSIX and
     `executor._note_if_killed` reads one to file a `util_killed` health event — the event whose
     job is catching the cgroup OOM killer. A deliberate human act must never land there.
-
-    And DISTINCT from the deadline's 124 and the abort's 130, because that distinction IS the
-    decision: `obsState()` in the console styles a timeout dashed ("nothing is known about the
-    work"), which is the wrong thing to say about a call somebody stopped on purpose.
     """
     assert CANCEL_EXIT > 0
     assert CANCEL_EXIT not in (0, TIMEOUT_EXIT, ABORT_EXIT)
@@ -175,10 +156,6 @@ def test_the_poll_is_the_same_one_look_for_both_questions(monkeypatch, tmp_path)
 def test_an_unwatched_call_still_blocks_for_its_whole_deadline(monkeypatch, tmp_path):
     """With neither callback there is nothing to poll FOR, so the wait must not spin: the
     no-callback path keeps its single long wait.
-
-    The figure is `deadline - now` rather than the integer itself, so this asserts one wait of
-    about the whole timeout — the property — and not a float equality that would fail on the
-    microseconds spent reaching the loop.
     """
     waits: list[float | None] = []
     real = subprocess.Popen.wait

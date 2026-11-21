@@ -1,22 +1,4 @@
-"""The suite must not rewrite the operator's util-stats snapshot (F684).
-
-`readmodels/util_stats.snapshot_path()` takes no `server`: it reads `XDG_STATE_HOME` (default
-~/.local/state), because a Landlock-jailed util subprocess can read that and NOT
-routines_home/.control, so a snapshot kept under `.control/` would be unreachable to a
-routine's own `util-stats` call. That makes it the one production write path that follows
-neither the config file nor `_hermetic_home`'s patched `expand` — it resolves through
-`Path.home()` — so every test that finished an engine run replaced the live
-`~/.local/state/routine-scheduler/util-stats.json` with fixture data.
-
-Both halves of the fix are pinned here because they only work together: the FENCE
-(`XDG_STATE_HOME` redirected in `conftest._hermetic_home`, beside RSCHED_CONFIG and
-RSCHED_DOCS_DIR) and the FLOOR (the real state dir in `production_guard._instance_paths`, so
-the next un-fenced write is refused instead of silent). A fence with no floor is a fence
-somebody removes.
-
-Not R2518's `rebuilding: true` marker: the write is already atomic (`atomic_write_json`), so
-a reader never sees a half-written snapshot. What was wrong was WHICH FILE got written.
-"""
+"""The suite must not rewrite the operator's util-stats snapshot (F684)."""
 
 from __future__ import annotations
 

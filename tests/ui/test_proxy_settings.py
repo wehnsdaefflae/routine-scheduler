@@ -221,14 +221,7 @@ def test_a_gemini_endpoint_is_signed_in_to_antigravity_from_its_own_card(ui, ui_
 
 
 def test_a_rate_limited_quota_says_when_it_will_read_again(ui, ui_page, monkeypatch):
-    """A 429 is not an outage and not a credential problem, so the card must not read as one.
-
-    The old branch rendered every `ok: false` as "subscription quota unavailable — <error>",
-    whose whole point is that the error names a one-line fix (the credential this needs
-    expires). For a rate limit there is nothing to fix: the operator needs to know that the
-    account is healthy and WHEN a figure will exist again — which is what the upstream's own
-    `Retry-After` says, carried out as seconds by `cliproxy_quota.retry_after_seconds`.
-    """
+    """A 429 is not an outage and not a credential problem, so the card must not read as one."""
     ui.server_cfg.endpoints["rl-proxy"] = EndpointConfig(
         kind="anthropic", base_url="http://127.0.0.1:1", quota_source="cliproxy")
     monkeypatch.setattr(cliproxy_quota, "read_quota", lambda cfg: {

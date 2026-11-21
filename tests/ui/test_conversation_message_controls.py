@@ -1,14 +1,4 @@
-"""The chat echo bubble's own controls: revise and withdraw a queued message (D139).
-
-The operator's ask was "i wanna see that message and be able to delete / revise it until it is
-consumed by the model". A ROUTINE's inbox always allowed exactly that; a CONVERSATION — the
-surface messages are most often injected on — had only POST, and the optimistic echo bubble
-(F295) carried no id, so there was nothing to address even in principle.
-
-These flows drive the REAL console: the bubble that says "sent" is where the message is
-rewritten or taken back, and the inbox file on disk is the proof, because that file is what the
-model will actually read.
-"""
+"""The chat echo bubble's own controls: revise and withdraw a queued message (D139)."""
 
 from __future__ import annotations
 

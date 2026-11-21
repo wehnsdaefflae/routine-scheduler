@@ -1,10 +1,4 @@
-"""A run's finish summary as an item on the Messages page (operator order 2026-09-05).
-
-The Summary page was a read surface nothing linked to, next door to the page that already was
-the index of everything the instance has to say. What these pin is that folding it in kept the
-two behaviours the old page had earned — Unread by default (2026-08-05) and a bulk sweep (F303)
-— while reusing the item vocabulary rather than forking it with a synonym.
-"""
+"""A run's finish summary as an item on the Messages page (operator order 2026-09-05)."""
 
 from __future__ import annotations
 

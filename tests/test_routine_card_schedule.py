@@ -1,9 +1,4 @@
-"""The routine card's schedule fields say when the scheduler STARTS the routine (D71).
-
-A member of a scheduled lane is fired by the lane, so its own cron — empty, or suppressed — names
-no time it runs at. Read from that cron, every lane member's page said "Manual — runs only when
-you click Run now" beside a lane tile saying the lane fires it.
-"""
+"""The routine card's schedule fields say when the scheduler STARTS the routine (D71)."""
 
 from __future__ import annotations
 

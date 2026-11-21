@@ -1,24 +1,5 @@
 """The item ORIGIN STAMP (F753): how old is an item, and can the index be asked for the
 ten oldest?
-
-Every finding and decision on the Messages page was stamped with `origin.ts` — the
-`generated` date of the report that CONTAINS it. `self-audit` rewrites `audit/report.json`
-wholesale every run, so that date moved to "today" on every run and an item's age was
-unreadable: self-audit measured its own /api/items rows as carrying no date field of any
-kind and had to fall back to the id ordinal to pick a quota.
-
-So the index carries `first_seen` (plus `first_seen_or_earlier`) from a store the rewrite
-cannot reach — `rsched.firstseen`, one small JSON map under `.control/` beside the ⚑ flags
-(the same reasoning as `priorities.py`: report.json is rewritten wholesale and is not ours
-to write, and reports.jsonl records what runs SAID, not UI state).
-
-These tests pin the four claims the feature stands on:
-
-1. every row carries a stamp, and a REPORT's is its real filing time from the ledger;
-2. the stamp survives a wholesale rewrite of report.json that moves `origin.ts`;
-3. an item that appears AFTER stamping began reads as an exact first sighting, while one
-   that was already there reads as a floor ("or earlier") — never a fabricated birth date;
-4. the stamp is served fresh rather than baked into the memoized index.
 """
 
 from __future__ import annotations

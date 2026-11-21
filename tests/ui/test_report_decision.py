@@ -1,19 +1,4 @@
-"""F621 — a routine blocked on the OPERATOR is visible to him, on the pages he reads.
-
-A `report` routes work to a ROUTINE, read on that routine's next scheduled run. A run whose
-report's substance is a question for the operator therefore reached no surface of his at all:
-the Decisions page renders file-backed records, and the asking routine's own card read
-`open_questions: 0` while a campaign sat halted on him. Measured on the live instance
-2026-10-11 — D118 phase 3 and R2413 both "waiting on the operator", with `open_questions: 0`,
-`decision_backlog: false`, `problems: []` and nothing on the Decisions page. His words,
-2026-10-02: "what?! why are the questions nowhere to be seen! stuff cannot just be silently
-blocked on a response from me!"
-
-Naming `options` on the report says the call is his, and the engine files the ONE record every
-operator surface already reads. These tests LOAD those pages: a record whose `type` is `report`
-has to arrive as an answerable card naming its report and its owner, and has to be counted on
-the routine's card like any other open question.
-"""
+"""F621 — a routine blocked on the OPERATOR is visible to him, on the pages he reads."""
 
 from __future__ import annotations
 

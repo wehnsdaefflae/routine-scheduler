@@ -1,12 +1,4 @@
-"""OBLIGATIONS (engine/obligations.py) and the owed-work watch (daemon/owed_watch.py).
-
-On 2026-07-30 the operator approved freelance-radar's profile update on the Decisions page —
-"You fix all of that" — and it was never applied: the answer reached one run's digest, that run
-ended, and the next run started from nothing. R2044 ("nobody owns deploying the Steward kit")
-sat three weeks with no owner. These tests pin the two paths that end both: an approval becomes
-a goal a run can quote and carry until one meets it, and owed work past a week reaches the
-operator — an overdue obligation on the blocked-work surface, an unowned report as a decision.
-"""
+"""OBLIGATIONS (engine/obligations.py) and the owed-work watch (daemon/owed_watch.py)."""
 
 from __future__ import annotations
 

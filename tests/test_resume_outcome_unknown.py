@@ -1,21 +1,4 @@
-"""D278: a resumed leg is TOLD when its last action's outcome is unknown.
-
-The engine records `assistant_action` BEFORE dispatch and the `observation` after it. A process
-killed between the two — a deploy, the D99 SIGKILL auto-resume, `daemon/reap_resume.py` after a
-restart — leaves the transcript ending in an action with no result, and `replay_messages` hands
-that to the model as the last assistant message. The only framing the resumed leg used to get was
-`rewind._RESUMED`, "continue from the last observation", which says nothing about the last action
-maybe having happened. For an outward action that is the costly case: freelance-hunter sending
-mail, vodafone-outage-claims filing a claim, do-my-taxes submitting a return — a model that sees
-no result is likely to issue the action again.
-
-Reviewed from getpaseo/paseo, whose daemon journals every agent message `pending` before sending
-and `completed` after, and whose retry reports `agent_request_outcome_unknown` rather than
-sending twice.
-
-The kill here is a `KeyboardInterrupt` raised inside the dispatcher: the `assistant_action` event
-is already on disk, the `observation` never is — byte for byte the shape a SIGKILL leaves.
-"""
+"""D278: a resumed leg is TOLD when its last action's outcome is unknown."""
 
 from __future__ import annotations
 

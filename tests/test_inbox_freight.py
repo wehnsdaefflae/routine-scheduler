@@ -1,10 +1,5 @@
 """The inbox's two invariants that nothing else pins: ONE writer of the `msg-*` shape, and
 what a leg that may not consume its freight is told about it.
-
-`engine/inbox.file_message` has always called itself the one writer; seven modules wrote the
-filename themselves anyway, one of them character-for-character. The other half is the read
-side: every scanner selected "any file that is not `answer-*`", which also matches
-`atomic_write`'s in-flight temp file.
 """
 from __future__ import annotations
 
@@ -67,8 +62,6 @@ def test_a_leg_that_may_not_consume_its_freight_is_told_what_is_waiting(tmp_path
     FRESH run (D92/D93). That exclusion is right; the silence was not. On 2026-09-21 a
     decision answered at 16:01 sat in the inbox while three continuation legs explained it as
     still open, until the operator asked whether his answer had been lost again.
-
-    `queued_freight` is the read half: it names what is waiting and consumes nothing.
     """
     d = _routine(tmp_path)
     inbox.file_message(d, "[AUDIT decision · D141] selected: option B\nand a second line",

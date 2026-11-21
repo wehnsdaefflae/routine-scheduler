@@ -1,12 +1,4 @@
-"""D220 — a filed proof reaches the run that asked, through BOTH delivery doors.
-
-An answer reaches a run at two moments: its boot digest (`engine/composer`) and a live turn
-boundary (`engine/control.drain_injections`). Each used to compose the verdicts riding an
-answer by naming every module inline, so a third verdict could reach a run at boot and not
-mid-run — the exact asymmetry R2778 and R2197 were each filed about. `rsched/answerlines.py`
-holds the one order; these tests pin that both doors use it and that the proof survives the
-consumption that destroys the pending record.
-"""
+"""D220 — a filed proof reaches the run that asked, through BOTH delivery doors."""
 
 from __future__ import annotations
 

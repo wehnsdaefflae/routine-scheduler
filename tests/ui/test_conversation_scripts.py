@@ -1,11 +1,4 @@
-"""A conversation's rail lists its own scripts (F833, components/runscripts.js).
-
-The operator, 2026-11-02: *"why do conversations not show the routine's scripts in the right
-side bar? routine runs seem to do it"* — decided 2026-11-05: conversations hold scripts. The
-section read the ROUTINES route alone, which 404s for every conversation, and swallowed the
-404, so the rail was silently empty. Both of a conversation's rails now read its own route: the
-conversation view's, and the run page's when the run is a conversation's.
-"""
+"""A conversation's rail lists its own scripts (F833, components/runscripts.js)."""
 
 from __future__ import annotations
 

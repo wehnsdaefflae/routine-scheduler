@@ -1,12 +1,4 @@
-"""Where a ⚑ priority flag LANDS: the owner resolution in `rsched/priorities.py` (D75, D240).
-
-A flag reaches the digest of the routine that owns the flagged row. Since self-audit was split
-into maintenance (`self-audit`) and feature development (`scheduler-builder`), a finding or
-decision self-audit has HANDED OVER is the builder's work, so the flag has to reach the
-BUILDER's digest — the routine that may act on it — and not the ledger keeper's (D240). The
-store round-trip, the `R<n>` side of the resolver and the Messages-page sort live in
-`test_items.py`; this module is the F/D owner rule and the one marker both sides read.
-"""
+"""Where a ⚑ priority flag LANDS: the owner resolution in `rsched/priorities.py` (D75, D240)."""
 
 from __future__ import annotations
 

@@ -1,15 +1,6 @@
 """PRODUCTION and DEVELOPMENT, kept apart in the real console (operator, 2026-10-08: "in the ui,
 we need to clearly distinguish between production related information and development related
 information … make sure though not to clutter the interface which is text heavy anyways").
-
-The rail's Develop group (Changes, Stats, Library) is one iris band apart from the production
-groups at every width; #/changes and #/changes/<slug> render the change read models
-(readmodels/change_effects.py, model_fit.py) as chips and mono numbers; Recipe health moved there
-from the routine page, which keeps exactly ONE line about development — summons-toned when its
-newest change regressed. Months of history REBUILT from git reach the same pages, so they fold:
-the weeks as small multiples, the newest releases and changes with one "show all", consecutive
-`too few runs` changes as one row, a batch of rule revisions as a count, "≈" on what rests on
-rebuilt runs, and an archived routine named but not linked.
 """
 
 from __future__ import annotations

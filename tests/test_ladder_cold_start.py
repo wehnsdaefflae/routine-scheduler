@@ -1,28 +1,4 @@
-"""A rung is never dispatched over a ZERO-WIDTH window (R2958/R2960).
-
-Two routines reported the same thing from different angles: an oversight rung started with a
-dispatch carrying no evidence — `since_turn: 0`, `turn: 0` — so the rung's run had nothing to
-judge and spent a whole run saying so. `engine/ladder.py:261` assembles the dispatch faithfully
-from those two numbers, so the bug was upstream: `rung_is_due` returned a PULL-FORWARD reason
-before the interval was consulted, and a pull-forward fires regardless of the interval — which
-at turn 0 means a window with no turns in it.
-
-The fix is deliberately narrow, because the module's own design sentence is right about the
-case it defends: *"an EMPTY interval is still a dispatch — a worker that emitted nothing since
-the last rung is itself the signal"*. A STALLED worker (turns elapsed, nothing to show) is
-exactly what a rung should see. Zero turns is not that: there are no `says`, no histogram, no
-repetition signals and no worker answers, so every verdict the rung could give is uninformed,
-while the rung's own brief tells it the engine's counts are the evidence.
-
-So these pin three things together, and the middle one is what keeps the fix from being a
-regression of the pull-forward itself:
-
-- a zero-width window does not dispatch, whatever the reason;
-- the REASON IS NOT SWALLOWED — `last_rung_turn` is untouched, so the next boundary that has a
-  turn in it fires on the same pull-forward. An escalation a person asked for must never be
-  lost, only deferred to the first moment there is something to look at;
-- a stalled worker (the interval elapsed, nothing emitted) still dispatches, unchanged.
-"""
+"""A rung is never dispatched over a ZERO-WIDTH window (R2958/R2960)."""
 
 from __future__ import annotations
 
@@ -34,15 +10,7 @@ SETTINGS = {"enabled": True, "turn_interval": 10, "rung_height": 2, "oversight_t
 
 
 class _Loop:
-    """The attributes `rung_is_due` reads, and nothing else.
-
-    `escalation_requested` and `outcome_claimed_met` live on the ctx. `repeat_failure_signal` is
-    read off the LOOP (`ladder.pull_forward_reason`, via `getattr`) and is deliberately NOT
-    declared here: `EngineLoop` does not declare it either, and `tests/test_double_conformance`
-    fails a double that assigns an attribute the real class lacks (F644). It is set from outside
-    in `_with_repeats` below — exactly as `tests/test_ladder_trigger` sets it — so the double
-    stays conformant while the production read stays exercised.
-    """
+    """The attributes `rung_is_due` reads, and nothing else."""
 
     def __init__(self, *, turn: int, last_rung_turn: int = 0, requested: bool = False,
                  claimed: bool = False, depth: int = 0):
@@ -53,14 +21,7 @@ class _Loop:
 
 
 def _with_repeats(loop: _Loop, repeats: list) -> _Loop:
-    """A loop carrying the repeat-failure signal, set the way the engine would set it.
-
-    WORTH KNOWING, found by this file's conformance red: no module in `src/` assigns
-    `repeat_failure_signal` at all — `ladder.pull_forward_reason` reads it through `getattr`,
-    so the `repeat_failure` pull-forward cannot fire in production today. The reason is in the
-    vocabulary (`ladder.PULL_FORWARD[0]`) and its predicate is reachable only from a test.
-    Reported rather than fixed here: giving it a writer is a behaviour change of its own.
-    """
+    """A loop carrying the repeat-failure signal, set the way the engine would set it."""
     loop.repeat_failure_signal = repeats
     return loop
 

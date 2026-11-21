@@ -1,10 +1,4 @@
-"""Steps through the console that several browser tests take the same way.
-
-Each one used to be copied into every file that needed it, so a markup change (a renamed
-selector, a section moved into a fold) had to be found and answered in each copy. Plain
-functions over a page or the `ui` harness rather than fixtures: none of them holds state or
-needs a teardown. A helper with one caller stays in its test file.
-"""
+"""Steps through the console that several browser tests take the same way."""
 
 from __future__ import annotations
 
@@ -19,14 +13,7 @@ from rsched.usage_log import WORKFLOW_USAGE_FILE
 
 
 def unfold(page) -> None:
-    """Open every routine-page settings group and each group's "more" menu.
-
-    The page ships with only its two leading groups open (views/routine-config.js): seven open at
-    once made it 11-12 000px tall. The rarely needed sections fold once more behind each group's
-    "more". A control inside a fold is not visible, so a test that reads one unfolds first. What
-    the DEFAULT is — and that the choice is remembered — is pinned in test_routine_groups.py, not
-    here.
-    """
+    """Open every routine-page settings group and each group's "more" menu."""
     page.wait_for_selector(".rgroup-head")
     page.evaluate("() => { for (const d of document.querySelectorAll("
                   "'details.rgroup, details.rmore')) d.open = true; }")
@@ -157,11 +144,7 @@ def desktop(name: str, vnc: str, *, idle_s: int = 5, ready: bool = True,
 
 
 class FakeBroker:
-    """The desktop broker's two operator operations, answered from a list the test edits.
-
-    It replaces `api_desktops._broker` — the one outbound hop — so the console's real route,
-    owner mapping and token filtering all run; only the sidecar is absent.
-    """
+    """The desktop broker's two operator operations, answered from a list the test edits."""
 
     def __init__(self, rows: list[dict]):
         self.desktops = list(rows)

@@ -1,28 +1,4 @@
-"""`deploy/backup.sh` stops re-copying OLD run directories, and keeps everything else whole.
-
-D235, the operator's answer to F830 verbatim: *"Exclude runs/ older than N days from the snapshot
-(keep state/, .memory/, LEDGER, audit/) — biggest cut, loses old transcripts off-box"*. The
-snapshot had stopped completing inside the unit's `TimeoutStartSec=4h` — no complete one between
-2026-11-01 and 2026-11-05, three `backup_stale` nights in a row — and the share is sshfs, one
-round trip per file, so the file COUNT is the cost.
-
-Each property here is one the shell can break silently, and two of them lose data if they break:
-
-- a run directory older than `KEEP_RUNS_DAYS` is not carried; a recent one is;
-- everything his answer names is carried AT ANY AGE — `state/`, `.memory/`, `LEDGER.md`,
-  `audit/` — and so is a `conversations/` run folder, which is a session and not a transcript;
-- a directory whose name is not a run id is KEPT: "unparseable" must never be read as "old";
-- `KEEP_RUNS_DAYS=0` carries every run directory, so the cut is switchable from the unit file;
-- the MIGRATION TARBALL still carries the aged-out run, because `deploy/bundle.sh`'s source host
-  is decommissioned immediately afterwards and that copy has to be complete. This is the one
-  deliberate difference between the two consumers of `deploy/state-paths.sh`, which is why the age
-  cut is in `backup.sh` and not in the shared `STATE_EXCLUDES`
-  (`tests/test_backup_snapshots.py::test_the_tarball_and_the_snapshot_carry_the_same_files` is
-  the test that would otherwise have forbidden it).
-
-The cutoff is computed by the real `date -u -d "N days ago"` — `_backup`'s date stub answers only
-`+%F` — so every fixture here is planted against the REAL UTC clock, not the stubbed snapshot day.
-"""
+"""`deploy/backup.sh` stops re-copying OLD run directories, and keeps everything else whole."""
 from __future__ import annotations
 
 import os
@@ -113,12 +89,6 @@ def test_a_run_older_than_the_window_is_not_mirrored_off_box_and_a_recent_one_is
     """The cut itself, at the default seven days, ON THE TIER THAT HAS THE COST: the 8- and
     30-day runs are absent from the off-box snapshot, the 2-day and today's are whole (their
     `sub/` included — excluding the directory excludes the tree).
-
-    R3204 moved the cut here. D235 cut old runs because every file is an sshfs round trip;
-    R3204 then made a LOCAL disk the first tier, where that cost does not exist, so the local
-    snapshot keeps everything and this exclusion applies to the off-box mirror alone. The
-    operator's two sentences compose: "loses old transcripts off-box" (D235) and "the local
-    tier may keep everything" (R3204).
     """
     offbox = _offbox_root(tmp_path)
     proc = _backup(home, root, SNAPSHOT_DAY, overrides={"MIRROR_ROOT": str(offbox)})
@@ -175,10 +145,6 @@ def test_an_offbox_mirror_drops_what_an_earlier_one_had_already_copied(home, roo
     """The off-box mirror converges on the local snapshot MINUS the aged-out runs, even when an
     older off-box snapshot still holds one — `--delete --delete-excluded` is what makes the
     mirror a projection of tonight's local snapshot rather than an accumulation.
-
-    Before R3204 this property belonged to a RESUMED local night (a half-built folder the next
-    run carried on in). The local tier no longer excludes anything, so the property moved with
-    the exclusion: it is the off-box tier that must not keep what the cut drops.
     """
     offbox = _offbox_root(tmp_path)
     stale = offbox / "snapshots/.in-progress/routines/aged/runs" / _run_id(30)

@@ -1,17 +1,5 @@
 """LANES — the temporal axis: the store (rsched.lanes), its CRUD API (web.api_lanes), the lane
 schedule (D71), the whole-lane pause, and the member-record shape.
-
-These tests pin the store's shape guarantees (ordered/deduped member records, on_failure
-vocabulary, the update tri-state), the at-most-one-lane cardinality the whole axis is built
-around, and the API's member-existence validation against the live registry — which covers
-only the slugs a caller ADDS, so one out-of-band routine deletion cannot lock a lane against
-every further edit (F442). `rsched validate`'s two instance-level cases sit here as well — a
-phantom member, a scheduled lane with nobody in it — because nothing cascades a routine
-deletion out of the store. Arming a chain appears only as far as the API reaches; the
-sequential advance itself is tests/test_lane_runs.py.
-
-Shared stores are NOT here: a store is shared by naming it among a routine's own write roots
-(tests/test_sharedstores.py), for the same reason it has its own module.
 """
 
 from __future__ import annotations
@@ -71,9 +59,6 @@ def test_a_routine_belongs_to_at_most_one_lane(tmp_path):
     the UI to remember. A routine in two scheduled lanes fires twice; no ordering and no
     on_failure policy can undo that. Timing is therefore a record of its own, apart from the
     shared config block, whose cardinality is a different question entirely.
-
-    Both writers check it and both name the offending slugs, because "already in another lane"
-    is actionable where "invalid" is not.
     """
     home = tmp_path
     morning = lanes.create(home, name="Morning", members=[m("a"), m("b")])

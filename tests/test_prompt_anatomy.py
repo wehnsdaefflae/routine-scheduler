@@ -1,11 +1,6 @@
 """docs/prompt-anatomy.md is contract documentation for the Help tab: it must track the
 prompt surface. This pins the load-bearing engine strings — change composer/loop/schema
 wording and this fails until the doc is revised to match.
-
-The needle list is held to the source in BOTH directions. `doc ⊇ engine` catches a wording
-change the doc has not followed; `engine ⊇ doc` catches the opposite and harder failure —
-prose that outlived its feature, which a one-way check reads as a pass. (A `GROUP FIRE PHASE`
-paragraph survived the machinery it described for months that way.)
 """
 
 import re

@@ -1,20 +1,4 @@
-"""The browser sidecar's entrypoint, RUN — not read.
-
-`tests/test_deploy_image.py` holds the deploy files' promises by reading them, because the images
-are built on the host and there is no CI. That is right for a pin (a digest, a flag) and not
-enough for CONTROL FLOW: a supervisor loop can satisfy every text assertion and still abort on
-`set -u`, wait on the wrong thing, or exit before it logs. So this module executes
-`deploy/chrome-entrypoint.sh` itself, with the five binaries it starts replaced by stubs — the
-one property that matters is observable in seconds:
-
-    one of the five processes dies -> the script exits, with that process's own status, naming it
-
-which is what makes compose's `restart:` bring the whole sidecar back instead of leaving a
-container that is up and broken (SD2.5, docs/designs.md).
-
-What this does NOT prove: that the real Xvfb, x11vnc, websockify, auth proxy and Chrome start and
-talk to each other — that needs the image, and the browser suite covers it from the outside.
-"""
+"""The browser sidecar's entrypoint, RUN — not read."""
 from __future__ import annotations
 
 import contextlib
@@ -63,17 +47,7 @@ def _sidecar(tmp_path: Path, dies: str | None = None, status: int = 7) -> Path:
 
 
 def _run(script: Path, tmp_path: Path, timeout: float) -> subprocess.CompletedProcess:
-    """Run the entrypoint and return its status and log.
-
-    The log goes to FILES, not pipes. The point of this script is that four processes outlive
-    the event under test, and they inherit whatever stdout they are given — so a PIPE is still
-    held open after the script itself has exited, and a reader waiting for EOF waits for
-    `sleep 300` rather than for the script. That cost three timed-out tests when this module was
-    written, and it is the same mistake as waiting on the wrong thing in the script.
-
-    They are also put in a session of their own, so the survivors can be killed as a group
-    instead of leaking into the rest of the suite.
-    """
+    """Run the entrypoint and return its status and log."""
     environment = dict(os.environ,
                        PATH=f"{script.parent / 'bin'}{os.pathsep}{os.environ['PATH']}",
                        BROWSER_CDP_TOKEN="test-token",
@@ -96,12 +70,7 @@ def _run(script: Path, tmp_path: Path, timeout: float) -> subprocess.CompletedPr
 
 
 def _end_the_group(child: subprocess.Popen) -> None:
-    """Kill the whole session AND reap it, so no stub outlives the test that started it.
-
-    The reap is not tidiness: a `Popen` collected while its process is still unwaited raises
-    inside `__del__`, which pytest turns into an unraisable-exception failure attributed to
-    whatever test happens to be running when the garbage collector gets there.
-    """
+    """Kill the whole session AND reap it, so no stub outlives the test that started it."""
     with contextlib.suppress(ProcessLookupError, PermissionError):
         os.killpg(os.getpgid(child.pid), signal.SIGKILL)
     with contextlib.suppress(subprocess.TimeoutExpired):
@@ -158,12 +127,6 @@ def test_the_chrome_sidecar_dies_whole_or_not_at_all():
     means the noVNC page never connects, and nothing exits, so nothing restarts. That is a
     sidecar in half, and the symptom reaching a person is "the browser view is black" with a
     healthy-looking container behind it (SD2.5, docs/designs.md).
-
-    The fix is `wait -n`: every process is backgrounded, PID 1 waits for the FIRST of them to
-    exit, and then the script exits — one dying ends the container and `restart:` brings all four
-    back together. This reads the script as a file, like every other promise in this module: the
-    container is built on the host and there is no CI, so what can be held without a Docker
-    daemon is held here.
     """
     script = ENTRYPOINT.read_text(encoding="utf-8")
     body = [ln for ln in script.splitlines()

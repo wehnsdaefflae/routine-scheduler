@@ -1,11 +1,4 @@
-"""Deferrals whose carrier closed without delivering them (the F324 loss mechanism).
-
-The fixture is the real history, because it is the best possible test: on 2026-08-21 the
-stopping-conditions SIDEBAR PANEL was deferred into F324; on 2026-08-26 F324 shipped the rail
-and closed `addressed`, naming R339/R340/R341/F336 as delivered — F336 had been deferred into it
-the same way and DID land, the panel did not. Nothing in the ledger could tell those two apart,
-which is why the panel was invisible for six days and only surfaced when the user asked.
-"""
+"""Deferrals whose carrier closed without delivering them (the F324 loss mechanism)."""
 
 from __future__ import annotations
 

@@ -1,15 +1,4 @@
-"""The routine page's settings groups: what is open when you arrive and what is remembered.
-
-Seven groups open at once made the page 11-12 000px tall; somebody who came to change one
-dial had no map. The head of each group carries a hint line, which IS the map. The page opens
-on the two questions most visits come with — when it fires and when it is finished — and
-folds the rest. Inside each group, the rarely needed sections fold once more behind its "more"
-menu, whose summary says what the menu holds.
-
-Nothing is removed by that; this file is what says so. One click opens a group, the choice
-survives a reload, and a setup-check fix link still lands the reader on its control — which it
-can only do by opening the folds on the way.
-"""
+"""The routine page's settings groups: what is open when you arrive and what is remembered."""
 from __future__ import annotations
 
 import yaml

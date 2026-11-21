@@ -1,15 +1,4 @@
-"""A cap a run can only learn by being refused (F680).
-
-`reminder_checks` enforces two lengths on the `remind` side field — `MAX_REGEX_CHARS` (200) and
-`MAX_DESCRIPTION_CHARS` (400) — and neither appeared in the schema a run is sent. So the only
-way to learn a limit was to write past it and lose the turn: three routines did that in one
-window, each curating correctly, and the run that shipped this fix paid it a fourth time on its
-own first reminder.
-
-The fix is not a wider cap: it is that the SCHEMA says the number, interpolated from the
-constant that enforces it. These tests pin both halves — the number is stated, and it is the
-same number — so a later change to either side cannot silently re-open the gap.
-"""
+"""A cap a run can only learn by being refused (F680)."""
 
 from rsched.engine.actionschema import ACTION_SCHEMA
 from rsched.reminder_checks import MAX_DESCRIPTION_CHARS, MAX_REGEX_CHARS

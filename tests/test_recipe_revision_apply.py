@@ -1,17 +1,4 @@
-"""D200, the operator's half: APPLYING a run's proposed recipe revision.
-
-`test_recipe_revision.py` is the engine seam — every finishing run is asked, and what it answers
-becomes one standing proposal. This file is the other end: what the operator can actually do with
-that card, which is where the decision row's constraint lands. A scheduled run holds no
-`write_recipe`, so the proposal cannot be an edit; and nothing out here can turn prose a run wrote
-about its own recipe into a diff without re-deriving the reasoning that run already did and left
-in its transcript. So approving ARMS the unlock that already exists (`engine/revise.py`, the run
-view's "editable recipe" checkbox): the proposing run is resumed with its recipe writable and
-makes the edit itself — one unlock path, not a second one that can drift from it.
-
-Every guard here exists because the marker is a ONE-SHOT unlock the next leg of that run dir
-reads, whatever starts it.
-"""
+"""D200, the operator's half: APPLYING a run's proposed recipe revision."""
 
 from __future__ import annotations
 

@@ -1,17 +1,4 @@
-"""Which blocked-work events are STANDING CONDITIONS, and which are INCIDENTS (R3418).
-
-`health_stream.BLOCKED_EVENTS` means "work that was due did not happen", and the fold used to
-report every row's magnitude as a `count`. For an incident that is a number of facts — a fire
-refused twice is two refusals. For a standing condition it is the number of DAYS THE DAEMON
-HAPPENED TO BE UP while one fact stayed true, because each of those writers latches privately
-to one row a day: a nineteen-night backup gap rendered as `count: 19` beside `fire_refused: 19`
-and both were summed into one `total`.
-
-These tests pin the split in both directions. The dangerous drift is an event classified by
-habit rather than by its writer's latch, so every name is listed here explicitly — a new
-`BLOCKED_EVENTS` entry fails `test_kind_answers_for_every_blocked_event` until someone decides
-which kind it is.
-"""
+"""Which blocked-work events are STANDING CONDITIONS, and which are INCIDENTS (R3418)."""
 
 from rsched.readmodels import blocked_kinds
 from rsched.readmodels.blocked_kinds import INCIDENT, STANDING, STANDING_EVENTS, kind

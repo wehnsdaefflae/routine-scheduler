@@ -1,18 +1,4 @@
-"""A CONVERSATION's `machines:` binding reaches its COMPOSED PROMPT (D216 part b).
-
-The parity pin this file exists for: a conversation binds machines exactly like a routine
-(D102, `web/api_conversation_config.py` PATCH `machines`), and the engine injects
-RSCHED_MACHINES for it (`engine/exec_env._machine_env`) — but until this file nothing
-asserted that the bound box is NAMED in the prompt the conversation's model reads. The
-surfaces that touch it were each pinned on their own side: `tests/test_conversations.py`
-`test_conversation_machines_bind_and_validate` stops at routine.yaml, and
-`tests/test_composer.py`'s machine tests build a ROUTINE context. A conversation told
-nothing about its GPU box spends its reply discovering hardware it was configured with.
-
-Asserted on the COMPOSED TEXT (`build_system_prompt`), not on `ctx.routine.machines`, and
-driven from the YAML on disk through the real `load_routine`, so the whole chain is covered:
-routine.yaml → config loader → `capabilities._machine_notes` → the CAPABILITIES section.
-"""
+"""A CONVERSATION's `machines:` binding reaches its COMPOSED PROMPT (D216 part b)."""
 from types import SimpleNamespace
 
 import yaml

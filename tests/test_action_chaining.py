@@ -1,9 +1,5 @@
 """ACTION CHAINING (engine/chain.py, operator 2026-10-23): a reply's actions run in order,
 inside one turn, and every result comes back together at the start of the next turn.
-
-His words: "I want action chaining to work like in the terminal. Chained actions provide their
-return values together in the next run", "on for every routine but can be toggled off in the
-routine settings", and the correction "stop at the first failed action, like &&".
 """
 
 import json
