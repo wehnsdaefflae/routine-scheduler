@@ -5,7 +5,7 @@ made for `abort`/`drain` into `cli_runctl.py`). It is one command but four indep
 questions, which is why it outgrew its home:
 
 1. is every file well-formed (`load_routine`'s own problems)?
-2. do the stored MODEL NAMES still exist in the catalog (`trials` — the loader cannot see it)?
+2. do the stored MODEL NAMES still exist in the catalog (`rolecatalog` — the loader cannot see it)?
 3. can each role's chain actually FAIL OVER (`conformance`, R2196)? — and is its claim verifier
    a different model from the one it judges (`verifier_model`, a NOTE)?
 4. is the SETUP coherent (`readmodels.surface`) and does the RECIPE still hold together
@@ -46,19 +46,15 @@ def cmd_validate(args) -> int:
     from .conformance import chain_problems
     from .readmodels.remedies import surface_lines
     from .readmodels.surface import routine_surface
-    from .trials import ignored_problem, roles_problem
+    from .rolecatalog import roles_problem
     from .verifier_model import shared_verifier_problem
     from .workflows.recipelint import recipe_errors, recipe_notes
 
     for d in targets:
         cfg, problems = load_routine(d)
-        # A model trial naming a model the catalog lacks is ignored at every fire — the loader
-        # cannot see the catalog, so it is said here (rsched/trials.py)
-        if cfg and (trial_problem := ignored_problem(server, cfg.trial)):
-            problems.append(trial_problem)
-        # And the STANDING roles, for the same reason and from the same module: a stored name
-        # goes stale when the catalog is renamed underneath it, and the write edge that checked
-        # it is long past (F643 — two runs died at boot on a `Sonnet` that was valid when taken)
+        # The STANDING roles: the loader cannot see the catalog, a stored name goes stale when
+        # the catalog is renamed underneath it, and the write edge that checked it is long past
+        # (F643 — two runs died at boot on a `Sonnet` that was valid when taken)
         if cfg and (role_problem := roles_problem(server, cfg.models)):
             problems.append(role_problem)
         # …and whether each role's chain can actually FAIL OVER (R2196, rsched/conformance.py):

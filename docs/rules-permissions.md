@@ -512,9 +512,7 @@ assists:
 The moment and the payload are COUPLED (`assists.MOMENT_PAYLOADS`), not free to combine:
 `pre-action` can only HOLD — at the point an action is chosen but not executed, the only way to
 reach the model is to stop it — and the three free moments can never hold, because a hold needs
-an action to stop and none of them has one. The `boundary` moment may also carry `action`: the
-rule PERFORMS an authored action (an `action:` dict beside the line) at no turn cost, bounded by
-the firing routine's own capabilities and barred from the kinds that steer a run.
+an action to stop and none of them has one.
 `rule-assists.md` carries the table and the worked examples; this page does not restate it.
 
 The rule does not shrink, it FACTORS: the trigger moves off the model, the operative line
@@ -571,7 +569,7 @@ on an `ask_user` carrying a `config_patch` and the Decisions page applies it wit
 no card; at `never` that widens to every patch field outside the sealed set, which also reaches
 `schedule`, `run_gate`, `rules` and `outcome`, so it is a deliberate per-routine choice. The
 sealed set is absolute at every level — `permissions`, `capabilities`, the filesystem roots, the
-`models`, a `trial`, `grants`, `connections`, `machines`: no dial value lets a routine widen its
+`models`, `grants`, `connections`, `machines`: no dial value lets a routine widen its
 own authority, and the refusal is enforced in the apply, never in the asking run's restraint. `reminders: local` is the
 default because a caution a run leaves itself about its own actions is ordinary conduct; at
 `local` a run writes its own reminders and applies them beside every curated one that reaches

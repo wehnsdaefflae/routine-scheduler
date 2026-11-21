@@ -91,7 +91,6 @@ def create(ctx: RunContext, action: dict) -> dict:
     raw.update(slug=slug, name=name, enabled=True, grants={}, triggers=[],
                description=f"Replacement candidate for {old}: {reason}"[:400],
                schedule={**schedule, "cron": ""})
-    raw.pop("trial", None)
     d = home / slug
     d.mkdir(parents=True)
     (d / "state").mkdir()

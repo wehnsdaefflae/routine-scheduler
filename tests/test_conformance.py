@@ -119,7 +119,7 @@ def test_a_cycle_terminates_and_an_unknown_fallback_is_skipped():
 
 
 def test_a_role_naming_an_uncatalogued_model_is_left_to_roles_problem():
-    """One finding per defect: `trials.roles_problem` already says "not in the model catalog",
+    """One finding per defect: `rolecatalog.roles_problem` already says "not in the model catalog",
     and saying it twice in one `validate` run teaches nobody anything.
     """
     server = _server(models={"A": ("ep_a", [])},

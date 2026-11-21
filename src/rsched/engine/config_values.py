@@ -13,39 +13,11 @@ click, and `null` keeps meaning "clear it" exactly as `api_routine_patch` reads 
 
 from __future__ import annotations
 
-#: What a model trial looks like, said in the refusal so the next filing gets it right.
-TRIAL_SHAPE = ('{"trial": {"id": "t-<yyyymmdd>-<model>", "models": {"main": "<catalog model '
-               'name>"}, "efforts": {"main": "<low|medium|high|xhigh|max>"} (optional), '
-               '"runs": <1-20>, "reason": "<what the trial should show>"}}')
-
 
 def _why(exc) -> str:
     """A pydantic ValidationError as one operator-readable clause per bad field."""
     return "; ".join(f"{'.'.join(str(p) for p in e['loc']) or 'value'}: "
                      f"{e['msg'].removeprefix('Value error, ')}" for e in exc.errors())
-
-
-def trial_value(server, patch: dict | None) -> str:
-    """Refuse a `trial` VALUE the apply would refuse (bad shape, or a model the catalog lacks).
-
-    The shape is `config/trialconf.TrialConfig`, the catalog is `rsched.trials`; the window fit
-    is left to the click. `null` (clear the trial) always passes.
-    """
-    if not patch or patch.get("trial") is None:
-        return ""
-    from pydantic import ValidationError
-
-    from ..config.trialconf import TrialConfig
-    from ..trials import catalog_problem
-
-    try:
-        trial = TrialConfig.model_validate(patch["trial"])
-    except ValidationError as exc:
-        return (f"config_patch trial: {_why(exc)}. A trial is {TRIAL_SHAPE}; "
-                '{"trial": null} clears one.')
-    if problem := catalog_problem(server, trial):
-        return f"config_patch {problem}. `list_models` names the catalog."
-    return ""
 
 
 def outcome_value(patch: dict | None) -> str:
@@ -132,7 +104,7 @@ def role_value(server, patch: dict | None) -> str:
     Mirrors `web/config_fields.validate_models` and is deliberately no stricter:
 
     - the DECISION roles are judged against `server.decision_models`, not the chat catalog —
-      which is why `trials.roles_problem` (chat catalog for every role) is not reused.
+      which is why `rolecatalog.roles_problem` (chat catalog for every role) is not reused.
     - blanking a role (`""`/`null`) clears it to the instance default, so it passes.
     - the model's WINDOW fit stays with the click (`web/model_fit.model_window_problem`).
     """

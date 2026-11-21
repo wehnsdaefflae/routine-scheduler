@@ -200,31 +200,7 @@ def refuted(loop, claims: list[dict], summary: str) -> list[dict]:
             out.append({"id": claim["id"], "text": claim["text"],
                         "evidence": str(v.get("evidence") or "").strip()
                         or "the transcript does not show this being done"})
-    # D287: the same claims screened by a DECISION model in shadow, recorded beside the prose
-    # judge's verdicts and changing none of them (engine/decision_shadow.py)
-    _shadow_claims(ctx, claims, summary, _tail(loop), {str(c["id"]) for c in out})
     return out
-
-
-def _shadow_claims(ctx, claims: list[dict], summary: str, tail: str,
-                   refuted_ids: set[str]) -> None:
-    """Hand the comparison to the shadow, and never let it reach the run.
-
-    A measurement inside a fail-open verifier buys the run nothing, so it never raises.
-    """
-    try:
-        from . import decision_shadow
-
-        decision_shadow.compare_claims(
-            ctx,
-            question=("Does the run's own record below SUPPORT this claim? Answer yes only if "
-                      "the summary and the transcript tail show the thing being done."),
-            evidence={"summary": summary, "transcript_tail": tail},
-            claims=claims,
-            chat_supported={str(c["id"]): str(c["id"]) not in refuted_ids for c in claims},
-        )
-    except Exception as exc:                      # a measurement never raises
-        log.info("finish: the claim shadow could not run (%s)", exc)
 
 
 def challenge_message(items: list[dict]) -> str:

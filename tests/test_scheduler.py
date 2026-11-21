@@ -685,8 +685,8 @@ async def test_a_role_the_run_may_never_resolve_does_not_refuse_the_fire(
     assert await runner.fire(cfg, reason="schedule") is not None
     await abort_live(runner, "reorgish")
     # …and `validate` still tells the whole truth about it, which is where it belongs
-    from rsched import trials as trials_mod
-    assert "models.uncensored" in trials_mod.roles_problem(server, cfg.models)
+    from rsched import rolecatalog
+    assert "models.uncensored" in rolecatalog.roles_problem(server, cfg.models)
 
 
 async def test_a_servable_role_fires_normally(make_routine, tmp_path, monkeypatch):

@@ -45,15 +45,6 @@ def problems(obj: dict, allowed_kinds: set[str] | None, grants) -> list[str]:
     if script is None or not all(isinstance(a, str) for a in argv) or not argv[0].strip():
         return [(f'kind={obj.get("kind")}: {FIELD} is ["<script-name>", ...args] — the name '
                  "of one of your scripts/ first, then its arguments, every item a string")]
-    if obj.get("background"):
-        # The background thread dispatches the KIND, not this fusion (which lives in
-        # `actionroute._route`), so a deferred pair would drop the script silently with its
-        # secret gate never asked. Refused here rather than half-performed in a thread.
-        return [(f'kind={obj.get("kind")}: {FIELD} cannot ride a backgrounded change — the '
-                 "background thread performs the change only, so the script would be dropped "
-                 "without running and its secret gate never asked. Either drop 'background' "
-                 "and keep the pair in one action, or defer the change alone and run the "
-                 "script as its own action once the write has landed")]
     from .actions import validate_action
     return [f"{FIELD}: {p}" for p in validate_action(script, allowed_kinds, grants)]
 

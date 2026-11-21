@@ -138,8 +138,7 @@ entry for what you are about to touch.
   whose command line hides whose status it is says so in the head (`engine/exitattr.py`).
   **Retry, failover and prompt-window policy read what a failed call DECLARED** —
   the provider's error enum (`endpoints/errorsignal.py`, R3108), never English sentences in its
-  body; the phrase lists are gone. A classifier that still cannot decide files
-  `error_class_undecided` (`engine/errorclass.py`), a measurement that changes no policy. A finish emitted while an undrained user message waits is deferred so the message
+  body; the phrase lists are gone. A finish emitted while an undrained user message waits is deferred so the message
   becomes the next turn (a finish that must stand — the spent reserved turn, an abort — names the
   still-queued message in the summary instead). Budgets are a runaway BACKSTOP, never a pace; do not reintroduce prose that has a run
   ration its work against the turn counter. The 85% warning is an EVENT, not a state: it is said
@@ -173,39 +172,15 @@ entry for what you are about to touch.
   NEXT completion — `endpoints.for_model` re-resolves the role every turn, so model, window and
   effort self-correct. The cheap position resolves the role through `config.base.role_default_model`
   (the routine's own `tool_call`, else the instance's `system_tool_call_model`, D230) and is served
-  only when the result DIFFERS from what `main` resolves to — one rule, `roleswap.cheap_model`,
-  which `engine/autoswap.py` delegates to so the two layers cannot disagree. A position that
+  only when the result DIFFERS from what `main` resolves to — one rule, `roleswap.cheap_model`.
+  The routine-wide default is `ServerConfig.system_tool_call_model`, which an unset
+  `models.tool_call` prefers over `system_model`; it ships empty. A position that
   resolves to no cheaper model is NAMED to the run as an engine note rather than silently served by
   the system-model fallback. A `strong` on a routine that configures no `main` REMOVES the override
   instead of naming a model, so the run returns to the instance default rather than being stranded
   on the cheap one. The operator's
   2026-10-16 choice of the run-chosen trigger over a stage- or turn-count rule made auditability
   a condition: D188's per-turn model stamp is what satisfies it.
-  The ENGINE serves the same slot for a REPEAT POLL, without the run asking (F785, D217 "both":
-  `engine/autoswap.py`, hung off `sidefields.land` so the turn loop gains no call site). A turn
-  qualifies only when the previous action was poll-class and the new one repeats that class —
-  `subruns`/`wait` by kind, `script`/`util` only when the canonical action string is identical —
-  and the cheap serve starts at the SECOND consecutive repeat, so one re-check never changes
-  models under a run. The main model returns on the first action of a different class. Three
-  stand-downs are load-bearing: no distinct `tool_call` model means the mechanism does nothing
-  and claims nothing (31 of 32 routines were in that position — D230 shipped the config half:
-  `config.base.role_default_model` gives the role a FLEET-WIDE default,
-  `ServerConfig.system_tool_call_model`, which an unset `models.tool_call` prefers over
-  `system_model`. It ships empty; an instance that names a model there ends the stand-down fleet-wide); a
-  byte-identical
-  streak at `wrongturn.WARN_STREAK` restores the main model, because that is the turn
-  `loop._repeat_warning` tells the run it is stuck and sheds the schema; and an action carrying
-  `role_swap` stops the engine guessing for the rest of the run. Measured reach on the 401
-  transcripts retained 2026-11-01 (32,255 landed turns): poll-class turns 14,395 (44.6%), but
-  ADJACENT poll repeats only 6 (0.019%), of which the escape-turn guard leaves **1 actually
-  served (0.003%)** — `REPEAT_FAIL` ends a run at 5 identical actions, so a real poll loop is
-  `poll → read the answer → poll` and its repeats are not adjacent, and for a poll whose action
-  never varies (`subruns` is declared `((), ())`) the class depth and the identical streak are
-  the same number, so `SERVE_FROM` always coincides with `WARN_STREAK` and that band is empty.
-  The adjacency rule is what D217 authorized, and on today's fleet it is close to a no-op;
-  reaching F785's 2,651 turns needs a windowed rule (22 turns, 0.07% at a window of 4) or
-  dropping adjacency altogether (1,142 turns, 3.5%), and that widening is an open operator
-  decision. `tests/test_auto_cheap_poll.py` pins the empty band with its reasoning.
   Two more SIDE FIELDS ride any kind the same turn-free way, behind the `reminders` capability:
   **`remind`** leaves/revises/deletes a CONSEQUENCE REMINDER — a `(regex → consequence)` pair over
   the canonical action string, and with `target` sets one on another routine or (at `global`,
@@ -542,19 +517,13 @@ entry for what you are about to touch.
   renderer's KeyError was a run no resume could recover. **A `background: true` call
   passes that gate on its STARTING turn, before the thread exists** (F633): the gate asks the user
   and a thread has no turn to block on, so a deferral that skipped it would have moved a security
-  decision out of reach — every call-time gate a kind has runs synchronously first. **A deferred
-  MUTATION is ordered by the target it declares, never by trust** (D118 phase 3,
-  `engine/background_order.py`): `write_file`, `edit_file` and `memory_write` may defer because
-  each names the one thing it writes, and `dispatch_action` holds any later action touching that
-  target until the write has landed — so a run that never calls `wait` is still correctly
-  ordered. And `wait` COVERS background calls (`engine/waitop.py`): with no `n` it ends on the
-  next child exit OR background landing, `all` waits for both, and with no child it waits for
-  the calls instead of refusing — it saw children only, and one run burned 20 minutes on it. Compare a path target as the RUN would resolve it (`run_context.work_dir`), or one
-  file reached by a relative and an absolute path counts as two and the barrier misses the stale
-  read it exists to prevent. A kind whose handler is not reached by `background._runner` may not
-  join that list — `write_util`/`write_rule` are gated in `actionroute._route`, and a
-  `then_script` is refused on a deferred change for the same reason: the thread would land the
-  change and drop the script with its gate never asked. **There is NO
+  decision out of reach — every call-time gate a kind has runs synchronously first. **Only a
+  read or a fetch defers** (`actions.BACKGROUNDABLE_KINDS`): its only effect is its observation,
+  so no later action can read state a deferred call has not written yet — every file, memory,
+  util and rule WRITE runs synchronously. And `wait` COVERS background calls
+  (`engine/waitop.py`): with no `n` it ends on the next child exit OR background landing, `all`
+  waits for both, and with no child it waits for the calls instead of refusing — it saw children
+  only, and one run burned 20 minutes on it. **There is NO
   concurrency cap** (D166 answered (c), unbounded: the run's own turn budget is the practical limit).
   0.392.0 read a cap of 3 at that seam; the decision row had recorded the option the operator did
   not choose, so 0.408.1 removed the mechanism rather than widening the number (F650) — the
@@ -817,9 +786,7 @@ by a test, by the engine, or by a past incident.
   config it was handed and refuses when that config resolves to different run homes than the
   spawner is using. A spawner whose config was never loaded from a file is refused before a
   process exists. Never give either flag a default — the fallback is `~`, i.e. production,
-  and a tmp-homed test once spent real money and real ledger rows there. A model trial's run
-  is told its models and efforts the same way (`--model role=name`, `--effort role=level`, from
-  the run dir's own `trial.json`).
+  and a tmp-homed test once spent real money and real ledger rows there.
 - **Under memory pressure the kernel takes a RUN, never the daemon.** `engine-run` raises its
   own `oom_score_adj` to 1000 before anything else (`rsched/oomrank.py`), and every util, script,
   `shell` command and test suite it starts inherits that; the daemon keeps 0. The daemon is the
@@ -830,14 +797,7 @@ by a test, by the engine, or by a past incident.
   a restart starts the container in a fresh memory cgroup, so `memory.events` inside it says
   `oom_kill 0` about the kill that caused that very restart — three runs concluded "not an OOM"
   from exactly that.
-- **A model trial ends by COUNTING, never by a write.** `trial:` in routine.yaml
-  (`rsched/trials.py`) is active while fewer than `runs` depth-0 usage runs carry its id in
-  `fingerprint.trial`; every fire while it is active is armed (`trial.json` in the run dir,
-  `--model` to `engine-run`, re-read from that dir on a resume). Nothing clears the field when
-  the trial finishes — it stays as history until the operator's next accepted change — so never
-  add a writer that tidies it up, and keep it out of the fingerprint's config hash
-  (`runrecord.NOT_BEHAVIOUR`), or the runs after a finished trial stop comparing equal to the
-  identical runs before it. That hash covers an ALLOWLIST (`runrecord.BEHAVIOUR`), and every
+- **The fingerprint's config hash covers an ALLOWLIST** (`runrecord.BEHAVIOUR`), and every
   RoutineConfig field sits in exactly one of the two sets — a new field fails
   `tests/test_runrecord.py` until it is decided: hashing a field by default made every cron
   edit read as a behaviour change.

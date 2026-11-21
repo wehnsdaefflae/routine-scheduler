@@ -18,7 +18,6 @@ from .base import (
     MODEL_KINDS,
     ROUTINE_MODEL_ROLES,
 )
-from .trialconf import trial_load_problems
 
 if TYPE_CHECKING:
     from .routine import RoutineConfig
@@ -100,11 +99,10 @@ def _scrub_ladder(cfg: RoutineConfig) -> list[str]:
 
 
 def scrub_bindings(cfg: RoutineConfig, raw: dict) -> list[str]:
-    """Models, efforts, the trial, connections, budgets, the stale `deliberation` key and the
+    """Models, efforts, connections, budgets, the stale `deliberation` key and the
     ladder — every problem line, with the unusable entries already removed from `cfg`.
     """
     problems = _scrub_models(cfg)
-    problems += trial_load_problems(raw.get("trial"), cfg.trial)
     from ..oauth.providers import PROVIDERS  # function-level: oauth imports secrets, not config
     for prov in [p for p in cfg.connections if p not in PROVIDERS]:
         problems.append(

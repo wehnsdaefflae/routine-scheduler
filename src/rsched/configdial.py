@@ -68,8 +68,6 @@ SEALED: frozenset[str] = frozenset({
     "fs_write_roots",   # what it may write — likewise
     "models",           # a role naming an absent model takes the routine dark (F643)
     # the same surface under other names
-    "trial",            # a TrialConfig CARRIES a models mapping (config/trialconf.py), so an
-    #                     autonomous trial is an autonomous role binding
     "grants",           # the decision rows: secret exposure and deny-forever tombstones
     "connections",      # OAuth account bindings — which account's data it reaches
     "machines",         # the SSH hosts it may act on

@@ -78,8 +78,7 @@ def cmd_run_once(args) -> int:
 
 
 def cmd_engine_run(args) -> int:
-    """Internal: spawned by the daemon. Same as run-once but quiet, with a fixed run_ts — and
-    `--model` overrides only when the daemon names a model trial's (rsched/trials.py).
+    """Internal: spawned by the daemon. Same as run-once but quiet, with a fixed run_ts.
 
     `--config` and `--homes` are REQUIRED and have NO default. This process inherits nothing
     from its spawner, so a default would mean silently adopting
@@ -131,8 +130,6 @@ def cmd_engine_run(args) -> int:
                   lambda *_: abortmark.signalled("signal", "SIGTERM to the engine process"))
     try:
         status, _ = run_routine(routine_dir, server, run_ts=args.run_ts,
-                                model_overrides=parse_model_overrides(args.model),
-                                effort_overrides=parse_effort_overrides(args.effort),
                                 resume_from=args.run_ts if getattr(args, "resume", False) else None)
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -248,12 +245,6 @@ def main(argv: list[str] | None = None) -> int:
                         "that resolves to different homes is refused")
     e.add_argument("--resume", action="store_true",
                    help="rehydrate the run's transcript and continue it")
-    e.add_argument("--model", action="append",
-                   help="a MODEL TRIAL's role override, kind=name (a catalog model; "
-                        "repeatable) — the daemon names a trial run's models here "
-                        "(rsched/trials.py)")
-    e.add_argument("--effort", action="append",
-                   help="a MODEL TRIAL's role effort override, kind=level (repeatable)")
     e.set_defaults(fn=cmd_engine_run)
 
     v = sub.add_parser("validate", help="validate server config and routine.yaml files")

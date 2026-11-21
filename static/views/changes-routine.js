@@ -24,7 +24,7 @@
 //                  into ONE row that opens onto them, a change revising more than three rules
 //                  names the count and opens onto the list, and only the newest ten rows show
 //                  until "show older".
-//   Model fit    — the runs grouped by model × effort × deliberation × trial (model_fit.py); a
+//   Model fit    — the runs grouped by model × effort × deliberation (model_fit.py); a
 //                  rebuilt run's catalog name and effort are unknown, so its provider id stands in.
 //   Recipe health
 //
@@ -210,7 +210,7 @@ function modelFit(groups) {
   return el("div", { class: "tablewrap" }, el("table", {
     class: "list stack fit-table",
     title: "runs grouped by what served them — comparable once the routine has run on more than one" },
-  el("thead", {}, el("tr", {}, th("model"), th("effort"), th("deliberation"), th("trial"),
+  el("thead", {}, el("tr", {}, th("model"), th("effort"), th("deliberation"),
     th("runs", "", "num"), th("met", "share of owed lines met", "num"),
     th("failed", "share of runs failed or aborted", "num"),
     th("disputed", "claims disputed per run", "num"),
@@ -224,7 +224,6 @@ function modelFit(groups) {
       g.model || g.model_id || "—"),
     el("td", { class: "mono inline", "data-label": "effort" }, g.effort || "—"),
     el("td", { class: "mono inline", "data-label": "delib." }, g.deliberation || "—"),
-    el("td", { class: "mono inline", "data-label": "trial" }, g.trial || "—"),
     el("td", { class: "num inline", "data-label": "runs" }, String(g.runs),
       g.rebuilt ? rebuiltMark(g.rebuilt) : null),
     el("td", { class: "num inline", "data-label": "met" }, pct(g.met_rate)),

@@ -65,11 +65,10 @@ def test_own_fields_refuses_a_field_outside_the_allow_list():
 @pytest.mark.parametrize("level", ["always", "own_fields", "never"])
 @pytest.mark.parametrize("key", ["permissions", "capabilities", "fs_read_roots",
                                  "fs_write_roots", "models", "grants", "connections",
-                                 "machines", "trial"])
+                                 "machines"])
 def test_a_sealed_key_is_refused_under_every_dial_value(level, key):
-    """`trial` is sealed for the same reason `models` is: a TrialConfig CARRIES a models
-    mapping (config/trialconf.py), so an autonomous trial is an autonomous role binding, and
-    a role naming an absent model takes the routine dark (F643)."""
+    """A role naming an absent model takes the routine dark (F643), and the rest are its
+    authority surface — no dial value hands any of them to the routine."""
     why = configdial.refusals({key: {}}, level)
     assert why, (level, key)
     assert key in why[0] and not configdial.may_apply({key: {}}, level)

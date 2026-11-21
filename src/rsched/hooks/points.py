@@ -45,8 +45,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 #: What a hook may DO when it fires at a point. The axis is `remind -> hold`, as
-#: `assists.PAYLOADS` already spells it, plus `note` for the points whose carrier is an engine
-#: note rather than an observation tail.
+#: `assists.PAYLOADS` spells it, plus `note` for the points whose carrier is an engine note
+#: rather than an observation tail.
 #:
 #: `action` — PERFORM one of the engine's own actions at the point, with no model turn — is the
 #: Claude-Code half of the operator's ask, and his answer (2026-10-26) was *"Any action. This

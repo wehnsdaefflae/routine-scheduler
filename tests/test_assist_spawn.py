@@ -120,7 +120,7 @@ def test_spawn_cannot_hold_and_carries_both_free_payloads():
 def test_the_assist_moment_and_the_point_are_the_same_vocabulary():
     assert "spawn" in lib.MOMENTS
     assert points.for_moment("spawn") == "spawn"
-    assert set(lib.MOMENT_PAYLOADS["spawn"]) == {"remind", "action"}
+    assert lib.MOMENT_PAYLOADS["spawn"] == ("remind",)
 
 
 def test_the_linter_refuses_a_hold_at_this_moment():

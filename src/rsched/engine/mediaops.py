@@ -173,8 +173,8 @@ def without_bytes(obs: dict) -> dict:
 def natively_viewable(ctx: RunContext, rel: str) -> tuple[str, str] | None:
     """`(abspath, media_type)` if THIS run's main model can be shown `rel` directly, else None.
 
-    The one spelling of that question, shared by conversation auto-attach, the `view_image`
-    pre-flight and `visionsteer`'s refusal: multimodal main model, media type carried
+    The one spelling of that question, shared by conversation auto-attach and the `view_image`
+    pre-flight: multimodal main model, media type carried
     natively, file exists, inside the native size cap. None means the vision-util fallback is
     the real path — also for anything that is not a readable local file.
     """

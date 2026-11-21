@@ -11,7 +11,6 @@ from . import (
     askbatch,
     authoring,
     background,
-    background_order,
     childfields,
     create_routine,
     detach,
@@ -23,7 +22,6 @@ from . import (
     manage_lane,
     secretgate,
     thenscript,
-    visionsteer,
 )
 from .control import RunAborted
 from .loopconst import POLL_S
@@ -41,32 +39,16 @@ def dispatch_action(loop, action: dict, ctx) -> dict:
     BaseException pass through.
     """
     try:
-        # The background-ordering barrier (D118), for EVERY action: a second deferred write to a
-        # pending target is refused; anything else touching it is HELD until that write lands —
-        # so a run that never calls `wait` is still correctly ordered. Targets are compared as
-        # the RUN would resolve them (`background_order.base_for`).
-        base = background_order.base_for(ctx)
-        conflict = background_order.refuse_conflict(loop, action, base=base)
-        if conflict is not None:
-            return conflict
-        if waited := background_order.await_dependencies(loop, action, base=base):
-            log.info("action %s waited on background %s", action.get("kind"), waited)
         if action.get("background"):
             # A backgrounded call (engine/background.py); `validate_action` already judged the
             # kind deferrable. Every call-time gate the foreground applies runs HERE, on the
             # starting turn (F633) — a gate in one path and not the other is one a flag walks
             # around. A refusal or pending request becomes this turn's observation. No
             # concurrency cap, by decision (D166; see `background.py`).
-            if (steered := visionsteer.refuse_if_viewable(action, ctx)) is not None:
-                return steered
             gated = _gate_for_background(loop, action)
             if gated is not None:
                 return gated
-            started = background.start(loop, action, ctx)
-            # What this deferred call will WRITE, keyed by its handle, beside the barrier that
-            # reads it.
-            background_order.claim(loop, action, started, base=base)
-            return started
+            return background.start(loop, action, ctx)
         return _route(loop, action, ctx)
     except RunAborted:
         raise
@@ -131,10 +113,6 @@ def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911 — one exit per k
         # D212: several `questions` in one action go to the batch handler.
         ask = askbatch.handle if action.get("questions") else interact.handle_ask
         return ask(loop, action, poll_s=POLL_S)
-    # R2249: `vision` on a file this run can view itself is refused BEFORE the secret gate,
-    # which would otherwise ask a needless (run-scoped) credential question.
-    if kind == "util" and (steered := visionsteer.refuse_if_viewable(action, ctx)) is not None:
-        return steered
     if (gate := _SECRET_GATES.get(kind)) is not None:
         # D39: per-routine secret exposure is decided at CALL time — the gate asks/refuses/
         # passes; None means the call proceeds on the executor the background thread uses too.

@@ -1,5 +1,5 @@
-"""The resource BINDINGS a routine PATCH may set — models, efforts, connections, machines and a
-model trial — validated and written into the raw routine.yaml mapping.
+"""The resource BINDINGS a routine PATCH may set — models, efforts, connections and machines —
+validated and written into the raw routine.yaml mapping.
 
 Split out of `api_routine_patch.py` (one responsibility per file): each key here is a REPLACE
 wholesale against the catalogs the instance holds, and each is popped out of `updates` so the
@@ -13,7 +13,6 @@ from .config_fields import (
     validate_efforts,
     validate_machines,
     validate_models,
-    validate_trial,
 )
 
 
@@ -35,12 +34,3 @@ def apply_bindings(server, raw: dict, updates: dict) -> None:
     # meaningless off the catalog, and the picker only offers catalog names.
     if "machines" in updates:
         raw["machines"] = validate_machines(server, updates.pop("machines"))
-    # A MODEL TRIAL: every model it names meets the checks a `models:` binding meets, because
-    # for its runs it IS one. Replaced whole (the generic merge would blend two trials); null
-    # removes the key, so "no trial" has one spelling.
-    if "trial" in updates:
-        trial = updates.pop("trial")
-        if trial is None:
-            raw.pop("trial", None)
-        else:
-            raw["trial"] = validate_trial(server, trial)

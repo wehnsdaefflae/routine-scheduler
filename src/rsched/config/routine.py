@@ -37,7 +37,6 @@ from .base import (
 )
 from .outcome import OutcomeConfig
 from .routine_scrub import scrub_bindings
-from .trialconf import TrialConfig
 from .tuning import load_tuning
 
 
@@ -124,9 +123,6 @@ class RoutineConfig(_Config):
     # catalog row per level. A role with no entry runs at the provider's default. Whichever
     # model of the role's failover chain serves a turn runs at this effort.
     efforts: dict[str, str] = Field(default_factory=dict)
-    # A MODEL TRIAL (rsched/trials.py): "run on these catalog models for the next N fires" while
-    # fewer than `runs` runs recorded it. A finished one stays as history until the next accept.
-    trial: TrialConfig | None = None
     # What the routine EXISTS to produce for its principal, as numbers its scripts/outcome.py
     # computes each run (config/outcome.py, engine/outcome.py). None = undeclared.
     outcome: OutcomeConfig | None = None

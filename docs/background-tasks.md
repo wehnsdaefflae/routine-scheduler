@@ -142,43 +142,18 @@ cannot offer.
 
 - **Which kinds.** `engine/actions.BACKGROUNDABLE_KINDS`: `util`, `script`, `shell`, `llm`,
   `decide`, `read_file`, `view_image`, `memory_read`, `read_rule` — each a read or a fetch whose
-  only effect is its observation — plus the three mutations `write_file`, `edit_file` and
-  `memory_write`, which defer behind the ordering barrier in the next bullet (D118 phase 3). A
-  control kind (`finish`, `ask_user`, `report`, `child`, `wait`, `kill`) is refused —
-  it either steers the run or is already asynchronous in its own right. So are `delete`, `move`
-  and `mkdir` (not slow, and `move` has two ends, not the one target a barrier keys on) and
-  `write_util`/`write_rule`, whose handlers have no `executor.DISPATCH` entry to run in a thread.
-- **A backgrounded MUTATION is ordered by the target it declares, never by trust**
-  (`engine/background_order.py`). The refusal this replaced had one reason — a later action must
-  not read state a deferred write has not performed yet — so the widening makes that impossible
-  rather than unlikely. A deferred mutation's target is the field the action already carries
-  (`path`, or `name` for a memory note); `actionroute.dispatch_action` then asks of EVERY later
-  action, deferred or not, whether it touches a live claim — reads it, writes it, names it in a
-  script's or a util's arguments, hands it to `decide` as evidence, or rides a `then_script` over
-  it — and HOLDS it until that write has landed. The barrier closes on the dependency, so a run
-  that never calls `wait` is still correctly ordered; `wait` remains the explicit form for a run
-  that wants everything quiet — and it COVERS background calls (`engine/waitop.py`): the any-mode
-  wait returns on the next child exit OR background landing (naming the handle; the observation
-  itself follows at that turn boundary through `collect`), `all` waits for every child and every
-  call, and with no child at all it waits for the calls instead of refusing. Before, it saw
-  children only: with none it answered "no sub-workflows have been spawned" at once (one run
-  asked 8 times on one backgrounded gate), and with some it never woke on a landing, so a verdict
-  that came back in two minutes sat unread through a 20-minute timeout. Two DEFERRED writes to one target have no safe order, so the
-  second is refused naming the handle that holds it; a SYNCHRONOUS write to the same target is
-  simply ordered behind the deferred one. A path target is RESOLVED against the directory the
-  run's relative paths resolve in (`run_context.work_dir`) before anything is compared, because
-  `state/x.json` and its absolute spelling are one file and comparing them as written would miss
-  exactly the stale read this replaces; a `memory_write` target is a topic in the memory
-  namespace and is deliberately not resolved. Where a target cannot be classified — a word in a
-  script's or a util's argv — both readings are compared, so the mechanism errs towards one wait
-  that was not needed, never towards a stale read.
-- **A `then_script` may NOT ride a deferred change**, and the refusal is the same lesson F633
-  taught. The thread dispatches the KIND (`background._runner` → `executor.dispatch`), while
-  the fusion of a change and the script that checks it lives in `actionroute._route`: a deferred
-  pair would therefore land the write and drop the script in SILENCE, with D39's call-time
-  secret gate never asked — an ergonomics flag walking around a security decision. It is refused
-  inside the schema-retry cycle (`engine/thenscript.problems`), naming both calls that work:
-  keep the pair synchronous, or defer the change alone and run the script once it has landed.
+  only effect is its observation. A control kind (`finish`, `ask_user`, `report`, `child`, `wait`, `kill`) is refused — it either steers the run or is already asynchronous in
+  its own right. So is every WRITE (`write_file`, `edit_file`, `memory_write`, `delete`, `move`,
+  `mkdir`, `write_util`, `write_rule`): a later action must not read state a deferred write has
+  not performed yet. A backgrounded `shell` or `util` CAN write and declares no target, so
+  ordering what it writes stays the run's own.
+- **`wait` COVERS background calls** (`engine/waitop.py`): the any-mode wait returns on the next
+  child exit OR background landing (naming the handle; the observation itself follows at that
+  turn boundary through `collect`), `all` waits for every child and every call, and with no child
+  at all it waits for the calls instead of refusing. Before, it saw children only: with none it
+  answered "no sub-workflows have been spawned" at once (one run asked 8 times on one
+  backgrounded gate), and with some it never woke on a landing, so a verdict that came back in
+  two minutes sat unread through a 20-minute timeout.
 - **The mechanics** live in `engine/background.py`, shaped on `engine/archival.py` rather than on
   the detached machinery above: `configure` / `start` / `collect` / `settle`. `actionroute.dispatch_action`
   intercepts the flagged action; `loop._turn_boundary` calls `collect`, which appends the real

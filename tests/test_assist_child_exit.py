@@ -95,7 +95,7 @@ def test_child_exit_cannot_hold_and_carries_both_free_payloads():
 def test_the_assist_moment_and_the_point_are_the_same_vocabulary():
     assert "child-exit" in lib.MOMENTS
     assert points.for_moment("child-exit") == "child-exit"
-    assert set(lib.MOMENT_PAYLOADS["child-exit"]) == {"remind", "action"}
+    assert lib.MOMENT_PAYLOADS["child-exit"] == ("remind",)
 
 
 def test_the_linter_refuses_a_hold_at_this_moment():

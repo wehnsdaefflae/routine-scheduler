@@ -3,11 +3,11 @@ SEGMENTS a routine's runs fall into: maximal stretches of consecutive runs whose
 A CHANGE is the boundary between two segments (readmodels/change_effects.py).
 
 The key's components: the recipe, the behaviour-relevant config, the main model by catalog name
-and by provider id, its effort, the deliberation level, a model trial — and the held rules, each
+and by provider id, its effort, the deliberation level — and the held rules, each
 by the hash of its text. The engine release is NOT one: releases land several a day and are read
 across the fleet instead (readmodels/change_fleet.py).
 
-A component's value is a string (`""` is a real value — no trial, no effort set) or None, which is
+A component's value is a string (`""` is a real value — no effort set) or None, which is
 UNKNOWN. A run rebuilt from history (`fingerprint.source == "reconstructed"`,
 the one-shot run-record backfill, honoured 2026-11-12) names what it could not recover in
 `fingerprint.unknown`; an unknown
@@ -18,7 +18,7 @@ in the routine.
 from __future__ import annotations
 
 #: The scalar components of a behaviour key; the held rules are the rest (`rule:<slug>`).
-SCALARS = ("recipe", "config", "model", "model_id", "effort", "deliberation", "trial")
+SCALARS = ("recipe", "config", "model", "model_id", "effort", "deliberation")
 
 Key = dict[str, str | None]
 FullKey = tuple[Key, dict[str, str] | None]

@@ -45,7 +45,7 @@ def _resolved(server: ServerConfig, models: dict[str, str] | None, role: str) ->
 def shared_verifier_problem(server: ServerConfig, models: dict[str, str] | None) -> str | None:
     """One line when the `tool_call` role (the verifier's) resolves to the `main` model's
     provider model, else None — and None when either name is not in the catalog (that is
-    `trials.roles_problem`'s line, not this one).
+    `rolecatalog.roles_problem`'s line, not this one).
     """
     main, judge = _resolved(server, models, "main"), _resolved(server, models, "tool_call")
     catalog = getattr(server, "models", None) or {}

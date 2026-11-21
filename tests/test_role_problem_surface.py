@@ -1,4 +1,4 @@
-"""A STALE MODEL ROLE is a problem the ROUTINE PAGE says (F643, rsched/trials.roles_problem)."""
+"""A STALE MODEL ROLE is a problem the ROUTINE PAGE says (F643, rolecatalog.roles_problem)."""
 
 from __future__ import annotations
 

@@ -61,9 +61,9 @@ def util_category(tags) -> str:
     return _UTIL_CATEGORY_OTHER
 
 
-#: Utils that exist for a TEXT-ONLY run, with the note a multimodal run is shown beside them.
-#: The engine refuses such a call (engine/visionsteer.py); this says it BEFORE the call, where
-#: it costs no turn. Keyed by util name, so the note travels with the util.
+#: Utils that exist for a TEXT-ONLY run, with the note a multimodal run is shown beside them —
+#: said BEFORE the call, where it costs no turn. Keyed by util name, so the note travels with
+#: the util.
 _FOR_TEXT_ONLY_RUNS: dict[str, str] = {
     "vision": "  [for a text-only run — THIS run's model is multimodal: use "
               "`view_image path=…`, which needs no secret and no upload]",

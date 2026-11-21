@@ -29,11 +29,12 @@ here is offline, free and reads only the resolved config:
 3. the server's fleet-wide pointers resolve — `system_model`, the fallback for every unset
    role, and `system_tool_call_model`, the one an unset `tool_call` prefers (D230).
 
-Checked where the live config is already read — `rsched validate`, beside `trials.roles_problem`
-(the same shape: a question the loader cannot answer because it cannot see the catalog) and
-`cli_validate._instance_problems` (coherence belonging to no single routine). `load_server_config`
-already returns a `problems` list the daemon surfaces; nothing asserted it was empty for THIS
-instance, and no problem was ever raised for a chain whose rungs share a failure domain.
+Checked where the live config is already read — `rsched validate`, beside
+`rolecatalog.roles_problem` (the same shape: a question the loader cannot answer because it
+cannot see the catalog) and `cli_validate._instance_problems` (coherence belonging to no single
+routine). `load_server_config` already returns a `problems` list the daemon surfaces; nothing
+asserted it was empty for THIS instance, and no problem was ever raised for a chain whose rungs
+share a failure domain.
 
 A FAILURE DOMAIN has TWO INDEPENDENT AXES, and sharing either one is fatal: the endpoint's
 `base_url` (one host, one outage) and the environment variable its key is read from (one
@@ -99,7 +100,7 @@ def chain_problems(server: ServerConfig, models: dict[str, str] | None) -> list[
 
     One line per role, naming the shared domain and the chain that shares it — a problem a
     reader cannot act on is a problem nobody fixes. A role whose name is not in the catalog is
-    skipped (that is `trials.roles_problem`'s line).
+    skipped (that is `rolecatalog.roles_problem`'s line).
     """
     out: list[str] = []
     for role, name in sorted((models or {}).items()):
