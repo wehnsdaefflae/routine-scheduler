@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.569.0] — 2026-11-21
+
+### Fixed
+- **uv may install a managed Python again: the toolchain root defaults under `~/.cache/uv`** —
+  R3631 reported that no routine can obtain a second interpreter. uv puts a managed interpreter
+  in the XDG data dir, and `/home/<user>/.local/share` is root-owned here, so `mkdir` fails
+  before Landlock is consulted; `sandbox._HOME_RW` does list `.local/share/uv`, but `landlock`
+  skips a rule path that does not exist and the toolchain list — unlike a routine's granted write
+  roots, which `_ensure_write_roots` creates for exactly this reason (R244/F293) — has no
+  bootstrap. `~/.cache` is owned by the daemon user, is already a jail-RW toolchain root, and uv
+  creates a missing install dir itself. New `rsched.uvtoolchain` fills in
+  `UV_PYTHON_INSTALL_DIR` at both env composition points — `utils_verbs.child_env` (every util)
+  and `scriptenv.ensure_env` (the per-routine scripts venv). It is a DEFAULT: a value already in
+  the environment wins. Measured on this host: `uv venv --python 3.10` downloaded CPython
+  3.10.21 and produced a working interpreter, where it had failed on the XDG path.
+- **A finish `accounting` written as ONE string is the list it spells** — the shape that refused
+  19 turns across 12 routines (2026-10-25..11-17), newly visible because 0.568.0 stopped the
+  wrong-turn fold filing each one as its own singleton cause. 9 of the 19 wrote the entries
+  newline-separated, 6 wrote a single entry, 2 wrote the list's own JSON. `engine/fieldshapes`
+  now coerces it at the normalize seam, where six other evidently-intended shapes are already
+  repaired. The repair is lossless by construction: `accounting.parse` judges every part, and
+  the field is coerced only when EACH part is a complete `<id> <verdict>: <account>` (or
+  `b<n> waits on <who>:`) entry on its own. A string whose parts are not whole entries — an
+  account clause spanning lines, prose around the entries — stays refused rather than split at
+  an invented boundary, and an empty field still never reaches the repair, so
+  `accounting.arrived` keeps the "no field" / "a field saying nothing" distinction F805 added.
+
 All notable changes to **routine-scheduler** (`rsched`) are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),

@@ -50,13 +50,12 @@ python left it: a script that imports a sibling module out of `scripts/` keeps w
 
 from __future__ import annotations
 
-import os
 import sys
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
 
-from . import sandbox, utils_run
+from . import sandbox, utils_run, uvtoolchain
 from .paths import ensure_gitignored
 
 #: The venv's path RELATIVE TO THE ROUTINE DIR — inside `scripts/`, never beside it. Also the
@@ -141,7 +140,7 @@ def ensure_env(routine_dir: Path, name: str, *,
                                fs_roots=True, fs_paths=fs_paths, net=True)
         except sandbox.SandboxRefusal as exc:
             return str(exc)
-        r = utils_run.run_jailed(cmd, env=dict(os.environ), cwd=routine_dir,
+        r = utils_run.run_jailed(cmd, env=uvtoolchain.defaulted_environ(), cwd=routine_dir,
                                  timeout=_INSTALL_TIMEOUT_S, label=f"venv setup ({step[1]})",
                                  aborted=aborted)
         if r.aborted:

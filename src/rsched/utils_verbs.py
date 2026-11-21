@@ -134,8 +134,10 @@ def child_env(home: Path, name: str, args: Sequence[str],
     Was `utils_run._child_env` until R2622; it moved here because the verb decision and the
     env it produces are one thing, and because the runner module is at its size ceiling.
     """
+    from . import uvtoolchain
     from .utils_run import scoped_env, util_needs
 
     verb_withheld, _verb = withheld_for_verb(home, name, args)
-    return scoped_env(util_needs(home, name).secrets, dict(extra_secrets or {}),
-                      set(withhold or set()) | set(verb_withheld))
+    return uvtoolchain.with_defaults(
+        scoped_env(util_needs(home, name).secrets, dict(extra_secrets or {}),
+                   set(withhold or set()) | set(verb_withheld)))

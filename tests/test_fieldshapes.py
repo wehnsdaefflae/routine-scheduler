@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from rsched.engine import notemeta
+from rsched.engine import accounting, notemeta
 from rsched.engine.actions import normalize_action, validate_action
 from rsched.engine.actionschema import ACTION_SCHEMA
 from rsched.schema_guard import validate
@@ -92,3 +92,61 @@ def test_several_labels_in_one_field_stay_refused(written):
     out = normalize_action({"say": "x", "kind": "read_file", "path": "a.txt",
                             "remind_feedback": written})
     assert validate(out, ACTION_SCHEMA)
+
+
+#: The finish `accounting` shapes the wrong-turn stream recorded being REFUSED, 2026-10-25..11-17
+#: — 19 turns across 12 routines, each one a schema retry at the one turn a run cannot repeat.
+@pytest.mark.parametrize(("written", "entries"), [
+    # newline-separated entries (9 of the 19) — tv-show-tracker-seedbox-manager, 2026-11-16
+    (("b2 met: Rick and Morty is tracked at Starting Season 10\n"
+      "b3 unmet: Wicker was searched across TPB, Torlock and NZBGeek"),
+     ["b2 met: Rick and Morty is tracked at Starting Season 10",
+      "b3 unmet: Wicker was searched across TPB, Torlock and NZBGeek"]),
+    # ONE entry as a bare string (6 of the 19) — deficit-coach, 2026-11-17
+    ("d1 met: read the stale 4 Nov weigh-in and yesterday's close",
+     ["d1 met: read the stale 4 Nov weigh-in and yesterday's close"]),
+    # the list's own JSON, as a string (2 of the 19) — folder-reorg, 2026-10-25
+    ('["d1 met: phase.json matched the evidence", "d2 met: the unit exit was diagnosed"]',
+     ["d1 met: phase.json matched the evidence", "d2 met: the unit exit was diagnosed"]),
+    # a `waits on` entry parses as an entry too (accounting._WAITS_RE)
+    (("b7 waits on scheduler-builder: the endpoint parameter\n"
+      "b4 unmet: 157 rows carry no proof"),
+     ["b7 waits on scheduler-builder: the endpoint parameter",
+      "b4 unmet: 157 rows carry no proof"]),
+])
+def test_an_accounting_written_as_one_string_is_the_list_it_spells(written, entries):
+    out = _accepted({"kind": "finish", "status": "ok", "summary": "s", "accounting": written})
+    assert out["accounting"] == entries
+    # lossless: the parser reads exactly the verdicts the written text carried
+    assert len(accounting.parse(out["accounting"])) == len(entries)
+
+
+@pytest.mark.parametrize("written", [
+    "d1 met: the first half of the account\nand the sentence continues on this line",
+    "Here is my accounting:\nd1 met: the thing was done",
+    "everything went fine this run",
+])
+def test_a_string_whose_parts_are_not_whole_entries_stays_refused(written):
+    """Splitting these would INVENT a boundary — where one verdict's account ends. The field
+    is left as written, so the run is told the shape rather than given a guess."""
+    out = normalize_action({"say": "x", "kind": "finish", "status": "ok", "summary": "s",
+                            "accounting": written})
+    assert out["accounting"] == written
+
+
+def test_a_real_list_is_untouched_and_an_empty_field_never_reaches_the_repair():
+    """The repair reads only a NON-EMPTY string. An empty one, a null and an empty list are
+    dropped by the seam's own empty-field stripping before `canonical` runs (actions.py), so
+    `accounting.arrived` still distinguishes "no field" from "a field saying nothing" — the
+    distinction F805 exists for. A whitespace-only string survives the strip and is returned as
+    written, which the schema refuses as the non-list it is."""
+    assert _accepted({"kind": "finish", "status": "ok", "summary": "s",
+                      "accounting": ["d1 met: x y"]})["accounting"] == ["d1 met: x y"]
+    for value in ("", None, []):
+        out = normalize_action({"say": "x", "kind": "finish", "status": "ok", "summary": "s",
+                                "accounting": value})
+        assert "accounting" not in out
+    blank = normalize_action({"say": "x", "kind": "finish", "status": "ok", "summary": "s",
+                              "accounting": "   "})
+    assert blank["accounting"] == "   "
+    assert validate(blank, ACTION_SCHEMA)

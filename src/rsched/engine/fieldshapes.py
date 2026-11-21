@@ -9,6 +9,10 @@ is LOSSLESS: the canonical value says exactly what the written one did, and noth
 - a memory note named `X.md` — how `.memory/INDEX.md` lists every note — is note `X`;
 - an integer field written as a numeric string (`"n": "4"`) is that integer;
 - `supersedes` / `settles` given ONE report id as a string is the one-element list;
+- a finish `accounting` written as ONE string — the entries newline-separated, a single entry, or
+  the list's own JSON — is that list, but ONLY when every part independently parses as a complete
+  entry (`accounting.parse`). A part that does not (an account clause spanning lines, prose around
+  the entries) is left refused: the list would otherwise be a guess at where one verdict ends;
 - `verified` given a bare date is `{"by": "run", "at": <date>}` — the run attesting its own check;
 - a `remind` with no `op` and no `id` can only be an add;
 - a `remind_feedback` written as a one-element list, as `{<id>: <label>}`, or with its label under
@@ -22,9 +26,11 @@ storage never sees a second convention.
 
 from __future__ import annotations
 
+import json
 import re
 
 from ..reminders import ID_RE, LABELS
+from . import accounting
 from .actionschema import ACTION_SCHEMA
 from .notemeta import is_index_name
 
@@ -57,7 +63,38 @@ def canonical(action: dict) -> dict:
         out["remind"] = {**remind, "op": "add"}
     if "remind_feedback" in out:
         out["remind_feedback"] = _feedback(out["remind_feedback"])
+    if "accounting" in out:
+        out["accounting"] = _entries(out["accounting"])
     return out
+
+
+def _entries(written: object) -> object:
+    """A finish `accounting` written as one STRING, as the list it spells — or as written.
+
+    Measured on the wrong-turn stream (2026-10-25..11-17): 19 turns across 12 routines were
+    refused for this one shape, 9 of them newline-separated entries, 6 a single entry, 2 the
+    list's own JSON. The repair is lossless only because `accounting.parse` is the judge: every
+    part must parse as a complete `<id> <verdict>: <account>` (or `b<n> waits on <who>:`) entry
+    on its own. One part that does not means the newlines are inside an account clause, where a
+    split would invent entry boundaries — so the field stays refused and the run is told the
+    shape, which is what `accounting.arrived` exists to make sayable.
+    """
+    if not isinstance(written, str) or not written.strip():
+        return written
+    text = written.strip()
+    if text.startswith("["):
+        try:
+            loaded = json.loads(text)
+        except ValueError:
+            return written
+        return loaded if isinstance(loaded, list) and _all_parse(loaded) else written
+    parts = [line.strip() for line in text.splitlines() if line.strip()]
+    return parts if parts and _all_parse(parts) else written
+
+
+def _all_parse(parts: list) -> bool:
+    """Every part is one complete accounting entry, judged by the parser that reads them."""
+    return all(isinstance(p, str) and accounting.parse([p]) for p in parts)
 
 
 def _is_hook_id(key: object) -> bool:
