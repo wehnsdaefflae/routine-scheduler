@@ -640,8 +640,7 @@ def test_write_and_remove_reject_non_slug_names(tmp_path):
 
 
 def test_dispatcher_list_skips_non_util_entries(tmp_path):
-    """`gu list` shows only real utils — __pycache__, removal residue, and stray files
-    must not appear."""
+    """`gu list` shows only real utils, never __pycache__, removal residue or stray files."""
     import subprocess as sp
     import sys
 
