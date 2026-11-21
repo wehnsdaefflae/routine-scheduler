@@ -7,7 +7,7 @@ every action individually valid, and this module reads them over the same landed
 - a CYCLE — two to four actions taking turns (`read → edit → read → edit`) with the SAME results
   each time round. The results are part of the key on purpose: a poll that is making progress
   changes what it returns, and a cycle of unchanged results is a run that is not moving. Kinds
-  whose job is to wait (`wait`, `subruns`, `ask_user`) never form one.
+  whose job is to wait (`wait`, `children`, `ask_user`) never form one.
 - VARIED FAILURES — three DIFFERENT calls of one kind failing in a row. The identical streak
   misses it by construction (each call differs), and it is the signature of guessing at a fix
   instead of reading the error. `shell` is exempt, as Hermes exempts its terminal: a run of
@@ -45,7 +45,7 @@ VARIED_FAILS = 3
 SAME_MIN_CHARS = 512
 
 #: Kinds whose job is to wait for something to change: never part of a cycle.
-_WAITING = frozenset({"wait", "subruns", "ask_user", "finish", "do_nothing"})
+_WAITING = frozenset({"wait", "children", "ask_user", "finish", "do_nothing"})
 
 #: Kinds whose result may be replaced by the same-result line: reads and calls whose output
 #: is the whole point, never a write's confirmation or a decision's record.

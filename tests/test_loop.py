@@ -3121,10 +3121,10 @@ def test_a_missing_child_refusal_names_the_action_that_lists_them(tmp_path):
     stub = SimpleNamespace(subruns={1: sub}, exit_event=threading.Event(),
                            parent=SimpleNamespace(ctx=SimpleNamespace(depth=1, run_dir=tmp_path)))
     err = SubrunManager.kill(stub, 3)["error"]
-    assert "no sub-workflow 3" in err and "`subruns` action lists" in err
+    assert "no sub-workflow 3" in err and "`children` action lists" in err
     err = SubrunManager.wait(stub, {"n": 3, "timeout_s": 0}, poll_s=0.01,
                              aborted=threading.Event())["error"]
-    assert "no sub-workflow 3" in err and "`subruns` action lists" in err
+    assert "no sub-workflow 3" in err and "`children` action lists" in err
 
 
 def test_wait_timeout_reports_timed_out():

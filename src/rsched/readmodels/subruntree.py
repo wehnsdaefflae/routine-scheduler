@@ -1,6 +1,6 @@
 """The recursive sub-run tree read-model — for the run/conversation rail's live decomposition view.
 
-A run's children (sequential `subtask`s and parallel `spawn`s alike) live on disk under
+A run's children (sequential and parallel `child` runs alike) live on disk under
 `runs/<ts>/sub/<n>/`, each its own routine with its own transcript. This module reconstructs the
 tree by READING those transcripts — it never writes anything, so the single-writer status.json
 contract is untouched. The parent transcript's `subrun_start` / `subrun_end` events give each
@@ -38,8 +38,8 @@ def build_tree(run_dir: Path, depth_left: int = MAX_DEPTH) -> list[dict]:
     children:[…]}. `start_turn` is the PARENT turn whose action started the child — where the
     rail's row links to in the parent transcript (D193); None when no numbered action preceded
     it.
-    `mode` is the child's kind, verbatim from its `subrun_start` (engine/child.py): "sequential"
-    (a subtask), "parallel" (a spawn) or "oversight" (an escalation ladder's rung, which
+    `mode` is the child's kind, verbatim from its `subrun_start` (engine/child.py): "sequential",
+    "parallel" or "oversight" (an escalation ladder's rung, which
     supervises the run that started it); `state` is running|ok|partial|failed|aborted.
 
     Memoized on the whole tree's transcript fingerprints — the rail polls this and used

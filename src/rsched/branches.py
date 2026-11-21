@@ -14,7 +14,7 @@ It is the `branch` mode of `engine/child.py`'s contract, and obeys all three par
   parent's ceilings as its own; it never draws down the parent's.
 - **A declared hand-back** — `hand_back()`, below.
 
-Unlike `spawn`/`subtask`, the branch is driven by the USER rather than by the engine: it is a
+Unlike a `child` run, the branch is driven by the USER rather than by the engine: it is a
 conversation, so it advances when someone writes in it. That is the only thing the mode changes.
 
 **Merging is deliberately NOT a transcript merge.** Two divergent histories cannot be

@@ -10,13 +10,13 @@ A run structures its work two ways, and they are deliberately different:
 
 **A child run is: an isolated run with its own directory, its own budget, its own recipe or
 pattern, and a declared relationship to its parent.** That is the whole concept, defined once in
-`engine/child.py`. `spawn`, `subtask`, (F325) a conversation `branch` and the escalation ladder's
-`oversight` rung are four scheduling **modes** of it:
+`engine/child.py`. The `child` action in either of its two `mode`s, (F325) a conversation
+`branch` and the escalation ladder's `oversight` rung are four scheduling **modes** of it:
 
 | mode | action | when it runs | who drives it |
 |------|--------|--------------|---------------|
-| `parallel` | `spawn` | concurrently — the parent keeps working | the engine |
-| `sequential` | `subtask` | the parent folds its result into the next step | the engine |
+| `parallel` | `child` (the default `mode`) | concurrently — the parent keeps working | the engine |
+| `sequential` | `child` with `mode: sequential` | the parent folds its result into the next step | the engine |
 | `branch` | a conversation fork (F325) | forked from a message, alongside the original | the user |
 | `oversight` | no action — the ladder fires it (`engine/ladder.py`), or a person asks for one | at a turn boundary, while the parent waits | the engine, or the operator |
 
@@ -86,21 +86,22 @@ FINISHED` off a mode table (`MODE_SHOUT`) that existed for that one call site an
 the rule above. The table is gone. The hook's headline carries the child's `pattern` as well,
 which a wait does not know.
 
-## The `subtask` action
+## A sequential `child`
 
 ```json
 {"say": "Drafting the report from the gathered sources.",
- "kind": "subtask",
- "prompt": "<self-contained brief — fold in the previous subtask's result>",
+ "kind": "child",
+ "mode": "sequential",          // omit for a parallel child (`turns` is then refused)
+ "prompt": "<self-contained brief — fold in the previous step's result>",
  "workflow": "general-task",   // optional: a library pattern for this step's purpose
  "label": "draft",             // optional: the tree node name
  "turns": 12}                  // optional: this child's turn budget (default: half your remainder)
 ```
 
-`subtask` is **non-blocking** — it starts the child in the background (its own thread, its own
+A sequential child is **non-blocking** — it starts the child in the background (its own thread, its own
 `EngineLoop`) and returns immediately, so the conversation stays live while it runs. Mechanically
-it is a child run tagged `sequential` with a `turns` budget — the same child `spawn` starts. To keep sequential order you **wait**
-for it — `wait n=N` — before starting the next subtask, and fold its result into that brief. The
+it is a child run tagged `sequential` with a `turns` budget — the same child a parallel `child` starts. To keep sequential order you **wait**
+for it — `wait n=N` — before starting the next one, and fold its result into that brief. The
 wait is **responsive**: it wakes on the child's completion (the finished-hook) but *yields* the
 moment a user message arrives, handing control back so the parent can reply, then you `wait` again.
 Its completion is delivered by the turn-boundary `CHILD RUN FINISHED` hook
@@ -115,7 +116,7 @@ step, a child run gets its own fresh context window and pattern; unlike the `par
 A child's OWN dir is `runs/<ts>/sub/<n>/` — its materialized `main.md`, its instruction, its
 scratch files — but its allowed fs roots **extend** the parent's rather than replace them
 (`childrun._sub_routine`): the parent routine dir and every configured or one-time-granted
-read/write root stay reachable, and the extension chains for grandchildren. A subtask briefed on
+read/write root stay reachable, and the extension chains for grandchildren. A child briefed on
 the parent's `state/` files therefore reads and writes them directly — before this (F185, R13:
 ards sub/1, 2026-07-24) moving the child's dir to `sub/<n>` silently dropped the routine dir
 from the allowed roots and stranded exactly such children. Children inherit the parent's
@@ -172,7 +173,7 @@ exist had to spend its whole budget before saying so, and a parent's `prompt` at
 its only word down. Both are now the ordinary `report` action with a RUN-TREE target:
 
 - a child writes `target: "parent"`, and the parent reads it at its next turn boundary;
-- a parent writes `target: "child:<label>"` — the label it passed to `spawn`/`subtask`.
+- a parent writes `target: "child:<label>"` — the label it passed to `child`.
 
 A SIBLING is not addressable, and that refusal is the design's first rule: *the run tree is the
 only addressing scheme*. A child says `parent`, and the parent — the only run that holds the
@@ -227,9 +228,9 @@ length."* — and its `main()` routes on the answer. The three shapes it chooses
 - **inline** — do it directly in this run's turns (the common case; most runs are small), which
   is what `separable()` returning false means;
 - **sequential** — one large task that splits into ORDERED steps where each depends on the
-  previous (research → draft → review) → a `subtask` per step;
-- **parallel** — many INDEPENDENT items with disjoint outputs → `spawn` per item, which is the
-  branch `separable()` returning true takes (`for chunk in batches(work): spawn(chunk)`).
+  previous (research → draft → review) → a sequential `child` per step;
+- **parallel** — many INDEPENDENT items with disjoint outputs → a parallel `child` per item, which is
+  the branch `separable()` returning true takes (`for chunk in batches(work): child(chunk)`).
 
 Decompose only when it earns the coordination cost; a few steps you can verify inline should stay
 inline.
@@ -276,7 +277,7 @@ instead of `wait`-ing forever for a child that can never finish.
 
 The **registry** (`SubrunManager.subruns`) is in-memory too, so a resumed leg starts with an empty
 one while every `sub/<n>/` directory the earlier leg made is still on disk — one of them possibly
-holding a finished hand-back in `artifacts/`. `subruns` therefore reports those directories as
+holding a finished hand-back in `artifacts/`. `children` therefore reports those directories as
 rows in state `orphaned-by-resume`, each naming its path and what landed in its `artifacts/`
 (`engine/subsalvage.py`), and `wait`/`kill` on such a number refuse with that reason instead of
 "no sub-workflow N" — which read as "it never existed" and sent a run off to redo finished work.
@@ -314,12 +315,12 @@ far.
 
 ## Process model — why children are threads (decision record, 2026-07)
 
-We evaluated moving `spawn`/`subtask` children onto the daemon-subprocess pattern the detached
+We evaluated moving in-process `child` runs onto the daemon-subprocess pattern the detached
 machinery uses, with the goal of deleting the resume-orphan handling (the aborted-on-resume
 notes and the synthesized dangling-subtask observation). **Decision: children stay in-process
 threads.** The two models are complementary by design, not rivals:
 
-|                | in-process child (`spawn`/`subtask`)         | detached task (`detach`)                    |
+|                | in-process child (`child`)                   | detached task (`detach`)                    |
 |----------------|----------------------------------------------|---------------------------------------------|
 | start latency  | milliseconds (a thread)                      | seconds (intent file → daemon tick → boot)  |
 | budget         | sliced live from the parent's remainder; usage folds back at exit | its own background budget; never folds back |
@@ -350,4 +351,4 @@ Why the subprocess trade-off fails for within-run children:
 
 The escape hatch already exists: work that must survive a restart or a reply-finish is
 `detach`, not a subtask. Revisit only if cross-restart subtask survival becomes a concrete
-need — and then by widening `detach`, not by migrating `spawn`/`subtask`.
+need — and then by widening `detach`, not by migrating `child`.

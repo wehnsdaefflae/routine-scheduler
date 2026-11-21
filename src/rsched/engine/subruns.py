@@ -1,8 +1,8 @@
 """CHILD RUN scheduling: a parent routine runs child routines materialized from workflow
-patterns, in either in-engine MODE — PARALLEL (`spawn`, non-blocking) or SEQUENTIAL (`subtask`,
-the parent waits). One concept, defined once in `engine/child.py`; both modes are built by the
-shared executor (childrun.build_child). This module owns their LIFECYCLE: start each in a
-thread, monitor (`subruns`), block or `wait`, `kill`, and announce every exit to the parent at a
+patterns, in either in-engine `child` MODE — PARALLEL (non-blocking) or SEQUENTIAL (the parent
+waits). One concept, defined once in `engine/child.py`; both modes are built by the shared
+executor (childrun.build_child). This module owns their LIFECYCLE: start each in a thread,
+monitor (`children`), block or `wait`, `kill`, and announce every exit to the parent at a
 turn boundary. Children never outlive the parent: its finish/abort kills them.
 
 Threading model: each child EngineLoop runs in its own thread and writes ONLY its own transcript
@@ -46,8 +46,8 @@ def _usage_snapshot(usage: dict) -> dict:
 
 
 class SubrunManager:
-    """The parent loop's window onto its CHILD RUNS: start one in either mode (`spawn`
-    parallel, `subtask` sequential), monitor (`subruns`/`wait`), `kill`, auto-announce exits at
+    """The parent loop's window onto its CHILD RUNS: start one in either `child` mode
+    (parallel or sequential), monitor (`children`/`wait`), `kill`, auto-announce exits at
     turn boundaries. Both modes share the budget/depth/parallel caps, the child-run executor
     and the hand-back — they differ only in scheduling (engine/child.py).
     """
@@ -56,7 +56,8 @@ class SubrunManager:
         self.parent = parent_loop
         self.subruns: dict[int, Subrun] = {}
         # Completion hook: every child exit sets this, so a parent blocked in `wait` or on a
-        # `subtask` wakes IMMEDIATELY instead of sleeping out a poll interval (or a whole timeout).
+        # sequential child wakes IMMEDIATELY instead of sleeping out a poll interval (or a whole
+        # timeout).
         self.exit_event = threading.Event()
 
     # -- caps + start (shared by both schedulers) -----------------------------------

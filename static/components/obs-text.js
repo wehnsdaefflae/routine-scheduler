@@ -153,10 +153,12 @@ export function observationText(o) {
   } else if (o.kind === "memory_write") {
     text = o.deleted ? `note "${o.name}.md" ${o.existed ? "deleted, INDEX updated" : "did not exist"}`
       : `note "${o.name}.md" ${o.created ? "created" : "revised"} (${o.lines} lines), INDEX updated`;
-  } else if (o.kind === "spawn") {
-    text = o.rejected ? `spawn REJECTED: ${o.reason}` :
-      `sub-workflow #${o.n} "${o.label}" started (${o.workflow}) — running in parallel`;
-  } else if (o.kind === "subruns") {
+  } else if (o.kind === "child") {
+    // D241: one kind, its `mode` a field — sequential or parallel (the default)
+    text = o.rejected ? `child REJECTED: ${o.reason}` :
+      `sub-workflow #${o.n} "${o.label}" started (${o.workflow}) — running `
+      + (o.mode === "sequential" ? "sequentially" : "in parallel");
+  } else if (o.kind === "children") {
     text = (o.rows || []).map((r) =>
       `#${r.n} "${r.label}" [${r.workflow}] ${r.state} · ${r.turns} turns · ${r.elapsed_s}s`)
       .join("\n") || "no sub-workflows";

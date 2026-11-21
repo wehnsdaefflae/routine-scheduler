@@ -305,10 +305,15 @@ one you are about to touch, not all of them.
   (stage), or THE RUN'S LIFECYCLE / A DIRECTORY (state), and use that word in the identifier,
   the API field, the CSS class and the user-visible label alike.
 - **Actions** (`engine/actions.py` — flat schema on purpose; weak models and Ollama grammars handle flat
-  far better than `oneOf`): `util, write_util, remove_util, read_file, view_image, write_file, delete,
-  move, mkdir, edit_file, memory_read, memory_write, read_rule, write_rule, script, shell, llm, decide,
-  spawn, subtask, detach, schedule_run, create_routine, manage_lane, task, goal, list_models,
-  subruns, kill, wait, ask_user, report, do_nothing, finish` (34, `actionschema.KINDS`).
+  far better than `oneOf`): `util, websearch, code_search, write_util, remove_util, read_file,
+  view_image, write_file, delete, move, mkdir, edit_file, memory_read, memory_write, read_rule,
+  write_rule, script, shell, llm, decide, child, detach, schedule_run, create_routine, manage_lane,
+  job, goal, list_models, children, kill, wait, ask_user, report, do_nothing, finish` (35,
+  `actionschema.KINDS`). A RETIRED kind name (`task`, D174; `spawn`/`subtask`/`subruns`, D241) is
+  an entry in `engine/renamedkinds.RENAMED`, which tells a run still emitting it the new name
+  (and any field the old name implied, e.g. `mode: sequential` for `subtask`) — and is the
+  vocabulary `tests/test_retired_kinds.py` refuses in every kind table under `src/` and
+  `static/`, which is how a rename's forgotten table is found.
   `do_nothing` (D186) is how a scheduled run states that nothing was due and WHY — no fields,
   the reasoning is `say` (non-empty, checked for this kind alone), and it grounds no `ok`
   finish (`engine/donothing.grounds_a_finish`, read by the loop and the resume rebuild alike). **A reply's actions run IN
@@ -446,7 +451,7 @@ one you are about to touch, not all of them.
   The ENGINE serves the same slot for a REPEAT POLL, without the run asking (F785, D217 "both":
   `engine/autoswap.py`, hung off `sidefields.land` so the turn loop gains no call site). A turn
   qualifies only when the previous action was poll-class and the new one repeats that class —
-  `subruns`/`wait` by kind, `script`/`util` only when the canonical action string is identical —
+  `children`/`wait` by kind, `script`/`util` only when the canonical action string is identical —
   and the cheap serve starts at the SECOND consecutive repeat, so one re-check never changes
   models under a run. The main model returns on the first action of a different class. Three
   stand-downs are load-bearing: no distinct `tool_call` model means the mechanism does nothing
@@ -463,7 +468,7 @@ one you are about to touch, not all of them.
   ADJACENT poll repeats only 6 (0.019%), of which the escape-turn guard leaves **1 actually
   served (0.003%)** — `REPEAT_FAIL` ends a run at 5 identical actions, so a real poll loop is
   `poll → read the answer → poll` and its repeats are not adjacent, and for a poll whose action
-  never varies (`subruns` is declared `((), ())`) the class depth and the identical streak are
+  never varies (`children` is declared `((), ())`) the class depth and the identical streak are
   the same number, so `SERVE_FROM` always coincides with `WARN_STREAK` and that band is empty.
   The adjacency rule is what D217 authorized, and on today's fleet it is close to a no-op;
   reaching F785's 2,651 turns needs a windowed rule (22 turns, 0.07% at a window of 4) or
@@ -542,9 +547,9 @@ one you are about to touch, not all of them.
   into a str twice and swap-thrashed the host for five hours). A shell `ls` does not ground — the
   engine sees only what read_file returned.
   There is ONE **CHILD RUN** concept (`engine/child.py`) — an isolated run with its own dir, its
-  own budget, its own recipe, and a declared relationship to its parent. `spawn` (parallel),
-  `subtask` (sequential) and a conversation `branch` are three scheduling MODES of it, never three
-  concepts and never a fourth action kind; `engine/child.py` owns the mode vocabulary the prompt
+  own budget, its own recipe, and a declared relationship to its parent. A parallel and a
+  sequential `child` (its `mode` field, D241) and a conversation `branch` are three scheduling
+  MODES of it, never three concepts; `engine/child.py` owns the mode vocabulary the prompt
   renders and the hand-back path, so the kind copy, the observations and the docs cannot drift
   apart (that drift once had the prompt claim children share the parent's working directory).
   A child's seals are the ROUTINE's, not its workspace's: the write gates cover every routine dir
@@ -556,7 +561,7 @@ one you are about to touch, not all of them.
   Every mode obeys the same contract: isolation, a budget sliced from the parent's remainder, and
   a HAND-BACK — summary always, FILES by the child writing into its own `artifacts/`, which the
   engine copies to the parent's `artifacts/` and NAMES the landed PATHS in the one
-  `CHILD RUN FINISHED (<mode>)` notification. `spawn`, `subtask`, a conversation `branch` and a
+  `CHILD RUN FINISHED (<mode>)` notification. Either `child` mode, a conversation `branch` and a
   detached task's delivery all hand back through ONE implementation (`engine/child.py`:
   `handback_dirname` / `collect_handback` / `handback_text`) — three landing places
   (`from-sub-<n>`, `from-branch-<slug>`, `from-bg-<id>`), one copy, one wording, and every one of

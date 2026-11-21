@@ -234,7 +234,7 @@ default. Routines and the system model reference a model by its catalog **name**
 - `fallbacks` — the ordered **failover chain**: catalog model names tried in order when this
   model fails hard. See *Failover & cooldowns* below.
 - `note` — **when to use this model**, one line, in your words (D279(a)). A run choosing a
-  `model` for `spawn`/`subtask`/`llm`, or a `role_swap` position, otherwise sees a catalog of
+  `model` for `child`/`llm`, or a `role_swap` position, otherwise sees a catalog of
   NAMES: nothing told it that one model is cheap and blunt, that another is the only one here
   with vision, or that a third is rate-limited to uselessness before noon. The `list_models`
   action returns it as `when_to_use` beside the name — only when set, because an empty line
@@ -532,7 +532,7 @@ operator's; what opens is the model id, which is the half the catalog actually m
 A URL in the field fails as the unconfigured endpoint name it is, and the error names the
 configured ones.
 
-**`llm` only.** A child run (`spawn`/`subtask`) is configured with `models["main"] = <catalog
+**`llm` only.** A child run (`child`) is configured with `models["main"] = <catalog
 name>` and resolves everything through the catalog, so an endpoint spec is refused there with a
 reason naming the action that does take one. A DECISION endpoint named here is refused too, and
 points at the `decide` action instead: it is a different wire (one typed answer, no free text).

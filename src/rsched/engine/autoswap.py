@@ -41,7 +41,7 @@ BY KIND. Turns where a poll class repeats twice in a row, which is what this mod
 (0.019%), of which the escape-turn stand-down below leaves 1 actually served (0.003%). The gap
 is structural, not a tuning choice: `REPEAT_FAIL` ends a run at 5 identical actions, so the real
 poll loop F785 measured is `poll → read the answer → poll` and its repeats are never ADJACENT.
-Worse for the two cases F785 names: when the poll's action never varies (`subruns` is declared
+Worse for the two cases F785 names: when the poll's action never varies (`children` is declared
 `((), ())` — no fields at all), the class depth and the byte-identical streak are the SAME
 number, so `SERVE_FROM` always coincides with `WARN_STREAK` and the escape-turn stand-down fires
 instead of the serve. Adjacency detection — the conservative shape that was authorized —
@@ -58,7 +58,7 @@ from . import enginenote, roleswap
 from .wrongturn import WARN_STREAK
 
 #: Kinds whose entire content is "has it finished?", so a repeat is the same question again
-#: however the fields read: `subruns` takes no arguments at all, and `wait` names only which
+#: however the fields read: `children` takes no arguments at all, and `wait` names only which
 #: child or handle is being waited on.
 POLL_KINDS = ("children", "wait")
 

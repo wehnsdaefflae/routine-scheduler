@@ -153,7 +153,7 @@ def parse_command(text: str) -> dict:
         known = ", ".join(f"/{k}" for k, _u, _s in COMMAND_HELP)
         raise CommandError(
             f"unknown command /{kind} — available: {known}. Loop-control actions "
-            "(spawn, subtask, wait, ask_user, finish, …) steer the assistant's run: "
+            "(child, wait, ask_user, finish, …) steer the assistant's run: "
             "ask it in plain words instead.")
     return {"say": f"user command: /{kind}", "kind": kind, **parser(tail.strip())}
 

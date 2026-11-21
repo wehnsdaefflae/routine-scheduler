@@ -39,7 +39,7 @@ _SAY_CONTRACT["think-on-paper"] = _SAY_CONTRACT["deliberate"]
 # survives compaction and reaches the next run).
 _STANDING_NOTE = (
     "Deliberation is part of your work product: give every action that shapes the run's "
-    "direction (finish, spawn, subtask, ask_user, entering a new stage) a `note` carrying "
+    "direction (finish, child, ask_user, entering a new stage) a `note` carrying "
     "your deliberation — the options you saw, the context and outside knowledge you "
     "brought, your judgment and why. It lands in state/notes.md; decide from what you "
     "wrote, not from memory."

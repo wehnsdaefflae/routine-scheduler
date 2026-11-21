@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.575.0] — 2026-11-21
+
+### Fixed
+- **The tables D241 missed: a retired child-run kind is now named nowhere that decides by kind.**
+  0.566.0 renamed `spawn`/`subtask`/`subruns` to `child` (with a `mode`) and `children`, and
+  several places still keyed on the old names:
+  - `engine/loopshape._WAITING` said `subruns`, so a run polling `children` between reads — the
+    same answer each time, because nothing had finished yet — was warned it was stuck and filed
+    as an `action_cycle` wrong turn. It now says `children`.
+  - `engine/renamedkinds.RENAMED` had no entry for any of the three, so a recipe the boot
+    migration had not reached got the blank enum refusal that module exists to prevent (the F637
+    shape). All three are there now, and an entry can name a FIELD the old name implied: a
+    `subtask` is told to resend as `child` **with `mode='sequential'`**, because "every other
+    field unchanged" alone would have turned it into a parallel child and refused its `turns`.
+  - Eight run-facing sentences still told a run to use a kind the schema refuses: the `kill`
+    refusal and the dead-child salvage refusal (`` `subruns` lists them ``), the `detach`
+    refusal, the `child:` report-target refusal, the `list_models` note, the `background` field
+    description and the deliberation paragraph (both on the wire every turn — the contract
+    shrinks slightly), and the unknown-slash-command error. Each now names `child`/`children`.
+  - The console: `components/obs-text.js` rendered every `child` and `children` observation as a
+    raw JSON dump (its branches still keyed on `spawn`/`subruns`); it now says which child started
+    and in which MODE, and lists the children table. The run page's "waiting on sub-runs…" label
+    looked for `spawn`/`subtask` and now looks for `child`.
+- **A regression floor for the whole class** (`tests/test_retired_kinds.py`): `RENAMED` is the
+  register of retired kinds, so it is also the vocabulary refused in every literal kind table,
+  dict key and `kind ==` comparison under `src/rsched` and in every `static/**.js` kind
+  comparison and kind array. A future rename that adds its entry gets its forgotten tables found
+  with no list to keep in step. Floors on the scan's machinery (196 tables, 104 JS comparisons
+  measured) keep it from passing vacuously. It also proves each correction is a promise kept:
+  following a hint's kind and fields yields an action the schema and `validate_action` accept.
+- Docs swept to the D241 vocabulary: CLAUDE.md's kind list (now the real 35), `engine/child.py`'s
+  docstring (which still said the modes keep their own kind names), docs/child-runs.md (its
+  example was a `"kind": "subtask"` action), background-tasks, architecture, endpoints, examples,
+  conversations, curated-rules, rules-permissions, prompt-anatomy and the README. The hook
+  MOMENT called `spawn` keeps its name — it is a moment, not an action kind.
+
 ## [0.574.0] — 2026-11-21
 
 ### Fixed

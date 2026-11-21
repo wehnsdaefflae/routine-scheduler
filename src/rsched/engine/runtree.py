@@ -105,7 +105,7 @@ def resolve(loop, target: str) -> tuple[Path | None, str, str]:
     label = _child_label(target)
     subs = list(getattr(loop.subruns, "subruns", {}).values())
     if not label:
-        return None, "", ("`child:` needs a label — the one you passed to spawn/subtask. "
+        return None, "", ("`child:` needs a label — the one you passed to `child`. "
                           + _live_labels(subs))
     matches = [s for s in subs if s.label == label]
     if not matches:

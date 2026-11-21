@@ -711,7 +711,7 @@ the enabled capabilities, the held permission slugs, and each held permission's 
 conduct note. Permission prose never appears in the natural-language part of the prompt;
 that is what the general rules are for.
 
-Sub-workflows (`spawn`) run with permissions and capabilities off: no gated kinds, no
+Sub-workflows (`child`) run with permissions and capabilities off: no gated kinds, no
 reserved utils, no recipe writes, no rules of their own.
 
 Budgets, `fs_read_roots` / `fs_write_roots` and schedules are resources, not capabilities —

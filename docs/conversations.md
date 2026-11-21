@@ -243,7 +243,7 @@ turn to the assistant, so you can run as many as you like (fetch a page, read a 
 a memory note) and the assistant stays quiet. It replies only when you send a plain
 message — and then it sees everything your commands produced. The result of each command
 appears in the chat as a command block; a malformed or disallowed command answers with its
-usage line instead of failing silently. Loop-control actions (`spawn`, `subtask`, `wait`,
+usage line instead of failing silently. Loop-control actions (`child`, `wait`,
 `ask_user`, `finish`, …) are deliberately not commands — they steer the assistant's run;
 ask for them in plain words.
 

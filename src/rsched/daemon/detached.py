@@ -2,7 +2,7 @@
 
 A **detached task** is a long fire-and-forget job a conversation launches with `detach`: a
 routine-shaped dir under `background_home` whose `routine.yaml` records its `owner`
-conversation. Unlike a within-reply `subtask` (a thread that dies with the reply's process),
+conversation. Unlike a within-reply `child` run (a thread that dies with the reply's process),
 it runs as its OWN daemon-managed `engine-run` subprocess, so it survives the conversation's
 reply-finishes, and reports its result back asynchronously.
 

@@ -58,7 +58,7 @@ out only after your explicit go.
 1. Reads the state digest: profile, yesterday's shortlist, earlier LEDGER entries, `.memory/` index
    (portal quirks live here — "GULP paginates after 20", "freelance.de needs the CDP
    browser").
-2. **Spawns one sub-workflow per platform** (`spawn`, four children in parallel, each with
+2. **Spawns one sub-workflow per platform** (`child`, four children in parallel, each with
    a self-contained scrape-and-normalize prompt) while it reads the inboxes itself.
 3. Merges, dedupes, scores; rewrites `state/shortlist.md`; compares against your past
    pursue/reject answers and drops the types you've rejected twice.

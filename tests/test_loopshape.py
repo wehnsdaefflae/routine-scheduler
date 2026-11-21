@@ -51,6 +51,17 @@ def test_a_poll_never_forms_a_cycle(make_routine, scripted):
     assert not any("one cycle" in o.get("tails", "") for o in _observations(events))
 
 
+def test_a_children_poll_never_forms_a_cycle(make_routine, scripted):
+    """D241 renamed `subruns` to `children`; `_WAITING` kept the old name, so a run checking on
+    its children between reads — the same answer each time, because nothing had finished yet —
+    was warned it was stuck and filed as an `action_cycle`."""
+    poll = {"say": "Checking my children.", "kind": "children"}
+    d, _ep, _status, events = _run(make_routine, scripted, [
+        _read("main.md"), poll, _read("main.md"), poll, finish()])
+    assert not any("one cycle" in o.get("tails", "") for o in _observations(events))
+    assert health_events(d.parent, event=wrongturn.EVENT, reason="action_cycle") == []
+
+
 def test_different_calls_of_one_kind_failing_in_a_row_are_named(make_routine, scripted):
     d, _ep, _status, events = _run(make_routine, scripted, [
         _read("nope-1.txt"), _read("nope-2.txt"), _read("nope-3.txt"), _read("nope-4.txt"),

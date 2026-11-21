@@ -584,7 +584,7 @@ therefore resolved `main` and `tool_call` to one model — a `role_swap: cheap` 
 nothing while the run believed it did. A MODEL TRIAL (`trial:`, `rsched/trials.py`) replaces chat roles (and
 their efforts) for the routine's next N fires without touching `models:` / `efforts:` — the
 daemon names the trial's models and efforts to the engine per run, exactly as `run-once --model
-… --effort …` does by hand. A single `llm`/`spawn`/`subtask` call may override its model per call
+… --effort …` does by hand. A single `llm`/`child` call may override its model per call
 (`model:` a role — main|tool_call|uncensored — or a CATALOG model name; D81, extended by
 the 2026-08-22 order retiring the subroutine role. The `list_models` action shows the
 catalog; an unconfigured `uncensored` or an unknown name is rejected with a teaching note). `EndpointRegistry.resolve(name)` /
@@ -1048,11 +1048,11 @@ and the capabilities digest's catalog listing):
 
 - **There is ONE child-run concept**, defined once in `engine/child.py` (F338): an isolated run
   with its OWN directory, its OWN budget sliced from the parent's remainder, its own recipe or
-  pattern, and a declared relationship to its parent. `spawn`, `subtask` and (F325) a
-  conversation `branch` are three scheduling MODES of it — parallel, sequential, and
-  forked-from-a-conversation — not three concepts, and NOT a fourth action kind: the existing
-  kinds keep their names at the action surface, because each names a different scheduling intent
-  a run genuinely chooses between, and share this contract underneath. Three names had invited
+  pattern, and a declared relationship to its parent. A parallel and a sequential `child` (the
+  action's `mode` field, D241) and (F325) a conversation `branch` are three scheduling MODES of it
+  — parallel, sequential, and forked-from-a-conversation — not three concepts, and they share this
+  contract underneath. The mode was once carried by two kind NAMES, `spawn` and `subtask`, which
+  is how one concept read as two mechanisms. Three names had invited
   three mental models, and the copy drifted between them until it claimed something false —
   that children share the parent's working directory (R409/R410). The contract is: isolation, a
   budget of its own, and a declared HAND-BACK (below). `engine/child.py` also owns the mode
@@ -1087,8 +1087,8 @@ and the capabilities digest's catalog listing):
   Decomposition is recursive (a child hits its own decompose gate; depth ≤ `max_child_depth`) and
   the `general-task` seed workflow carries its gate as `separable(work)` — true when the work
   splits into independent chunks whose own context would crowd out the rest of the run, which
-  routes it to a `spawn` per chunk, and false keeps it inline (ordered steps that each depend on
-  the previous are `subtask`s, the shape the task-specific patterns carry);
+  routes it to a parallel `child` per chunk, and false keeps it inline (ordered steps that each depend on
+  the previous are sequential `child` runs, the shape the task-specific patterns carry);
   `converse` handles decomposition as inline prose.
   Children are killed at parent finish (never outlive it); exits fold usage into the parent. The
   recursive tree is visualized live in the run/conversation rail (`rsched/readmodels/subruntree.py` →
@@ -1182,7 +1182,7 @@ and the capabilities digest's catalog listing):
   schema-retry cycle. A `then_script` may not ride a deferred change either: the thread
   dispatches the kind, so the script would be dropped unrun with its secret gate never asked
   (`engine/thenscript.problems`). **Three things now share the word "background" and the distinction is
-  load-bearing**: a within-reply `subtask`/`spawn` thread, a cross-reply `detach` task, and this
+  load-bearing**: a within-reply `child` thread, a cross-reply `detach` task, and this
   per-action flag. Name the mechanism, never the adjective alone.
 - **ask_user** is `blocking` (poll `inbox/answer-<qid>.json` up to `ask_timeout_min`, then the run
   CONTINUES on the action's stated `default` and the record stays open as deferred) or `deferred`

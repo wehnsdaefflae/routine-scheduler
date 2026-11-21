@@ -320,7 +320,7 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
                             "'handle' (a background call's bg1/bg2 …), never both — drop the "
                             "one you did not mean")
         elif not has_n and not has_handle:
-            problems.append("kind=kill requires 'n' (the sub-workflow number — `subruns` "
+            problems.append("kind=kill requires 'n' (the sub-workflow number — `children` "
                             "lists them) or 'handle' (a background call's handle, bg1/bg2 …, "
                             "from the started observation that named it)")
     if kind in ("read_file", "view_image"):

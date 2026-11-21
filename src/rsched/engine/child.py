@@ -9,12 +9,14 @@ working directory (R409/R410), a lie that cost a run a recovery detour.
 
 **A child run is:** an isolated run with its own directory, its own budget, its own recipe or
 pattern, and a declared relationship to its parent. That is the whole concept. What varies
-between `spawn`, `subtask` and `branch` is only the MODE — *when* it runs relative to the
-parent and *who* drives it — never what a child IS.
+between a parallel child, a sequential child and a conversation `branch` is only the MODE —
+*when* it runs relative to the parent and *who* drives it — never what a child IS.
 
-Deliberately NOT a fourth action kind: `spawn`, `subtask` and (F325) the conversation fork keep
-their own names at the action surface, because each names a different scheduling intent a run
-actually chooses between. They share this contract underneath.
+At the action surface the mode is a FIELD of one kind: `child` takes `mode` (parallel or
+sequential) and `children` lists them (D241, 0.566.0). The scheduling intent a run chooses
+between used to be carried by two kind NAMES, `spawn` and `subtask`, which is how one concept
+read as two mechanisms. The conversation fork (F325) stays the person's own surface. All of
+them share this contract underneath.
 
 The contract has three parts, and every mode obeys all three:
 

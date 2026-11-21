@@ -1,7 +1,7 @@
 """The CHILD RUN executor — materialize a child routine from a workflow pattern and wire its
-EngineLoop. One builder for every in-engine scheduling MODE: parallel (`spawn`) and sequential
-(`subtask`). They are the same thing — a child run, as `engine/child.py` defines it — differing
-only in how the parent schedules it and how its budget is sliced.
+EngineLoop. One builder for every in-engine scheduling MODE: parallel and sequential, the
+`mode` of one `child` action. They are the same thing — a child run, as `engine/child.py`
+defines it — differing only in how the parent schedules it and how its budget is sliced.
 
 Each child is a REAL routine on disk under `runs/<ts>/sub/<n>/` while it runs (its own main.md +
 stages/ + instruction), so its module reads resolve under its own dir and it can itself

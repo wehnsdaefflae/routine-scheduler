@@ -1,6 +1,6 @@
 # Detached background tasks — long fire-and-forget in conversations
 
-A within-reply `subtask`/`spawn` is a **thread** in the reply's process: it keeps a conversation
+A within-reply `child` run is a **thread** in the reply's process: it keeps a conversation
 live *while a child runs within a reply*, but it dies when the reply's process exits (a conversation
 is finish-per-reply / process-per-reply). That can't cover the one case a chat most wants: **kick off
 a long job (a 20-minute scrape), keep having a normal back-and-forth about other things, and get told
@@ -144,7 +144,7 @@ cannot offer.
   `decide`, `read_file`, `view_image`, `memory_read`, `read_rule` — each a read or a fetch whose
   only effect is its observation — plus the three mutations `write_file`, `edit_file` and
   `memory_write`, which defer behind the ordering barrier in the next bullet (D118 phase 3). A
-  control kind (`finish`, `ask_user`, `report`, `spawn`, `subtask`, `wait`, `kill`) is refused —
+  control kind (`finish`, `ask_user`, `report`, `child`, `wait`, `kill`) is refused —
   it either steers the run or is already asynchronous in its own right. So are `delete`, `move`
   and `mkdir` (not slow, and `move` has two ends, not the one target a barrier keys on) and
   `write_util`/`write_rule`, whose handlers have no `executor.DISPATCH` entry to run in a thread.
@@ -332,10 +332,10 @@ load, where its spend lands, and who gets it.
 | | lives | blocks the reply | reports via | survives reply-finish |
 |---|---|---|---|---|
 | `background: true` (one action) | a thread in the reply | no (the turn returns at once) | the turn-boundary collector | no |
-| `subtask` (sequential) | a thread in the reply | no (you `wait`) | the finished-hook / `wait` | no |
-| `spawn` (parallel) | a thread in the reply | no | the finished-hook | no |
+| `child` (mode sequential) | a thread in the reply | no (you `wait`) | the finished-hook / `wait` | no |
+| `child` (mode parallel) | a thread in the reply | no | the finished-hook | no |
 | `detach` (background) | its OWN daemon process | no (you `finish`) | an inbox message + wake | **yes** |
 
 Reach for `detach` only when a job is genuinely long and independent; anything you can finish within the
-reply should stay a direct step or a `subtask`. Reach for `background: true` when the step belongs in
+reply should stay a direct step or a sequential `child`. Reach for `background: true` when the step belongs in
 THIS context and only its waiting is the problem.

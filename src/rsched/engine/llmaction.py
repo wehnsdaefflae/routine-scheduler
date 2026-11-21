@@ -181,7 +181,7 @@ def do_list_models(ctx: RunContext) -> dict:
                  for name, cfg in sorted((ctx.server.endpoints or {}).items())]
     out: dict = {"kind": "list_models", "roles": roles, "models": models,
                  "endpoints": endpoints,
-                 "note": ("a spawn/subtask/llm action's `model` field takes one of these "
+                 "note": ("a child/llm action's `model` field takes one of these "
                           "catalog names, or a role (main/tool_call/uncensored/supervisor); "
                           "children default to main, llm to tool_call. An `llm` call may also "
                           "name '<endpoint>/<model id>' from `endpoints` to reach a model the "

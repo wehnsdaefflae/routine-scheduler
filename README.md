@@ -20,8 +20,8 @@ and declared network need (`docs/sandboxing.md`); if none fits, the routine writ
 (`write_util`, selftest-gated, optionally requiring your approval — and never silently recreating
 a util you deleted). For the genuine one-off there is the `shell` action — the escape hatch, off
 by default, in the same jail and with no secret at all. Other actions: read/write a file, a scoped `llm` subcall, decompose the
-work into child tasks — `spawn` parallel sub-workflows (monitor with `subruns`, `kill`, `wait`) or
-run ordered `subtask` steps sequentially (each a fresh-context child on its own pattern + budget) —
+work into child runs — `child` starts one in parallel or, with `mode: sequential`, as an ordered
+step (each a fresh-context child on its own pattern + budget; monitor with `children`, `kill`, `wait`) —
 ask the user (blocking or deferred), or finish. Children never outlive the parent; the recursive
 sub-run tree is shown live in the run rail. A conversation can also `detach` a LONG job that OUTLIVES a
 reply (its own daemon-managed process, reporting back on completion). The engine commits each routine's working dir automatically. Endpoints

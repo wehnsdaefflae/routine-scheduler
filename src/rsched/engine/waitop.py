@@ -2,7 +2,7 @@
 
 Moved out of `engine/subruns.py` (which sits at the 350-line bar) when `wait` learned the
 run's second kind of in-flight work. A run has TWO things it can be waiting for, and before
-this `wait` saw only one of them: child runs (`spawn`/`subtask`) and backgrounded calls
+this `wait` saw only one of them: child runs (`child`) and backgrounded calls
 (`background: true`, `engine/background.py`). With no child it answered "no sub-workflows have
 been spawned" at once, so a run waiting on a backgrounded test gate asked again and again
 (scheduler-builder used it 8 times on one background call); with children it never woke on a

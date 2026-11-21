@@ -1,6 +1,6 @@
 """The `detach` action handler — launch a long background task that outlives this reply.
 
-`detach` is the CROSS-REPLY counterpart to `subtask`/`spawn` (within-reply children that die
+`detach` is the CROSS-REPLY counterpart to `child` (within-reply children that die
 when the reply's process exits). It does NOT run anything in-process: it drops an intent file in
 `background_home/.requests/` and returns immediately. The daemon's DetachedManager picks the
 intent up, materializes + fires the task as its own `engine-run` subprocess, and — on completion
@@ -28,7 +28,7 @@ def handle_detach(ctx: RunContext, action: dict) -> dict:
         return {"kind": "detach", "rejected": True,
                 "reason": "detach is only available from a top-level conversation (not a scheduled "
                           "routine, and not a within-reply child). Do the work directly, or use "
-                          "subtask/spawn to decompose it inside this reply."}
+                          "a `child` run to decompose it inside this reply."}
     workflow = (action.get("workflow") or "").strip() or "general-task"
     label = (action.get("label") or "").strip() or "background task"
     taskid = background_task_id(ctx.routine.slug)

@@ -246,7 +246,7 @@ export async function render(view, runId, query = {}) {
     if (!p || !p.kind) return "waiting for the model…";
     if (p.kind === "util") return p.name ? `running util ${p.name}…` : "running a util…";
     if (p.kind === "llm") return "running an LLM subcall…";
-    if (["spawn", "subtask", "detach", "wait"].includes(p.kind)) return "waiting on sub-runs…";
+    if (["child", "detach", "wait"].includes(p.kind)) return "waiting on sub-runs…";
     if (p.kind === "ask_user") return "waiting for your answer…";
     return `executing ${p.kind}…`;
   };

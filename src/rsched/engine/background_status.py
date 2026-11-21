@@ -1,4 +1,4 @@
-"""What is RUNNING in the background, as `subruns` rows (R3600).
+"""What is RUNNING in the background, as `children` rows (R3600).
 
 The operator caught this mid-run in `tv-show-tracker-seedbox-manager`: a `background: true`
 script was in flight as `bg1`, the run asked `subruns` to see what it was waiting for, and the
@@ -6,7 +6,7 @@ answer was *"no record of a child in THIS leg — and none on disk either, so no
 Work the run had started was running, and the one action whose job is to say what is running
 denied it existed.
 
-**Why the two belong in one table.** `spawn`/`subtask` and a backgrounded call are different
+**Why the two belong in one table.** A `child` run and a backgrounded call are different
 mechanisms — a child run is a process with its own budget, a background call is a thread inside
 this interpreter — but they are the same THING to a run reading its own state: work it started,
 not yet in hand, whose result arrives at a later turn boundary tagged with an identifier. `kill`
@@ -15,7 +15,7 @@ reason; the status table was the only surface that knew one and not the other.
 
 **Two namespaces stay two namespaces**, so these rows are a separate `background` key rather
 than more `rows`: a row with an `n` is a sub-workflow and a row with a `handle` is a thread, and
-`subruns`' own count has always meant children. Folding them into one list would make `count`
+`children`' own count has always meant children. Folding them into one list would make `count`
 mean two things and invite `kill n=1` at a `bg1`.
 
 `state` distinguishes `running` from `landed` because a call that FINISHED mid-turn is still in

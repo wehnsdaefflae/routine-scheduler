@@ -40,7 +40,7 @@ BACKGROUND_FIELD = {
                    "NEXT action needs — you would only have to wait for it anyway. There is no "
                    "cap on how many may be in flight at once; your own turn budget is the "
                    "limit, since every result still has to be read. A kind that STEERS the run "
-                   "(finish, ask_user, report, spawn, subtask, wait, kill) may not defer, nor "
+                   "(finish, ask_user, report, child, wait, kill) may not defer, nor "
                    "may delete, move, mkdir, write_util or write_rule — each refusal says why · "
                    "util/websearch/code_search/script/shell/llm/decide/read_file/view_image/"
                    "memory_read/read_rule:"

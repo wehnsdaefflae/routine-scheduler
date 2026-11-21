@@ -133,8 +133,8 @@ def no_such_child(run_dir: Path, n: int) -> str:
                 f"no thread for it: it cannot be waited on or killed, and its exit will not be "
                 f"announced. Its work is on disk at {run_dir / 'sub' / str(n)} — read its "
                 f"artifacts/ and transcript.jsonl instead of spawning it again.")
-    return (f"no sub-workflow {n} — the `subruns` action lists every child this run has "
-            "spawned, with its number and state")
+    return (f"no sub-workflow {n} — the `children` action lists every child this run has "
+            "started, with its number and state")
 
 
 def turns_reached(child_dir: Path) -> int:

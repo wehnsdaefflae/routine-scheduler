@@ -41,7 +41,7 @@ def _brief(action: dict) -> str:
 
     Now the canonical rendering (`actionschema.canon`), truncated. It used to carry its own
     name/path/paths rule, which quietly disagreed with `BRIEF_FIELD` for every kind whose
-    identifying field is neither (`llm`, `ask_user`, `spawn`, `report`, `shell`, …) — those
+    identifying field is neither (`llm`, `ask_user`, `child`, `report`, `shell`, …) — those
     stamped a bare kind with no target at all.
     """
     from .actionschema import canon
