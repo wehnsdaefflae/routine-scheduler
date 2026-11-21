@@ -5,7 +5,7 @@ import json
 import pytest
 
 from conftest import finish, util, write_file
-from helpers import prompt_text, server_for, set_capabilities
+from helpers import prompt_text, seed_local_reminders, server_for, set_capabilities
 from rsched import reminder_checks as checks
 from rsched import reminders as store
 from rsched.engine.actions import validate_action
@@ -37,7 +37,7 @@ def test_action_is_the_default_kind_so_every_stored_reminder_keeps_working(tmp_p
 
 
 def test_a_kind_round_trips_through_the_local_store(tmp_path):
-    store.save_local(tmp_path, [_rem(rid="rem-r", regex="exit 2", kind="result")], {})
+    seed_local_reminders(tmp_path, [_rem(rid="rem-r", regex="exit 2", kind="result")], {})
     loaded, _ = store.load_local(tmp_path)
     assert (loaded[0].kind, loaded[0].regex) == ("result", "exit 2")
 
@@ -61,7 +61,7 @@ def test_matching_selects_by_kind(tmp_path):
 
 def test_the_union_dedupes_by_regex_and_kind(tmp_path):
     """Two hooks with the same pattern on different kinds are different consequence classes."""
-    store.save_local(tmp_path, [_rem(rid="rem-l", regex="^util:danger", kind="result")], {})
+    seed_local_reminders(tmp_path, [_rem(rid="rem-l", regex="^util:danger", kind="result")], {})
     home = tmp_path / "lib" / "reminders"
     home.mkdir(parents=True)
     store.write_global(home, _rem(rid="rem-g", regex="^util:danger", kind="action",
@@ -111,9 +111,9 @@ def test_a_result_hook_fires_on_the_observation_and_does_not_hold_the_action(
     d = make_routine(slug="remkind")
     set_capabilities(d, reminders="local")
     # the target is the OBSERVATION as the model is shown it — "wrote N bytes to <path>"
-    store.save_local(d, [_rem(rid="rem-res", regex=r"wrote \d+ bytes to state/probe",
-                              kind="result",
-                              desc="the probe wrote the sibling routine's input")], {})
+    seed_local_reminders(d, [_rem(rid="rem-res", regex=r"wrote \d+ bytes to state/probe",
+                                  kind="result",
+                                  desc="the probe wrote the sibling routine's input")], {})
     ep = scripted([write_file("state/probe.txt", content="probe-one"), finish()])
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
@@ -133,8 +133,8 @@ def test_a_result_hook_does_not_fire_on_the_action_that_produced_it(make_routine
     two targets are different subjects, and conflating them is the bug this step prevents."""
     d = make_routine(slug="remkind2")
     set_capabilities(d, reminders="local")
-    store.save_local(d, [_rem(rid="rem-res2", regex=r"^util:danger", kind="result",
-                              desc="should never fire — no observation renders that way")], {})
+    seed_local_reminders(d, [_rem(rid="rem-res2", regex=r"^util:danger", kind="result",
+                                  desc="should never fire — no observation renders that way")], {})
     scripted([util("danger"), write_file("state/x.txt", content="x"), finish()])
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
@@ -147,8 +147,8 @@ def test_a_result_hook_does_not_fire_on_the_action_that_produced_it(make_routine
 def test_a_prose_hook_matches_what_the_model_said_that_turn(make_routine, scripted):
     d = make_routine(slug="remprose")
     set_capabilities(d, reminders="local")
-    store.save_local(d, [_rem(rid="rem-pr", regex="force.push", kind="prose",
-                              desc="a force push rewrites what the remote already served")], {})
+    seed_local_reminders(d, [_rem(rid="rem-pr", regex="force.push", kind="prose",
+                                  desc="a force push rewrites what the remote already served")], {})
     ep = scripted([{**write_file("state/y.txt", content="y"),
                     "say": "I will force push after this"}, finish()])
     status, _run_dir = run_routine(d, server_for(d), run_ts=TS)
@@ -161,8 +161,8 @@ def test_an_action_kind_hook_still_holds_before_execution(make_routine, scripted
     """The regression guard: everything the layer did before this change, unchanged."""
     d = make_routine(slug="remsame")
     set_capabilities(d, reminders="local")
-    store.save_local(d, [_rem(rid="rem-act", regex=r"^write_file path=state/probe",
-                              desc="it clobbers the sibling run's input")], {})
+    seed_local_reminders(d, [_rem(rid="rem-act", regex=r"^write_file path=state/probe",
+                                  desc="it clobbers the sibling run's input")], {})
     scripted([write_file("state/probe.txt", content="one"),
               write_file("state/probe.txt", content="one"), finish()])
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)

@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from conftest import finish, write_file
-from helpers import prompt_text, reminder, server_for, set_capabilities
-from rsched import reminders as store
+from helpers import prompt_text, reminder, seed_local_reminders, server_for, set_capabilities
 from rsched.engine.loop import EngineLoop
 from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
@@ -22,7 +21,7 @@ def _run(make_routine, scripted, replies, *, local=(), **caps):
     d = make_routine(slug="heldr")
     set_capabilities(d, reminders="local", **caps)
     if local:
-        store.save_local(d, list(local), {})
+        seed_local_reminders(d, list(local), {})
     ep = scripted(replies)
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")

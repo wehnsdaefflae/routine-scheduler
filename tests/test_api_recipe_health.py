@@ -6,6 +6,7 @@ the no-active-run 409 guard).
 import subprocess
 
 from conftest import git_in as _git
+from helpers import seed_local_reminders
 from rsched.paths import atomic_write_json
 
 
@@ -86,7 +87,7 @@ def test_health_carries_the_cautions_the_run_was_held_by(api_client, make_routin
     c, _tmp = api_client
     d = make_routine(slug="cautious")
     (d / "state").mkdir(exist_ok=True)
-    store.save_local(d, [store.Reminder(
+    seed_local_reminders(d, [store.Reminder(
         id="rem-mv", regex="^util:fs-ops mv ", description="it overwrites the destination",
         scope="local", created_run="r:1",
         stats={**store.blank_stats(), "fires": 3, "could_not": 2, "did": 1})], {})
@@ -115,7 +116,7 @@ def test_a_local_reminder_can_be_deleted_and_a_curated_one_cannot(api_client, ma
     c, _tmp = api_client
     d = make_routine(slug="forgetful")
     (d / "state").mkdir(exist_ok=True)
-    store.save_local(d, [
+    seed_local_reminders(d, [
         store.Reminder(id="rem-a", regex="^util:a", description="d", scope="local",
                        created_run="r:1", stats=store.blank_stats()),
         store.Reminder(id="rem-b", regex="^util:b", description="d", scope="local",
@@ -140,7 +141,7 @@ def test_a_local_reminder_is_not_deleted_under_a_live_run(api_client, make_routi
 
     c, _tmp = api_client
     d = make_routine(slug="forgetful")
-    store.save_local(d, [
+    seed_local_reminders(d, [
         store.Reminder(id="rem-a", regex="^util:a", description="d", scope="local",
                        created_run="r:1", stats=store.blank_stats())], {})
     mk_run(d, "20260708-100000", "running")

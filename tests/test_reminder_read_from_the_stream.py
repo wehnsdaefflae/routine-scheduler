@@ -1,5 +1,5 @@
-"""The reminder READ is served from the hook stream, with the tallies merged from the store
-(D152 step 4 / goal b4) — the reminder twin of `hooks/reportread`.
+"""The reminder READ is served from the hook stream alone, with the tallies joined from the
+store (D152 step 4 / goal b4) — the reminder twin of `hooks/reportread`.
 """
 
 from __future__ import annotations
@@ -99,46 +99,15 @@ def test_a_stream_served_definition_keeps_the_stores_tally(tmp_path, monkeypatch
     assert live[0].stats["would_have"] == 2 and live[0].stats["did"] == 3
 
 
-def test_a_reminder_the_stream_lacks_is_served_from_the_store(tmp_path, monkeypatch):
-    """The rule that cannot lose a reminder — `reportread.folded`'s, for a store whose loss
-    changes what HOLDS a run rather than what a page lists."""
+def test_a_reminder_the_stream_lacks_is_not_served(tmp_path, monkeypatch):
+    """The stream is the ONLY source of a definition: a row only the store holds is not part of
+    the live set, and nothing compares the two stores on a read."""
     rd = tmp_path / "r"
     _store(rd, [_rec("rem-1"), _rec("rem-2")])
     monkeypatch.setattr(reminderread, "stream_definitions",
                         lambda home, routine: {"rem-1": _rec("rem-1")})
     live, _gstats = reminderread.read_local(tmp_path, rd)
-    assert sorted(r.id for r in live) == ["rem-1", "rem-2"]
-
-
-def test_the_shortfall_is_filed_rather_than_passing_silently(tmp_path, monkeypatch):
-    """A store serving the read while the stream that replaced it is behind must say so."""
-    rd = tmp_path / "r"
-    _store(rd, [_rec("rem-1"), _rec("rem-2")])
-    monkeypatch.setattr(reminderread, "stream_definitions",
-                        lambda home, routine: {"rem-1": _rec("rem-1")})
-    filed = []
-    monkeypatch.setattr(reminderread, "log_health_event",
-                        lambda *a, **kw: filed.append((a, kw)))
-    reminderread.read_local(tmp_path, rd)
-    assert filed, "a read served from the store filed nothing"
-    event = filed[0][0][1] if len(filed[0][0]) > 1 else filed[0][1].get("event")
-    assert "reminder_stream" in str(event)
-
-
-def test_an_empty_stream_and_a_behind_stream_are_reported_apart(tmp_path, monkeypatch):
-    """'The store is gone' and 'the store is behind' want different repairs — the reports half
-    learned this and named them apart."""
-    rd = tmp_path / "r"
-    _store(rd, [_rec("rem-1")])
-    seen = []
-    monkeypatch.setattr(reminderread, "log_health_event",
-                        lambda *a, **kw: seen.append(str(a[1] if len(a) > 1 else kw.get("event"))))
-    monkeypatch.setattr(reminderread, "stream_definitions", lambda home, routine: {})
-    reminderread.read_local(tmp_path, rd)
-    monkeypatch.setattr(reminderread, "stream_definitions",
-                        lambda home, routine: {"rem-9": _rec("rem-9")})
-    reminderread.read_local(tmp_path, rd)
-    assert len(set(seen)) == 2, f"both shortfalls filed the same event: {seen}"
+    assert [r.id for r in live] == ["rem-1"]
 
 
 def test_the_global_tally_is_the_stores_alone(tmp_path, monkeypatch):
@@ -164,20 +133,6 @@ def test_a_broken_store_reads_as_empty_rather_than_failing_the_run(tmp_path, mon
     assert [r.id for r in live] == ["rem-1"] and gstats == {}
 
 
-def test_an_unreadable_stream_falls_back_to_the_store(tmp_path, monkeypatch):
-    """A stream read that raises must not take the run's reminders with it."""
-    rd = tmp_path / "r"
-    _store(rd, [_rec("rem-1")])
-
-    def boom(home, routine):
-        raise OSError("stream gone")
-
-    monkeypatch.setattr(reminderread, "stream_definitions", boom)
-    monkeypatch.setattr(reminderread, "log_health_event", lambda *a, **kw: None)
-    live, _g = reminderread.read_local(tmp_path, rd)
-    assert [r.id for r in live] == ["rem-1"]
-
-
 def test_a_global_definition_is_not_served_as_a_local_one(tmp_path, monkeypatch):
     """`load_local`'s contract is LOCAL reminders plus the global TALLY — not global definitions."""
     rd = tmp_path / "r"
@@ -185,14 +140,14 @@ def test_a_global_definition_is_not_served_as_a_local_one(tmp_path, monkeypatch)
     monkeypatch.setattr(reminderread, "stream_definitions", lambda home, routine: {
         "rem-1": _rec("rem-1"),
         "rem-g": dict(_rec("rem-g"), scope="global", reach="universal")})
-    monkeypatch.setattr(reminderread, "log_health_event", lambda *a, **kw: None)
     live, _g = reminderread.read_local(tmp_path, rd)
     assert [r.id for r in live] == ["rem-1"]
 
 
-def test_load_local_stays_the_stores_reader_or_the_comparator_lies(tmp_path, monkeypatch):
-    """`load_local` must NOT become the merged read, and this is the subtlest trap in the
-    cutover.
+def test_load_local_stays_the_stores_reader(tmp_path, monkeypatch):
+    """`load_local` must NOT become the stream read: the raw mutation paths (`record`,
+    `dispose`, `set_for`) work off it, and a mutator reading its own projection would rewrite
+    definitions from a served fold.
     """
     rd = tmp_path / "r"
     _store(rd, [_rec("rem-1", regex="^stored:")])
@@ -200,6 +155,3 @@ def test_load_local_stays_the_stores_reader_or_the_comparator_lies(tmp_path, mon
                         lambda home, routine: {"rem-9": _rec("rem-9", regex="^streamed:")})
     live, _g = reminders.load_local(rd)
     assert [r.id for r in live] == ["rem-1"] and live[0].regex == "^stored:"
-
-    from rsched.hooks import reminderproj
-    assert sorted(reminderproj.stored_definitions(rd)) == ["rem-1"]

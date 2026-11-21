@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from conftest import finish, write_file
-from helpers import reminder, server_for, set_capabilities
+from helpers import reminder, seed_local_reminders, server_for, set_capabilities
 from rsched import reminders as store
 from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
@@ -14,7 +14,7 @@ TS = "20260905-090000"
 def _run(make_routine, scripted, replies, *, local=()):
     d = make_routine(slug="remonce")
     set_capabilities(d, reminders="local")
-    store.save_local(d, list(local), {})
+    seed_local_reminders(d, list(local), {})
     ep = scripted(replies)
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     return d, ep, status, read_events(run_dir / "transcript.jsonl")[0]

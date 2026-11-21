@@ -10,7 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from conftest import finish, util, write_file
-from helpers import server_for, set_capabilities, transcript_events
+from helpers import seed_local_reminders, server_for, set_capabilities, transcript_events
 from rsched import assists as lib
 from rsched import reminders as rem_store
 from rsched.endpoints.base import EndpointError
@@ -32,7 +32,7 @@ def _observed(run_dir) -> list[str]:
 
 def _reminder(d, regex: str) -> None:
     set_capabilities(d, reminders="local")
-    rem_store.save_local(d, [Reminder(id="rem-1", regex=regex, description="it clobbers x",
+    seed_local_reminders(d, [Reminder(id="rem-1", regex=regex, description="it clobbers x",
                                       scope="local", created_run="r:1",
                                       stats=rem_store.blank_stats())], {})
 

@@ -3,7 +3,7 @@ lost from this ledger.
 """
 from __future__ import annotations
 
-import json
+from helpers import seed_reports
 
 # The R2886 / R2313 pair, as `reports.read_reports` folds it (D177: the ROW keeps the detail
 # whole, so the prose a settled report claimed with is still on disk).
@@ -133,10 +133,7 @@ def test_load_reads_the_live_stream_and_survives_a_missing_one(tmp_path):
     from rsched.readmodels.prose_closures import load
 
     assert load(tmp_path) == []                            # no .control at all
-    control = tmp_path / ".control"
-    control.mkdir()
-    (control / "reports.jsonl").write_text(
-        "".join(json.dumps(r) + "\n" for r in (CLAIMED, CLAIMANT)), encoding="utf-8")
+    seed_reports(tmp_path, [CLAIMED, CLAIMANT])
     assert [o["id"] for o in load(tmp_path)] == ["R2313"]
 
 
@@ -147,10 +144,7 @@ def test_the_api_surfaces_it(api_client, make_routine):
     """
     c, tmp = api_client
     make_routine(slug="self-audit")
-    control = tmp / "routines" / ".control"
-    control.mkdir(parents=True, exist_ok=True)
-    (control / "reports.jsonl").write_text(
-        "".join(json.dumps(r) + "\n" for r in (CLAIMED, CLAIMANT)), encoding="utf-8")
+    seed_reports(tmp / "routines", [CLAIMED, CLAIMANT])
 
     got = c.get("/api/items/orphans").json()
     stranded = [o for o in got if o.get("kind") == "prose-closure"]

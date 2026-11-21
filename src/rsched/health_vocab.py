@@ -277,12 +277,6 @@ routine per day, `obligations` how many, detail naming each and what the last ru
 item_dropped_live: a finding/decision self-audit's report.json carried open or in_progress was
 rewritten out of it (`daemon/item_record_watch`); `items` names them. The index keeps it live.
 
-The STORE-SHORTFALL family — `hook_stream_diverged`, `hook_stream_unreadable`,
-`reminder_stream_diverged`, `reminder_stream_unreadable` — lives in `health_vocab_stores`, whose
-docstring carries their paragraphs and whose `EVENTS` is joined into the tuple below. One
-subject (a read served from the store the hook stream replaced) outgrowing a file at the size
-bar is exactly the case the rule above names.
-
 process_overhead_high: a routine's median `process_share` over its last runs reached the bar —
 its runs go mostly to its own process (`engine/overhead_alarm`, `median`/`threshold`/`runs`).
 
@@ -294,8 +288,6 @@ page lists the same rows as UNDELIVERED with deliver / settle.
 """
 
 from __future__ import annotations
-
-from .health_vocab_stores import EVENTS as _STORE_EVENTS
 
 EVENTS: tuple[str, ...] = (
     "run_failed",
@@ -340,7 +332,6 @@ EVENTS: tuple[str, ...] = (
     "error_class_undecided",
     "item_dropped_live",
     "oneshot_skipped",
-    *_STORE_EVENTS,
     "process_overhead_high",
     "postdeploy_failed",
     "answer_undelivered",

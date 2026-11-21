@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from helpers import bare_routine
+from helpers import bare_routine, seed_reports
 from rsched.engine.admin_handlers import handle_report
 from rsched.engine.inbox import drain_messages
 from rsched.engine.observations import format_observation
@@ -193,16 +193,11 @@ def test_rows_already_disposed_of_by_a_non_owner_stay_settled(home):
     """The operator's own note with the decision: 113 rows were settled by their own sender —
     reopening them would hand triage 49 unread rows at once. The gate is a WRITE precondition
     and the read model does not re-litigate history."""
-    import json
-
     handle_report(_loop(home, "freelance-radar"), {"title": "historical row"})
-    path = reports_path(home)
-    with path.open("a", encoding="utf-8") as fh:        # as the old engine would have written it
-        fh.write(json.dumps({"id": "R2", "ts": "2026-09-01T00:00:00+02:00",
-                             "routine": "freelance-radar",
-                             "run_id": "freelance-radar:20260901-000000",
-                             "title": "its own follow-up", "detail": "",
-                             "answers": "R1"}) + "\n")
+    seed_reports(home, [{"id": "R2", "ts": "2026-09-01T00:00:00+02:00",   # as the old engine
+                         "routine": "freelance-radar",                     # would have written it
+                         "run_id": "freelance-radar:20260901-000000",
+                         "title": "its own follow-up", "detail": "", "answers": "R1"}])
     assert _status(home)["R1"] == "settled"
     assert owner_of(_rows(home), "R1") == "", "and it is still nobody's row"
 

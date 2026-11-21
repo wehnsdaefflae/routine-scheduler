@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from conftest import finish
-from helpers import prompt_text, reminder, server_for
-from rsched import reminders as store
+from helpers import prompt_text, reminder, seed_local_reminders, server_for
 from rsched.engine.actions import validate_action
 from rsched.engine.actionschema import ACTION_SCHEMA
 from rsched.engine.kindsurface import schema_for_kinds
@@ -24,7 +23,7 @@ def _write_then(argv, path="scripts/probe.py", content=SCRIPT):
 def _run(make_routine, scripted, monkeypatch, replies, *, result=(0, "ran", ""), local=()):
     d = make_routine(slug="fuser")
     if local:
-        store.save_local(d, list(local), {})
+        seed_local_reminders(d, list(local), {})
     calls: list[tuple] = []
     monkeypatch.setattr("rsched.scripts.run_script",
                         lambda rd, name, args, **_kw: calls.append((name, list(args))) or result)

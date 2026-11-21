@@ -1279,14 +1279,18 @@ and the capabilities digest's catalog listing):
   through, folds the STREAM (`rsched/hooks/reportread`, step 9). No caller changed; what the
   step cost was the HISTORY, which had to be complete first: a one-shot pre-stream backfill,
   then a repair of 8 mirror-era rows whose hooks carried no disposal at all.
-  One rule governs the read, chosen so that no reading can LOSE a report: the stream decides,
-  and when the ledger names a report the stream's fold does not, the ledger is served and the
-  shortfall is filed (`hook_stream_diverged`, or `hook_stream_unreadable` when the stream holds
-  no report rows at all). `reports.jsonl` stays for that fall-back and for its readers outside
-  the engine (the operator's own eye, self-audit's folds); its bytes are unchanged. The reminder layer and the injection path
-  still own their stores and MIRROR their writes here (`engine/remind_write`,
+  The stream is the read's ONLY source: a read never opens `reports.jsonl`, and the memo
+  fingerprint covers the stream alone. (Until the comparison was retired every cache miss also
+  folded the ledger and served it when it named a report the stream lacked; the two had held
+  exactly the same report rows for weeks, so that cost ~21 MB of parsing per miss to find them
+  equal.) `reports.jsonl` stays WRITTEN for its readers outside the engine (the operator's own
+  eye, routine scripts that fold it); its bytes are unchanged. The reminder layer and the
+  injection path still own their stores and MIRROR their writes here (`engine/remind_write`,
   `engine/control.inject_user_message` through `engine/hookmirror`), best-effort — including
-  the target's disposition of a foreign hook, which is a later row about the same id.
+  the target's disposition of a foreign hook, which is a later row about the same id. A
+  reminder's DEFINITION is read from the stream alone (`hooks/reminderread`), joined with the
+  tally only `state/reminders.json` carries; a reminder the store names and the stream does not
+  is not served.
   The FIFTH source is the `schedule` trigger's first user, which is what closed the campaign's
   last gap: a ONE-SHOT is a `schedule`-triggered hook (`rsched/hooks/scheduleproj`, D152 gap 5),
   armed from the routine page or by a routine's own `schedule_run` action, with its ending —
@@ -1305,16 +1309,13 @@ and the capabilities digest's catalog listing):
   writers are deliberate for now: the report ledger and the reminders store have readers
   outside this engine (the Decisions page, self-audit's folds, the per-routine fire tallies),
   and the duplication ends when the surfaces ride the one mechanism.
-  TWO DECISIONS are taken from the stream so far (`hooks/reportinv`, D152 steps 7-8): the
-  open-thread cap that refuses a run's fourth parallel report to one owner, on the write path,
-  and the pre-finish hold that asks a run to answer a hand-off before it ends, at its finish.
-  Both ask BOTH stores and keep the LEDGER's answer when they differ, filing
-  `hook_stream_diverged` — while two writers exist, a refusal or a hold justified only by the
-  stream would be the mover's own defect reaching a run's work, and the event is what makes a
-  disagreement findable instead of silent. Both fold the stream through `reports.fold_rows`
-  before comparing: `reportproj` writes a filing and each lifecycle fact as separate rows,
-  while the predicates read flags only the fold puts on a filing row (F847 — five spurious
-  divergences in one day, one of them reading 19 open threads against the ledger's 3). Every finished
+  The two DECISIONS taken from report history — the open-thread cap that refuses a run's
+  fourth parallel report to one owner, on the write path, and the pre-finish hold that asks a
+  run to answer a hand-off before it ends — read the same folded stream as every surface
+  (`report_threads.open_threads` / `still_owed` over `reports.read_reports`), so a refusal or a
+  hold is always justified by the count a person can see. `hooks/reportinv.hook_of_row` keeps
+  the projection's exact inverse, which is what makes "the ledger is a projection" checkable
+  row for row. Every finished
   (sub)run appends to
   `~/routines/.control/workflow-usage.jsonl` — the routine-improver routine's evidence stream
   for the shared library it owns — its `library-pass` stage reads this stream each sweep —

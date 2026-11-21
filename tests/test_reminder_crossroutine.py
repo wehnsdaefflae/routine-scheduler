@@ -4,7 +4,9 @@ import json
 
 import pytest
 
+from helpers import seed_local_reminders
 from rsched import reminders as store
+from rsched.hooks import store as hookstore
 from rsched.reminders import Reminder
 
 
@@ -13,6 +15,17 @@ def _rem(rid="rem-1", regex="^util:danger", desc="it deletes the target", kind="
     return Reminder(id=rid, regex=regex, description=desc, scope=scope, kind=kind, owner=owner,
                     created_run="r:1", stats={**store.blank_stats(), **stats},
                     reach=reach or ("universal" if scope == "global" else ""))
+
+
+def _dispose(routine_dir, rid, disposition, run_id=""):
+    """`store.dispose` plus the hook row the engine appends beside it
+    (`hookmirror.reminder_disposed`): the disposition a run holds is read from the stream."""
+    held = next(r for r in store.load_local(routine_dir)[0] if r.id == rid)
+    out = store.dispose(routine_dir, rid, disposition, run_id=run_id)
+    hookstore.record_reminder(routine_dir.parent, record=held.as_record(),
+                              routine=routine_dir.name, run_id=run_id,
+                              target=routine_dir.name, disposition=disposition)
+    return out
 
 
 # --- the owner is part of a hook's identity ------------------------------------------------
@@ -30,7 +43,7 @@ def test_a_record_without_an_owner_is_its_holders_own(tmp_path):
 
 
 def test_an_owner_round_trips_and_marks_the_hook_foreign(tmp_path):
-    store.save_local(tmp_path, [_rem(rid="rem-f", owner="watcher")], {})
+    seed_local_reminders(tmp_path, [_rem(rid="rem-f", owner="watcher")], {})
     loaded, _ = store.load_local(tmp_path)
     assert (loaded[0].owner, loaded[0].foreign) == ("watcher", True)
 
@@ -53,8 +66,8 @@ def test_set_for_refuses_to_exceed_the_targets_cap(tmp_path):
     """The cap is a runaway backstop on the TARGET's turns, so a foreign writer obeys it too."""
     target = tmp_path / "routines" / "builder"
     (target / "state").mkdir(parents=True)
-    store.save_local(target, [_rem(rid=f"rem-{n}", regex=f"^util:x{n}")
-                              for n in range(store.MAX_LOCAL)], {})
+    seed_local_reminders(target, [_rem(rid=f"rem-{n}", regex=f"^util:x{n}")
+                                  for n in range(store.MAX_LOCAL)], {})
     with pytest.raises(store.ReminderCapError):
         store.set_for(target, regex="^util:one-too-many", description="d", kind="action",
                       owner="watcher", run_ts="20261001-120000")
@@ -78,7 +91,7 @@ def test_set_for_will_not_duplicate_a_live_pattern_of_the_same_kind(tmp_path):
 
 @pytest.mark.parametrize("disposition", list(store.DISPOSITIONS))
 def test_every_disposition_round_trips_in_the_targets_own_store(tmp_path, disposition):
-    store.save_local(tmp_path, [_rem(rid="rem-f", owner="watcher")], {})
+    seed_local_reminders(tmp_path, [_rem(rid="rem-f", owner="watcher")], {})
     store.dispose(tmp_path, "rem-f", disposition)
     loaded, _ = store.load_local(tmp_path)
     if disposition == "remove":
@@ -89,8 +102,8 @@ def test_every_disposition_round_trips_in_the_targets_own_store(tmp_path, dispos
 
 def test_a_muted_hook_stays_in_the_store_but_leaves_the_live_set(tmp_path):
     """`mute` is the target's "not this run" — the definition survives for its owner to see."""
-    store.save_local(tmp_path, [_rem(rid="rem-f", owner="watcher")], {})
-    store.dispose(tmp_path, "rem-f", "mute", run_id="builder:20261018-130004")
+    seed_local_reminders(tmp_path, [_rem(rid="rem-f", owner="watcher")], {})
+    _dispose(tmp_path, "rem-f", "mute", run_id="builder:20261018-130004")
     home = tmp_path / "lib" / "reminders"
     assert [r.id for r in store.active(tmp_path, home, "local",
                                        run_id="builder:20261018-130004")] == []
@@ -104,9 +117,9 @@ def test_a_muted_hook_stays_in_the_store_but_leaves_the_live_set(tmp_path):
 def test_a_mute_expires_with_the_run_that_made_it(tmp_path):
     """The defect F697 names: a mute was documented as run-scoped and stored as permanent."""
     home = tmp_path / "lib" / "reminders"
-    store.save_local(tmp_path, [_rem(rid="rem-f", owner="watcher")], {})
+    seed_local_reminders(tmp_path, [_rem(rid="rem-f", owner="watcher")], {})
     muting = "builder:20261018-130004"
-    store.dispose(tmp_path, "rem-f", "mute", run_id=muting)
+    _dispose(tmp_path, "rem-f", "mute", run_id=muting)
     assert [r.id for r in store.active(tmp_path, home, "local", run_id=muting)] == []
     later = "builder:20261019-030004"
     assert [r.id for r in store.active(tmp_path, home, "local", run_id=later)] == ["rem-f"]
@@ -118,7 +131,7 @@ def test_a_mute_with_no_stamp_has_expired(tmp_path):
     """
     stale = Reminder(**{**_rem(rid="rem-old", owner="watcher").as_record(),
                         "disposition": "mute", "muted_run": ""})
-    store.save_local(tmp_path, [stale], {})
+    seed_local_reminders(tmp_path, [stale], {})
     home = tmp_path / "lib" / "reminders"
     assert [r.id for r in store.active(tmp_path, home, "local",
                                        run_id="builder:20261019-030004")] == ["rem-old"]
@@ -126,10 +139,10 @@ def test_a_mute_with_no_stamp_has_expired(tmp_path):
 
 def test_keeping_a_hook_muted_earlier_in_the_same_run_clears_the_stamp(tmp_path):
     """The holder's last word in the run counts: `keep` after `mute` makes it live again."""
-    store.save_local(tmp_path, [_rem(rid="rem-f", owner="watcher")], {})
+    seed_local_reminders(tmp_path, [_rem(rid="rem-f", owner="watcher")], {})
     run = "builder:20261018-130004"
-    store.dispose(tmp_path, "rem-f", "mute", run_id=run)
-    store.dispose(tmp_path, "rem-f", "keep", run_id=run)
+    _dispose(tmp_path, "rem-f", "mute", run_id=run)
+    _dispose(tmp_path, "rem-f", "keep", run_id=run)
     loaded, _ = store.load_local(tmp_path)
     assert (loaded[0].disposition, loaded[0].muted_run) == ("keep", "")
     home = tmp_path / "lib" / "reminders"

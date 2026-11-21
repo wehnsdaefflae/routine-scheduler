@@ -11,15 +11,11 @@ not timidity — it is that a reminder's record holds something the stream must 
   remove, not to spread.
 - a **mute's run stamp**, which expires with the run that made it.
 
-Called from the TESTS alone — no `src/` module imports it, and the codemap flags it as an orphan
-for that reason. That is the design, not neglect: this module is the CHECK that the store is a
-derived view, not a step in the write path.
-
-So the DEFINITIONS are derived here and the tallies stay where they are written. `definitions`
-is what makes "derived view" a claim a test can check rather than a sentence in a design:
-fold the stream, read the store, and the definition of every hook must agree. A disagreement
-means something wrote a reminder without going through the write path — the one thing the step
-set out to make impossible.
+So the DEFINITIONS are derived here and the tallies stay where they are written: `definitions`
+is what `hooks/reminderread` serves a run, joined there with the store's tallies. Nothing
+compares the two stores any more — the drift check that measured them equal before the read was
+cut over (0 drifting ids over all 31 live routines as of 0.549.0) was retired with the report
+side's comparison, and the stream is the only source a definition is read from.
 
 The fold is by id, last row wins, because the stream is append-only: a revise, a mute and a
 remove are three later facts about one hook, and the last one is what is true now.
@@ -40,8 +36,8 @@ REMOVING = ("remove",)
 #: The curator's `dead` (D231) is NOT one of the record's dispositions: the row stays in the
 #: store with its tally and its own `disposition` untouched, and the annotation lives in the
 #: store's `dead` sidecar. So a disposal row keeps the definition in the derived view and does
-#: NOT overwrite what the record says — otherwise this projection would report `dead` where the
-#: store reports `keep` and `drift` would name a disagreement that is not one.
+#: NOT overwrite what the record says — otherwise this projection would serve `dead` where the
+#: record says `keep`, a disposition no reader of a reminder knows.
 ANNOTATING = ("dead",)
 
 
@@ -67,10 +63,10 @@ def definitions(routines_home: Path, *, routine: str = "") -> dict[str, dict]:
             # holder, so this row's origin names who DISPOSED of the hook, never who set it.
             # Deriving `owner` from it would project the holder as the owner of a hook a
             # sibling set, and `owner` is what decides who may remove one — so a `keep` or a
-            # `mute` would silently transfer ownership, and `drift` would then name a
-            # disagreement with a store that still records the real setter. The definition's
-            # ownership is established by the row that WROTE it; a later disposition inherits
-            # it (and an unknown owner stays unknown rather than becoming the holder).
+            # `mute` would silently transfer ownership away from the real setter. The
+            # definition's ownership is established by the row that WROTE it; a later
+            # disposition inherits it (and an unknown owner stays unknown rather than becoming
+            # the holder).
             owner = str((out.get(hook.id) or {}).get("owner") or "")
         if routine and holder != routine:
             continue
@@ -90,37 +86,3 @@ def definitions(routines_home: Path, *, routine: str = "") -> dict[str, dict]:
                         "owner": owner, "disposition": hook.disposition}
     return out
 
-
-def stored_definitions(routine_dir: Path) -> dict[str, dict]:
-    """The same shape, read from the routine's OWN store — the other side of the comparison.
-
-    Deliberately not a second fold: it reads through `reminders.load_local`, so what is
-    compared is what a run would actually hold, not a re-parse of the file.
-    """
-    from ..reminders import load_local
-
-    held, _ = load_local(routine_dir)
-    return {r.id: {"regex": r.regex, "description": r.description, "kind": r.kind,
-                   "scope": r.scope, "reach": r.reach, "created_run": r.created_run,
-                   "owner": r.owner, "disposition": r.disposition}
-            for r in held}
-
-
-def drift(routines_home: Path, routine_dir: Path) -> dict[str, tuple[dict | None, dict | None]]:
-    """Where the derived view and the store DISAGREE, by id — `(from_the_stream, in_the_store)`.
-
-    Empty is the campaign's claim for the reminder half. A non-empty answer names exactly which
-    hook was written without going through the write path, which is worth more than a boolean:
-    it points at the writer, and a writer outside the one path is what step 4 removes.
-
-    Local scope only, because that is what a routine's own store holds; a curated reminder
-    lives in the library and is read from there by every routine that it reaches.
-    """
-    derived = {k: v for k, v in definitions(routines_home,
-                                            routine=routine_dir.name).items()
-               if v["scope"] == "local"}
-    stored = {k: v for k, v in stored_definitions(routine_dir).items()
-              if v["scope"] == "local"}
-    return {rid: (derived.get(rid), stored.get(rid))
-            for rid in set(derived) | set(stored)
-            if derived.get(rid) != stored.get(rid)}

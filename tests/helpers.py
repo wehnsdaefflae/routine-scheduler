@@ -133,6 +133,38 @@ def reminder(rid: str = "rem-1", regex: str = "^util:danger", desc: str = "it de
 # ---- on disk ------------------------------------------------------------------------------
 
 
+def seed_local_reminders(routine_dir: Path, rows: list[Reminder], gstats: dict | None = None,
+                         refused: list[dict] | None = None) -> None:
+    """Seed a routine's reminders the way the write paths leave them: the store row (which
+    keeps the tally) AND the hook-stream definition, which is the only place a reminder's
+    definition is READ from (`hooks/reminderread`). A row carrying an `owner` is a foreign hook
+    that owner set on this routine; the rest are the routine's own. The hook home is
+    `routine_dir.parent`, where `reminders.active` looks by default."""
+    from rsched.hooks import store as hookstore
+
+    reminder_store.save_local(routine_dir, rows, gstats or {}, refused)
+    for r in rows:
+        if r.scope == "local":
+            hookstore.record_reminder(routine_dir.parent, record=r.as_record(),
+                                      routine=r.owner or routine_dir.name, run_id=r.created_run,
+                                      target=routine_dir.name if r.owner else "")
+
+
+def seed_reports(routines_home: Path, rows: list[dict]) -> None:
+    """Append report rows the way the one writer does: the hook first (`hook_of_row`, the
+    projection's exact inverse), then its `reports.jsonl` row. A fixture writing the ledger
+    alone writes a state no filing reaches, and the read serves the hook stream only."""
+    from rsched.hooks import store as hookstore
+    from rsched.hooks.reportinv import hook_of_row
+    from rsched.paths import append_jsonl
+    from rsched.reports import reports_path
+
+    reports_path(routines_home).parent.mkdir(parents=True, exist_ok=True)
+    for row in rows:
+        hookstore.write(routines_home, hook_of_row(row))
+        append_jsonl(reports_path(routines_home), row)
+
+
 def routine_yaml(routine_dir: Path) -> dict:
     """A routine's routine.yaml as it stands on disk."""
     return yaml.safe_load((routine_dir / "routine.yaml").read_text(encoding="utf-8"))

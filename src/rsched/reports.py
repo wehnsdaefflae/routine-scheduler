@@ -49,9 +49,9 @@ A report is also ONE CONFIGURATION OF A HOOK (D152): trigger `send`, addressee t
 routine or `triage`, delivery `next_prompt`, disposition open → settled. Since campaign step 4
 the HOOK IS THE SOURCE: every row below is written to `.control/hooks.jsonl` first and appended
 here as its PROJECTION (`hooks/reportproj`, which says why this file's bytes stay); a hook that
-cannot be written REFUSES the filing. Step 7 moved the first DECISION onto that stream
-(`hooks/reportinv.open_threads_now`), keeping the ledger's answer and filing a health event —
-`hook_stream_diverged` — if the two ever disagree.
+cannot be written REFUSES the filing. Since step 9 every READ is the stream's too
+(`hooks/reportread`), the open-thread cap below included: it counts the rows `read_reports`
+returns, and nothing compares them with this file.
 
 That is also what makes the OPEN-THREAD CAP fair. A run may not open more than
 `OPEN_THREAD_CAP` parallel threads to one owner (D110, operator 2026-08-31); the refusal names
@@ -73,10 +73,9 @@ from . import report_detail, report_disposal
 from .engine import inbox
 from .hooks import reportproj
 from .hooks import reportread as _reportread
-from .hooks.reportinv import open_threads_now
 from .ids import now_iso
 from .paths import append_jsonl, file_lock, read_jsonl
-from .report_threads import OPEN_THREAD_CAP, ThreadCapError, supersedable
+from .report_threads import OPEN_THREAD_CAP, ThreadCapError, open_threads, supersedable
 
 REPORTS_FILE = "reports.jsonl"
 REPORT_ID_RE = re.compile(r"^R(\d+)$")
@@ -174,7 +173,7 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
             rows = read_reports(path)
             folded, _ = supersedable(rows, list(supersedes))
             if target and not answers and not disposal.settles and not folded:
-                open_ids = open_threads_now(routines_home, rows, routine=routine, target=target)
+                open_ids = open_threads(rows, routine=routine, target=target)
                 if len(open_ids) >= OPEN_THREAD_CAP:
                     raise ThreadCapError(routine, target, open_ids)
             item_id = next_id(path)
@@ -311,8 +310,8 @@ def discard_undelivered_report(routines_home: Path, report_id: str) -> dict:
 
 
 #: THE READ, which since D152 step 9 belongs to the module that owns the stream
-#: (`hooks/reportread.read_reports` — it states the whole rule, including when the projection
-#: is served instead and what is filed then). Re-exported because `reports.read_reports` is
+#: (`hooks/reportread.read_reports` — the stream is its only source, and its docstring says
+#: why this file is still written). Re-exported because `reports.read_reports` is
 #: the name ~20 callers already hold, and moving the responsibility rather than the name is
 #: what let this file keep shrinking while gaining the cutover: the read's own prose lives
 #: where the read lives.

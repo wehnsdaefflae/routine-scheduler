@@ -186,21 +186,18 @@ def _unclosed_delivered_report(s: Situation) -> bool:
 
     `ctx.reports_open` is the engine's own bookkeeping (the drain adds, an `answers` reply
     removes; a `closes: true` closure never enters). What is still owed is re-read from the
-    LEDGER at the moment of asking (R2086), since a thread can be closed other ways.
+    folded reports at the moment of asking (R2086), since a thread can be closed other ways.
     """
     owed = list(getattr(s.ctx, "reports_open", None) or [])
     if not owed:
         return False
     from .. import reports
-    from ..hooks.reportinv import still_owed_now
+    from ..report_threads import still_owed
 
     home = s.ctx.server.routines_home
-    rows = reports.read_reports(reports.reports_path(home))
-    # Also asked of the HOOK STREAM (D152); the ANSWER stays the ledger's, and a
-    # disagreement files `hook_stream_diverged`. `routine` only labels that event, so it is
-    # read defensively: a raising predicate is silently INERT.
-    slug = str(getattr(getattr(s.ctx, "routine", None), "slug", "") or "")
-    return bool(still_owed_now(home, rows, owed, routine=slug))
+    # `read_reports` folds the HOOK STREAM (D152 step 9) — the one source every report
+    # surface reads, so the hold is placed on the count a person can see.
+    return bool(still_owed(reports.read_reports(reports.reports_path(home)), owed))
 
 
 def _rendered_output_unseen(s: Situation) -> bool:

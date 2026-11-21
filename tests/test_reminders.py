@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from conftest import finish, util, write_file
-from helpers import prompt_text, reminder, server_for, set_capabilities
+from helpers import prompt_text, reminder, seed_local_reminders, server_for, set_capabilities
 from rsched import reminder_checks as checks
 from rsched import reminders as store
 from rsched.engine.actions import validate_action
@@ -152,7 +152,7 @@ def test_a_pattern_that_stopped_compiling_never_fires_rather_than_raising():
 
 def test_local_round_trip_and_the_global_tally_share_one_file(tmp_path):
     local = [reminder(rid="rem-a", regex="^util:a"), reminder(rid="rem-b", regex="^util:b", did=2)]
-    store.save_local(tmp_path, local, {"rem-g": {**store.blank_stats(), "fires": 3}})
+    seed_local_reminders(tmp_path, local, {"rem-g": {**store.blank_stats(), "fires": 3}})
     back, gstats = store.load_local(tmp_path)
     assert [r.id for r in back] == ["rem-a", "rem-b"]
     assert back[1].stats["did"] == 2 and back[1].scope == "local"
@@ -184,7 +184,7 @@ def test_the_union_is_local_over_global_by_regex(tmp_path):
                                      scope="global"))
     store.write_global(lib, reminder(rid="rem-g2", regex="^util:z", desc="only global",
                                      scope="global"))
-    store.save_local(tmp_path, [reminder(rid="rem-l", regex="^util:a", desc="mine wins")], {})
+    seed_local_reminders(tmp_path, [reminder(rid="rem-l", regex="^util:a", desc="mine wins")], {})
 
     assert store.active(tmp_path, lib, "none") == []
     # the curated set reaches a routine at `local`: the dial governs authoring, not reading
@@ -219,7 +219,7 @@ def test_a_curated_record_that_cannot_say_whom_it_reaches_reaches_nobody(tmp_pat
 
 def test_record_bumps_the_tally_for_both_scopes_in_the_local_file(tmp_path):
     local = reminder(rid="rem-l", regex="^util:a")
-    store.save_local(tmp_path, [local], {})
+    seed_local_reminders(tmp_path, [local], {})
     # the tally AFTER the increment comes back, so a frozen in-memory copy can be refreshed
     assert store.record(tmp_path, local, "fires")["fires"] == 1
     assert store.record(tmp_path, local, "would_have")["would_have"] == 1
@@ -311,7 +311,7 @@ def _run(make_routine, scripted, replies, *, reminders="local", local=(), **caps
     d = make_routine(slug="remr")
     set_capabilities(d, reminders=reminders, **caps)
     if local:
-        store.save_local(d, list(local), {})
+        seed_local_reminders(d, list(local), {})
     ep = scripted(replies)
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
@@ -560,9 +560,9 @@ def test_a_grant_that_lands_mid_run_does_not_truncate_the_store(make_routine, sc
 
     d = make_routine(slug="remr")
     set_capabilities(d, reminders="none")        # the config level: the layer is OFF at boot
-    store.save_local(d, [reminder(rid="rem-old-1", regex="^util:a", desc="from an earlier run",
-                                  fires=3, would_have=2),
-                         reminder(rid="rem-old-2", regex="^util:b", desc="also earlier")], {})
+    seed_local_reminders(d, [reminder(rid="rem-old-1", regex="^util:a", desc="from an earlier run",
+                                      fires=3, would_have=2),
+                             reminder(rid="rem-old-2", regex="^util:b", desc="also earlier")], {})
 
     def grant_at_boot(loop, pairs):              # stand in for the Decisions-page answer
         loop.ctx.granted_now = frozenset({"reminders:local"})
