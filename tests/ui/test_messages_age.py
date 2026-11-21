@@ -4,6 +4,8 @@ import json
 
 from playwright.sync_api import expect
 
+from helpers import seed_reports
+
 REPORT = {
     "schema": 1, "run_id": "self-audit:20260716-200000",
     "generated": "2026-07-16T20:00:00+00:00",
@@ -31,9 +33,7 @@ def _seed(ui, make_routine):
     audit.mkdir(parents=True, exist_ok=True)
     (audit / "report.json").write_text(json.dumps(REPORT), encoding="utf-8")
     (audit / "changelog.jsonl").write_text(CHANGELOG, encoding="utf-8")
-    control = ui.routines / ".control"
-    control.mkdir(parents=True, exist_ok=True)
-    (control / "reports.jsonl").write_text(json.dumps(BUG) + "\n", encoding="utf-8")
+    seed_reports(ui.routines, [BUG])
 
 
 def test_a_card_shows_the_items_age_and_qualifies_a_floor(ui, ui_page, make_routine):

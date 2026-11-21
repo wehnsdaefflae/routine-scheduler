@@ -11,6 +11,8 @@ import re
 
 from playwright.sync_api import expect
 
+from helpers import seed_reports
+
 REPORT = {
     "schema": 1, "run_id": "self-audit:20260716-200000",
     "generated": "2026-07-16T20:00:00+00:00",
@@ -44,9 +46,7 @@ def _seed(ui, make_routine, *, report=True):
     if report:
         (audit / "report.json").write_text(json.dumps(REPORT), encoding="utf-8")
     (audit / "changelog.jsonl").write_text(CHANGELOG, encoding="utf-8")
-    control = ui.routines / ".control"
-    control.mkdir(parents=True, exist_ok=True)
-    (control / "reports.jsonl").write_text(json.dumps(BUG) + "\n", encoding="utf-8")
+    seed_reports(ui.routines, [BUG])
 
 
 def test_messages_page_lists_every_type_with_status_and_history(ui, ui_page, make_routine):
@@ -300,8 +300,6 @@ def test_a_settling_reply_names_the_rows_it_finished_on_its_card(ui, ui_page, ma
     it settled read `settled` with it as their `answered_by`.
     """
     make_routine(slug="self-audit")
-    control = ui.routines / ".control"
-    control.mkdir(parents=True, exist_ok=True)
     rows = [
         {"id": "R1", "ts": "2026-09-10T08:00:00+00:00", "routine": "self-audit",
          "run_id": "self-audit:1", "target": "steward-hub-maintainer", "title": "first thing"},
@@ -311,8 +309,7 @@ def test_a_settling_reply_names_the_rows_it_finished_on_its_card(ui, ui_page, ma
          "run_id": "shm:1", "target": "self-audit", "title": "both of those are done",
          "answers": "R1", "settles": ["R2"], "closes": True},
     ]
-    (control / "reports.jsonl").write_text(
-        "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    seed_reports(ui.routines, rows)
 
     ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
     ui_page.wait_for_selector("h1:has-text('Messages')")

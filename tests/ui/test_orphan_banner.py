@@ -7,16 +7,14 @@ import json
 
 from playwright.sync_api import expect
 
+from helpers import seed_reports
+
 
 def _seed(ui, make_routine, rows):
     """A real self-audit routine (the page resolves the slug through the registry) and the
     report stream the banner reads."""
     make_routine(slug="self-audit")
-    control = ui.routines / ".control"
-    control.mkdir(parents=True, exist_ok=True)
-    with (control / "reports.jsonl").open("w", encoding="utf-8") as fh:
-        for row in rows:
-            fh.write(json.dumps(row) + "\n")
+    seed_reports(ui.routines, rows)
 
 
 def test_messages_discards_an_undelivered_orphan(ui, ui_page, make_routine):
@@ -81,8 +79,9 @@ def test_the_banner_shows_a_row_a_settled_reports_prose_claimed_to_close(
     _seed(ui, make_routine, [
         {"id": "R2313", "ts": "2026-10-07T18:10:00+02:00", "routine": "c-20261007-150942",
          "target": "scheduler-improvement-research", "detail": "Two findings, filed together.",
-         "title": "create_routine cannot REVISE an existing routine",
-         "delivered": {"ts": "2026-10-10T09:00:00+02:00", "run_id": "x:20261010-010003"}},
+         "title": "create_routine cannot REVISE an existing routine"},
+        {"id": "R2313", "event": "delivered", "ts": "2026-10-10T09:00:00+02:00",
+         "run_id": "x:20261010-010003"},
         {"id": "R2886", "ts": "2026-10-24T03:03:10+02:00", "closes": True, "answers": "R2743",
          "routine": "scheduler-improvement-research", "target": "self-audit",
          "title": "R2313 settled: finding 1 is answered by D198 and parked",

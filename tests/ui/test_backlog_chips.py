@@ -4,6 +4,8 @@ import json
 
 from playwright.sync_api import expect
 
+from helpers import seed_reports
+
 REPORT = {
     "schema": 1, "run_id": "self-audit:20261018-010000",
     "generated": "2026-10-18T01:00:00+00:00",
@@ -35,10 +37,7 @@ def test_the_active_chip_says_whom_the_worklist_waits_on(ui, ui_page, make_routi
     audit = ui.routines / "self-audit" / "audit"
     audit.mkdir(parents=True, exist_ok=True)
     (audit / "report.json").write_text(json.dumps(REPORT), encoding="utf-8")
-    control = ui.routines / ".control"
-    control.mkdir(parents=True, exist_ok=True)
-    (control / "reports.jsonl").write_text(
-        "".join(json.dumps(r) + "\n" for r in (IN_TRANSIT, UNROUTABLE)), encoding="utf-8")
+    seed_reports(ui.routines, [IN_TRANSIT, UNROUTABLE])
 
     ui_page.goto(f"{ui.url}/#/messages")             # the default view: summaries
     bar = ui_page.locator(".filterbar")

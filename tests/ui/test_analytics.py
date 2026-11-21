@@ -8,7 +8,7 @@ per-util execution table — driven end to end, asserting both the DOM and what 
 from playwright.sync_api import expect
 
 from conftest import git_in
-from helpers import write_usage_stream
+from helpers import seed_local_reminders, write_usage_stream
 
 from .helpers import confirm_modal, unfold, visible_toast
 
@@ -188,7 +188,7 @@ def test_cautions_table_shows_the_tallies_and_deletes_a_local_reminder(ui, ui_pa
 
     d = ui.routine_dir("uir")
     (d / "state").mkdir(parents=True, exist_ok=True)
-    store.save_local(d, [store.Reminder(
+    seed_local_reminders(d, [store.Reminder(
         id="rem-mv", regex="^util:fs-ops mv ", description="it overwrites the destination",
         scope="local", created_run="r:1",
         stats={**store.blank_stats(), "fires": 3, "could_not": 2})], {})
