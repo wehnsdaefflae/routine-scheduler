@@ -1,31 +1,4 @@
-"""F859: a run-tree message has no ledger row, so its disposal fields are NAMED, not refused.
-
-A `report` whose `target` is `parent` or `child:<label>` is a hook delivered at that run's next
-turn boundary. `engine/runtree` is explicit that it "is not an item and owes the ledger nothing"
-— it gets no `R<n>` at all. Two consequences were handled in opposite, and both wrong, ways:
-
-- **`closes` was REFUSED**, with a message telling the run to drop it. Accurate, and it cost a
-  whole turn for a field that could not have done anything either way. Measured: 19 such
-  refusals across 11 routines by 2026-11-06, which is why 0.511.0 made the wording target-aware
-  — and then THREE MORE in a single `scheduler-builder` run on 2026-11-08 (turns 67, 223 and
-  110, at 16:14, 16:15 and 17:18), all three of the event's all-time fires. Making a refusal
-  clearer does not stop it being paid for.
-- **`answers`, `settles` and `supersedes` were SILENTLY IGNORED.** `admin_handlers.report`
-  returns at the run-tree branch before any of them is read, so a run that wrote
-  `answers: R123` had its hook delivered and believed a ledger row disposed of. That is the
-  more expensive half: a refusal costs a turn, a false belief costs a row that nobody closes
-  and that keeps reading as open in every backlog.
-
-So the rule here is ONE rule, in one direction: the disposal grammar governs ledger rows, and a
-run-tree message has none — every disposal field is dropped, the hook is delivered, and the
-observation NAMES what was ignored and what to do instead. The turn is not lost and the false
-belief cannot form.
-
-What is NOT changed, and is pinned below: the refusal for a ROUTINE target. D196 is the
-operator's, verbatim — *"Refuse it loudly — a report carrying closes with supersedes but no
-answers/settles is rejected with a message naming what closes needs"* — and that shape has a
-real ledger row behind it, so it keeps refusing exactly as it did.
-"""
+"""F859: a run-tree message has no ledger row, so its disposal fields are NAMED, not refused."""
 
 from __future__ import annotations
 

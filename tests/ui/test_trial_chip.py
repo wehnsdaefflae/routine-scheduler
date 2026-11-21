@@ -1,10 +1,4 @@
-"""The routine page's MODEL TRIAL chip (components/trialchip.js over rsched/trials.py).
-
-A routine on a trial runs on another model than its own for a while — production-relevant, so
-the header says it in ONE chip beside the run chip, counts the runs from the durable stream as
-they land, and points a finished trial at its results. No trial, no chip; a trial the catalog
-cannot serve is a PROBLEM, said in the page's problem panel rather than as a trial.
-"""
+"""The routine page's MODEL TRIAL chip (components/trialchip.js over rsched/trials.py)."""
 
 import yaml
 from playwright.sync_api import expect

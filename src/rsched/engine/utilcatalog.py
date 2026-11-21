@@ -1,16 +1,8 @@
 """The util catalog as the prompt's INDEX of the library — names, grouped by category.
 
-Lifted out of `engine/capabilities.py`, which was AT its size ceiling and may only shrink: the
-catalog is one responsibility (what the library HOLDS, filed under a controlled vocabulary) and
-the section that quotes it is another. Moving it is what let goal b5 step 4 land at all — the
-host shrinks while gaining the feature, which is the house rule for a file at zero slack.
-
-NAMES ONLY since 2026-11-14 (goal b5 step 4, the operator's decision: *"Let's try 3 for three
-days and see how it goes"*). Measured over 52 live prompt captures, the per-util summaries cost
-6,696 chars of EVERY composed prompt and overlapped what the enforced wire already carries by
-0.4% — so they were a description, not a duplicate, and the cut moves them one call away
-(`util name=search`, `util name=list`) rather than removing them from the instance. That is
-also why it is a TRIAL: restoring the summaries is restoring one composition here.
+NAMES ONLY (an operator trial): the per-util summaries cost every composed prompt thousands of
+chars, so they are moved one call away (`util name=search`, `util name=list`). Restoring them is
+restoring one composition here.
 """
 
 from __future__ import annotations
@@ -20,8 +12,7 @@ from __future__ import annotations
 # category whose keyword set intersects the util's freeform `tags:`. Order matters — it resolves
 # collisions: Connectors and the meta/logs/audit group sit above Health so e.g. `google-api`
 # (tags include health/fitness) and `health-events`/`service-logs` (daemon "health"/logs) do NOT
-# land under "Health & fitness". Nothing is hidden: every util's one-line summary stays visible
-# under its group. This is a first-cut vocabulary, tunable as tags are normalized.
+# land under "Health & fitness". A first-cut vocabulary, tunable as tags are normalized.
 _UTIL_CATEGORIES: tuple[tuple[str, frozenset[str]], ...] = (
     ("Jobs & freelance", frozenset({"jobs", "freelance", "procurement", "clera"})),
     ("Newsletter & digest", frozenset({"newsletter", "digest", "voting", "feedback"})),
@@ -70,14 +61,9 @@ def util_category(tags) -> str:
     return _UTIL_CATEGORY_OTHER
 
 
-#: Utils that exist for a TEXT-ONLY run, with the note a multimodal run is shown instead of
-#: their bare summary (R2249). A util in the catalog reads as a tool to reach for, and the
-#: qualifier inside `vision`'s summary — "for a text-only model" — was not enough: a run with
-#: a multimodal model called it on a PDF, which opened a credential question for a call that
-#: needed no credential and would have uploaded a grant document to a third party. The engine
-#: refuses that call (engine/visionsteer.py); this is the same fact said BEFORE the call, where
-#: it costs no turn. Keyed by util name, so the note travels with the util and not with a
-#: category.
+#: Utils that exist for a TEXT-ONLY run, with the note a multimodal run is shown beside them.
+#: The engine refuses such a call (engine/visionsteer.py); this says it BEFORE the call, where
+#: it costs no turn. Keyed by util name, so the note travels with the util.
 _FOR_TEXT_ONLY_RUNS: dict[str, str] = {
     "vision": "  [for a text-only run — THIS run's model is multimodal: use "
               "`view_image path=…`, which needs no secret and no upload]",
@@ -91,14 +77,8 @@ def util_catalog_block(utils: list[dict], kinds: list[str], g, *,
     Groups are emitted in `_UTIL_CATEGORIES` order, "Other" last. Reserved-but-ungranted utils
     keep their annotation.
 
-    NAMES ONLY, not summaries (goal b5 step 4, the operator's decision of 2026-11-14: *"Let's try
-    3 for three days and see how it goes"*). The summaries were 6,696 chars of EVERY composed
-    prompt, measured over 52 live captures, and 0.4% of them overlapped anything the enforced
-    wire carries — so this is not a duplicate being removed but a description being moved one
-    call away (`util name=search`, `util name=list`), which is why it needed his decision.
-    The header below is what keeps that honest: a catalog of bare names with no route to what
-    they DO would teach a run that the library is smaller than it is.
-    Reversing the trial is reversing this one composition.
+    NAMES ONLY (see module docstring). The header names the route to what each util DOES, or a
+    catalog of bare names would teach a run that the library is smaller than it is.
     """
     if not utils:
         return "Global utils: (none in the library yet)."

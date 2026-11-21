@@ -1,19 +1,4 @@
-"""R3341: clicking a prompt segment shows the text — for the two segments that HAVE one.
-
-The operator asked *"can we click on it to see the actual prompt?"*. Half the bar can answer
-honestly and half cannot, and these tests pin which half and what the other half says:
-
-1. `history` and `observations` ARE the message list, which is on disk in the transcript, so
-   their text is served as a RECORDING — replayed through `engine/history.replay_messages`, the
-   engine's own renderer, which is why it is byte-identical to what was sent;
-2. every always-on section answers "text not recorded" and no text at all. **Nothing
-   re-composes a section at read time**, at any fidelity: the composing path drains a shared
-   store and writes transcript events, so a GET endpoint that did it would mutate state on
-   every tap of the bar;
-3. a row's token figure SUMS to the segment total the bar draws (`estimate_input_tokens` is
-   additive), which is what makes the view auditable against the bar rather than adjacent to it;
-4. the turn on each row is READ from the transcript, never derived.
-"""
+"""R3341: clicking a prompt segment shows the text — for the two segments that HAVE one."""
 
 from __future__ import annotations
 

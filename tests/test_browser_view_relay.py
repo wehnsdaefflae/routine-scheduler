@@ -1,13 +1,5 @@
 """The browser-view relay's two outward-facing edges: what it will fetch, and how its pass
 travels.
-
-The URL arithmetic (`test_browser_proxy.py`) and the routes (`test_browser_view_routes.py`)
-were both already pinned; what was not is the hop the relay does NOT choose. It ran with
-`follow_redirects=True`, so the FIRST hop was safely derived from the configured URL and every
-one after it belonged to the upstream — and the upstream here is a raw websockify on a port
-published to the whole tailnet with no credential. A 302 from it turned the console into an
-SSRF proxy reachable with nothing but the browser-view pass, from a daemon that can talk to
-cliproxy, the chrome CDP port, the LAN and the internet.
 """
 
 from __future__ import annotations
@@ -98,9 +90,6 @@ def test_the_pass_cookie_is_secure_behind_a_terminating_proxy(app_client):
 def test_the_relay_authenticates_to_the_sidecar(app_client, monkeypatch):
     """The sidecar's ports sit behind a bearer proxy now (deploy/browser-auth-proxy.py), so the
     console is one of its CALLERS: without the header the screen is a 401 the user cannot act on.
-
-    Asserted on how the request is BUILT, like the redirect test beside it — the alternative is
-    a live sidecar, which a unit test must not need.
     """
     from rsched.web import screen_proxy
 
@@ -116,20 +105,7 @@ def test_the_relay_authenticates_to_the_sidecar(app_client, monkeypatch):
 
 
 def test_the_screen_admits_simultaneous_viewers():
-    """TWO console surfaces depend on this one word, and nothing pinned it (R3206).
-
-    `api_screen_view` opens an independent upstream socket per accepted viewer with no lock,
-    semaphore or viewer registry, so whether a second surface gets a picture is decided entirely
-    by the RFB server: `-shared` tells x11vnc not to drop the incumbent viewer when another
-    connects. Since 0.501.0 the browser DOCK and the full-screen `#/browser` page are both
-    allowed to hold a connection (docs/designs.md, tests/ui/test_browser_dock_seat.py), and the
-    repo's prose said the opposite — "one viewer at a time" — until that release corrected it.
-
-    Dropping the flag in a tidy-up would make the two surfaces contend for the screen, and the
-    symptom (a viewer that hangs up whenever the other opens) reads as a flaky relay rather than
-    as a deployment change. Asserted on the deploy file's text, like
-    tests/test_backup_watch.py::test_the_attempt_bound_is_the_units_time_limit.
-    """
+    """TWO console surfaces depend on this one word, and nothing pinned it (R3206)."""
     from pathlib import Path
 
     entrypoint = (Path(__file__).resolve().parent.parent

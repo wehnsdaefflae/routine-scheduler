@@ -1,22 +1,4 @@
-"""The `spawn` HOOK POINT — the other end of a child's life (D152 step 7).
-
-Step 6 made `child-exit` fire; this is its twin. `hooks/points.py` carried four points with an
-empty `fires` since the registry shipped in 0.458.0 — `spawn`, `child-exit`, `run-end`,
-`restart` — and the operator's brief put the run tree first: *"Messages between runs, their
-children, and the user should implement hooks"*. The gap list is two after this.
-
-What these defend, beyond "it fires":
-
-- **ONCE PER CHILD.** The boundary runs every turn and the child keeps running for many of
-  them, so the point must fire at the FIRST boundary after a spawn and never again. A rule
-  re-read on every turn of a long child is the layer crying wolf.
-- **ORDER.** Nothing is appended by the fire site itself: the run already has the spawn
-  observation in its prompt, which is what the point is about.
-- **The PAYLOAD coupling.** `spawn` changes no control flow — the child is already running —
-  so it carries the free payloads and never `hold`.
-- **The predicate is about the BRIEF**, the only thing about a running child a parent can still
-  act on, and it is inert on an exit row so the two run-tree moments cannot cross-fire.
-"""
+"""The `spawn` HOOK POINT — the other end of a child's life (D152 step 7)."""
 
 from __future__ import annotations
 
@@ -189,10 +171,6 @@ def _sub(n: int, brief: str):
 def test_the_point_fires_once_per_child_however_many_boundaries_pass(tmp_path, monkeypatch):
     """The boundary runs every turn while the child keeps running, so a fire site that did not
     mark the child would re-evaluate the point on every turn of a long child.
-
-    Counted at the POINT, not in the messages: the once-per-run assist budget caps the notes
-    whatever the site does, so an assertion about message count passes with the marking removed
-    and proves nothing about this property (measured — it did).
     """
     fires: list[dict] = []
     monkeypatch.setattr(control.assist, "at_spawn", lambda _loop, row: fires.append(row))

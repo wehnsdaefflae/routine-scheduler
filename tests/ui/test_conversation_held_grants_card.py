@@ -1,19 +1,4 @@
-"""A CONVERSATION's HELD grants, read and withdrawn from its own page (D216 rank 1).
-
-F783 gave the operator the DENY half of a conversation's `grants:` mapping (the tombstones, and
-the press that clears one — tests/ui/test_conversation_declined_card.py). The ALLOW half had no
-surface at all: a `grants:` TRUE row — what a Decisions `allow_forever` writes for the one class
-with no native switch, `secret:` (`entities.TRUE_ROW_CLASSES`,
-`web/grants_apply.apply_forever`) — was honoured by the engine for a conversation exactly as for
-a routine and shown nowhere, so the operator could not read what a thread had been granted, nor
-take it back short of hand-editing routine.yaml.
-
-The gap was a PAGE, so these tests load what the operator sees. The router is pinned in
-tests/test_conversation_grants.py; a write surface with no card is not the gap closed, which is
-why every assertion here is on the VISIBLE row and on the press that withdraws it. Each
-assertion about a row's content follows a presence assertion on that row: a selector that
-matches nothing reads as a pass over a console that lost the card entirely.
-"""
+"""A CONVERSATION's HELD grants, read and withdrawn from its own page (D216 rank 1)."""
 
 import yaml
 from playwright.sync_api import expect

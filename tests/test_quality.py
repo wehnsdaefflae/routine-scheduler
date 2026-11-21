@@ -1,14 +1,4 @@
-"""The ruff + mypy gates, run as tests — so the ONE gate the engine actually runs covers them.
-
-CLAUDE.md requires `ruff check` and `mypy` green on the FULL repo in every commit and states
-"pre-commit enforces both". But on the deployment the daemon commits PROGRAMMATICALLY (git
-hooks bypassed) and pre-commit is not installed, while the self-audit routine's only hard gate
-is `util pytest-run`. So a ruff/mypy regression in a file no run touched sailed through
-unnoticed for four releases — the Jul-2026 toolchain bump (uv.lock: ruff 0.15.21 / mypy 2.3.0)
-turned the tree red and 0.72–0.76 kept committing over it (found by the F97 external audit,
-2026-07-20). Folding the two gates into pytest means red can never be committed silently again:
-the routine reverts on a red suite, and the checks run over the live tree's pending edits too.
-"""
+"""The ruff + mypy gates, run as tests — so the ONE gate the engine actually runs covers them."""
 
 import shutil
 import subprocess
@@ -56,10 +46,6 @@ def test_vulture_clean():
     constant that no longer has a caller, because each file is locally consistent. Adopting this
     found four: a dead ServerConfig property, a duplicated sandbox-mode tuple (two sources of
     truth for one contract), a write-only RunContext field, and a dead wizard helper.
-
-    `src` and `tests` are scanned TOGETHER on purpose: a src symbol exercised only by a test is
-    not dead, and scanning src alone reports three such false positives. Config, including the
-    framework entry points that are called by decorator rather than by name, is in pyproject.
     """
     _gate("vulture", "src", "tests", "--min-confidence", "60")
 

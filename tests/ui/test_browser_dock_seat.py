@@ -1,26 +1,4 @@
-"""The browser dock gives the screen back on `#/browser`, and takes it again on leaving.
-
-The dock connects the first time it is both open and on screen and then KEEPS the connection:
-folding hides the frame rather than hanging up, which is what the operator asked for ("connect
-only when you first open it"). On `#/browser` that outlived its welcome. The dock HIDES there —
-that page IS the screen, full size and interactive — so the console sat on a live viewer
-connection to a preview nobody could see while the operator was looking at the real thing.
-
-The operator's call (docs/designs.md, 2026-11-05, option b): the dock releases the connection
-while `#/browser` is shown and dials again when he leaves it. **Folding keeps it**, which he
-said in the same breath and which `test_folding_the_dock_keeps_the_screen` below holds.
-
-WHAT THE MEASUREMENT FOUND, since the decision was taken against a premise these tests get to
-correct: the screen is NOT a single seat, and `#/browser` was never refused one. x11vnc runs
-with `-shared` (deploy/chrome-entrypoint.sh), so the RFB server admits simultaneous viewers,
-and the relay opens an independent upstream socket per viewer with no seat accounting of any
-kind (web/api_screen_view._socket / ._bridge). So there is no defect half to fix here — what
-the release saves is a second live screen nobody is looking at, which is the half that stands.
-
-WHY IT IS THE BROWSER'S OWN and not every dock's: `mountScreenDock` takes it as an option
-(`releaseOnPage`), the way it takes `newTab`. The desktop dock's page is a fleet of CARDS, not
-a screen, so it has nothing to hand over by leaving.
-"""
+"""The browser dock gives the screen back on `#/browser`, and takes it again on leaving."""
 
 from __future__ import annotations
 
@@ -38,11 +16,7 @@ RFB_BANNER = b"RFB 003.008\n"
 
 
 def _screen_dials(page) -> list[str]:
-    """Every socket the page opens to the relayed screen, as it opens one.
-
-    The dock probes before it mounts anything and only a reachable screen gets a frame, so a
-    dial IS this console taking a viewer connection — which is what the release gives back.
-    """
+    """Every socket the page opens to the relayed screen, as it opens one."""
     sockets: list[str] = []
     page.on("websocket",
             lambda ws: sockets.append(ws.url) if "/browser-view/websockify" in ws.url else None)
@@ -77,9 +51,6 @@ def test_the_dock_hangs_up_on_the_browser_page_and_dials_again_on_leaving(ui, ui
 def test_a_connected_dock_gives_up_its_frame_and_gets_it_back(ui, ui_page):
     """The connection IS the frame: an iframe with a screen in it is what holds a viewer, so
     the release has to take it out of the document — hiding the dock leaves it streaming.
-
-    The fixture's relay has nothing behind it, so the probe is answered here with the version
-    banner a live screen sends, which is what makes the dock mount a real frame to give up.
     """
     ui.server_cfg.browser_view_url = DEAD_SCREEN
     ui_page.route_web_socket(re.compile(r"/browser-view/websockify"),

@@ -1,29 +1,4 @@
-"""F908 — a retired reminder stops firing at once, and its id is never handed out again.
-
-OBSERVED ON THE LIVE INSTANCE, in `rules-review:20261117-061103` (its transcript is the
-evidence, not a reconstruction):
-
-- 07:27:34 — `remind op=add` allocated `rem-20261117-061103-1` for a reducer caution.
-- 07:29:29 — `remind op=dead` on that same id succeeded: *"marked DEAD … it fires no more in
-  rules-review's runs"*.
-- **07:46:27 — that same id HELD an action**, 16m58s after being retired, costing the run a turn
-  and a `could_not` label for a caution it had already withdrawn.
-- 09:07:33 — a RESUMED leg allocated `rem-20261117-061103-1` AGAIN, now for an unrelated
-  read-only-token caution. The old death annotation still names that id, so the dead filter
-  suppresses the NEW caution on every fresh load: the routine silently stopped being warned.
-
-Two distinct defects, two tests here:
-
-1. the annotation is applied to the STORE while the live set is formed at construction, so a
-   `dead` op landing mid-run left `loop.reminders` holding the row it had just retired;
-2. the allocator built its `taken` set from the LIVE set — which is exactly what the dead filter
-   has already removed — so a retired id read as free.
-
-What this file does NOT cover, and must not be read as covering: the live data corruption in
-`rules-review`'s own store is unrepaired (the reducer definition and its 1 fire / 1 could_not
-tally are recoverable only from that transcript), and invalidating a reminder cache in ANOTHER
-already-running process is outside this prevention code.
-"""
+"""F908 — a retired reminder stops firing at once, and its id is never handed out again."""
 
 from __future__ import annotations
 
@@ -48,12 +23,7 @@ def _rem(rid, regex="^util:a", **kw):
 
 
 def test_a_retired_reminder_stops_holding_actions_in_the_same_run(make_routine, scripted):
-    """The 16m58s window, closed: the row leaves the live set the moment it is retired.
-
-    The run adds a reminder, retires it with `op=dead` (self-targeted, which is how a routine
-    withdraws its own pattern while keeping its tally), and then emits an action its pattern
-    matches. That action must EXECUTE — no hold — because the caution has been withdrawn.
-    """
+    """The 16m58s window, closed: the row leaves the live set the moment it is retired."""
     d = make_routine(slug="retire")
     set_capabilities(d, reminders="global")   # a `dead` op is the curator's grant, even self-targeted
     ep = scripted([
@@ -77,12 +47,7 @@ def test_a_retired_reminder_stops_holding_actions_in_the_same_run(make_routine, 
 
 
 def test_a_retired_id_is_never_allocated_again(make_routine):
-    """The id-reuse half, driven at the store so it is about allocation and not about a run.
-
-    A dead-annotated row is absent from the live set, so an allocator reading the live set
-    offers its id again — and the new definition then inherits the old death marker, which is
-    what silenced `rules-review`'s API caution.
-    """
+    """The id-reuse half, driven at the store so it is about allocation and not about a run."""
     d = make_routine(slug="reuse")
     (d / "state").mkdir(exist_ok=True)
     retired = _rem(f"rem-{TS}-1", regex="^script:review_reduce")

@@ -1,10 +1,5 @@
 """The agent desktops in the console: the Desktops page (the take-over surface) and the desktop
 dock (the read-only glance), beside the browser's two.
-
-The broker is faked at its one outbound hop (`helpers.run_desktops`), so the console's real
-`/api/desktops` route, its owner mapping and its token filter all run; the screens themselves
-point at an address with nothing behind it, which is how most of these tests watch WHAT the
-console dials without needing a VM.
 """
 
 from __future__ import annotations

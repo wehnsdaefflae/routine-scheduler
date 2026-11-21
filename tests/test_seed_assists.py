@@ -1,16 +1,4 @@
-"""The ENTRY-LEVEL carry of a seed rule's `assists:` declarations into the live library.
-
-`bootstrap.sync_seed_library_docs` is add-only at the FILE level, which is right for prose and
-wrong for a declaration the engine reads: `evidence-discipline` declared assists in
-`library-seed/` from 0.471.0, the live copy declared none, and the hook points steps 6-8 wired
-fired against ZERO candidates on this instance for three releases. A green gate cannot see it —
-`tests/test_assists.py` reads the SEED directory, never the live library.
-
-0.477.0's one-shot `migrate_rule_assists` closed that gap once and could never close another:
-it refused a rule whose live copy already declared assists, which is every rule it had just
-fixed. So the mechanism is a recurring sync at the granularity the problem has — the ENTRY —
-and these are the four things it must refuse while doing it.
-"""
+"""The ENTRY-LEVEL carry of a seed rule's `assists:` declarations into the live library."""
 
 from __future__ import annotations
 

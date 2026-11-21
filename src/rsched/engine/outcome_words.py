@@ -8,15 +8,11 @@ line per measure names the number:
     interviews · count · higher — interviews or calls booked with a client
     weight_kg · level · lower — his weight on the scale this morning
 
-Every route that creates a routine requires it — a conversation's confirmed draft, a scheduled
-run's queued proposal and the Decisions page that materializes one — because a routine created
-without it is one `rsched validate` fails at once, and the freelance-radar lesson is that a
-routine nobody asked "what is this for, counted how" runs for months on its own account of
-itself. The person's confirmation of the draft IS the accept: scaffold writes the contract into
-the new routine.yaml AND, from these same lines, a `scripts/outcome.py` stub, so the first run
-records a reading rather than an outcome error (D286, `workflows/outcome_stub.py`); a later run
-replaces the stub's placeholder with real counting from the records its stages keep (the
-recipe's Done-when line names the measures; workflows/pipeline.py).
+Every route that creates a routine requires it: a routine nobody asked "what is this for,
+counted how" runs on its own account of itself, and `rsched validate` fails one without it. The
+person's confirmation of the draft IS the accept: scaffold writes the contract into routine.yaml
+AND a `scripts/outcome.py` stub from the same lines (`workflows/outcome_stub.py`), which a later
+run replaces with real counting.
 """
 
 from __future__ import annotations
@@ -71,17 +67,10 @@ def done_when_line(cfg: OutcomeConfig) -> str:
     """The recipe's Done-when line for the contract: it names every measure as a word, which
     is what the setup surface checks (readmodels/surface_outcome.names_a_measure).
 
-    It names `**Work:**` because that is where the action schema puts the outcome — "a SHORT
-    summary in TWO labelled parts: `**Process:**` … then `**Work:**` … the outcome with its
-    numbers" (`engine/actionschema.py`), which `static/md.js`'s `outcomeLine` reads back as the
-    one-line outcome every console row shows. It used to say "leads with the outcome", and a run
-    that followed the schema literally failed this line while a run that passed it deviated from
-    the schema: `library-sync:20261028-233002` turn 24 was objected to for opening with
-    `**Process:**` and re-finished with the counts on a line above it, `bahnbonus-seat-position:
-    20261022-193955` turn 18 the same a week earlier (F806). The two-part format is the
-    operator's (2026-10-28) and is pinned in four places, so this sentence is the one that
-    moved. The `outcome-first` RULE is untouched: the outcome still leads the part a reader of
-    one line is shown.
+    It names `**Work:**` because that is where the action schema's two-part summary puts the
+    outcome (`engine/actionschema.py`), which `static/md.js`'s `outcomeLine` reads back as each
+    console row's one-line outcome; a line demanding the summary open with the outcome would
+    contradict the schema.
     """
     ids = ", ".join(m.id for m in cfg.measures)
     return ("the run's summary opens its `**Work:**` part with the outcome as "

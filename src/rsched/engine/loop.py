@@ -84,8 +84,7 @@ class EngineLoop:
     Construct with `resume=True` to rehydrate a prior transcript and continue it.
     """
 
-    # Filled in by `loopsetup.configure` — declared here so the class still says what
-    # an EngineLoop HOLDS, which is what lifting construction out would otherwise cost.
+    # Filled in by `loopsetup.configure` — declared so the class says what an EngineLoop HOLDS.
     _archival: Any
     _challenged: set[str]
     _evict_owed: Any
@@ -167,9 +166,8 @@ class EngineLoop:
     def run(self) -> str:
         """Drive the run to its end and return its status.
 
-        The turn cycle is ONE deliberate sequence and this is the only place it is written
-        down: each step's body lives in a method named for it, so the ORDER that defines the
-        engine reads top to bottom here, and nowhere else.
+        The turn cycle's ORDER is written down here and nowhere else; each step's body lives in
+        a method named for it.
         """
         ctx = self.ctx
         try:
@@ -201,9 +199,7 @@ class EngineLoop:
                 streak = loopnudge.repeat_streak(self, action)
                 if verdict := self._fail_fast(action, retries_before, streak):
                     return self._finish_run("failed", verdict)
-                # Every action this ONE reply wrote, in order, inside this one turn
-                # (engine/chain.py): the finish branch, the reserved-turn refusal and the
-                # ordinary observe all live there, for one action as for eight.
+                # Every action this ONE reply wrote, in order, inside this turn (engine/chain.py).
                 if (outcome := chain.take_turn(self, action, streak)) is not None:
                     return outcome
         except RunAborted:
@@ -223,10 +219,8 @@ class EngineLoop:
         landed archive. Each only appends to the message list — it never rewrites it.
         """
         pause_gate(self, poll_s=POLL_S)
-        # The escalation ladder's trigger, after the pause gate and before the inbox drain:
-        # a rung that is due runs HERE, so its directive is filed as ordinary freight and
-        # drained by the very same `drain_injections` below — an append at a boundary, never
-        # a prefix rewrite. Off unless the routine's config enables it (engine/ladder.py).
+        # The escalation ladder (opt-in, engine/ladder.py) runs before the inbox drain, so a
+        # due rung's directive is drained below as ordinary freight.
         _ladder_at_boundary(self)
         apply_model_switch(self)
         apply_deliberation_switch(self)
@@ -236,25 +230,16 @@ class EngineLoop:
         drain_injections(self)
         announce_finished_subruns(self)
         announce_started_subruns(self)   # the `spawn` point: once per child, its row in hand
-        # Rule ASSISTS at the turn boundary: a rule whose moment has arrived says its
-        # operative line as an appended ENGINE NOTE. Append-only and turn-free, the
-        # same carrier a mid-run rule binding already uses.
-        assist.at_boundary(self)
-        archival.collect(self)   # …as does a background archival landed since the last turn
-        # …as does a BACKGROUNDED ACTION whose real observation has landed (D118 phase 1):
-        # the run marked a read or a fetch `background`, got its turn back at once, and this
-        # is where the actual observation arrives — the same start-now/collect-later shape
-        # `announce_finished_subruns` above uses for a child run, sized to one action.
-        background.collect(self)
+        assist.at_boundary(self)     # rule assists whose moment arrived, as ENGINE NOTEs
+        archival.collect(self)       # a background archival landed since the last turn
+        background.collect(self)     # backgrounded actions whose observation has landed
 
     def _land(self, action: dict, usage: dict | None = None, *, chained: bool = False) -> None:
         """The accepted action becomes the turn: counted, recorded with the phase it was
         taken in, its note filed, appended as the model's message, remembered for the digest.
 
-        A CHAINED element (engine/chain.py) lands the same way inside the SAME turn: the turn
-        counter does not advance again — a chain is one model call — and the event carries
-        which element of the reply it was, so a reader can tell a chain from a turn apiece.
-        No usage: the whole reply's spend is booked on its first action.
+        A CHAINED element (engine/chain.py) lands inside the SAME turn: the counter does not
+        advance, the event names its element, and the reply's spend is booked on its first action.
         """
         ctx = self.ctx
         if not chained:
@@ -270,13 +255,9 @@ class EngineLoop:
     def _fail_fast(self, action: dict, retries_before: int, streak: int) -> str | None:
         """The verdict that ends a run the model is no longer steering, or None.
 
-        D87-A: a turn that needed schema-rejection retries extends the storm streak; a clean
-        turn resets it. At SCHEMA_STORM_TURNS consecutive retry-burdened turns the run fails
-        early — cheaper and clearer than limping to the budget wall at full-prompt retry
-        prices. A FINISH is exempt: it ends the run anyway, so failing it saves nothing and
-        discards the one thing a run leaves behind, its authored summary — on the reserved
-        finish turn, the very loss the reserve exists to prevent. A finish a guard sets aside
-        still counts toward the streak, so the next retry-burdened turn trips it.
+        D87-A: SCHEMA_STORM_TURNS consecutive retry-burdened turns fail the run early, cheaper
+        than limping to the budget wall. A FINISH is exempt (failing it would discard the
+        authored summary), but still counts toward the streak.
         """
         ctx = self.ctx
         if ctx.schema_retries > retries_before:
@@ -295,16 +276,12 @@ class EngineLoop:
         """The status when the finish stands, None when a guard set it aside for a turn — via
         engine/finishstands.py, never finishgate: a RAISING guard must not cost the summary.
         """
-        # The reminder side fields ride a finish exactly as `note` does (captured when the
-        # turn landed). The last turn is where they matter most: the engine asks for a
-        # `did`/`didnt` label on the turn AFTER the held action ran, and that is very often
-        # this one.
+        # The reminder side fields ride a finish as `note` does; a `did`/`didnt` label is often
+        # owed on exactly this turn.
         remind_note = remind.apply_ops(self, action, poll_s=POLL_S, replayable=True)
-        # …and the `turn:finish` trigger fires here, its own fire point: the finish produces no
-        # ordinary observation, so there is no tail for `at_observation` to ride.
+        # `turn:finish` fires here: a finish has no ordinary observation tail to ride.
         remind_note += remind.at_finish(self, action)
-        # A finish that was its reply's FIRST action, with more written after it: when a guard
-        # sets the finish aside, the run is told those did not run either (replyactions).
+        # Actions written after the finish did not run either, if a guard sets it aside.
         remind_note += unexecuted_note(
             [unexecuted_row(a) for a in self.unexecuted],
             "a `finish` ends the run, so nothing written after it could run")
@@ -316,21 +293,15 @@ class EngineLoop:
     def _observe(self, action: dict, streak: int) -> None:
         """Run ONE action and append what came back, with its tails.
 
-        The pre-execution caution layer (engine/hold.py) is asked first: a consequence
-        reminder this routine wrote, or a general rule whose moment this action IS, HOLDS the
-        action — it does NOT run — and the model decides again with the caution in front of
-        it. After execution would be after the consequence.
-
-        The observation-moment rule assists are asked BEFORE the observation is recorded, so
-        the record names what fired (`assist.recorded`): the transcript is what a resumed leg
-        rebuilds the once-only guards from (engine/guardscope.py). Their line still rides the
-        tail, in its place.
+        The hold seam (engine/hold.py) is asked first: a matching reminder or rule HOLDS the
+        action before it runs, since after execution is after the consequence. Observation
+        assists are asked BEFORE the observation is recorded, so the record names what fired —
+        a resumed leg rebuilds its once-only guards from it (engine/guardscope.py).
         """
         ctx = self.ctx
         obs = hold.before_dispatch(self, action) or actionroute.dispatch_action(self, action, ctx)
-        # Whether the rest of this reply still runs (engine/chain.py: `&&`), and the actions
-        # that did NOT — named by name in THIS observation and stored on it, so a resumed leg
-        # replays the same words (engine/replyactions.py). Their side fields never ran either.
+        # Whether the rest of this reply still runs, and the actions that did NOT — stored on
+        # this observation so a resumed leg replays the same words (engine/replyactions.py).
         obs = {**obs, **chain.stop_fields(self, obs)}
         held = hold.is_hold(obs)
         if donothing.grounds_a_finish(obs):
@@ -343,11 +314,8 @@ class EngineLoop:
         ctx.transcript.event("observation", obstails.record(assist.recorded(
             self, mediaops.without_bytes(obs), fired), tails), turn=ctx.turn)
         if obs.get("cancelled"):
-            # F586 / D160-C's second half: a person reached into this run and stopped ONE call.
-            # The observation above already carries the flag, but an observation records what
-            # the RUN was told; this records that somebody OUTSIDE the run intervened, which is
-            # exactly what an audit cannot reconstruct later — a cancelled call and a call that
-            # failed fast are indistinguishable in a record of outcomes alone.
+            # A person stopped ONE call (F586). Recorded as its own event: in outcomes alone a
+            # cancelled call is indistinguishable from one that failed fast.
             ctx.transcript.event("action_cancelled",
                                  {"kind": action["kind"], "brief": brief_value(action)[:200],
                                   "exit": obs.get("exit")}, turn=ctx.turn)
@@ -368,28 +336,15 @@ class EngineLoop:
         """Everything that rides an observation, in the order the model reads it
         (docs/prompt-anatomy.md §3b). Each tail is free and appears only when it applies.
         """
-        # `remind` / `remind_feedback` ride ANY action at no turn cost (like `note`),
-        # applied AFTER the interception check so a reminder authored this turn can
-        # never hold the very action it rode on.
+        # `remind` side fields, applied AFTER the hold check so a reminder authored this turn
+        # can never hold the action it rode on.
         text = remind.apply_ops(self, action, poll_s=POLL_S)
-        # …and the reminders whose TRIGGER is not an action — `result` (what just came back),
-        # `prose` (what this turn said), the `turn:*` moments. They cannot hold (the thing they
-        # watch has already happened), so they ride the tail at no turn cost.
+        # Reminders on non-action triggers (`result`, `prose`, `turn:*`) cannot hold; they ride.
         text += remind.at_observation(self, action, obs)
-        # …and the observation-moment assists ride the same tail, for the rules whose
-        # moment is "what just came back" rather than "what you are about to do" — asked
-        # before the observation was recorded (`_observe`), read here in their place.
-        text += assist.tail(fired)
-        # …and the run's OWN archived history is the third store this layer feeds from: when
-        # what just happened overlaps an archived topic, the tail names the file.
-        text += recall.at_observation(self, action, obs)
-        # D65: an `allow once` grant is spent by THIS successfully-dispatched
-        # matching action — revoked here, at the same boundary, and announced so
-        # the next matching attempt is not an unexplained denial. A HELD action is
-        # not one: it never reached the executor, so it used nothing ("spent by USE,
-        # not by attempt"). Spending it there would also break the hold's own
-        # contract — re-emitting the same action is the confirmation to proceed, and
-        # it would have been denied for a grant the first attempt consumed.
+        text += assist.tail(fired)   # observation-moment assists, asked in `_observe`
+        text += recall.at_observation(self, action, obs)   # an overlapping archived topic
+        # D65: an `allow once` grant is spent by USE, not attempt — a HELD action never reached
+        # the executor, and re-emitting it is the confirmation to proceed.
         if not held and (spent := requests.consume_once_grants(self, action, obs)):
             text += requests.spent_notice(spent, action)
         if REPEAT_WARN <= streak < REPEAT_FAIL:
@@ -397,7 +352,7 @@ class EngineLoop:
         text += loopshape.after(self, action, obs)   # a cycle, varied failures, a same result
         if warning := self.ctx.budget_warning():
             text += turnwindow.converge(warning)
-        # D227: and what is LEFT, as a fact — HERE because the contract is composed once
+        # D227: what is LEFT, as a fact — here, since the contract is composed once.
         text += turnwindow.budget_tail(self.ctx)
         if self._history_active:
             self._hist_note_countdown -= 1
@@ -407,9 +362,8 @@ class EngineLoop:
         return text
 
     def _repeat_warning(self, streak: int) -> str:
-        """The repeat-streak tail, and the escape hatch it opens (see loopsetup): the next
-        reply runs schema-free, and once shedding has rescued the run twice the provider
-        schema stays off for the rest of it.
+        """The repeat-streak tail, and its escape hatch: the next reply runs schema-free; after
+        two sheds the provider schema stays off for the rest of the run.
         """
         self._shed_schema_turns = 1   # re-arms on every further repeat
         self._sheds += 1

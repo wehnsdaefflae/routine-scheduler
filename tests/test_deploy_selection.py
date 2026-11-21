@@ -1,24 +1,4 @@
-"""ONE compose selection per host, in `.env` — and `deploy/nat64.sh`, which writes its file half.
-
-Which files make up the project and which profiles are on belong to the HOST, so they live where
-Compose looks on every command run from the checkout's root: COMPOSE_FILE and COMPOSE_PROFILES in
-`.env`. A selection handed to one command reached that command and no other. It failed in both
-directions:
-
-- `nat64.sh on` gave its own `up` a file list naming docker-compose.yml and compose.nat64.yml. A
-  list replaces Compose's default — and with it the auto-loading of the gitignored
-  docker-compose.override.yml — so from 2026-09-27 until the 0.372.1 deploy every container ran
-  with no memory limit — the condition that override exists to prevent.
-- DOCKER.md's plain rebuild named no list at all, so on a host with NAT64 on it would have
-  recreated rsched and chrome without the DNS64 resolvers; 0.372.1 had to be deployed with all
-  three files and the profile typed out by hand.
-
-The script is driven for real, against a copy of the checkout's compose files, through a `docker`
-stub that resolves the selection the way Compose does: a file flag replaces COMPOSE_FILE, which
-replaces the default discovery (and the override's auto-load with it); a profile flag replaces
-COMPOSE_PROFILES; the shell's environment beats `.env`. That is what Compose v5.5.1 did on the
-server on 2026-10-01 — a Compose that resolves differently moves this stub with it.
-"""
+"""ONE compose selection per host, in `.env` — and `deploy/nat64.sh`, which writes its file half."""
 from __future__ import annotations
 
 import json

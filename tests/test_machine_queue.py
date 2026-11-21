@@ -1,14 +1,4 @@
-"""The fair-share job queue for an exclusive machine (a GPU box).
-
-The operator's ask was specific — "i would prefer they found a way to schedule it so everyone
-gets their turn" — and it rules out the two obvious answers. A mutex REFUSES, so on a daily cron
-two of three routines get "no" every day. An flock blocks in arbitrary order, so a routine that
-submits three jobs starves one that submits one. The third thing is an ORDER, and it is the
-`remote` util's: it ships its `fair_share_order` to the box by source, and its selftest pins that
-order — the spent-turn regression included — on the very helper the box runs. What these pin
-is the scheduler's half: a position every run can read in the box's own order, and a failure
-mode that never reads as "free".
-"""
+"""The fair-share job queue for an exclusive machine (a GPU box)."""
 
 from __future__ import annotations
 
@@ -210,13 +200,7 @@ def _age_the_mirror(tmp_path, machine: str, seconds: float) -> None:
 
 
 def test_a_fresh_mirror_is_not_re_read(tmp_path, monkeypatch):
-    """The rate is set by what READERS tolerate, not by the 5s tick that notices.
-
-    Every read is an SSH session and a `uv run --script` interpreter boot on the box. Refreshed
-    per tick that was ~17k sessions a day for a mirror whose consumers accept 15 minutes of age —
-    and an unreachable box, whose attempt lives for its 20-60s connect timeout, started a new one
-    every 5s onto the loop's 8-worker default executor.
-    """
+    """The rate is set by what READERS tolerate, not by the 5s tick that notices."""
     import json
     calls: list[list[str]] = []
 

@@ -1,9 +1,5 @@
 """The run view's two controls that act on the RUN rather than on its settings
 (`static/components/runsupervise.js`): 👁 supervise a live run, ⟲ rewind a terminal one.
-
-Their own file because they are one surface concern and `test_flows.py` is 2,127 lines against
-this repo's 350-line bar — and because the pair's VISIBILITY is the contract: each is offered in
-exactly the state where it can work, so they are asserted together or not at all.
 """
 
 import json
@@ -47,13 +43,6 @@ def test_run_view_supervise_button_asks_a_live_run_for_a_rung(ui, ui_page):
 def test_supervise_is_dead_while_in_flight_and_hands_focus_back_after(ui, ui_page):
     """F779: the two controls run through util.js `act()` now, and these are its observable
     promises — the ones the hand-rolled shape could not keep.
-
-    `act` disables for the whole in-flight window (a double-click cannot send the ask twice),
-    re-enables in a `finally` (the only way it cannot be forgotten — the hand copy re-enabled
-    on both paths only because nothing between the await and the re-enable threw, and
-    `static/util.js:337` names that failure: its author saw the control stay dead for real when
-    a missing toast host made `toast()` throw), and hands focus BACK to the button that had it,
-    which a disabled button cannot hold — so a keyboard reader is not dropped onto <body>.
     """
     ui.seed_run("uithrow", "20260716-081500", "running")
     held = hold_requests(ui_page, "**/api/runs/uithrow:20260716-081500/supervise")

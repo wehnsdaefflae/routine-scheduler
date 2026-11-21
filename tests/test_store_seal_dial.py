@@ -1,18 +1,4 @@
-"""The job-store seal follows the routine's `jobs` DIAL, not the path (F752).
-
-`state/jobs.json` was sealed for EVERY routine purely by name, and the refusal pointed the
-refused run at the `job` action — which, with the job layer off, is projected out of its schema
-and does not exist for it. `voice-model-trainer` met exactly that: no `jobs:` key in its
-routine.yaml, its own 174 KB hand-maintained record of remote training jobs at that path, and a
-recipe stage built around writing it (R2787 → F752). Renaming either side would have fixed one
-routine and left the collision for the next; the dial fixes all of them at once.
-
-What must NOT change with it: the seal is one of the structural refusals `_write_gate` applies
-ABOVE its `if grants is None` early return (F698 found the strongest seals were the ones a
-policy-less context skipped), and it must survive a policy held across a release that cannot
-answer `jobs_on` (F677). So only POSITIVE knowledge that the dial is off unseals the file —
-every "I cannot tell" keeps it sealed.
-"""
+"""The job-store seal follows the routine's `jobs` DIAL, not the path (F752)."""
 
 from __future__ import annotations
 

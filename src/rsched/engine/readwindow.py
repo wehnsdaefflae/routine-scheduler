@@ -1,15 +1,12 @@
 """read_file's WINDOW — which lines of a stream one read returns, and how it is reported.
 
-Split out of `fileops.py` (at its size ceiling) when the window learned two things a run kept
-being refused for (the wrong-turn stream, 2026-11-10..18):
+Beyond a plain slice:
 
-- a NEGATIVE `start_line` counts from the END — `-40` is the last 40 lines. Runs asked for a
-  file's tail that way across routines (a case history's last block, a JSONL's newest rows) and
-  were refused by `minimum: 1`; the stream is still read once, keeping only the tail in a
-  bounded deque, and the observation reports the resolved line numbers.
+- a NEGATIVE `start_line` counts from the END — `-40` is the last 40 lines. The stream is still
+  read once, keeping only the tail in a bounded deque, and the observation reports the resolved
+  line numbers.
 - a `max_lines` over `MAX_LINES` is served at the cap and the observation SAYS so
-  (`max_lines_capped`), where the schema's `maximum` refused the whole read — 24 refusals in a
-  week, each a turn, for a bar the observation's character cap usually makes moot anyway.
+  (`max_lines_capped`) rather than refusing the whole read.
 """
 
 from __future__ import annotations
@@ -65,11 +62,9 @@ def windowed(rel_path: str, window: list[str], total: int, start: int,
     content = "\n".join(window)
     truncated = False
     if len(content) > OBS_CAP_CHARS:
-        # END-truncate a file read: keep whole lines from the HEAD, drop the tail, and report
-        # the exact next start_line — so a follow-up read continues IN SEQUENCE. (Opaque output
-        # rides truncate()'s head+tail elision, where the tail's tail — a traceback end — must
-        # survive; a file read is ordered, so dropping the tail and resuming is the right shape.
-        # Operator AUDIT note, F204.)
+        # END-truncate a file read: keep whole lines from the HEAD and report the exact next
+        # start_line, so a follow-up read continues IN SEQUENCE (a file read is ordered, unlike
+        # opaque output's head+tail elision).
         kept: list[str] = []
         used = 0
         for ln in window:
@@ -81,9 +76,8 @@ def windowed(rel_path: str, window: list[str], total: int, start: int,
         core = "\n".join(kept)
         resume = f"start_line={end_line + 1}"
         if len(core) > OBS_CAP_CHARS:
-            # A single line longer than the cap: the rest of it is the next page. Resuming at
-            # the next LINE skipped it — a one-line minified JSON spill, or the 1 MB capture
-            # envelope, could not be read past its first 8,000 chars at all.
+            # A single line longer than the cap: the rest of it is the next page (resuming at
+            # the next LINE would skip it, e.g. a one-line minified JSON spill).
             core = core[:OBS_CAP_CHARS]
             resume = f"start_line={start} start_char={start_char + OBS_CAP_CHARS}"
         content = (core + f"\n[... {len(kept)} of {len(window)} window lines shown (through line "

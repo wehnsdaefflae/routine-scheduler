@@ -1,16 +1,4 @@
-"""A routine that reaches its FINISH LINE retires itself — without anything writing config.
-
-The operator asked for routines that "disable themselves once they think they reached it". The
-invariant it runs into is absolute: a run never writes `routine.yaml`, and the engine never writes
-config. Retirement satisfies both because it is DERIVED — the scheduler simply builds no fire
-table entry for a routine whose finish line is reached (`engine/finishline.py`); reopening it
-puts the routine straight back. The `enabled: false` half is a click on the Decisions page,
-through the ordinary config writer.
-
-Three parties complete a finish line, each covered here: a RUN whose accounting proves an
-outcome it judges, the CALENDAR (a date outcome or the `until` date — no run involved), and the
-OPERATOR ticking an outcome only they judge.
-"""
+"""A routine that reaches its FINISH LINE retires itself — without anything writing config."""
 
 from __future__ import annotations
 

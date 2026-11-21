@@ -1,12 +1,4 @@
-"""D175: the conversation finish flow OFFERS a playbook when the conversation did real work.
-
-The operator answered "do we still need playbooks?" with option (c), 2026-10-10 — keep the
-feature and make it earn its place, explicitly as a BET that nothing was ever distilled because
-nothing ever suggested it. So what is pinned here is the predicate the offer rests on: it fires
-on a finished conversation that spent real turns, and on nothing else. If the offer ships and
-the library still holds one playbook months later, the bet is refuted by evidence rather than
-by inference — which is the whole reason the row was kept open.
-"""
+"""D175: the conversation finish flow OFFERS a playbook when the conversation did real work."""
 
 from __future__ import annotations
 

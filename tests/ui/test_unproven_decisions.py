@@ -1,28 +1,4 @@
-"""The Decisions page holds an ANSWERED-BUT-UNPROVEN decision, in a band of its own (D220/F795).
-
-The operator, 2026-10-29: *"You need to come up with a proof at creation and accept / decline my
-response based on the result of you checking the proof"* — and the rule that reorganizes the
-page: **a decision stays open, visible and open to his feedback until at least one option has a
-positive proof, or it is actively discarded or overridden.** F795 states the defect from the
-other end: an answered decision leaves this page the moment the answer is recorded, and nothing
-ever checks that the authorized work landed.
-
-0.519.0 shipped the mechanism (`rsched/proofs.py`, `rsched/proofcheck.py`) and nothing rendered
-it. This is the rendering, and the one constraint it must not break is the HARD one D220 states:
-**a row whose proof is unproven must never be re-presented as an unanswered question.** So the
-band sits between what waits on a person and what is settled, the card keeps its answer and its
-revise control, and nothing counts it as work owed.
-
-What a person SEES, and what is asserted here:
-
-* the band exists, with its own caption, and only for rows that are answered AND unproven;
-* a `negative` proof — the actions were performed and the proof is STILL absent, his own
-  "unexpected event" state — renders LOUDER than an open question, which is the one place this
-  page shouts about something already answered;
-* a `positive` proof clears the row into Settled, where an ordinary answered decision goes;
-* a decision with NO proof behaves exactly as it always did, which is every row the instance
-  has ever had.
-"""
+"""The Decisions page holds an ANSWERED-BUT-UNPROVEN decision, in a band of its own (D220/F795)."""
 
 from playwright.sync_api import expect
 

@@ -1,19 +1,4 @@
-"""F677: a release landing mid-run must not take an in-flight run's finish gate with it.
-
-The specimen is 2026-10-12, 07:34-08:26: three runs (scheduler-builder, llmsectest-weekday,
-global-utils-review) filed the instance's first three `finish_gate_failed` events, all
-`AttributeError: 'GrantPolicy' object has no attribute 'jobs_on'` at engine/jobops.py:43.
-0.416.0 (committed 07:23) renamed taskops.py -> jobops.py and tasks_on -> jobs_on while those
-runs already HELD a GrantPolicy made by the build they booted with — and the finish path is
-reached through one deliberately lazy import (engine/finishstands.py), so the gate and its whole
-module subtree were loaded FRESH FROM DISK at the finish turn. It failed open: all three runs
-finished, and the jobs gate silently did not run.
-
-Both halves are tested here: the finish path is PINNED at run start, so a held object meets the
-build that made it; and a held object that still cannot answer is answered from the routine's own
-capabilities — DATA, not a held object — with the mismatch NAMED on the record rather than
-reaching the operator as a bare AttributeError.
-"""
+"""F677: a release landing mid-run must not take an in-flight run's finish gate with it."""
 
 import sys
 from types import ModuleType
@@ -28,13 +13,7 @@ TS = "20261012-073400"
 
 
 class PolicyFromTheOldBuild:
-    """What those three runs were holding: the policy object as the PREVIOUS build left it.
-
-    0.416.0 renamed the property `tasks_on` to `jobs_on`; an instance made before the release
-    answers the old name and has never heard of the new one. The `jobs` SETTING the policy
-    carries is untouched by the rename — but reading it off this object is reading the held
-    object again, which is the thing that cannot be trusted here.
-    """
+    """What those three runs were holding: the policy object as the PREVIOUS build left it."""
 
     tasks_on = True
     jobs = "on"

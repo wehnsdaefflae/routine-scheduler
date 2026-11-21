@@ -1,18 +1,4 @@
-"""A STALE MODEL ROLE is a problem the ROUTINE PAGE says (F643, rsched/trials.roles_problem).
-
-`roles_problem` has answered "which of this routine's stored `models:` names can this instance no
-longer serve" since F643, where `tv-show-tracker-seedbox-manager` and `library-sync` each carried
-a bare `Sonnet` taken nine weeks earlier: after the catalog rename to `Sonnet medium`/`Sonnet
-high` both died at boot — rc=1, no finish, no summary, an `orphaned_run` and nothing to read. But
-only `rsched validate`, a command a person types, asked it, while its weaker sibling
-`ignored_problem` — a trial merely IGNORED at every fire — already reached this payload. The
-lesser failure had a console surface and the total one did not, so it is said here too: `main`
-resolves on the first turn of every run.
-
-The two DECISION roles sit in the same `models:` map but resolve against the DECISION catalog
-(`config/decisionconf.py`), so they are never judged against the chat one — a page calling a
-working decision model a run-killer is a false alarm on the one panel that must be believed.
-"""
+"""A STALE MODEL ROLE is a problem the ROUTINE PAGE says (F643, rsched/trials.roles_problem)."""
 
 from __future__ import annotations
 

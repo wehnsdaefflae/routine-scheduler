@@ -48,10 +48,6 @@ def test_an_over_long_description_is_refused_with_its_overflow_shown():
     """F612: the cap rejects the WHOLE action, so the author re-composes from memory of what it
     wrote. Measured 2026-10-03: 14 routines hit it across their last four runs, self-audit in
     three consecutive runs, each losing a turn to a refusal that was accurate and unactionable.
-
-    Naming the count alone says "too long"; naming the TAIL says which sentence to drop. The cap
-    itself is unchanged — truncating silently would keep the turn and lose the author's last
-    sentence without telling anyone.
     """
     tail = "and this last sentence is the part that must go."
     text = "y" * checks.MAX_DESCRIPTION_CHARS + tail
@@ -532,9 +528,6 @@ def test_two_asks_in_one_turn_get_two_decision_records(tmp_path):
     """A global reminder op riding an `ask_user` files a SECOND question on the same turn —
     the first time one turn could file two. The id was `q-<run-ts>-<turn>`, so the approval
     overwrote the user's own question and the answer settled the wrong one.
-
-    Unit-level on purpose: the end-to-end path needs a BLOCKING approval, which would park
-    the test on the ask timeout, and the collision is a property of id allocation alone.
     """
     from types import SimpleNamespace
 

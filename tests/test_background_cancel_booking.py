@@ -1,15 +1,4 @@
-"""A cancelled background model call's spend BOOKS — the behaviour, not the wording (F722).
-
-`test_background_actions.py` already asserts that the `handle` field's description SAYS the
-spend books. That is a documentation test, and the operator's hand-off named the gap it left:
-the behaviour was never checked, and it was wrong. A model call parks its reading only once the
-provider answers, so a call cancelled WHILE RUNNING parked nothing at `cancel` time, and the
-reading that arrived afterwards sat in a parking slot whose Pending had already left the live
-list — which both `collect` and `settle` iterate.
-
-The fake completion here sleeps, then books, in that order: that is the real timing, and a test
-whose fake books before sleeping would pass against the broken engine.
-"""
+"""A cancelled background model call's spend BOOKS — the behaviour, not the wording (F722)."""
 
 from __future__ import annotations
 
@@ -48,11 +37,7 @@ TURN_S = 0.5
 
 @pytest.fixture
 def slow_booking_llm(monkeypatch):
-    """An `llm` that answers slowly and books WHEN IT ANSWERS — the provider's real order.
-
-    A fake that booked before sleeping would park at `cancel` time and pass against the broken
-    engine, which is exactly the hole the wording-only assertion left.
-    """
+    """An `llm` that answers slowly and books WHEN IT ANSWERS — the provider's real order."""
     import rsched.engine.executor as executor_mod
 
     def slow_llm(action, ctx):

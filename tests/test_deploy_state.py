@@ -1,15 +1,4 @@
-"""The deploy STATE inventory, read against the compose file and run through its consumers.
-
-`deploy/state-paths.sh` is the one list of what lives outside the engine image. `bundle.sh`
-(the one-shot migration tarball) and `backup.sh` (the nightly dated snapshots) both source it
-so the two cannot drift, and the compose file's binds are what it has to cover. None of it is
-Python, which is why it is tested here: each of these drifted once in a way only a migration, a
-disk failure or a fresh host would have shown — a data home mounted but never carried, a
-backup that ignored the excludes the tarball honoured, an optional credential store required,
-a sidecar writing a carried home as root where the backup could not read it.
-The backup's own run — and the check that it carries exactly the tarball's files — is in
-tests/test_backup_snapshots.py, which builds its instances with `_home` from here.
-"""
+"""The deploy STATE inventory, read against the compose file and run through its consumers."""
 from __future__ import annotations
 
 import os

@@ -3,25 +3,17 @@ blocks, NATIVE tool turns and cache markers. Pure functions of the list: the tra
 (`anthropic_api.py`) decides which apply to a call and posts what they return.
 
 **Native tool turns** (`native_turns`). The engine keeps every past action as an assistant
-message holding its JSON and every observation as a user message — one provider-agnostic list.
-Sent like that on the Anthropic wire with the action tool on `auto`, a thinking model reads its
-own history as JSON TEXT and imitates it: it writes an action as text, which ends nothing, thinks
-on as though it had run, and makes the call for the next — two actions in one reply, the second
-narrating the first as done (R2443-R2445; engine/replyactions.py runs the first). So a schema'd
-call on `auto` renders each past action as what it was, a call of the offered tool — `tool_use`
-— and the message after it as that call's `tool_result`. A reply then ends at its one call, as
-the API ends every tool turn. Replaying the real turn 194 of llmsectest-weekday:20261010-040001
-through the live proxy: text history gave two actions in 5 replies of 5; native history gave ONE
-call in 5 of 5, with thinking on and the whole prefix read from cache.
+message holding its JSON and every observation as a user message. A thinking model on `auto` that
+reads its own history as JSON TEXT imitates it — it writes an action as text, which ends nothing,
+then makes a call narrating the first as done (R2443-R2445). So a schema'd call on `auto` renders
+each past action as a `tool_use` of the offered tool and the message after it as its
+`tool_result`; a reply then ends at its one call.
 
-The API does not require the signed thinking block of an earlier reply to be passed back (measured
-the same day: a continuation with and without it were both accepted), so nothing beyond the
-engine's list is needed and nothing is stored. The rendering is deterministic and positional — a
-call's id is its index in the merged list — so a message renders the same bytes on every later
-turn and the cached prefix holds. A message that is not exactly one JSON object (schema-retry
-debris cut at 4,000 characters, two merged replies) stays text, and so does the message after
-it. A forced call (`tool_choice: forced`, the Codex route) keeps the text history it was
-validated on: forcing already allows one call and nothing else.
+No signed thinking block needs passing back, so nothing beyond the engine's list is stored. The
+rendering is deterministic and positional — a call's id is its index in the merged list — so the
+cached prefix holds. A message that is not exactly one JSON object stays text, and so does the
+message after it. A forced call (`tool_choice: forced`) keeps text history: forcing already
+allows one call and nothing else.
 """
 
 from __future__ import annotations
@@ -59,11 +51,8 @@ def content_blocks(content: str, media: list[dict]) -> list[dict]:
     for item in media:
         mime = item["media_type"]
         try:
-            # R1493: prefer bytes the engine captured when it verified the file. A message's
-            # media rides the whole conversation, so re-reading the path here would re-read it
-            # on every later send — and a run that overwrites or cleans up that file invalidates
-            # an attachment the model was already told it would see. Only entries with no
-            # captured bytes (conversation auto-attach) are read from disk.
+            # R1493: prefer bytes captured at verification — the file may have changed since;
+            # only entries with none (conversation auto-attach) are read from disk.
             data = item.get("b64") or read_media_b64(item["path"])
         except OSError as exc:
             blocks.append({"type": "text", "text":
@@ -195,19 +184,10 @@ def claim_placement(body: dict) -> dict:
     when there is one (tools lead the prefix, so nothing smaller exists), else a short leading
     slice of the system prompt, else of the first message (`_claimed_text`).
 
-    No marker at all is not "no caching" on every wire. CLIProxyAPI, the subscription proxy
-    every `anthropic` endpoint here runs through, adds its own breakpoints — on the tools, the
-    system prompt and the last message — to any request that arrives carrying none
-    (`shouldEnsureCacheControl`, v7.2.156; there is no setting for it). Measured over the week
-    to 2026-10-08: 100% of four archival calls' input (2.94M tokens) and 95% of 190 `llm`
-    subcalls' was billed as cache WRITES, at 1.25x, for prefixes nothing ever read again.
-    One marker of the caller's own tells the proxy placement is taken, and caches at most the
-    prefix up to it: a ~150-token tool definition for the archival call, a 1,000-char slice
-    otherwise — both below the minimum prefix the API caches, so the claim writes nothing on
-    the direct API either. Marking a whole long system prompt or a whole single-message prompt
-    instead would write exactly what the claim exists to keep out. The one prefix with no text
-    to slice is a message that opens with an image: that image is marked, and is at most one
-    image's tokens.
+    No marker is not "no caching" on every wire: CLIProxyAPI adds its own breakpoints to a
+    request carrying none, billing one-shot prefixes as cache WRITES at 1.25x. One marker of the
+    caller's own tells it placement is taken, on a prefix below the API's minimum cacheable size,
+    so the claim writes nothing. A message opening with an image marks that image.
     """
     if body.get("tools"):
         return {**body, "tools": [{**body["tools"][0], "cache_control": dict(EPHEMERAL)},

@@ -1,29 +1,4 @@
-"""D118 phase 3 — a backgrounded MUTATION, ordered by the targets actions declare.
-
-Phase 1 refused every mutation outright, with one reason: a later synchronous action would
-read state the deferred one has not written yet. Widening the allowlist is only safe if that
-is made IMPOSSIBLE rather than unlikely, so the contract these tests pin is:
-
-* a backgrounded mutation declares its target in the field the action already carries
-  (`path` for the file kinds, `name` for `memory_write`);
-* a later action that TOUCHES that target — reads it, writes it, or runs a script/util over
-  it — is HELD until the write has landed. The barrier closes on the dependency, so a run
-  that forgets to `wait` still cannot read stale state;
-* ONE FILE REACHED BY TWO SPELLINGS IS ONE TARGET: a path is resolved against the directory
-  the run's relative paths resolve in, or a deferred `state/x.json` and an absolute read of it
-  would miss each other — the stale read this whole model exists to prevent. A memory topic is
-  a namespace, not a file, and is not resolved;
-* two backgrounded writes to the SAME target cannot be ordered against each other, so the
-  second is REFUSED with a message that teaches the call that works;
-* a `then_script` may not ride a deferred change: the thread performs the change only, so the
-  script would be dropped unrun with its secret gate never asked (F633's shape);
-* an action touching nothing a pending write owns is not delayed at all, and the barrier is
-  asked of EVERY action — including by callers that hold no loop, where it must answer, not
-  raise.
-
-The ordering half is proved with a REAL thread doing a REAL slow write: a mock cannot fail
-the way a racing thread does.
-"""
+"""D118 phase 3 — a backgrounded MUTATION, ordered by the targets actions declare."""
 
 import threading
 import time
@@ -132,11 +107,7 @@ def test_a_then_script_riding_a_write_touches_what_it_names():
 # ---- the barrier: a dependency holds the later action ------------------------------------------
 
 def _loop_with_pending(target, work, kind="write_file"):
-    """A loop stand-in holding ONE live background mutation whose thread runs `work`.
-
-    The claim is registered through the real `claim()` the engine calls, so these tests
-    exercise the shipped path rather than a hand-placed attribute.
-    """
+    """A loop stand-in holding ONE live background mutation whose thread runs `work`."""
     pending = Pending(handle="bg1", kind=kind, brief=target, turn=1, thread=None)  # type: ignore[arg-type]
     pending.thread = threading.Thread(target=work, name="rsched-background-bg1", daemon=True)
     loop = SimpleNamespace(_background=[pending], _background_seq=1)

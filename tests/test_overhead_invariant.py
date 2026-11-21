@@ -5,7 +5,6 @@ validate` through that row, and the boot digest's FINISH block — plus the one-
 
 from __future__ import annotations
 
-import json
 import subprocess
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -13,10 +12,8 @@ from types import SimpleNamespace
 from helpers import health_events, measured_run, write_usage_stream
 from rsched import cli
 from rsched.engine import finish_digest, overhead, overhead_alarm
-from rsched.migrate_overhead import RECORD, run_migration
 from rsched.readmodels import memo, overhead_reading
 from rsched.readmodels.surface_overhead import _overhead_nodes
-from rsched.readmodels.usage_stream import stream_path
 
 
 def _row(i: int, share: float | None, *, slug: str = "r", depth: int = 0,
@@ -123,26 +120,6 @@ def test_the_finish_block_says_it_beside_the_recipe_ask(tmp_path):
     assert "PROCESS OVERHEAD" not in finish_digest.digest_section(d, recipe_ask=False)
     _stream(home, [0.1, 0.1, 0.1, 0.1])          # a different size: the memo sees the change
     assert "PROCESS OVERHEAD" not in finish_digest.digest_section(d)
-
-
-def test_the_backfill_measures_the_newest_leg_of_each_kept_run_once(tmp_path):
-    home = tmp_path / "routines"
-    run_dir = home / "digest" / "runs" / "20261001-050000"
-    run_dir.mkdir(parents=True)
-    (run_dir / "transcript.jsonl").write_text(json.dumps(
-        {"type": "assistant_action", "payload": {"kind": "memory_read", "name": "n"}}) + "\n",
-        encoding="utf-8")
-    leg1, leg2, gone = measured_run(1), measured_run(1), measured_run(2)
-    write_usage_stream(home, [leg1, leg2, gone])
-    record = run_migration(SimpleNamespace(routines_home=home))
-    assert (record["runs"], record["counted"], record["unknown"]) == (2, 1, 1)
-    rows = [json.loads(ln) for ln in stream_path(home).read_text(encoding="utf-8").splitlines()]
-    assert "overhead" not in rows[0]["quality"]
-    assert rows[1]["quality"]["overhead"] == {"task": 0, "process": 1, "friction": 0,
-                                              "process_share": 1.0}
-    assert "overhead" not in rows[2]["quality"]           # its dir is gone: unmeasured
-    assert (home / RECORD).exists()
-    assert run_migration(SimpleNamespace(routines_home=home)) == {}
 
 
 def _commit_recipe(d, text: str) -> str:

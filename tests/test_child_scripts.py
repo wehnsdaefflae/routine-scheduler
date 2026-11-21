@@ -1,12 +1,4 @@
-"""A CHILD run reaches the routine's own `scripts/`.
-
-A child's own dir is its workspace, `runs/<ts>/sub/<n>/`, and script lookup asked only that
-dir (and an open job's workspace), so a child found no script at all. Holding no capability,
-it holds no `shell` either: a child briefed to build and test one item of a parallel batch
-could edit files but could not run the routine's test gate or any other tooling it keeps
-(the builder's parallel builds, 2026-10-18). The routine's scripts run inside the child's own
-jail, whose roots already extend to the routine's dir (F185) — so this is reach, not authority.
-"""
+"""A CHILD run reaches the routine's own `scripts/`."""
 
 from __future__ import annotations
 

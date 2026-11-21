@@ -1,22 +1,4 @@
-"""The `ungated_write` marker's READER — one health event per run (R2654).
-
-D158 traded a seal for a marker: every write protection lives in the file-action gate, a
-`bash -c` redirect calls none of them, and deciding which writes a shell line performs is
-undecidable — so prevention was replaced by `ungated_write` on the observation, "so a person
-auditing the run afterwards can find the writes that no gate saw".
-
-The detection half was never connected. Measured at 0.432.0: `ungated_write` appeared at
-exactly two lines of `src/rsched`, both the writer — nothing in `readmodels/`, nothing in
-`web/`, nothing in `static/`, and `components/transcript.js` had no case for the flag while
-carrying two for `timed_out`. The only consumer in existence was the four in-process assertions
-in `tests/test_shell_action.py`. A compensating control nothing reads is not one.
-
-So the first write-shaped command of a run files an `ungated_write` health event into
-`.control/health-events.jsonl` — the one durable, machine-checked stream an audit opens. What
-is pinned here is that it arrives, that it arrives ONCE per run (the stream's own lesson: one
-resumed run once wrote 26 of 1,289 rows for a single condition), and that a read-only run files
-nothing, which is what keeps the stream worth reading.
-"""
+"""The `ungated_write` marker's READER — one health event per run (R2654)."""
 
 from pathlib import Path
 

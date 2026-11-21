@@ -1,21 +1,4 @@
-"""A written-out count in contract prose is a claim about a tuple's `len()`, and nothing checked it.
-
-`engine/transcript.py:7` already states the principle for its own vocabulary — *"`EVENT_TYPES` is
-the number, and `len()` is how to ask"* — but the two documents that quote those numbers to a
-reader were pinned on neither the names nor the count. Both had drifted silently:
-
-* `CLAUDE.md`'s Transcript-events block listed 19 types and said `(19 …)` while `EVENT_TYPES`
-  held 20 — `oversight_failed` (`transcript.py:42`, written by the escalation ladder) was in the
-  code, in the web renderer and in the CLI, and absent from the vocabulary every contributor
-  reads. CLAUDE.md's own instruction on that line is "extend the tuple and both readers
-  together, never one alone"; the doc was the reader nobody extended.
-* `docs/prompt-anatomy.md` called the action schema "the full 30-kind schema" while `KINDS`
-  held 33.
-
-A count is the cheapest kind of documentation to falsify and the most expensive to disbelieve: a
-reader who counts 20 names under a `(19 …)` cannot tell which half is stale. These tests fail
-until the prose follows the source, in both directions — the names AND the number.
-"""
+"""A written-out count in contract prose is a claim about a tuple's `len()`, and nothing checked it."""
 
 import re
 from pathlib import Path

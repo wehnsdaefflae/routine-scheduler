@@ -1,10 +1,4 @@
-"""A due fire the GLOBAL PAUSE drops leaves a record — for a routine as well as for a lane.
-
-`daemon/pause_skip.py`'s two writers, and the reader registration without which the console
-cannot see either. The lane half was already covered in test_scheduler.py (F573); this file
-exists because the ROUTINE half was not, and because the two writers now live in one module
-precisely so they cannot drift apart again.
-"""
+"""A due fire the GLOBAL PAUSE drops leaves a record — for a routine as well as for a lane."""
 
 from __future__ import annotations
 
@@ -31,16 +25,6 @@ async def test_a_paused_routine_skip_says_so_in_the_health_stream(make_routine, 
     """For as long as both paths existed they were asymmetric: the LANE path has written an
     event since F573, while a lane-less routine's skipped fire left only a `log.info` line —
     and the journal is the one surface this instance's own audit cannot read.
-
-    Measured cost of that silence: a global pause held from ~03:00 to 21:52 on 2026-10-13 and
-    `scheduler-builder` (cron `0 6,14`, in no lane) missed BOTH of its fires with the health
-    stream saying nothing at all, while the six LANE fires the same pause ate were each on the
-    record. The run that noticed had to prove it from the absence of a run directory.
-
-    `test_scheduler.py::test_paused_tick_skips_fires_but_advances` pins the skip itself; this
-    pins the WITNESS, and asserts on the detail rather than the event name alone — a reader has
-    to learn which routine lost a fire and that it is not coming back, or the event is a
-    notification that something unspecified happened.
     """
     from rsched.daemon import pause
 

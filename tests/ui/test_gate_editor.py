@@ -1,14 +1,4 @@
-"""The run gate in the console: a list of CHECKS, edited in the settings draft, tested in place.
-
-A gate decides WHETHER a scheduled fire becomes a run at all, so it sits in the Schedule & gate
-group beside the cadence. It is a list of checks, each a known question with parameters, rendered
-from the vocabulary the server publishes (GET /api/gate/kinds) — so a kind cannot exist on one
-side only. The routine's own `scripts/admit.py` is one more check, edited in place below its
-row. "Test the gate now" asks the checks as shown — saved or not — through the real admission
-path and starts no run.
-
-The file on disk is the proof of a save: `routine.yaml` is what the daemon reads at admission.
-"""
+"""The run gate in the console: a list of CHECKS, edited in the settings draft, tested in place."""
 
 from __future__ import annotations
 
@@ -104,11 +94,6 @@ def _stub_test_result(page, checks, *, asked_of=None, decision="run"):
 def test_the_component_chips_are_colour_coded_by_what_they_would_do(ui, ui_page):
     """The operator's order: "i obviously want the chips of all the component the complete gate
     consists of to be color coded. green for 'would fire' red for 'wouldn't fire'."
-
-    Asserted on the RENDERED COLOUR, never on the class name — F644's third defect was
-    ladderstrip.js emitting severity class names that matched no CSS rule at all, so two states
-    the code distinguished rendered in identical ink and a console read of the JS proved
-    nothing. getComputedStyle is what a class with no rule cannot survive.
     """
     ui_page.goto(f"{ui.url}/#/routine/uir")
     panel = _gate(ui_page)

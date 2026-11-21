@@ -1,30 +1,23 @@
 """A SIDE FIELD written inside `say` instead of beside it (F679).
 
 `say` is prose the console publishes verbatim. The side fields — `note`, `remind`,
-`remind_feedback` — are structured fields the engine files at no turn cost. A run that writes
-`<note>…</note>` INSIDE its `say` gets the worst of both: the markup is published as prose, and
-the note never reaches `state/notes.md`, so the next run's digest carries nothing. Nothing told
-the run either way. Silence is the defect — not the mistake, which is one sentence to correct.
+`remind_feedback` — are structured fields the engine files at no turn cost. `<note>…</note>`
+written INSIDE `say` is published as markup and never filed.
 
-So it is caught where every correctable mistake is caught: inside the schema-retry cycle
-(`actions.validate_action`), which hands the problem back before the action becomes a turn. The
-run then re-emits with the text in the field that keeps it. A detector that merely WARNED after
-the fact would publish the markup and lose the note exactly as before.
+So it is caught inside the schema-retry cycle (`actions.validate_action`), before the action
+becomes a turn, and the run re-emits with the text in the real field; a warning after the fact
+would still publish the markup and lose the note.
 
-Why a PAIRED element and not any angle bracket: `say` legitimately carries prose about XML, HTML
-and this engine's own prompt sections — `<note>` is named in the docs this repo ships, and in
-this very module's own tests. A check that fired on a bare mention would make the engine unable
-to talk about itself. What a run writes when it believes the channel is markup is a whole
-element, `<note>…</note>`, so that is what is caught: an opening tag AND its closing tag.
+Only a PAIRED element is caught, not any angle bracket: `say` may legitimately talk about
+`<note>`, and a check firing on a bare mention would leave the engine unable to describe itself.
 """
 
 from __future__ import annotations
 
 import re
 
-#: The side fields a run may write beside `say`. A tag named after one of these inside `say` is
-#: the mistake this module exists for; `actions.SIDE_FIELDS` is the same list in its own module
-#: and is not imported here, because this one is pure and must not import the action contract.
+#: The side fields a run may write beside `say` — `actions.SIDE_FIELDS`, not imported because this
+#: module is pure and must not import the action contract.
 _FIELDS = ("note", "remind", "remind_feedback")
 #: A whole ELEMENT named after a side field — `<note>…</note>`, attributes allowed, nothing or
 #: anything between the tags. Neither tag alone qualifies: a run quoting `<note>` or `</note>`

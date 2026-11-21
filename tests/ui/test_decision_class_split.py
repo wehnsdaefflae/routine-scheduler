@@ -1,29 +1,4 @@
-"""The Decisions page splits by CLASS, not by whose process is parked — D212 increment (c).
-
-The operator's answer, 2026-10-25: *"Both axes: subject decides the default, the run may
-override it when the work is genuinely blocked"*. Increment (a) put that class on every record
-(`engine/askclass.py`): `blocking` means the run could not do the work it was fired to do
-without the answer, `closing` that it finished and the answer shapes the next run. The two are
-ORTHOGONAL to `mode`, which says only whether the asking run's PROCESS sat and waited.
-
-This page grouped by `mode`. Measured over the 282 records the instance had filed, `mode:
-"blocking"` was used 0 times — so the band that promised "a run is waiting on you" was
-structurally empty, while a run that said `blocks_work: true` sat in "Deferred" among the asks
-nothing is held up by. That is the thing he asked to see at a glance.
-
-What a person SEES, and what is asserted here:
-
-* a `blocking`-class ask lands in the Blocking band even when the run that filed it has ENDED —
-  the work is still blocked, which is what the class means (before this it was demoted to
-  Proposals, the band whose own caption says nobody is waiting);
-* a `closing`-class ask lands in the Closing band even while its run is alive, because nothing
-  about it stopped that run;
-* an ACCESS REQUEST with no `class` key — every record filed before increment (a) — reads as
-  blocking by its subject, which is `askclass.of`'s own default;
-* the filter chips count the same two buckets, so the toolbar and the bands cannot disagree.
-
-Every assertion about an element first asserts it is PRESENT (`to_have_count(1)`).
-"""
+"""The Decisions page splits by CLASS, not by whose process is parked — D212 increment (c)."""
 
 from __future__ import annotations
 
@@ -66,13 +41,7 @@ def test_a_closing_class_ask_bands_as_closing_though_its_run_is_alive(ui, ui_pag
 
 
 def test_both_classes_at_once_render_blocking_first(ui, ui_page):
-    """One band each, and the one holding work up on top — the glance the split exists for.
-
-    The closing ask is seeded against a LIVE run deliberately: a closing ask whose filing run
-    has ended is a PROPOSAL (R2425 — nothing consumes the answer on a clock), and that band is
-    unchanged by this increment. A BLOCKING one is never demoted that way, which is the
-    asymmetry the split is for.
-    """
+    """One band each, and the one holding work up on top — the glance the split exists for."""
     ui.seed_question("uir", "q-20260714-070000-3", "May I drop the old column?",
                      asked="20260714-070000", extra={"class": "blocking"})
     ui.seed_run("uir", "20260714-080000", "running")

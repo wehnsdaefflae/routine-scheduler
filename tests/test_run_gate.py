@@ -86,9 +86,6 @@ def test_the_console_names_the_script_the_daemon_actually_runs():
     and the daemon disagree, the operator writes a file the daemon never reads and gets a gate
     that silently never gates — the one failure mode a gate must not have, because "no gate"
     and "a gate that admits everything" look identical from outside.
-
-    The name is `admit.py`, not `gate.py`: three routines already run a `scripts/gate.py` as an
-    IN-RUN check runner; ticking the gate over those would have failed every fire.
     """
     root = Path(__file__).resolve().parent.parent
     label = (root / "static/components/gate-editor.js").read_text(encoding="utf-8")
@@ -276,9 +273,7 @@ async def test_timeout_kills_descendants(setup_gate):
     """The grandchild is looked for directly, by a token in its argv. A marker it wrote 3 s
     after it started, read 1.5 s after the run ended, could only catch an escape when the
     preparation took under half a second — and the wait cost those 1.5 s on every run.
-
-    It holds none of the gate's pipes on purpose: the reap's `proc.wait()` returns only once
-    every pipe has closed, so a grandchild holding one is waited out instead of found alive."""
+    """
     cfg, _, runner = setup_gate
     cfg.run_gate.timeout_s = 2
     token = f"{cfg.dir}/descendant"
@@ -306,9 +301,6 @@ async def test_a_gate_failure_reaches_the_health_stream(setup_gate):
     `run_failed` never fires and the reap — finding a state that is already terminal — emits
     nothing either. The only durable trace was one clause inside the lane chain's
     `lane_chain_done` detail, and `run_failed` is the one event the nightly audit filters for.
-
-    The failure mode this makes visible is permanent: a withdrawn gate secret or a kernel that
-    dropped Landlock fails every scheduled fire of a gated routine, forever, before turn 0.
     """
     import json
     cfg, server, runner = setup_gate

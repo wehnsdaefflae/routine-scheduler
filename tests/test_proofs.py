@@ -1,15 +1,4 @@
-"""D220 — a decision's option carries a PROOF, and recording an answer is not the end of it.
-
-The operator, 2026-10-29: *"You need to come up with a proof at creation and accept / decline
-my response based on the result of you checking the proof"*. His five states and the rule that
-makes them matter: a decision stays open, visible and open to his feedback until at least one
-option has a POSITIVE proof, or it is actively discarded or overridden.
-
-These tests pin the vocabulary and the state machine. The surfaces that RENDER it and the
-periodic check that moves `in_progress` on are later increments; what is pinned here is that
-the mechanism cannot be filed wrong, cannot silently clear a row, and tells the asking run
-what will be checked.
-"""
+"""D220 — a decision's option carries a PROOF, and recording an answer is not the end of it."""
 
 from __future__ import annotations
 

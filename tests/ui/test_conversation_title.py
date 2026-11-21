@@ -1,11 +1,5 @@
 """The conversation header: its title is edited in place and saved on blur, and its saves
 happen once per press.
-
-The save compared the edited text with the title the header was RENDERED with, and never moved
-that baseline after a save: renaming "A" to "B" saved, but renaming it back to "A" compared
-equal to the stale baseline and was silently skipped — the header said "A" while the
-conversation stayed "B" on disk and in the sidebar. A title cleared to nothing was likewise
-skipped without a word, leaving an empty heading over a conversation that still had its name.
 """
 
 from __future__ import annotations

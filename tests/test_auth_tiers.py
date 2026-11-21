@@ -1,21 +1,4 @@
-"""The two bearer tiers, on the READ half (R94).
-
-`ROUTINE_TOKEN_MUTATIONS` is empty, so the write half has held since 0.153: every
-config-mutating route is a POST/PUT/PATCH/DELETE and the routine tier permits none of them.
-"Read-only" was taken to mean "may read anything", and that is not the same promise — a util
-subprocess runs inside a Landlock jail scoped to ITS routine's granted roots, and a handful of
-GETs hand it precisely what the jail forbids.
-
-Each denied prefix is denied for a stated reason, and the table below is the reason:
-`/api/fs` browses the daemon's whole filesystem (names only, but names are the map),
-`/api/settings` enumerates every central secret with the utils that declare it,
-`/api/routines/*/secrets` every routine's OWN secret names and the store's host path,
-`/api/debug` samples the daemon's own stacks, and `/api/search` is full-text over EVERY
-routine's transcripts, notes and ledgers — observations are never redacted, so a util that
-printed a token once is queryable by every other routine forever. `/api/desktops` and the two
-relayed screens (`/browser-view`, `/desktop-view`) are the operator's: the fleet carries every
-desktop's screen token, and tests/test_desktop_view_api.py pins those against a run's token.
-"""
+"""The two bearer tiers, on the READ half (R94)."""
 
 from __future__ import annotations
 
@@ -93,12 +76,6 @@ def test_a_curator_denied_the_reminder_route_is_told_its_own_one(client):
     """F914: `rules-review` held `capabilities.reminders: global`, met this 403 on
     `DELETE /api/routines/{slug}/reminders/{rid}`, concluded no curator lever existed, and
     left an operator-approved cleanup unapplied — proposing a duplicate route instead.
-
-    The refusal is CORRECT (the console's delete is the user's lever, and it must stay so),
-    but a refusal that names no alternative reads as "this cannot be done". The detail already
-    routes two other classes home — a config change to `ask_user` with `config_patch`, a file
-    to `read_file` — and the reminder case is the same shape: a run disposes of a reminder
-    through the `remind` SIDE FIELD on any action, not through an endpoint.
     """
     r = client.delete("/api/routines/tiered/reminders/rem-20260101-000000-1",
                       headers={"Authorization": f"Bearer {ROUTINE_TOKEN}"})

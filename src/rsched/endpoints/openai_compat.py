@@ -6,18 +6,15 @@ endpoint's configured mode:
   json_schema  → {"type":"json_schema","json_schema":{name,schema,strict}} (OpenRouter, OpenAI)
   json_object  → {"type":"json_object"} (guard validates)
   none         → nothing requested; the code-level validator + retry loop does all the work
-A provider/model that rejects the requested response_format is retried once without it —
-whether it says so with an HTTP 400 naming the field, or hides a schema-incapable backend
-behind a generic 503 (some NanoGPT community backends). The schema guard downstream still
-validates every reply.
+A provider/model that rejects the requested response_format (a 400 naming the field, or a
+generic 503 from a schema-incapable backend) is retried once without it; the schema guard
+downstream still validates every reply.
 
-Prompt caching is mostly implicit on this wire: OpenAI-, DeepSeek- and GLM-style backends
-hit on a byte-stable prefix by themselves, and the hit comes back as
-`prompt_tokens_details.cached_tokens`. Anthropic models served through an aggregator are
-the exception — they cache only where a breakpoint says to — so a conversation turn on one
-carries a top-level `cache_control` (OpenRouter's automatic last-block mode) and its
+Prompt caching is mostly implicit on this wire (byte-stable prefix, reported as
+`prompt_tokens_details.cached_tokens`). Anthropic models via an aggregator cache only on a
+breakpoint, so a conversation turn on one carries a top-level `cache_control` and its
 `cache_write_tokens` are folded into usage. A ONE-SHOT call (`cacheable=False`) places no
-marker: its prefix is never sent again, so the write would buy a read that never comes.
+marker: its prefix is never sent again.
 
 A bill the provider REPORTS — OpenRouter's usage accounting `cost`, else an Otari gateway's
 `cost_usd` — becomes the usage's `cost` (`usage.reported_cost`).
@@ -53,29 +50,22 @@ log = logging.getLogger("rsched.endpoints.openai")
 # refusal as "…does not support the requested response format." — the field's name with a space.
 _RF_ERROR_HINTS = ("response_format", "response format", "json_schema", "structured")
 
-# F362: a credit-metered provider (OpenRouter) answers 402 when the REQUESTED max_tokens
-# costs more than the remaining balance, and the message names the number that would fit:
-#   "You requested up to 16384 tokens, but can only afford 9590"
-# The run is not out of credit — it asked for a ceiling it cannot pay for, which recurs as
-# any balance drains no matter how often it is topped up. One degraded retry at the stated
-# affordable ceiling turns a hard run-killing failure into a shorter completion.
+# A credit-metered provider (OpenRouter) answers 402 when the REQUESTED max_tokens costs more
+# than the balance, naming what would fit ("…but can only afford 9590"). One degraded retry at
+# that ceiling turns a run-killing failure into a shorter completion (F362).
 _AFFORD_RE = re.compile(r"can only afford\s+(\d+)", re.IGNORECASE)
 # Below this a retry is pointless — the reply would be too short to carry an action.
 _MIN_AFFORDABLE_TOKENS = 600
 
 _THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 
-#: What THIS WIRE carries, independent of any model (D192). The chat-completions API has a
-#: published `input_audio` content part, so audio can ride it; it has no video part the
-#: OpenAI-compatible servers agree on, so a video never does however the catalog is set. The
-#: per-model bit is ANDed with these in `supports_media` — model permission AND wire capability.
+#: What THIS WIRE carries, independent of any model (D192): `input_audio` exists, no agreed
+#: video part does. ANDed with the per-model bit in `supports_media`.
 WIRE_AUDIO = True
 WIRE_VIDEO = False
 
-#: Aggregator id prefixes whose upstream caches ONLY on an explicit breakpoint. Everything
-#: else served over this wire (OpenAI, DeepSeek, the GLM/Qwen hosts) caches implicitly on a
-#: byte-stable prefix, which the engine's append-only message list already gives them — so
-#: the marker is sent to the models that need it and to no others.
+#: Aggregator id prefixes whose upstream caches ONLY on an explicit breakpoint; everything
+#: else on this wire caches implicitly on a byte-stable prefix.
 _EXPLICIT_CACHE_PREFIXES = ("anthropic/",)
 
 
@@ -121,11 +111,8 @@ class OpenAICompatEndpoint:
         """OpenAI-compatible vision models take images natively when the resolved model is
         multimodal; PDF support is spotty across providers, so PDFs route to the vision util.
 
-        AUDIO rides this wire (D192): the chat-completions API carries it as an `input_audio`
-        content part, so the gate is the resolved MODEL's `audio` bit — one endpoint serves
-        both a model with ears and one without. VIDEO does not: the chat-completions request
-        has no video part this wire's servers agree on, so it is False here whatever the
-        catalog says, and the file keeps its fallback.
+        AUDIO rides this wire as `input_audio`, gated by the resolved MODEL's `audio` bit;
+        VIDEO never does (no agreed video part), so the file keeps its fallback (D192).
         """
         return supports_media_type(media_type, multimodal=multimodal, pdf=False,
                                    audio=audio and WIRE_AUDIO, video=video and WIRE_VIDEO)
@@ -150,9 +137,6 @@ class OpenAICompatEndpoint:
                  timeout: int = DEFAULT_TIMEOUT,
                  cacheable: bool = True,
                  temperature: float | None = None) -> Completion:
-        # Nothing identifies the conversation: OpenAI-style providers cache implicitly on
-        # byte-stable prefixes, which the engine's append-only message list already gives
-        # them; the cached share shows up as usage "cached_in" (see _parse).
         temp = temperature if temperature is not None else self.temperature  # model wins
         if self.native and schema is not None:
             return self._complete_native(messages, model, schema, max_tokens, timeout, temp)
@@ -163,20 +147,11 @@ class OpenAICompatEndpoint:
             # usage accounting: the response's usage block then carries the real $ cost
             body.setdefault("usage", {"include": True})
             if cacheable and _needs_explicit_cache(model):
-                # Anthropic models cache ONLY where a cache_control breakpoint says to —
-                # implicit prefix caching is an OpenAI/DeepSeek behaviour, and routing the
-                # same model through an aggregator does not add it. Without this the
-                # metered Opus fallback re-sent its whole prefix at full price every turn:
-                # birthday-admin 20260914-100002 turns 53-63, `in` ~100-117k each,
-                # `cached_in` 0, $6.63 for twelve turns. OpenRouter's top-level field marks
-                # the last cacheable block automatically, which is the same moving tail
-                # breakpoint the direct adapter places. A provider that rejects the field
-                # 400s naming it and gets one degraded retry without it (below).
-                #
-                # A request for caching, not a guarantee: this endpoint pins
-                # `provider.order` with `allow_fallbacks: true`, and the measured run above
-                # was served by a provider that was not first on that list. Read
-                # `cache_read_share` on a metered run to know whether it took.
+                # Anthropic models cache ONLY where a cache_control breakpoint says to, and
+                # an aggregator does not add implicit caching. OpenRouter's top-level field
+                # marks the last cacheable block (the same moving tail breakpoint the direct
+                # adapter places); a provider that rejects it gets one retry without it.
+                # A request, not a guarantee — read `cache_read_share` to know it took.
                 body["cache_control"] = {"type": "ephemeral"}
         if temp is not None:
             body["temperature"] = temp
@@ -207,11 +182,8 @@ class OpenAICompatEndpoint:
                 if degraded.keys() != body.keys():
                     resp = self._post(degraded, headers, timeout)
             elif resp.status_code == 402 and (afford := _AFFORD_RE.search(resp.text)):
-                # The provider priced the request out and TOLD US what fits. Retry once at
-                # that ceiling instead of failing the turn: a shorter answer beats a dead
-                # run, and the operator sees the squeeze in the endpoint log rather than as
-                # a mystery 402. Below the floor there is no useful reply to be had, so the
-                # 402 stands and failover (if configured) takes over.
+                # Priced out, and told what fits: retry once at that ceiling. Below the
+                # floor the 402 stands and failover (if configured) takes over.
                 affordable = int(afford.group(1))
                 if affordable >= _MIN_AFFORDABLE_TOKENS and affordable < (max_tokens or 0):
                     log.warning("%s: 402 priced out at max_tokens=%s; retrying at %s",
@@ -220,12 +192,9 @@ class OpenAICompatEndpoint:
                     if alt.status_code == 200:
                         resp = alt
             elif resp.status_code == 503 and "response_format" in body:
-                # A backend that can't do schema-constrained decoding may reject
-                # `response_format` with a 503 whose body never names the field —
-                # indistinguishable by content from a real outage (NanoGPT's community model
-                # backends do exactly this). Try ONCE without it; adopt the retry only if it
-                # clears. A genuine outage still 503s and falls through to _parse's retryable
-                # 5xx path, so with_retries backs off exactly as before.
+                # A schema-incapable backend may reject `response_format` with a 503 that
+                # never names it. Try ONCE without it; adopt the retry only if it clears —
+                # a genuine outage still 503s into _parse's retryable path.
                 alt = self._post({k: v for k, v in body.items() if k != "response_format"},
                                  headers, timeout)
                 if alt.status_code == 200:
@@ -237,15 +206,9 @@ class OpenAICompatEndpoint:
     def _complete_native(self, messages, model, schema, max_tokens, timeout,
                          temperature=None) -> Completion:
         """Ollama native /api/chat with `format` = the JSON schema → constrained decoding."""
-        # num_ctx MUST be set: Ollama's default context is tiny, so a large prompt gets
-        # silently truncated and schema enforcement degrades (the model emits stray keys).
-        #
-        # It is sized from the ENDPOINT's context_tokens, which is the only window this
-        # adapter is given — `complete` receives the model's max_tokens but never its
-        # resolved window. So an endpoint left at the 25,000 default in front of a 128k
-        # model decodes at 25,000 however much compaction budgeted, and the prompt is
-        # truncated silently. Set `context_tokens` on an Ollama ENDPOINT to its largest
-        # served model until the resolved window is threaded through the protocol.
+        # num_ctx MUST be set: Ollama's default context is tiny and truncates silently. It is
+        # sized from the ENDPOINT's context_tokens (the only window this adapter is given), so
+        # set that on an Ollama endpoint to its largest served model.
         options = {"num_ctx": max(8192, self.context_tokens)}
         if temperature is not None:
             options["temperature"] = temperature
@@ -303,20 +266,11 @@ class OpenAICompatEndpoint:
             # the qwen3 / GLM thinking models NanoGPT serves).
             text = message.get("reasoning") or message.get("reasoning_content") or ""
         usage = data.get("usage") or {}
-        # Implicit prompt caching (OpenAI/OpenRouter/DeepSeek-style): cached_tokens arrives
-        # as a SUBSET of prompt_tokens on this API — subtract it so "in" is fresh input
-        # only, the same cached-kept-OUT-of-"in" convention the anthropic adapter reports
-        # (token budgets keep their meaning; cache hit rates stay visible per run).
+        # On this wire `prompt_tokens` is the TOTAL and cached/written tokens are its
+        # breakdown: subtract both so "in" is fresh input only, the convention the anthropic
+        # adapter reports. Reporting `cache_write` is what lets `cache_read_degraded` fire.
         details = usage.get("prompt_tokens_details") or {}
         cached = int(details.get("cached_tokens") or 0)
-        # Writes are reported only by providers that cache EXPLICITLY (the Anthropic models
-        # above). They come out of "in" exactly as reads already do — on THIS wire
-        # `prompt_tokens` is the total and the details are its breakdown, so folding the key
-        # without subtracting would double-count every written token into the run's token
-        # budget, the opposite of the convention. Without the key at all,
-        # `cache_read_share` returns None for the whole endpoint and `cache_read_degraded`
-        # — the one signal separating a warm prefix from one re-written every turn — can
-        # never fire on an aggregator path.
         written = int(details.get("cache_write_tokens") or 0)
         out: dict[str, int | float] = {
             "in": max(int(usage.get("prompt_tokens") or 0) - cached - written, 0),
@@ -331,12 +285,9 @@ class OpenAICompatEndpoint:
         stop_details: dict = {}
         refusal = message.get("refusal")
         if not text.strip() and isinstance(refusal, str) and refusal.strip():
-            # The spec's dedicated refusal field (structured-outputs declines): content is
-            # null and finish_reason is often just "stop", so without this promotion the
-            # decline would masquerade as an empty completion. The refusal prose rides
-            # stop_details so the transcript shows WHY (R5). finish_reason
-            # "content_filter" — the other openai-vocabulary decline — passes through
-            # verbatim above; the engine treats both as refusal-shaped (REFUSAL_STOPS).
+            # The spec's refusal field: content is null and finish_reason often "stop", so
+            # promote it or the decline reads as an empty completion; the prose rides
+            # stop_details. "content_filter" passes through above (both in REFUSAL_STOPS).
             stop = "refusal"
             stop_details = {"explanation": refusal.strip()}
         return Completion(text=text, usage=out, provider=str(data.get("provider") or ""),

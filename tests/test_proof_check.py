@@ -1,16 +1,4 @@
-"""D220 step 3 — the check that moves a proof on, and the one predicate that can run today.
-
-A proof nobody checks is a promise, which is what the decision ledger already had. So the
-lifecycle needs a CHECK: for each answered decision whose chosen option sits `in_progress`,
-run its predicate and write `positive` (it landed) or `negative` (performed, and the proof is
-still absent — his "unexpected event" state).
-
-The registry is deliberately small. One predicate is implementable from what a decision record
-already carries and nothing else: `config_patch_live` — the decision proposed a `config_patch`,
-so the proof is that the live config holds those values. A predicate id with no entry in the
-registry is `unknown` and leaves the state ALONE: a check that cannot run must never be read as
-a check that failed, which would turn every unimplemented predicate into a false alarm.
-"""
+"""D220 step 3 — the check that moves a proof on, and the one predicate that can run today."""
 
 from __future__ import annotations
 

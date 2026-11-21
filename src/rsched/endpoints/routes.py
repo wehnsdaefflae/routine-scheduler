@@ -3,9 +3,8 @@
 An Otari gateway serves normalised names (`claude-opus-5`, `gpt-5.6-luna`, `glm-5.3`) and its
 `aliases:` decide which provider answers each one: a CLIProxyAPI subscription login, OpenRouter,
 Nano-GPT, Anthropic's own API. The window and output maximum belong to that ROUTE, not to the
-model: the Codex Plus login serves `gpt-5.6-luna` at 372,000 tokens where the API serves
-1,050,000. Reading the model's public figure for a gateway name (what the reference catalog did
-until 0.564.0) sized a run for a window its route does not have.
+model (a subscription login may serve a far smaller window than the API), so the model's public
+figure is never read for a gateway name.
 
 So a name resolves in two steps, and either can come back UNKNOWN — which stays unknown:
 

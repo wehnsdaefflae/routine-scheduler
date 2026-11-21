@@ -1,17 +1,15 @@
 """The SHAPE of a run's recent actions — what the identical-action streak cannot see.
 
-`loopnudge.repeat_streak` catches ONE action landing again and again. Hermes Agent's tool-loop
-controller (`agent/tool_guardrails.py`) showed three more shapes a stuck run takes, each with
-every action individually valid, and this module reads them over the same landed actions:
+`loopnudge.repeat_streak` catches ONE action landing again and again. This module reads three
+more shapes a stuck run takes (after Hermes Agent's tool-loop guardrails), each with every
+action individually valid:
 
 - a CYCLE — two to four actions taking turns (`read → edit → read → edit`) with the SAME results
   each time round. The results are part of the key on purpose: a poll that is making progress
   changes what it returns, and a cycle of unchanged results is a run that is not moving. Kinds
   whose job is to wait (`wait`, `children`, `ask_user`) never form one.
-- VARIED FAILURES — three DIFFERENT calls of one kind failing in a row. The identical streak
-  misses it by construction (each call differs), and it is the signature of guessing at a fix
-  instead of reading the error. `shell` is exempt, as Hermes exempts its terminal: a run of
-  distinct red commands is usually diagnosis.
+- VARIED FAILURES — three DIFFERENT calls of one kind failing in a row: guessing at a fix
+  instead of reading the error. `shell` is exempt: distinct red commands are usually diagnosis.
 - a SAME RESULT — a large result (`SAME_MIN_CHARS`+) byte-identical to one the run was already
   shown and still holds in its context. The observation is MARKED (`same_as_turn`) before it is
   recorded, and `engine/samestub.py` renders the mark as one line, live and on replay alike; the
@@ -19,8 +17,7 @@ every action individually valid, and this module reads them over the same landed
   after a compaction archived it, the result is shown again in full.
 
 The two warnings ride the observation tail (`loop._tails`), each once per onset, and file a
-`wrong_turn_detected` row (`action_cycle`, `varied_failures`) — the same measurement-first
-discipline `engine/wrongturn.py` sets out: a warning, never an ended run.
+`wrong_turn_detected` row (`action_cycle`, `varied_failures`) — a warning, never an ended run.
 
 The state lives on `loop.shape` and is NOT rebuilt on a resume: every reading here is about the
 last few actions, and a fresh leg starting with an empty window misses at most one onset.

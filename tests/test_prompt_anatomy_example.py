@@ -1,34 +1,4 @@
-"""§5 of docs/prompt-anatomy.md calls itself a FULL VERBATIM EXAMPLE — this makes it one (F672).
-
-The section quotes a whole composed system prompt, and the Help tab renders it as what the
-orchestrator actually sees. Nothing compared it to the composer. By 2026-10-15 it had drifted
-in three ways at once, none of them visible to the checks that existed:
-
-1. **Nine of fifteen kind bullets** were an older wording than `kindprose.KIND_PROSE`
-   (`llm`, `spawn`, `subtask`, `detach`, `list_models`, `subruns`, `kill`, `ask_user`,
-   `report`). One divergence reached a run's behaviour rather than its reading: the `subtask`
-   bullet offered `workflow: "generate"` "to DRAFT one when none fits" — `generate` is real for
-   `create_routine` only, and `subruns.py`/`child.py` have zero hits for it, so a run following
-   the doc would have its child refused.
-2. **The ACTION SCHEMA dump disagreed with the bullets in the same section**: the bullets
-   advertised `goal`, `list_models` and `delete`/`move`/`mkdir`, while the dump's `kind` enum
-   omitted all five. The example contradicted itself about what its own routine could emit.
-3. **Nine schema fields were missing and eight descriptions stale** — `options` still said
-   `maxItems: 5` where the schema says 26 (ask_user's cap is a validator constant, not the
-   field's).
-
-`test_prompt_anatomy.py` catches a field the schema no longer DEFINES, and pins individual
-engine strings as needles. Neither shape could see any of the above: a bullet quoting last
-month's wording defines nothing and matches no needle. So this file checks the other direction
-— the one that makes "verbatim" structural:
-
-- every bullet the composer would emit for the example's own kind set appears in the fence;
-- no bullet appears for a kind the example's schema does not carry;
-- the schema dump is byte-identical to `schema_for_kinds` for that same kind set.
-
-The example's kind set is taken from the dump's own `kind` enum, so the doc stays free to
-choose which routine it portrays; what it cannot do is portray it inaccurately.
-"""
+"""§5 of docs/prompt-anatomy.md calls itself a FULL VERBATIM EXAMPLE — this makes it one (F672)."""
 
 import json
 import re
@@ -91,19 +61,6 @@ def test_the_rest_of_section_5_quotes_the_engine_verbatim_too():
     """§5.1's dump is held byte-for-byte above — this holds the REST of the section, which
     quotes the other three things a run reads: its kickoff (§5.2), the tail every ordinary
     turn carries (§5.3) and the conditional tails near the end (§5.4).
-
-    D246 ordered "regenerate §5's full verbatim example from a composed prompt" on the
-    assumption it had drifted. Measured 2026-11-07, it had not: every one of these strings
-    still matched its composer, because F672's fix plus the two tests above had closed the
-    gap §5.1 was the symptom of. So the work left was not a regeneration but the MISSING
-    PIN — the reason the first drift went unseen for a month was that nothing compared these
-    quotes to anything, and a section that calls itself verbatim and is checked in one of its
-    four parts is exactly as trustworthy as the unchecked three.
-
-    Each entry is (where, the composer that makes it, what §5.x quotes). Substituted values
-    (a run id, a count, a path) are cut at the first placeholder — what is pinned is the
-    engine's own words around them, the same bargain `_contains_around_placeholders` strikes
-    for a bullet carrying `{util_confirm}`.
     """
     from rsched.engine.turnwindow import converge
 
@@ -146,11 +103,7 @@ def test_the_rest_of_section_5_quotes_the_engine_verbatim_too():
 
 
 def test_the_quoted_bullets_are_the_composer_s_own_prose():
-    """Every bullet the example's kind set earns is in the fence, word for word.
-
-    This is what the `generate` slug slipped through: the doc's `subtask` bullet was a
-    paraphrase nobody compared to anything, and a run can act on a paraphrase.
-    """
+    """Every bullet the example's kind set earns is in the fence, word for word."""
     fence = _fence()
     kinds = set(_schema_dump()[1]["properties"]["kind"]["enum"])
     checked = 0

@@ -1,16 +1,4 @@
-"""The engine's OWN seals hold for a context with no grant policy (F698).
-
-`RunContext.grants` is documented as `None (direct construction) = unrestricted`, and
-`_write_gate`'s docstring says its structural refusals "hold with no policy loaded". Two of
-them did not: `_engine_owned` (the `runs/`, `.util_outputs/`, `.doc_cache/` record the engine
-keeps OF the run) and the `routine.yaml` refusal both sat BELOW the `if g is None: return None`
-early return, so the strongest refusals in the file were the ones a policy-less context
-skipped — the inverse of what both docstrings promise.
-
-Only the RECIPE seal reads the policy (`g.recipe_unlocked`), so it alone belongs below that
-return. These tests pin the ordering: with grants=None the engine's record and the user's
-config are still refused, while an ordinary path in the routine's own dir still writes.
-"""
+"""The engine's OWN seals hold for a context with no grant policy (F698)."""
 
 from __future__ import annotations
 

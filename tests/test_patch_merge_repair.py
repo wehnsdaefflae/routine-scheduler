@@ -1,24 +1,4 @@
-"""A renamed key must be REPAIRABLE through the API — the writer judges the MERGED result.
-
-F759. Three writers merged a partial block into the stored one and judged the PATCH's keys,
-never the result, so the STORED block's vocabulary was nobody's business:
-
-- `ladder` refused an unknown patch key and then merged the patch over the stored block. A key
-  the stored block already carried survived every save, `load_routine` reported it forever, and
-  no patch could clear it — the key is not in `LADDER_KEYS`, so naming it (even as a null) was
-  itself a 400. D189 renamed `max_depth` → `rung_height` on 2026-10-22 and left `fau`
-  permanently unrepairable: the operator's own `{"ladder": {"max_depth": null}}` was refused.
-- `run_gate` merges through `RunGateConfig`, which is `extra="forbid"`: one stale stored key
-  made EVERY save a 422 — unsavable as well as unrepairable.
-- `write_tuning` merged updates into the raw file and dropped nothing, so `load_tuning` reported
-  a pre-rename key (`fau`: `ladder_rung_height`) after every write.
-
-The rule these pin: a key the PATCH names outside the known set stays a 400 (a typo must be
-loud — it is a save that would otherwise report success and do nothing), and a key only the
-STORED block carries is dropped from the result and NAMED to the caller. Nobody is typing it,
-it is already written, and refusing it buys a 400 per save without ever making the routine
-repairable.
-"""
+"""A renamed key must be REPAIRABLE through the API — the writer judges the MERGED result."""
 
 from __future__ import annotations
 

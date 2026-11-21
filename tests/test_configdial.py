@@ -1,16 +1,4 @@
-"""The `config_confirm` dial's FIELD POLICY (rsched/configdial.py) — D191.
-
-The dial decides whether a routine's own `config_patch` needs the operator's click. This file
-pins the vocabulary and the three sets, because every other half of the feature (the apply
-gate, the UI ladder, the docs) is derived from them: a set that drifts here is an autonomous
-write nobody authorized.
-
-Two properties are load-bearing and are asserted at every level:
-
-* a patch naming ANOTHER routine is a decision whatever the dial says, and
-* the SEALED keys are refused whatever the dial says — the exclusion is absolute, enforced
-  where the apply happens and never by the calling run's restraint.
-"""
+"""The `config_confirm` dial's FIELD POLICY (rsched/configdial.py) — D191."""
 
 from __future__ import annotations
 

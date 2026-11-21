@@ -1,24 +1,4 @@
-"""The orphan breadcrumb: an orphaned run says WHETHER its process tree was replaced (R2928).
-
-Three kills in two days (2026-10-25 18:03:35, 2026-10-25 20:29:48, 2026-10-26 16:24:05) closed
-out as *"orphaned: process gone at daemon boot — cause unrecorded (no deliberate-shutdown
-mark)"*, and three runs across two routines concluded the killer was outside what any run could
-establish. It was not: pid 1's start time against the run's last status write answers it, and on
-2026-10-26 pid 1 was measured 54 SECONDS YOUNGER than the orphan rows — the whole container had
-been recreated under the run.
-
-The operator ruled on it (2026-10-26, answering R2966): *"Both: find the restarter AND add the
-breadcrumb."* Finding the restarter is a host-side look no run can make and is his. This is the
-breadcrumb, and these pin the three things it must get right:
-
-- the inference itself, both ways round (a recreated container, and a daemon that died inside a
-  living one — a different investigation that must not wear the container's verdict);
-- that a SHUTDOWN MARK still wins, because a mark is a statement of intent by the process that
-  performed the stop and nothing inferred may override it;
-- that an unanswerable measurement leaves `unknown` exactly as it was. An inference resting on
-  nothing is worse than an honest silence, which is the same discipline `classify_cause` already
-  applies to a missing memory sample (F569).
-"""
+"""The orphan breadcrumb: an orphaned run says WHETHER its process tree was replaced (R2928)."""
 
 from __future__ import annotations
 
@@ -31,12 +11,7 @@ HZ = 100
 
 
 def _proc(tmp_path, *, boot: datetime, pid1_after_boot_s: float):
-    """A /proc stand-in carrying just the two files the measurement reads.
-
-    Written as files rather than monkeypatched functions because the parsing is half the
-    correctness here: pid 1's `comm` is parenthesized and may contain spaces, so a reader that
-    splits the whole line on whitespace mis-indexes every field after it.
-    """
+    """A /proc stand-in carrying just the two files the measurement reads."""
     root = tmp_path / "proc"
     (root / "1").mkdir(parents=True)
     (root / "stat").write_text(f"cpu  1 2 3\nbtime {int(boot.timestamp())}\n", encoding="utf-8")
@@ -60,13 +35,7 @@ def test_pid1_start_time_is_read_through_a_comm_containing_spaces(tmp_path):
 
 
 def test_a_container_recreated_under_the_run_is_named_with_both_timestamps(tmp_path):
-    """The measured case: pid 1 is YOUNGER than the run's last sign of life.
-
-    2026-10-26's real numbers — pid 1 at 16:23:11, the orphan row at 16:24:05 — are 54 s the
-    other way round from what a surviving container looks like, and that difference IS the
-    verdict. The sentence carries both stamps because a verdict without its measurement is a
-    claim that gets repeated without being checkable.
-    """
+    """The measured case: pid 1 is YOUNGER than the run's last sign of life."""
     boot = datetime(2026, 10, 26, 16, 0, 0).astimezone()
     proc = _proc(tmp_path, boot=boot, pid1_after_boot_s=23 * 60 + 11)   # 16:23:11
     last_turn = boot + timedelta(minutes=22, seconds=17)                # 16:22:17

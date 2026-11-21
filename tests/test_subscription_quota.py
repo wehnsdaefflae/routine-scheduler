@@ -1,15 +1,4 @@
-"""Subscription quota normalization and route applicability.
-
-TWO SHAPES, ONE REPRESENTATION (D277). `/api/oauth/usage` carried every window as a top-level
-key and this module read four of them by name; the API is moving model- and surface-scoped
-weekly limits into a `limits[]` array while still sending some as legacy `seven_day_<model>`
-keys. A scoped limit that exists only in `limits[]` reached a reader that could not see it, so
-the card's weekly Opus/Sonnet line would have disappeared with no error — **a limit we cannot
-read reading as a limit that is not there**.
-
-These tests are built from BOTH payload shapes, which is what the order asks for: legacy-only,
-`limits[]`-only, both for the same model, a malformed entry, and an unknown kind.
-"""
+"""Subscription quota normalization and route applicability."""
 from datetime import UTC, datetime
 
 from rsched.endpoints.subscription_quota import normalize

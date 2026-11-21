@@ -7,10 +7,9 @@ Four dialects, one answer shape (`Listing`): OpenRouter's public `/models` (size
 `max_model_len`; a subscription proxy lists ids and nothing else). A direct Anthropic endpoint is
 read from nothing: `limits.STATIC_WINDOWS` answers for it. A GATEWAY endpoint's figures come from
 the route each name takes instead (`routes`, `routecatalogs`); its own listing still says which
-ids it serves. Every
-reader is opportunistic — a provider that is down, refuses, or answers in a shape it does not
-know reads as UNANSWERED, never as an error and never as "does not serve this model". What the
-answers MEAN (the output-cap policy, the precedence chain, the cache) is `limits`' business.
+ids it serves. Every reader is opportunistic — a provider that is down, refuses, or answers in an
+unknown shape reads as UNANSWERED, never as an error or "does not serve this model". What the
+answers MEAN is `limits`' business.
 """
 
 from __future__ import annotations
@@ -28,11 +27,9 @@ log = logging.getLogger("rsched.limits")
 _TIMEOUT = 20
 
 #: What one provider's catalog route answered: the limits it published, keyed by model id, and
-#: the ids it LISTS. The two are not the same set — a gateway may list a model and publish no
-#: figures for it (CLIProxyAPI's `/v1/models` carries id/object/created/owned_by and nothing
-#: else) — and conflating them is what made "no limit found" and "no such model" one message.
-#: `None` for the id set means the question went UNANSWERED (no listing route, or it failed),
-#: which is never the same as "the provider does not serve this".
+#: the ids it LISTS — not the same set (a gateway may list a model and publish no figures), so
+#: "no limit found" and "no such model" stay distinct. `None` for the id set means UNANSWERED,
+#: never "the provider does not serve this".
 Listing = tuple[dict[str, tuple[int, int | None]], set[str] | None]
 
 
@@ -40,19 +37,15 @@ def provider_of(ep) -> str:
     """Which metadata API this endpoint speaks. Sniffed from base_url the way
     `endpoint_probe.credits_provider` already does, so the two read the same signals.
 
-    The KIND is not that signal. An `anthropic` endpoint is Anthropic's own API only when it
-    points at Anthropic's host; a subscription proxy speaks the same wire and serves whatever
-    its upstreams do — OpenAI ids included — so it is sniffed like any other gateway and its
-    `/models` route is read for whatever it carries. The static Claude table answers for
-    Anthropic's own API alone: a proxy serving a Claude id may serve it on a smaller window.
+    The KIND is not that signal: an `anthropic` endpoint is Anthropic's own API only on
+    Anthropic's host; a subscription proxy speaks the same wire and is sniffed like any gateway.
+    The static Claude table answers for Anthropic's own API alone — a proxy may serve a Claude id
+    on a smaller window.
     """
     base = (ep.base_url or "").lower()
     if ep.kind == "anthropic" and ("api.anthropic.com" in base or not base):
-        # Its listing DOES publish max_input_tokens/max_tokens (since 2026-03), but no
-        # direct Anthropic endpoint is configured on this instance — both anthropic-kind
-        # endpoints are subscription proxies, which are sniffed as gateways below. Read
-        # the listing the day one is added; until then the table is the honest answer and
-        # is labelled as one.
+        # Its listing DOES publish max_input_tokens/max_tokens, but no direct Anthropic
+        # endpoint is configured here; read it the day one is added. Until then, the table.
         return "table"
     if "openrouter" in base:
         return "openrouter"
@@ -79,9 +72,8 @@ def read(provider: str, ep, model_ids: list[str]) -> Listing:
 def models_url(ep) -> str:
     """The OpenAI-shaped catalog route for this endpoint. An `openai` base_url already carries
     the `/v1` (`…/api/v1`); an `anthropic` one deliberately does NOT, because the Messages
-    adapter appends `/v1/messages` itself — so the listing lives one segment deeper there.
-    Getting this wrong costs nothing visible: a 404 reads exactly like a gateway that publishes
-    no catalog, and the miss would look like the model's own.
+    adapter appends `/v1/messages` itself — so the listing lives one segment deeper there. A
+    wrong route fails silently (a 404 reads like a gateway with no catalog).
     """
     base = (ep.base_url or "").rstrip("/")
     return f"{base}/v1/models" if ep.kind == "anthropic" else f"{base}/models"
@@ -125,9 +117,8 @@ def _positive(value: object) -> int | None:
 
 def openrouter_figures(row: dict) -> tuple[int, int | None] | None:
     """One OpenRouter row's ROUTE figures: `top_provider`'s window and output maximum — the
-    provider OpenRouter actually routes to, whose window can sit below the row's headline
-    (`xiaomi/mimo-v2.6-pro`: 1,050,000 headline, 1,048,576 served) — and the row's own window
-    only where the top provider states none.
+    provider OpenRouter actually routes to, whose window can sit below the row's headline — and
+    the row's own window only where the top provider states none.
     """
     top = row.get("top_provider")
     top = top if isinstance(top, dict) else {}
@@ -243,11 +234,9 @@ def _ollama(ep, model_ids: list[str]) -> Listing:
     """`POST {origin}/api/show` per model → `model_info["<arch>.context_length"]`. Ollama has no
     output limit of its own, so the output cap is derived from the window (`limits`).
 
-    What this does NOT reach is `openai_compat`'s native `num_ctx`: `complete()` is never
-    handed the resolved window, so the decode ceiling is still the ENDPOINT's
-    `context_tokens`. Discovery therefore sizes compaction's budget correctly while the
-    request itself can still be truncated — set an Ollama endpoint's `context_tokens` to
-    its largest served model.
+    This does NOT reach `openai_compat`'s native `num_ctx`, which still comes from the
+    ENDPOINT's `context_tokens` — set that to the largest served model, or a request can be
+    truncated although compaction's budget is right.
     """
     out: dict[str, tuple[int, int | None]] = {}
     for mid in model_ids:

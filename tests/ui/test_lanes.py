@@ -1,16 +1,4 @@
-"""Lane management on the Routines page — a lane has no subpage of its own (D80).
-
-A LANE is the temporal axis (docs/lanes-tags.md). The toolbar creates one, the lane row
-runs/pauses it, the overlay editor edits members, order, schedule and on-failure; the lot
-persists to `.control/lanes.json`. A lane carries no config and no store at all — which is what
-`test_moving_a_routine_between_lanes_leaves_its_config_alone` pins, because a record holding
-both would make a timing decision silently a permissions decision.
-
-The ROUTINE page's half is here as well: the hero tile that READS this routine's lane without
-offering to change it.
-
-Driven against the REAL console JS — the ui_page fixture also asserts the page threw no JS
-error."""
+"""Lane management on the Routines page — a lane has no subpage of its own (D80)."""
 
 import json
 
@@ -140,9 +128,7 @@ def test_routines_page_lane_pause_toggle(ui, ui_page, make_routine):
     """Whole-lane pause on the lane row: a SCHEDULED lane offers ⏸ pause — clicking persists
     paused=true to the store and shows the badge; resume clears both. An unscheduled lane shows
     no toggle (there is no cron to pause; ▶ run now is its only fire path).
-
-    The two lanes hold DIFFERENT routines: a routine belongs to at most one lane and the store
-    enforces it, so the same member in both would be refused before the page ever renders."""
+    """
     make_routine(slug="uir2")
     rec = lanes.create(ui.routines, name="Sched", members=[{"slug": "uir"}],
                        cron="0 7 * * *", tz="UTC")
@@ -219,11 +205,7 @@ def test_lane_editor_offers_no_shared_config(ui, ui_page):
     """The same invariant from the other side: there is nothing IN a lane editor that could
     change a member's config. What a member may do is its own config, so the editor offers
     members, order, schedule and on-failure and nothing else.
-
-    The pin is the editor's POSITIVE statement about the half it does not hold: the note that
-    sends the reader to each member's own page instead. Asserting the absence of a selector
-    nothing emits proves nothing — it passes today and would go on passing over an editor that
-    grew a config block under any other name."""
+    """
     lane = lanes.create(ui.routines, name="Nightly", members=[{"slug": "uir"}])
     ui_page.goto(f"{ui.url}/#/routines")
     ui_page.wait_for_selector("tr[data-lane-row]")

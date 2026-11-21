@@ -1,41 +1,4 @@
-"""The seven classes of thing that might need the operator's intervention — D289.
-
-HIS WORDS, 2026-11-12, quoted whole in R3365 and carried into D289: operator-facing text *"must
-focus on things that might require my intervention. this includes (a) context for things i might
-need to decide (b) unexpected events. they might be an indication that my intervention is
-required (c) any form of outgoing or incoming communication, especially personal (d) reached
-goals (e) blocks that the system cannot resolve itself (f) methodological or strategic pivots
-(g) confirmed dead-ends"*.
-
-HIS ANSWER, 2026-11-14 (D289, over three alternatives): *"Lead with the seven classes as a
-labelled block at the top, narrative below it"*.
-
-THE OPEN SUB-QUESTION HE HANDED WITH IT — does the engine ask a run to MARK its finding's class,
-or does the renderer classify prose heuristically? — is inside the decision's scope, so it is
-answered here, and MEASURED on this instance rather than chosen by taste (2026-11-14):
-
-  (a) context for a decision   529 of 623 question records carry explicit `options`  STRUCTURED
-  (b) unexpected events        2,618 health rows, 36 `health_vocab.EVENTS` types     STRUCTURED
-  (c) communication            a reserved outward util is GATED and `unknownoutcome` knows an
-                               outward act, but no stream records that one happened    PARTIAL
-  (d) reached goals            146 `status.json` files carry goals with `met`         STRUCTURED
-  (e) unresolvable blocks      `BLOCKED_EVENTS` → `operator_blocks.annotate`, plus a
-                               `partial` finish, which by its own contract means a blocker
-                               the run could not clear                                STRUCTURED
-  (f) methodological pivots    no field, no event, no store — prose only             UNRECORDED
-  (g) confirmed dead-ends      no field, no event, no store — prose only             UNRECORDED
-
-So the answer is NEITHER option as posed: **the renderer DERIVES the four classes the engine
-already records, and the engine asks a run to MARK only what it cannot derive.** Classifying
-(a), (b), (d) or (e) from prose would replace a fact with a guess — `operator_blocks` already
-knows who can clear a block, and a heuristic disagreeing with it would be wrong in a way nobody
-could see. Letting a run mark them would be worse: the label would become a run's opinion of its
-own work, on the very surfaces that exist because a run's prose does not say what needs a person.
-
-THIS INCREMENT IS THE FOLD, server-side on purpose. The labelled block's rendering is the next
-step, and the classification it leads with has to exist and be right first — and a fold is
-testable without the browser stage, which hung twice on 2026-11-14 (R3428).
-"""
+"""The seven classes of thing that might need the operator's intervention — D289."""
 
 from __future__ import annotations
 

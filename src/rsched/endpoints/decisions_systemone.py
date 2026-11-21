@@ -106,10 +106,8 @@ class SystemOneDecisions:
         text-only call carries no `images` key at all, so Jev never sees an empty one.
 
         `state` carries structured evidence ANNOUNCED AS TEXT (`decisions.evidence_text`), not
-        as a raw object: the Otari gateway serving this instance's three decision models refuses
-        a request whose `state` is a JSON object with `HTTP 400 {"detail":"The provider rejected
-        the request as invalid"}` — measured five times on 2026-11-13/14 — while the announced
-        form is answered by all three. Jev answers either, so one form serves every model.
+        as a raw object: the Otari gateway refuses an object `state` with HTTP 400, while Jev
+        answers either, so one form serves every model.
         """
         out: dict = {"model": model, "state": evidence_text(evidence),
                      "questions": {q.name: wire_question(q) for q in questions}}

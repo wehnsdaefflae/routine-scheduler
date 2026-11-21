@@ -1,24 +1,4 @@
-"""F861: how long a VIEW takes to settle after a navigation — the cost this console mostly is.
-
-`static/app.js` is a hash router: only the FIRST page load of a session fires `load`, and every
-navigation after it is a `hashchange` that swaps `#view`'s children in place. The trace store's
-own numbers say how lopsided that is — over the 14-day window to 2026-11-09, **752 `nav` rows
-against roughly one page load per session**. So F858's two duration kinds, between them, miss
-the thing the operator meets most often: clicking Routines → Run → Questions and waiting for
-the page to appear. `load` fires once; `slow` fires only if some request crosses its 1,000 ms
-floor, and a view can feel slow while every one of its requests is fast (three sequential
-fetches of 400 ms, a large render, a skeleton that lingers).
-
-What is added: one `render` row per navigation, carrying the view and the milliseconds from the
-`hashchange` until `#view` STOPS changing. It lives entirely in `trace.js` — `app.js` is over
-the repo's size bar and may not grow, and a tracer that observes the DOM needs nothing from the
-router anyway, which is the better seam: the app does not know it is measured.
-
-The two honest limits, both pinned below. (1) "Settled" is a quiet period, not a paint: the
-measurement ends when no mutation has arrived for `SETTLE_MS`. (2) The run view STREAMS, so its
-mutations never truly stop — the row is reported at the first quiet period and the observer
-then disarms, so one navigation yields at most one row and a live view cannot inflate it.
-"""
+"""F861: how long a VIEW takes to settle after a navigation — the cost this console mostly is."""
 
 from __future__ import annotations
 
@@ -43,13 +23,7 @@ def test_the_router_file_did_not_grow():
 
 
 def test_the_measurement_starts_at_the_navigation_and_ends_when_the_view_stops_changing():
-    """The shape of the quantity: armed by `hashchange`, closed by a quiet `#view`.
-
-    Read from the shipped source because the quantity itself cannot exist under pytest — there
-    is no DOM, no MutationObserver and no clock. The browser test
-    (`tests/ui/test_request_timing.py`) proves the row appears; this proves the mechanism is the
-    one the finding describes, so a future rewrite cannot quietly measure something else.
-    """
+    """The shape of the quantity: armed by `hashchange`, closed by a quiet `#view`."""
     text = TRACE_JS.read_text(encoding="utf-8")
     assert "MutationObserver" in text, text
     assert re.search(r'getElementById\("view"\)', text), "the observer must watch #view"

@@ -1,24 +1,4 @@
-"""The escalation ladder is VISIBLE: its events are writable, and its directive is attributable.
-
-Two defects this pins, both found 2026-10-03 while building the ladder's surfaces (step 6), both
-invisible to the ladder's own suite because `tests/test_ladder_trigger.py` stubs the transcript
-with a list-appending fake:
-
-1. `engine/transcript.py`'s `EVENT_TYPES` did not contain `oversight_directive`,
-   `oversight_skipped` or `oversight_no_directive`, and `Transcript.event` opens with
-   `assert type_ in EVENT_TYPES`. So EVERY ladder record path raised against the real class.
-   `ladder.at_boundary` catches broadly and its fallback `oversight_skipped` raised too — a rung
-   that fired would have left no trace at all, which for an oversight mechanism is the one
-   failure mode that must never be silent.
-
-2. `engine/control.inject_user_message` built the `user_injection` event without the delivery
-   channel, so a rung's directive — machine-authored and binding on the run — was rendered as
-   the operator speaking. The channel now rides the payload (`via`, `source`); the console reads
-   it (`tests/ui/test_transcript_events.py`).
-
-So these tests go through the REAL `Transcript` and the REAL injection path. A fake that accepts
-anything cannot fail the way production did.
-"""
+"""The escalation ladder is VISIBLE: its events are writable, and its directive is attributable."""
 
 from __future__ import annotations
 

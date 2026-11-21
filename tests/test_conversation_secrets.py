@@ -1,16 +1,4 @@
-"""A conversation's OWN secrets (D216 rank 1 — the operator: "All six, as one parity campaign").
-
-The point under test is a PARITY, not a new mechanism: the scoped store has always been keyed by
-the run's slug, and a conversation's slug is its directory name exactly as a routine's is, so the
-engine already injected `secrets.d/<conversation-slug>.env` into its util calls. Only the write
-surface was missing — `api_routine_secrets` resolves through `routines_common._info`, which asks
-`registry.info` about `routines_home` alone, so a conversation slug 404'd on a store that would
-have served it.
-
-So each test here asserts the conversation behaves like a routine on the SAME store, including the
-two refusals that matter: an unknown slug cannot create an orphan credentials file, and the names
-read is refused to the routine token.
-"""
+"""A conversation's OWN secrets (D216 rank 1 — the operator: "All six, as one parity campaign")."""
 
 from __future__ import annotations
 

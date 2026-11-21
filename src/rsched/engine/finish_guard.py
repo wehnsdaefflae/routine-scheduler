@@ -1,12 +1,8 @@
 """Reject an authored ok-finish that CLAIMS a high-signal action the run never took.
 
-Motivated by self-audit finding F127 (2026-07-19): a routine wrote *"Filed report to
-self-audit"* in its finish summary while taking no `report` action — narrated unperformed
-work. The reviewer chose to REJECT such a finish (decision D31 = option B) so the run must
-either actually take the action or drop the false claim before it may finish.
-
-The check is deliberately NARROW — a false reject blocks a legitimate finish on the shared run
-path, so precision beats recall:
+Narrated unperformed work (D31): the run must take the action or drop the claim before it may
+finish. The check is deliberately NARROW — a false reject blocks a legitimate finish, so
+precision beats recall:
 
   * Only the high-signal, side-effecting action kinds whose *engine token* essentially
     never appears in prose except as a deliberate claim: ``report``, ``ask_user``,
@@ -15,11 +11,7 @@ path, so precision beats recall:
     ("asked the user"), which are too ambiguous to reject on.
   * The token must be bound (within a short window) to an affirmative completion verb, with no
     negation just before ("did not file a report" is fine).
-  * META routines (tag ``meta``: self-audit, routine-improver, config-optimizer, token-lab,
-    clarification) are EXEMPT. Their whole job is to analyse and quote *other* runs' actions,
-    so their summaries legitimately contain these tokens without taking the action — a universal
-    check would false-reject the auditor's own finishes (self-audit's F127 summary literally
-    quotes "Filed report").
+  * META routines (tag ``meta``) are EXEMPT: they analyse and quote *other* runs' actions.
 """
 from __future__ import annotations
 
@@ -27,9 +19,8 @@ import re
 
 # action kind -> regex of affirmative completion verb stems that assert it was performed
 _CLAIM_ACTIONS: dict[str, str] = {
-    # "sent/send/open" deliberately absent for report: they are DOCUMENT-shipping verbs, and
-    # a routine whose deliverable is a PDF/LaTeX "report" writes them in every honest summary
-    # (R360, frame-fill-lab:20260814-061034 — four consecutive false rejects).
+    # "sent/send/open" deliberately absent for report: document-shipping verbs that a routine
+    # whose deliverable is a PDF "report" writes in every honest summary (R360)
     "report": r"fil|submit|post|logg|escalat|rais",
     "ask_user": r"ask|question|escalat|surfac|prompt",
     "schedule_run": r"schedul|arm|queu",
@@ -48,8 +39,7 @@ def normalize_escaped_newlines(text: str) -> str:
     A finish or report field is authored as JSON, where a real line break is written ``\\n``.
     A model that instead emits ``\\\\n`` yields a Python string carrying the literal two
     characters backslash-n, which render verbatim as ``\\n`` in the Markdown console, the
-    dashboard last-outcome and the next run's digest — a silent, recurring UI degradation any
-    model can reintroduce (self-audit R82, 2026-08-01).
+    dashboard last-outcome and the next run's digest.
 
     The tell of a WHOLESALE double-escape is unambiguous: the text carries literal ``\\n``
     (or ``\\t``) escapes and NOT ONE real newline. Then the author plainly meant line breaks,
@@ -69,17 +59,9 @@ def unbacked_action_claims(summary: str, taken_kinds, is_meta: bool) -> list[str
     ``taken_kinds``. Empty for meta routines, an empty summary, or when every claimed action was
     actually taken this run.
 
-    WHAT "TAKEN" MEANS, and why the caller had it wrong (D243, review item E4.3). ``taken_kinds``
-    is ``loop.executed_kinds`` — the kinds that EXECUTED, maintained beside ``executed_actions``
-    and from the one predicate ``donothing.grounds_a_finish``. It used to be
-    ``{r["kind"] for r in loop.turn_records}``, and ``turn_records`` is appended at the
-    assistant-action stage, BEFORE dispatch: so it held every kind the model EMITTED, including
-    an action a consequence reminder or a rule assist HELD (``engine/hold.py`` — it never
-    reached the dispatcher) and one the reserved finish turn REFUSED (``engine/chain.py``'s
-    ``rejected`` observation). A summary saying "filed a report" therefore passed on a report
-    that was held and never re-emitted — the one guard whose whole job is catching
-    narrated-but-unperformed work, reading an unperformed action as performed. A kind that
-    cannot ground a finish cannot back a claim either, and now one predicate says both.
+    ``taken_kinds`` is ``loop.executed_kinds`` — kinds that EXECUTED, per the one predicate
+    ``donothing.grounds_a_finish`` (D243) — never the kinds the model EMITTED, which include
+    held and refused actions. A kind that cannot ground a finish cannot back a claim either.
     """
     if is_meta or not summary:
         return []
@@ -88,8 +70,7 @@ def unbacked_action_claims(summary: str, taken_kinds, is_meta: bool) -> list[str
     for kind, verbs in _CLAIM_ACTIONS.items():
         if kind in taken or kind not in summary:
             continue
-        # \b-bounded: "reports/", "reporting" or "schedule_runner" never contain the claim
-        # token as a word, so document paths and derived nouns cannot trip the guard (R360).
+        # \b-bounded, so document paths and derived nouns ("reports/", "reporting") never trip
         token = rf"\b{re.escape(kind)}\b"
         pat = re.compile(
             rf"(?:{verbs})\w*.{{0,{_WINDOW}}}?{token}|{token}.{{0,{_WINDOW}}}?(?:{verbs})\w*",

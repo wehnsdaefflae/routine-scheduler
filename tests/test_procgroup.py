@@ -1,11 +1,4 @@
-"""Ending a process group the way its members can clean up after (`procgroup.terminate`).
-
-The 2026-09-30 incident in miniature: git deletes its `index.lock` only in its SIGTERM handler,
-so a deadline that SIGKILLs it leaves the lock behind. What the helper owes both of its callers
-(`libgit.git`, `utils_run.run_jailed`): SIGTERM first, a wait that covers the whole GROUP rather
-than its leader, and SIGKILL only for what outlives the grace — delivered even when the caller
-does not live through the grace itself.
-"""
+"""Ending a process group the way its members can clean up after (`procgroup.terminate`)."""
 
 from __future__ import annotations
 

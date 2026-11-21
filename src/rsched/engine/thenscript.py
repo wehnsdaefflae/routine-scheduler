@@ -1,20 +1,13 @@
 """THEN-SCRIPT — a file change and the script that checks it, in ONE action.
 
-NVIDIA SoL-Pi's Action Fusion (arXiv 2609.20519): an agent edits a file, then spends a whole
-model turn asking to run the command that tests, builds or renders it. The pair is just as
-common here. Of 3,459 `write_file`/`edit_file` actions in 160 fleet runs (2026-09-17..10-08),
-1,089 were followed directly by a run of the file just changed — 536 of them a `script` — and
-every turn re-reads the whole context (175k tokens on average). So `write_file` and `edit_file`
-take an optional `then_script` — `["<name>", *args]` — and the engine runs that script once the
-change has landed, returning both results in one observation.
+SoL-Pi's Action Fusion: an edit is commonly followed by a whole model turn spent running the
+file just changed. So `write_file` and `edit_file` take an optional `then_script` —
+`["<name>", *args]` — run once the change has landed, both results in one observation.
 
-Scoped to `script` on purpose. A routine's script is a BASE kind — no capability, no approval
-dial — so the riding call passes exactly the gates it would pass alone, and each is applied to
-it AS a script action (`riding`): `validate_action` (the workflow's `tools:` list and the
-capability layer), the pre-execution HOLD seam (a reminder or rule on `script:<name> …` holds
-the fused action — `hold.before_dispatch` asks about each part) and D39's call-time secret
-gate. A util or a shell command would ride past every gate keyed on its own kind, which is why
-neither may.
+Scoped to `script` on purpose: the riding call passes every gate AS a script action
+(`riding`) — `validate_action` (the `tools:` list, the capability layer), the pre-execution
+HOLD seam (`hold.before_dispatch` asks about each part) and D39's call-time secret gate. A util
+or a shell command would ride past every gate keyed on its own kind.
 
 The change runs first and decides alone whether the script runs: a write or edit that failed
 skips it, and the observation says so. A script that fails leaves the change in place — the
@@ -53,12 +46,9 @@ def problems(obj: dict, allowed_kinds: set[str] | None, grants) -> list[str]:
         return [(f'kind={obj.get("kind")}: {FIELD} is ["<script-name>", ...args] — the name '
                  "of one of your scripts/ first, then its arguments, every item a string")]
     if obj.get("background"):
-        # D118 phase 3 admitted `write_file`/`edit_file` to BACKGROUNDABLE_KINDS, and the thread
-        # dispatches the KIND (`background._runner` → `executor.dispatch`), not this fusion —
-        # which lives in `actionroute._route`. A deferred pair would therefore land the change
-        # and drop the script in SILENCE, with D39's call-time secret gate never asked: F633's
-        # exact shape, an ergonomics flag walking around a security decision. Refused here,
-        # inside the schema-retry cycle, rather than half-performed in a thread.
+        # The background thread dispatches the KIND, not this fusion (which lives in
+        # `actionroute._route`), so a deferred pair would drop the script silently with its
+        # secret gate never asked. Refused here rather than half-performed in a thread.
         return [(f'kind={obj.get("kind")}: {FIELD} cannot ride a backgrounded change — the '
                  "background thread performs the change only, so the script would be dropped "
                  "without running and its secret gate never asked. Either drop 'background' "

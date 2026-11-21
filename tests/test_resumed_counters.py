@@ -1,23 +1,4 @@
-"""D245 (a) — the two counters a RESUMED LEG must keep, rebuilt from the transcript.
-
-The designs entry: *"`loop.failures` (the "failed twice this run" count behind the repair hint)
-and `_schema_off` ("schema off for the rest of the run") reset on every leg, so after a resume
-a call's second failure reads as its first."*
-
-`tests/test_guard_scope.py` already pins the OTHER half of this — an assist that fired may not
-fire again after a resume. This is the complement, and the harder direction: a call that failed
-ONCE before the restart and once after it has failed TWICE in this run, so fix-the-cause's
-moment is NOW. With the tally reset, that moment never arrives at all: the run that most needs
-"stop tuning this and change route" is exactly the one whose legs keep splitting the evidence.
-
-Both facts are already READABLE from the transcript the resumed leg boots with — no side file,
-no new event type:
-
-* a failure is `exitgate.failure_tally_key(ctx, action, obs)` over an action and its own
-  observation, recorded as a paired `assistant_action` + `observation`;
-* `_schema_off` already writes an `error` event saying so ("provider response-format disabled
-  for the rest of the run"), so the fact was on the record and simply never read back.
-"""
+"""D245 (a) — the two counters a RESUMED LEG must keep, rebuilt from the transcript."""
 
 from __future__ import annotations
 

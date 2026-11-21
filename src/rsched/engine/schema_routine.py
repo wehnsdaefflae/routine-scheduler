@@ -1,11 +1,7 @@
 """The `create_routine` fields as schema — the kind whose grammar is widest (D198).
 
-Extracted from `actionschema.py` the way `schema_questions`, `schema_remind` and
-`schema_background` were, and for the same reason: that file is over the house size bar, so its
-ceiling in `tests/size_ratchet.json` is SHRINK-ONLY and a new field cannot be added to it. D198
-needed one — `revises`, the in-place revision path's mode flag — so the seven fields only this
-kind uses moved out first and the field went in here. `workflow` stays in `actionschema`: it is
-shared with spawn/subtask/detach, and a field two kinds read belongs where both can see it.
+Extracted from `actionschema.py` (over the size bar, shrink-only). `workflow` stays there: it
+is shared with spawn/subtask/detach.
 
 The ORDER of this mapping is part of the always-on contract: `kindsurface.schema_for_kinds`
 renders `ACTION_SCHEMA` as the model sees it, `docs/prompt-anatomy.md` §5.1 quotes that
@@ -15,8 +11,7 @@ the exact position they held in the file they came from. A reordering here is a 
 
 from __future__ import annotations
 
-#: The create_routine-only properties, in ACTION_SCHEMA order (merged with `**` at the place
-#: `pattern` … `replaces` stood, so the rendered schema is unchanged but for `revises`).
+#: The create_routine-only properties, in ACTION_SCHEMA order (merged with `**`).
 ROUTINE_FIELDS: dict[str, dict] = {
     "pattern": {"type": "string",
                 "description": "create_routine: the SETTINGS pattern the new routine "

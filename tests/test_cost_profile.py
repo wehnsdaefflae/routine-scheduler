@@ -1,22 +1,4 @@
-"""What does ONE run of this routine cost — and can that figure be trusted? (D163)
-
-`stats.monthly_spend` answers cost per calendar MONTH, `run_health.recent_trend` answers
-"has it ballooned" as a boolean. Neither answers the figure a budget is actually set in, so
-`readmodels/cost_profile.py` reads the per-RUN half off the same stream, with the same
-quantity (`volume`) and the same window pair — and this file pins the two properties that
-make it worth reading rather than a fourth cost vocabulary:
-
-1. it does not invent a second statistic — the medians it reports are the medians the flag
-   fires on (`test_median_agrees_with_the_flags_median`), and the trend verdict is the flag's
-   own, passed through;
-2. it says when its own figures are understated. Until 0.494.0 a run that spawned children
-   under-reported its tree by up to 40% (R3112: `history.prior_usage` dropped `subrun_end`
-   at a resume boundary; an orphaned child's spend was written as `usage: {}`). The stream on
-   disk still carries those rows, so a 5-run window straddling the fix compares two different
-   quantities and reads as a cost improvement nobody made. Detection is arithmetic, not a
-   hard-coded release date: a depth-0 parent whose own `#sub<n>` rows sum to MORE than it
-   reported is understated whatever wrote it.
-"""
+"""What does ONE run of this routine cost — and can that figure be trusted? (D163)"""
 
 from __future__ import annotations
 
@@ -85,14 +67,7 @@ def test_an_unmeasured_run_is_no_reading_never_a_zero(tmp_path):
 
 
 def test_a_malformed_volume_is_skipped_as_a_reading(tmp_path):
-    """One bad row never 500s a dashboard and never counts as 0 (stats.py's own rule).
-
-    This also covers the trend hand-off: `run_health.regression_flag` does
-    `float(r["volume"])` behind an `is not None` guard and therefore raises TypeError on a
-    row like this one — a live fragility of that shared module (reachable from the routine
-    page's `recipe_regression`, reported separately, NOT fixed here). `cost_profile` hands it
-    a sanitized copy, so asking this reader for a profile must not raise.
-    """
+    """One bad row never 500s a dashboard and never counts as 0 (stats.py's own rule)."""
     legs = _series([10, 20])
     legs.append(_leg(f"{SLUG}:20260920-020000", day=20, volume={"not": "a number"}))
     profile = cost_profile(_home(tmp_path, legs), SLUG)

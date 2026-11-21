@@ -1,18 +1,4 @@
-"""D245(b): a REPLAYED observation keeps the tails that rode it.
-
-`EngineLoop._tails` appends everything that rides an observation message — the reminder note,
-the rule-assist line, the history pointer, the spent once-grant, the repeat warning, the budget
-remainder (docs/prompt-anatomy.md §3b) — after the observation was already recorded. None of it
-reached the transcript, so `history.replay_messages` rebuilt the observation WITHOUT its tails:
-from the first such message a resumed leg's prompt differed from what the model actually read.
-Two costs, both measured elsewhere in this codebase (`engine/enginenote.py`'s docstring): the
-provider cache misses from that message on — re-WRITTEN at 1.25x instead of re-read at 0.1x —
-and cautions the model had been shown are simply gone from the leg that continues its work.
-
-The tails are kept as the rendered TEXT, never as the facts behind them: re-rendering on a
-resume would recompute a budget remainder against the new leg's window and re-apply reminder
-ops that already ran. Verbatim is the only thing that can be byte-identical.
-"""
+"""D245(b): a REPLAYED observation keeps the tails that rode it."""
 
 from __future__ import annotations
 

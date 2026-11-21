@@ -29,12 +29,6 @@ def test_what_names_no_moment_is_none():
 def test_at_or_after_orders_stamps_across_a_dst_change():
     """F771, measured on the real stamps of 2026-10-25, the day Europe/Berlin fell back
     03:00 CEST -> 02:00 CET.
-
-    The operator answered six audit decisions between 02:07 and 02:17 CET (+01:00); the
-    report they belonged to was generated at 02:40 CEST (+02:00), i.e. 00:40 UTC — so every
-    answer was 27-38 minutes LATER than the report. As TEXT every one of them sorts EARLIER,
-    which read as "not answered yet": all six decisions re-presented as open cards and he
-    answered them a second time, two of them differently.
     """
     generated = "2026-10-25T02:40:00+02:00"           # 00:40 UTC
     for marker in ("2026-10-25T02:07:19+01:00",       # 01:07 UTC — 27 min AFTER

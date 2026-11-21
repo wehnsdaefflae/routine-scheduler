@@ -1,32 +1,4 @@
-"""A CONVERSATION's SECRET EXPOSURE — the three-state dial over the SHARED store (D216 part a).
-
-A ROUTINE's settings page has carried a three-state control per central-store secret for the
-life of D103: `static/views/routine-config-access.js` renders, for every name in the store,
-"ask on first use" (no row), "expose" (`secret:<NAME>: true`) and "withhold"
-(`secret:<NAME>: false`), written into routine.yaml's `grants:` mapping through the settings
-DRAFT the operator accepts. A conversation had NONE of it: `api_conversation_grants.py` could
-only CLEAR a row that already existed (F783's tombstones, D216 rank 1's held grants), so the
-only way a thread ever got a secret was the engine asking at first use — and the only way one
-was withheld in advance was a hand edit of routine.yaml. `grants` is absent from
-`CONVERSATION_PATCH_FIELDS` and `ConversationPatch` forbids extras, so even an API caller was
-refused.
-
-The surface under test is therefore a PRE-EXPOSURE write beside the two clears, in the same
-router, and its two shape choices are load-bearing and pinned here:
-
-* ONE named row per write, never a wholesale `grants` replace — the conversation's capabilities
-  panel has no draft and no accept (every card writes on click), so a replace would silently
-  drop a row that arrived in between, and the rows in that same mapping include the deny
-  tombstones the engine honours;
-* CLASS-LOCKED to `secret:` — the key is built server-side from a validated store NAME, so this
-  route cannot reach a row of any other class. That is what keeps the two clears' sign lock
-  intact: a tombstone of another class is still only clearable by its own press. Within the
-  `secret:` class the dial deliberately reaches all three states, exactly as the routine page's
-  does — that IS the control this part adds.
-
-And it is operator-only (`app.ROUTINE_TOKEN_MUTATIONS` is empty): a run that was refused a
-secret must not be able to expose it to itself.
-"""
+"""A CONVERSATION's SECRET EXPOSURE — the three-state dial over the SHARED store (D216 part a)."""
 
 from __future__ import annotations
 

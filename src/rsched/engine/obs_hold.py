@@ -1,27 +1,16 @@
 """The wording of a HELD action — the one observation that is not a dispatch result.
 
-Split out of the flat renderer (`observations.format_observation`) when the second hold kind
-arrived: the per-domain formatters (`obs_files`, `obs_library`, `obs_children`, `obs_admin`)
-already establish that a family of kinds gets its own module, and a hold is now a family.
-
-Both kinds say the same four things, because a hold the model cannot act on precisely is a
-turn spent for nothing: that NOTHING ran, what the caution is, how to proceed anyway, and the
-four-way outcome label the engine wants back — one vocabulary, because the question a hold's
-turn is bought to answer ("did this interruption change anything?") is the same question
-whichever layer raised it (D239). Only the middle two differ by source.
+Both kinds say the same four things: that NOTHING ran, what the caution is, how to proceed
+anyway, and the four-way outcome label the engine wants back — one vocabulary whichever layer
+raised it (D239). Only the middle two differ by source.
 """
 
 from __future__ import annotations
 
 from ..reminders import LABEL_HELP, looks_too_broad
 
-#: Each layer's promise is about ITS OWN ledger key and says so, because the two keys are
-#: different and `hold.before_dispatch` returns at the FIRST source that matches: a re-emit
-#: spends only the hold it was told about, and the other layer is still asked. "It runs this
-#: time" was therefore false whenever a reminder AND a rule matched one action — the run was
-#: held twice having been promised once, which reads as the seam ignoring its own confirmation
-#: (D246). Naming the source is also what makes the sentence usable: a second hold whose head
-#: names the other layer is then an expected step, not a malfunction.
+#: Each layer's promise is about ITS OWN ledger key and says so: `hold.before_dispatch` returns
+#: at the FIRST matching source, so a re-emit may still meet the other layer's hold (D246).
 _PROCEED = ("To go ahead anyway, emit the SAME action again — this RULE will not hold it again "
             "(one hold per action string per run — per reply, in a conversation); a consequence "
             "reminder matching the same action is a separate hold and may still fire once. To "
@@ -37,18 +26,13 @@ def _caution(r: dict) -> str:
     """One reminder's line — plus, when its OWN tally indicts its pattern, the evidence and
     the way out, in the hold the run is already paying for.
 
-    A reminder is only worth its turns while the consequence it names can actually happen. The
-    tally that answers that was written on every fire and read by nothing: 198 holds in 21 days,
-    67 of them labelled `could_not` by the run itself, and the only prune path was the model
-    spontaneously remembering to look. Surfacing it HERE — where the run is re-deciding the
-    action anyway and `remind` rides that same turn for free — makes pruning a thing it can do
-    in the moment rather than a thing it must remember to come back for.
+    Surfaced HERE, where the run is re-deciding the action anyway and `remind` rides the same
+    turn for free, so pruning a too-broad reminder happens in the moment.
     """
     line = f"- [{r['id']} · {r['scope']}] {r['description']}"
     if owner := str(r.get("owner") or ""):
-        # A FOREIGN hook (D152-C step 2): another routine set this on you, so the caution comes
-        # with the one thing a self-authored one does not need — your say over whether it stays.
-        # Put where the fire is, because that is the only moment its usefulness is observable.
+        # A FOREIGN hook: another routine set this, so the holder gets its say over whether it
+        # stays — at the fire, the only moment its usefulness is observable.
         line += (f"\n  ↳ SET BY `{owner}`, not by you. You decide its fate on this fire: carry "
                  f"`remind_feedback` with id {r['id']} and `disposition` = keep (leave it live) "
                  f"/ mute (silence it for the rest of THIS run, {owner} still sees it) / remove "

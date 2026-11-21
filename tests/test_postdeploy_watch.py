@@ -1,19 +1,4 @@
-"""The daemon runs the post-deploy checklist itself, a short while after boot (F854).
-
-`rsched postdeploy` shipped in 0.445.0 and nothing ever ran it: `grep -rn "postdeploy.jsonl"
-src/` found exactly one writer, the CLI module, reached only when a person types the command.
-Meanwhile the restart sentinel path — the one this instance takes several times a week — exits
-for the supervisor and verifies nothing. Measured cost: the daemon came up on 0.520.0 at
-2026-11-08T17:56:26 while the record's newest row was still 2026-11-06T10:00:22, whose own
-backup-freshness check was a FAIL nothing re-checked for sixty hours.
-
-The operator chose the shape verbatim: "the daemon runs the checks itself a short while after
-boot (in-process, served-identity hitting its own port once it answers) and appends the row — no
-human step ever again". So these tests pin that a boot leaves a row with nobody typing anything,
-that the row is the SAME shape the command writes (or the two histories stop being comparable),
-that a FAIL reaches a surface the console reads, and that the checks themselves are never
-re-implemented.
-"""
+"""The daemon runs the post-deploy checklist itself, a short while after boot (F854)."""
 
 import json
 

@@ -1,27 +1,4 @@
-"""The kind bullets carry IDENTITY and CONDUCT — never a field recital the wire already has.
-
-The operator's decision of 2026-11-13, building goal b5's second step: *"Cut the bullets to
-conduct only — drop every field recital the enforced wire already carries."* The block was
-21,421 chars on every turn of every run (21 live captures, 2026-11-12), and it was the THIRD
-copy of one contract in a single request — `endpoint.complete(schema=…)` puts `ACTION_SCHEMA`'s
-own `description` prose in front of the model structurally, `schemaindex.index` states which
-fields each kind takes, and the bullets then said it again in prose nothing enforced.
-
-What these tests pin is the ARCHITECTURE, not a char count (`tests/test_prompt_budget.py` holds
-the size):
-
-1. no bullet sentence is the schema's own words — a recital that creeps back is caught here,
-   where it is cheap, rather than in a prompt-size review nobody runs;
-2. every bullet still opens with its kind's IDENTITY, because `ACTION_SCHEMA["kind"]` is a bare
-   enum: the wire says a kind EXISTS and never what it is for;
-3. the conduct sentences that exist nowhere else survive. That was the operator's stated reason
-   for choosing this cut over moving conduct into library rules: not every routine holds the
-   corresponding rule, so a rule-only home loses the instruction for those that do not.
-
-The duplication test reads 4-grams rather than whole sentences: a recital reappears paraphrased
-as often as verbatim, and a 4-word window is short enough to catch a re-worded one while long
-enough that ordinary English ("the run's own", "at most one") does not trip it.
-"""
+"""The kind bullets carry IDENTITY and CONDUCT — never a field recital the wire already has."""
 
 from __future__ import annotations
 
@@ -110,11 +87,7 @@ def test_no_bullet_sentence_restates_a_field_description():
 
 
 def test_every_agreed_duplication_is_still_a_real_sentence():
-    """A carve-out that matches nothing is not protection — it is a hole left open.
-
-    If the finish bullet is reworded, this entry stops matching and the duplication check
-    silently stops covering whatever replaced it. Fail here instead, where the reason is.
-    """
+    """A carve-out that matches nothing is not protection — it is a hole left open."""
     sentences = [s for _, prose in KIND_PROSE for s in _sentences(prose)]
     for prefix in AGREED_WITH_THE_WIRE:
         assert any(s.startswith(prefix) for s in sentences), (
@@ -165,12 +138,7 @@ def test_the_conduct_that_lives_nowhere_else_survives():
 
 
 def test_a_bullet_never_recites_a_field_the_schema_describes_in_full():
-    """A surviving sentence may NAME a field, but not teach what the schema teaches.
-
-    The check is narrow on purpose: a sentence naming exactly one field in backticks and
-    overlapping that ONE field's description is the shape the 2026-11-13 cut removed five of,
-    and the shape most likely to come back when someone adds a bullet.
-    """
+    """A surviving sentence may NAME a field, but not teach what the schema teaches."""
     props = ACTION_SCHEMA["properties"]
     offenders = []
     for covers, prose in KIND_PROSE:

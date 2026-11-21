@@ -1,25 +1,4 @@
-"""An answered AUDIT decision ACKNOWLEDGES the answer — it does not just disappear.
-
-F529's second half, in the operator's own words: *"he must get an acknowledgement that an
-answer landed — the absence of one is precisely why he answered twice."* The evidence is
-concrete: he spent three messages and two clicks re-answering settled questions, and wrote
-*"i answered your questions. for the second time btw. did my answers get lost the first
-time?!"*
-
-What he saw. Answering an audit decision writes the durable marker and queues his words
-(`web/api_audit.write_feedback`), and `decisions_read._audit_decisions_fresh` then `continue`s
-past that decision — so the card VANISHED. No receipt, nothing saying his words had been
-recorded, nothing to re-read. Every OTHER decision shape on that page keeps a settled card
-with the answer in it (F525, `questions-taxonomy.GROUPS`'s "Settled" band, rendered by
-`views/questions.js`'s `q.answered` branch); the audit decisions — the ones he answers most —
-were the only shape that silently emptied.
-
-So an answered audit decision stays on the page as an ANSWERED row: `answered: True` plus the
-words he chose, read from the two records his click actually wrote (the queued message while it
-is queued, the durable marker once a run has consumed it). It is not a new ask: every counter
-on that page and in the push sender filters `answered` out (`views/questions.js`'s `open`,
-`web/push.pending`), so the acknowledgement costs no badge and asks nothing of him.
-"""
+"""An answered AUDIT decision ACKNOWLEDGES the answer — it does not just disappear."""
 from __future__ import annotations
 
 from rsched.paths import atomic_write_json, read_json

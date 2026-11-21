@@ -1,17 +1,4 @@
-"""A CONVERSATION's SECRET EXPOSURE dial, on its own page (D216 part a).
-
-A routine's settings page has carried a three-state control per central-store secret since D103
-(`static/views/routine-config-access.js`: "ask on first use" / "expose" / "withhold"). A
-conversation had none: the two clear routes beside this one (F783's tombstones, D216 rank 1's
-held grants) can only remove a row that already EXISTS, so the exposure decision for a thread
-was reachable only by the engine asking at first use, and withholding a name in advance meant
-hand-editing routine.yaml.
-
-The gap was a PAGE, so these tests load what the operator sees and drive the dial: the router is
-pinned in tests/test_conversation_secret_exposure.py, and a write surface with no control is not
-the gap closed. Each assertion about a row's state follows a presence assertion on that row — a
-selector that matches nothing reads as a pass over a console that lost the card entirely.
-"""
+"""A CONVERSATION's SECRET EXPOSURE dial, on its own page (D216 part a)."""
 
 import yaml
 from playwright.sync_api import expect

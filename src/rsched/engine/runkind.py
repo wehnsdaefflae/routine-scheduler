@@ -1,9 +1,8 @@
 """What KIND of run this is — a conversation, a root conversation, a detached background
 task — told by the home its directory sits in (`paths.directly_under`).
 
-Four modules each carried their own copy of "is this dir directly under that home", two of
-them private names other modules imported anyway. One definition, so the engine cannot
-disagree with itself about whether a run has a user behind it.
+One definition, so the engine cannot disagree with itself about whether a run has a user
+behind it.
 """
 
 from __future__ import annotations

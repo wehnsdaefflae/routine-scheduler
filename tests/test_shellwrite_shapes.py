@@ -1,35 +1,4 @@
-"""`marks_a_write()` shape pins — the noise cases and the shape that never fired (F730).
-
-`engine/shellwrite.marks_a_write` decides whether a `shell` command's SHAPE may have written,
-which files the run's one `ungated_write` health event (D158, R2654). The marker's whole value is
-that an auditor can trust it, so BOTH directions of its precision are pinned here, measured
-against the commands the fleet really ran rather than invented ones.
-
-F718 (0.433.2) fixed a `>` inside a quoted string. Two shapes survived it, found by measuring the
-ten `ungated_write` events of 2026-10-19 against the live function:
-
-* **a bare `>/dev/null`** — the stderr strip required a leading fd digit (`\\d>`), so
-  `ls "$d" >/dev/null 2>&1 && echo ok`, a pure reachability probe, read as a redirect;
-* **`>=` in inline Python** — `if ts >= '2026-10-19'` is the commonest line a routine writes when
-  it filters its own state, and three of the ten events were exactly that.
-
-And one shape had **never fired at all**: the interpreter clause was anchored with `\\b-c\\b`,
-whose leading `\\b` cannot match a SPACE-preceded ` -c` (a word boundary needs a word character
-on one side, and both ` ` and `-` are non-word). So `python3 -c "open('x','w')"` was unflagged for
-the clause's whole life — while F718's own docstring asserted it "still flags on `open`".
-
-Repairing that anchor could not be a straight un-break: `open` alone matches
-`json.load(open(p))`, which is how every routine READS its state. The needle is therefore a write
-VERB (or a write-mode `open`), and the inline program is recognised in all three forms a routine
-uses — `-c`/`-e`, stdin `-`, and a heredoc. That last form matters: of 96 fleet commands that lose
-their flag under the narrow `-c` repair, 50 genuinely wrote through a heredoc and were flagged
-today only by the accident of containing a `>=`.
-
-Measured over 3,926 shell commands in 40 fleet runs of 2026-10-16..19: at the RUN level — the unit
-the stream files — no run loses its flag and three gain one (`funscript-trainer:20261017-023004`,
-`rules-review:20261018-010418`, `tv-show-tracker-seedbox-manager:20261016-160003`), each for a
-command that really writes.
-"""
+"""`marks_a_write()` shape pins — the noise cases and the shape that never fired (F730)."""
 
 from __future__ import annotations
 
@@ -111,27 +80,14 @@ def test_a_write_shaped_command_is_marked(command: str) -> None:
 
 
 def test_the_interpreter_clause_is_reachable_at_all() -> None:
-    """The regression that hid F730: a clause that can never match is worse than a missing one.
-
-    `\\b-c\\b` is the exact shape that made the interpreter clause dead code, so the pin is on the
-    clause's own precondition — an inline write-mode open, with nothing else in the command that
-    any other shape could catch.
-    """
+    """The regression that hid F730: a clause that can never match is worse than a missing one."""
     command = "python3 -c \"open('x','w')\""
     assert ">" not in command, "no redirect here: only the interpreter clause can match"
     assert marks_a_write(command) is True
 
 
 def test_a_read_chain_is_not_joined_across_and_into_one_apparent_write() -> None:
-    """`&&` ENDS a command, so a shape's scan must not reach past it (measured 2026-11-07).
-
-    The git/patch shape excluded `|` and `;` but not `&`, so it matched across `&&` and joined
-    two read-only subcommands into one apparent `git … stash`. The specimen is verbatim from
-    `self-audit:20261107-233235` turn 4 — a pure read (log, status, worktree list, stash list,
-    tail, cat) that filed an `ungated_write` health event at 2026-11-08T00:33:27. One of the
-    five such events in that window was this false positive, and the module's own docstring is
-    why that matters: a detector a reader learns to discount is worse than none.
-    """
+    """`&&` ENDS a command, so a shape's scan must not reach past it (measured 2026-11-07)."""
     command = (
         'cd /home/mark/git-repos/routine-scheduler && echo "=== HEAD ===" && '
         'git log --oneline -8 && echo "=== STATUS ===" && git status --porcelain=v1 | head -30'
@@ -178,9 +134,5 @@ def test_a_filtering_sed_beside_a_grep_flag_is_not_a_write() -> None:
 
 
 def test_the_marker_stays_conservative_where_it_cannot_parse() -> None:
-    """A bare `>` outside quotes still flags, even when it means "greater than".
-
-    Deciding that would need a shell parser. The documented promise is conservatism in the
-    FLAGGING direction, so this stays a known false positive rather than a silent miss.
-    """
+    """A bare `>` outside quotes still flags, even when it means "greater than"."""
     assert marks_a_write('python3 -c "\nif a > b:\n    pass"') is True

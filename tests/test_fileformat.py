@@ -1,10 +1,4 @@
-"""F460 — the PARSE GATE: an edit or overwrite may not leave a structured file unparseable.
-
-The live specimen: a degraded fallback model emitted a schema-VALID edit_file whose
-replacement was half plausible JSON and half an echoed observation, and the engine applied it
-byte-faithfully; a 59 KB state/shared-state.json stopped parsing and the routine worked from
-rubble until a human diagnosed it (R1342/R1344, miz-grant-steward:20260907-054543 turn 75).
-"""
+"""F460 — the PARSE GATE: an edit or overwrite may not leave a structured file unparseable."""
 
 from types import SimpleNamespace
 

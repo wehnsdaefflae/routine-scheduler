@@ -1,29 +1,4 @@
-"""A rule FIRE reads as a fire, and a reminder id in a side field links to its row.
-
-F591's two remaining increments (increments 1 and 3 shipped in 18d07e0). Operator, 2026-09-30:
-*"also if reminders or rules fire it needs to be nicely highlighted, formatted, and link to the
-specific rule or reminder"*.
-
-Both properties are asserted against the real renderer in the real browser:
-
-1. **A reminder id is a LINK when the mount knows whose transcript it is.** `createTranscript`
-   takes the routine `slug`, so a `rem-…` in a `remind` / `remind_feedback` side field points at
-   `#/changes/<slug>?rem=<id>`, whose Recipe health carries that reminder's row, its pattern and
-   its tally, and lands on that row (F832, tests/ui/test_reminder_landing.py)
-   (`static/views/routine-health.js`). Without a slug there is nowhere to send the reader, so the
-   id stays the plain `<code>` it already was — a dead link is worse than dead text, and that
-   negative case is asserted too, because it is the one a later "link everything" change breaks.
-
-2. **A rule FIRE is not an ordinary result.** A rule that HELD an action, or that fired on one's
-   result, names itself in the payload's `assists` as `<rule>/<id>` (engine/assist.py `hold` and
-   `at_observation`), and that field is the ONLY place the slug is read from: the house rule for
-   this work is LINK FROM STRUCTURED FIELDS, NEVER FROM FREE TEXT (components/conceptlinks.js —
-   a rule called `work-order` would match ordinary English in every say line on the instance).
-   The strip sits OUTSIDE the collapsed result fold, because a reader has to see that a rule
-   fired without expanding anything, and the row keeps the `obs-held` state word the 2026-09-28
-   held/refused/usage vocabulary gave it. An observation carrying no `assists` gets NO strip: a
-   row never states something its payload does not say.
-"""
+"""A rule FIRE reads as a fire, and a reminder id in a side field links to its row."""
 from playwright.sync_api import expect
 
 # The real renderer, mounted twice — once knowing the routine, once not. The box id says which,

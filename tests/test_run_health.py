@@ -110,21 +110,6 @@ def test_recent_trend_needs_two_windows_of_runs():
 def test_recent_trend_window_counts_runs_not_legs():
     """The window is REGRESSION_WINDOW *runs*, and a run that finishes several times must
     not spend the window on its own bookkeeping.
-
-    Every constant in this module states its reason in RUNS — the window is "5 ≈ one week of
-    a daily routine … a single flaky run is only 20% of the sample", the fail-rate jump is
-    "2 extra failures in a 5-run window", MIN_RUNS is "below 3 runs on either side a
-    comparison is a coin flip". A run the operator continues, or one that resumes after a
-    restart, appends a further usage record under the SAME run_id, and on this instance
-    2,543 depth-0 records covered 1,256 runs — 2.02 legs per run. So slicing the tail before
-    folding those legs hands the heuristic a sample half the size it reports, and the error
-    runs the wrong way: the more a run costs, the more often it finishes, and the more of the
-    window it eats. Measured 2026-09-25, `weightloss` (173 legs / 67 runs) got a 2-vs-1
-    comparison and was never judged at all, while three routines were flagged on samples
-    below MIN_RUNS.
-
-    Ten runs of two legs each: a leg-sliced window sees 5 legs = 2 runs and cannot judge;
-    a run-sliced window sees 5 runs on each side and judges the token balloon.
     """
     records = []
     for i in range(10):
@@ -290,7 +275,7 @@ def test_a_hand_broken_assist_tally_reads_as_nothing_instead_of_breaking_the_pag
     d = server.routines_home / "r"
     (d / "state").mkdir(parents=True)
     (d / "state" / "assists.json").write_text(
-        json.dumps({"x:pre-action": "lots", "y:observation": 2}), encoding="utf-8")
+        json.dumps({"x:pre-action": "lots", "y:observation": {"fires": 2}}), encoding="utf-8")
     rows = [(r["key"], r["fires"]) for r in cautions(server, d)["assists"]]
     assert rows == [("y:observation", 2), ("x:pre-action", 0)]
 
@@ -298,10 +283,6 @@ def test_a_hand_broken_assist_tally_reads_as_nothing_instead_of_breaking_the_pag
 def test_a_continued_run_is_one_run_not_three():
     """Legs of one run are bookkeeping, not cost, and the two halves of a usage record
     disagree about which: `turns` is cumulative across legs while `tokens` is per leg.
-
-    Measured on the live instance 2026-09-23: HALF of all depth-0 records (2,445 over 1,211
-    runs) were extra legs, so a five-record window was often two runs plus their legs — and
-    folding them dropped the flagged set from 31 routines to 6, all six genuine.
     """
     from rsched.readmodels.usage_stream import fold_legs
 
@@ -371,14 +352,6 @@ def test_folding_legs_is_what_stops_a_steady_routine_flagging():
 def test_version_buckets_count_runs_not_legs(tmp_path):
     """The routine page's per-version table reports `runs`, `fail_rate` and both medians —
     and every one of them must be per RUN.
-
-    A continued run appends a further usage record under the same run_id, so tallying raw
-    records inflates `runs` (2.02 legs per run on this instance, measured 2026-09-25) and
-    drags the medians toward whatever the short bookkeeping leg happened to carry. The
-    fail_rate is the worst of them: a partial first leg followed by an ok continuation was
-    counted as one failure AND one success in the same bucket.
-
-    Three runs, five legs, one recipe version: the bucket holds 3 runs.
     """
     from rsched.readmodels import memo
 

@@ -1,12 +1,6 @@
 """One name for a child run: the `child` kind with a `mode`, and the three names it retires
 (D241, operator decision 2026-10-17: *"sub-runs / subtasks (why two terms for the same thing?
 fix that)"*).
-
-The decision is about VOCABULARY, so the tests are about vocabulary: that the retired names are
-GONE rather than aliased (an alias is how two names for one thing survive indefinitely), that
-the prompt a model actually reads says one noun, and that the instructions already on this
-instance are carried over — because removing a kind while a live recipe still names it tells a
-run to emit something the schema refuses.
 """
 
 from __future__ import annotations
@@ -15,8 +9,6 @@ import json
 
 import pytest
 
-from conftest import make_test_server
-from rsched import migrate_child_kind
 from rsched.engine import childfields, kindprose
 from rsched.engine.actions import KIND_FIELDS
 from rsched.engine.actionschema import ACTION_SCHEMA, KINDS
@@ -115,87 +107,3 @@ def test_the_mode_is_taught_where_the_wire_carries_it():
 
 # ----------------------------------------------------------------------------- the migration
 
-def test_the_migration_rewrites_an_instruction_but_never_a_record(tmp_path):
-    """A recipe is an INSTRUCTION a run acts on and must be carried over; a ledger is a RECORD
-    of what happened, and a run really did call `subtask` in October. Rewriting the record
-    would make it lie about the past."""
-    server = make_test_server(tmp_path)
-    routine = tmp_path / "routines" / "demo"
-    (routine / "stages").mkdir(parents=True)
-    (routine / "main.md").write_text("Use `subtask` for an ordered step, `spawn` to parallelise.",
-                                     encoding="utf-8")
-    (routine / "stages" / "build.md").write_text("Check `subruns` for the status table.",
-                                                 encoding="utf-8")
-    (routine / "LEDGER.md").write_text("2026-10-02: spawned 3 subtasks, all green.",
-                                       encoding="utf-8")
-
-    record = migrate_child_kind.run_migration(server)
-
-    assert record["files"] == 2
-    main = (routine / "main.md").read_text(encoding="utf-8")
-    assert "subtask" not in main and "spawn" not in main
-    assert "`child` (mode sequential)" in main and "`child`" in main
-    assert "children" in (routine / "stages" / "build.md").read_text(encoding="utf-8")
-    assert "subtasks" in (routine / "LEDGER.md").read_text(encoding="utf-8")
-
-
-def test_the_migration_leaves_the_spawn_hook_point_alone(tmp_path):
-    """`spawn` is also the name of a hook POINT — a moment in a run's life that rules match on.
-    Renaming it here would silently stop those rules firing, which is a failure with no error.
-    """
-    server = make_test_server(tmp_path)
-    routine = tmp_path / "routines" / "demo"
-    routine.mkdir(parents=True)
-    (routine / "main.md").write_text(
-        "A rule may fire at the `spawn` hook point.\nUse `subtask` for an ordered step.",
-        encoding="utf-8")
-
-    migrate_child_kind.run_migration(server)
-
-    text = (routine / "main.md").read_text(encoding="utf-8")
-    # BACKTICKED, because that is the spelling the rewrite table actually matches: a plain-prose
-    # "spawn" is never touched, so a test using one would pass whether the guard existed or not.
-    assert "`spawn` hook point" in text          # the moment keeps its name
-    assert "subtask" not in text                 # the kind does not
-
-
-def test_the_migration_leaves_a_rules_bare_yaml_moment_alone(tmp_path):
-    """The shape the quoted KEEP forms miss, and the one that actually bit: a rule's
-    `assists:` names its hook moment on a bare YAML key. Rewriting `moment: spawn` to
-    `moment: child` makes the rule fail its OWN linter — `spawn` is a moment in a run's life
-    and `child` is not one — and the failure is silent until the library is linted.
-    """
-    server = make_test_server(tmp_path)
-    rules = tmp_path / "library" / "rules"
-    rules.mkdir(parents=True)
-    (rules / "evidence-discipline.md").write_text(
-        "assists:\n  - id: on-a-thin-brief\n    moment: spawn\n"
-        "    line: >-\n      Brief it with `subtask` in mind.\n", encoding="utf-8")
-
-    migrate_child_kind.run_migration(server)
-
-    text = (rules / "evidence-discipline.md").read_text(encoding="utf-8")
-    assert "moment: spawn" in text, "the hook MOMENT must keep its name"
-    assert "subtask" not in text, "the kind must not"
-
-
-def test_the_migration_runs_once(tmp_path):
-    server = make_test_server(tmp_path)
-    routine = tmp_path / "routines" / "demo"
-    routine.mkdir(parents=True)
-    (routine / "main.md").write_text("`subtask` it.", encoding="utf-8")
-
-    first = migrate_child_kind.run_migration(server)
-    assert first["files"] == 1
-    assert migrate_child_kind.run_migration(server) == {}
-
-
-def test_the_migration_reaches_the_library_a_run_actually_reads(tmp_path):
-    server = make_test_server(tmp_path)
-    rules = tmp_path / "library" / "rules"
-    rules.mkdir(parents=True)
-    (rules / "work-order.md").write_text("Decompose with `subtask`.", encoding="utf-8")
-
-    migrate_child_kind.run_migration(server)
-
-    assert "subtask" not in (rules / "work-order.md").read_text(encoding="utf-8")

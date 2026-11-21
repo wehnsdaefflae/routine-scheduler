@@ -206,12 +206,6 @@ class _EmptyRegistry(_Registry):
 def test_an_empty_llm_completion_is_an_error_not_a_silent_empty_answer():
     """R1611: three consecutive empty replies across two models, on a prompt quoting a
     security-disclosure draft, after a near-identical call had answered fully minutes earlier.
-
-    An empty reply and a silent refusal are indistinguishable, and the refusal classifier reads
-    the reply TEXT — which an empty string cannot carry — so nothing downstream could tell them
-    apart either. The run that hit this nearly read the silence as "the reviewer found no
-    problems with the revised draft", i.e. a false verification of an outbound message going to
-    a stranger under the user's name. So the observation must FAIL loudly (failure-visibility).
     """
     reg = _EmptyRegistry()
     usage: list[dict] = []

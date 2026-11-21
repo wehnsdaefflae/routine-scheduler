@@ -1,13 +1,4 @@
-"""The observation renderer's two floors (engine/obs_floor.py) and the suite's render guard.
-
-The specimen is scheduler-builder:20261011-120001 (2026-10-11): a memory_write edit that would
-have left its note at 112 lines was correctly REFUSED, the refusal reached a renderer that read
-the `lines` of a success, and the KeyError ended the engine after four shipped releases — then
-ended the resume at turn 0, because a resumed leg re-renders the stored observation. That is the
-fourth defect of the kind, so these tests hold the CLASS: every action kind words an error
-result, a renderer that raises costs a run one line and never the run, and a test that produces
-an observation proves its words (tests/render_guard.py).
-"""
+"""The observation renderer's two floors (engine/obs_floor.py) and the suite's render guard."""
 
 import pytest
 

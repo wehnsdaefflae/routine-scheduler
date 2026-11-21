@@ -30,17 +30,12 @@ from . import attempts, failover, prices
 from .base import DEFAULT_TIMEOUT, ChatEndpoint, Completion, EndpointError, Message
 
 #: Task kinds whose prompt is a CONVERSATION — the only ones a cache breakpoint can pay for.
-#: Everything else here is one-shot (an `llm` action, the archival digest, the refusal
-#: classifier, a workflow draft, a playbook distillation): a fresh prefix that is never sent
-#: again, so the write costs 1.25x for a read that never comes. Measured 2026-09-11: 0.3%
-#: read share on `llm_action` against 96% on turns.
+#: Everything else here is one-shot: a fresh prefix never sent again, so a cache write costs
+#: 1.25x for a read that never comes.
 #:
-#: Derived HERE and nowhere else, because this wrapper is the one seam every completion
-#: passes through and it already knows the kind. A per-call-site flag would be a flag ten
-#: call sites can forget; the adapters still default `cacheable=True`, so a path that somehow
-#: bypasses instrumentation keeps caching rather than silently losing it. How a one-shot call
-#: is kept OUT of the cache is each adapter's business: on the `anthropic` wire it takes one
-#: marker, not none, because the subscription proxy caches any request that carries none
+#: Derived HERE, the one seam every completion passes through, rather than as a per-call-site
+#: flag; adapters still default `cacheable=True`, so a path bypassing instrumentation keeps
+#: caching. How a one-shot call stays OUT of the cache is each adapter's business
 #: (`anthropic_messages.claim_placement`).
 CACHEABLE_KINDS = frozenset({"turn"})
 
@@ -72,14 +67,9 @@ def _attempt_reporter(sink, common: dict):
     """The hook `base.with_retries` calls from inside its own loop, bound to ONE call's record.
 
     An `attempt` record is the SAME call — same id — on its Nth try: `attempt` is the try now
-    STARTING (the boundary names the one that just failed), `tries` the total allowed, `after`
-    what ended the previous one, `retry_in` the wait before this one. That is the question a
-    reader has, and nothing could answer it while three attempts of 600 s hid behind one
-    `started` row. The four fields are set HERE rather than threaded through `make_record`,
-    which stays the lifecycle-line builder every phase shares.
-
-    The terminal failure is not reported here — the wrapper's own `failed` record covers it, so
-    an exhausted loop books each boundary once and the failure once.
+    STARTING, `tries` the total allowed, `after` what ended the previous one, `retry_in` the
+    wait before this one. The terminal failure is not reported here — the wrapper's own
+    `failed` record covers it.
     """
     def report(attempt: int, tries: int, error: BaseException, retry_in: float) -> None:
         rec = make_record("attempt", **common)
@@ -131,13 +121,9 @@ class FileSink:
 _sink = None  # None = no bookkeeping configured (pure passthrough)
 
 #: The calls this process has STARTED and not yet terminated, by id → its `started` record.
-#: Tracked because a call can die without unwinding: `engine/archival.py` runs its completion in
-#: a DAEMON thread, so at process exit the interpreter kills it mid-`complete()` and the
-#: `except BaseException` below never runs. Measured in conversation c-20260915-074755's sidecar
-#: (884 ids): 23 had a `started` record and no terminal one, 17 of them `Compaction · archival`.
-#: The task centre sets `done_at` only from a terminal record, so each of those leaked a
-#: permanently-`running` task (F572). A caller that KNOWS it is giving up — `archival.settle()`
-#: does, and it is still alive when it decides — terminates them through `abandon_open_calls`.
+#: Tracked because a call can die without unwinding (archival's completion runs in a DAEMON
+#: thread, killed at process exit), which would leave a permanently-`running` task. A caller
+#: that knows it is giving up terminates them through `abandon_open_calls`.
 _open: dict[str, dict] = {}
 _open_lock = threading.Lock()
 
@@ -169,13 +155,9 @@ def _note_terminal(cid: str | None) -> None:
 def abandon_open_calls(*, error: str, purpose: str | None = None) -> int:
     """Write a `failed` record for every call still open, and return how many.
 
-    This is how a caller that abandons work on purpose keeps the books honest without knowing
-    the call id — the id is minted inside `complete()` and never returned, which is exactly why
-    `archival.settle()` had no way to say what it already knew. Idempotent: a call terminated
-    here leaves the open set, so abandoning twice writes one record.
-
-    `purpose` narrows it to one kind of work (the abandoning caller's own), because a run that
-    gives up on its archive has said nothing about the turn call still in flight beside it.
+    How a caller that abandons work on purpose keeps the books honest without knowing the call
+    id (minted inside `complete()`). Idempotent. `purpose` narrows it to the caller's own kind
+    of work, leaving other in-flight calls alone.
     """
     sink = _sink
     if sink is None:
@@ -235,17 +217,14 @@ class InstrumentedEndpoint:
                 raise
             prices.price_usage(self._home, self._inner.name, model, comp.usage)
             return comp
-        # No `process_id` here on purpose: the one live attributor is the daemon, which stamps
-        # `rec.setdefault("process_id", run.run_id)` on the way into the task centre
-        # (daemon/runner.py). `make_record` omits falsy keys, so nothing downstream changes.
+        # No `process_id` here: the daemon stamps it on the way into the task centre.
         common = {"id": uuid.uuid4().hex[:12], "endpoint": self._inner.name, "model": model,
                   "purpose": purpose or "LLM call", "kind": kind}
         started = make_record("started", **common)
-        note_started(started)          # so an abandoning caller can terminate it (F572)
+        note_started(started)          # so an abandoning caller can terminate it
         _emit(sink, started)
         try:
-            # The retry loop lives INSIDE the adapter, so it reports its own boundaries through
-            # the one-way `attempts` seam while this call is on the stack (F655).
+            # the adapter's retry loop reports its boundaries through the `attempts` seam
             with attempts.reporting(_attempt_reporter(sink, common)):
                 comp = self._inner.complete(messages, **inner_kwargs)
         except BaseException as exc:
@@ -262,13 +241,10 @@ class InstrumentedEndpoint:
 
     def _mark_health(self, exc: EndpointError, model: str) -> None:
         """Cooldowns are a PROVIDER-HEALTH signal: start one only when the adapter's own
-        transport retries were exhausted on a retryable-class failure (outage, rate limit,
-        network). A deterministic failure — bad key, malformed request, a Settings probe
-        with a wrong credential — is a CONFIG error: cooling it would poison resolution
-        for 5 minutes after the user fixes the config. A provider that sent a `Retry-After`
-        is cooled for at least that long — it has stated when it will serve again.
-        (The engine's turn completion still cools a model it abandons MID-TURN, whatever
-        the error class — that judgment lives at the engine seam, engine/degrade.py.)
+        transport retries were exhausted on a retryable-class failure. A deterministic failure
+        (bad key, malformed request) is a CONFIG error, and cooling it would outlast the fix.
+        A `Retry-After` is honoured as a minimum. (A model abandoned MID-TURN is cooled by the
+        engine regardless — engine/degrade.py.)
         """
         if exc.retryable:
             failover.mark_failed(self._inner.name, model,

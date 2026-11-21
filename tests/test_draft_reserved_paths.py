@@ -1,21 +1,4 @@
-"""D281: a routine DRAFT that names a path the engine owns says so BEFORE the routine exists.
-
-The measured failure: `drawerrr-irreversible-actions` was drafted with its obligations register
-at `state/obligations.json` — 11 occurrences across three stage files — and met the engine's
-refusal on its FIRST run while seeding state, with no prior state to fall back on and its own
-`## Done when` lines pointing at a file that cannot exist. The drafting run blamed the shared
-template; all 15 installed templates leave that filename to the routine, so the path was the
-draft's own and the fix propagated nowhere.
-
-The operator's answer put the check at creation. These tests pin what that means:
-
-1. the warning fires on the draft, naming the path, the count and what owns it instead;
-2. it WARNS and never refuses — the draft step exists to be corrected, and the reserved paths
-   have legitimate alternatives the author can pick;
-3. a clean draft adds NOTHING to the observation (the common case must cost nothing to read);
-4. the list is the engine's own, read from the module that owns it — so a store added to
-   `engine/storeseal` is screened here without anyone remembering to.
-"""
+"""D281: a routine DRAFT that names a path the engine owns says so BEFORE the routine exists."""
 
 from __future__ import annotations
 

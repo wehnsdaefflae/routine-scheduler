@@ -1,15 +1,4 @@
-"""An artifact is a MUTABLE file under a STABLE name, so it is never cached (R1682).
-
-The action documentation tells every run that re-writing a filename updates that artifact in
-place — "extend what is there instead of making report-2.md". A run followed exactly that
-instruction, rewrote `asks-2026-09-19.html` from 7,886 to 13,371 bytes adding two decision
-cards, verified the new content on disk with a grep, and the user still saw the old version;
-copying identical bytes to a NEW filename was the workaround that worked. A decision surface
-therefore never reached him while the run recorded it delivered.
-
-There is no check a routine can perform that distinguishes "written" from "visible", so the
-guarantee belongs to the serving endpoint.
-"""
+"""An artifact is a MUTABLE file under a STABLE name, so it is never cached (R1682)."""
 
 from __future__ import annotations
 

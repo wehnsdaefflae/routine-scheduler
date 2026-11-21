@@ -1,25 +1,4 @@
-"""The post-boot checklist's fifth check: can the fleet's model roles actually fail over?
-
-`conformance.chain_problems` could answer this from resolved config, offline and free, since
-R2196 — and its only caller was `rsched validate`, a command somebody has to type. The watcher's
-own docstring states what that is worth: *a check that runs only when a human types a command is
-a check whose SILENCE MEANS NOTHING.*
-
-What the silence cost, measured 2026-11-12: `deficit-coach:20261111-230002` died with "the model
-chain was exhausted after 0 rungs" on a provider connection refusal, and the previous `self-audit`
-run died the same way hours earlier. `engine/failover.next_after` searches strictly AFTER the
-failed member, so a chain of one dies at its first failure — and 12 of 13 catalog models declare
-`fallbacks: []`.
-
-It is a NOTE and never a FAIL, deliberately: `cli_validate` reports these lines without counting
-them because whether a single-member or single-domain chain is acceptable is a judgement about
-this instance's providers, and a boot check that went red over it would be switched off inside a
-week. Making it fatal is the operator's call; what this adds is that the answer reaches the
-record at every boot.
-
-A separate module because `tests/test_postdeploy.py` (340 lines) is ten lines from the size
-ratchet bar.
-"""
+"""The post-boot checklist's fifth check: can the fleet's model roles actually fail over?"""
 from __future__ import annotations
 
 import pytest

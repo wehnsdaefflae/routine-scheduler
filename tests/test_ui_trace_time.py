@@ -1,20 +1,4 @@
-"""F577: a UI trace row's `ts` is when the EVENT happened, not when its BATCH was flushed.
-
-Before this, `static/trace.js` sent no timestamp, `TraceEvent` had no `ts` field to carry one
-and `api_traces._append` computed a single `now` for a whole POST — so every row of a flush
-window (5 s, or a whole session tail on `pagehide`) shared one instant. Inter-event timing is
-the one quantity the store did not preserve, and it is the only quantity the friction
-inference needs: three consumers read it (self-audit's evidence pass, its
-`scripts/ui_trace_audit.py`, the routine-improver's improve-ui lens) and none of them could
-tell 3 clicks in 3 seconds from 3 clicks in 3 minutes. Worse, it manufactured co-occurrence
-between events that merely shared a flush.
-
-What is pinned here: the client's own event time survives the batch when it is credible; the
-server's receive stamp stays beside it under `received`, so a skewed client clock is
-measurable instead of silently trusted; and `ts_src` names which clock produced `ts`, so a
-fallback is READ, never inferred. Old rows on disk (no `received`, no `ts_src`) are untouched
-— every reader takes these fields with `.get`.
-"""
+"""F577: a UI trace row's `ts` is when the EVENT happened, not when its BATCH was flushed."""
 
 from __future__ import annotations
 

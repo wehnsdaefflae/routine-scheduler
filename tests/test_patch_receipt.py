@@ -1,23 +1,4 @@
-"""R2778 — the asking RUN is told whether its `config_patch` was applied.
-
-The measured harm: a routine asked for a budget raise with a `config_patch`, the operator
-answered with prose that read as approval, the run recorded the raise as applied and then
-planned a 600-turn budget against a still-live 400-turn ceiling — `budget_exhausted` twice
-(2026-10-19T08:03:39 and 2026-10-20T07:27:18, both `limit=400`).
-
-R2189 built the half that tells the person who CLICKED (`config_patch_applied` in the answer
-file and the HTTP response). Nothing carried that fact to the run: `collect_deferred_answers`
-dropped it and the composer rendered `- Q: … / A: …` and nothing else.
-
-The trap these tests exist to pin: the `approve & apply` button PATCHes the target and THEN
-posts an ordinary answer, so an answer file written for a SUCCESSFULLY APPLIED patch also said
-`config_patch_applied: False`. Telling a run "NOT APPLIED" off that flag alone would be a
-falsehood on the one path that works — strictly worse than the old silence. So both directions
-are tested here, and neither is allowed to regress into the other.
-
-Lives in its own file: `tests/test_composer.py` is at its size ceiling (size_ratchet.json),
-and the rule there is "put the addition in its own file".
-"""
+"""R2778 — the asking RUN is told whether its `config_patch` was applied."""
 
 from __future__ import annotations
 
@@ -158,10 +139,6 @@ def test_a_patch_answered_mid_run_tells_the_live_run_too(make_routine):
 def test_the_answer_route_records_a_patch_the_button_applied(client):
     """The seam that makes the flag true in BOTH directions: the answer POST carries an explicit
     applied signal, which the button sets after its PATCH verified every key landed.
-
-    Discriminating any other way was rejected: the button's canned text ("approved & applied the
-    proposed config change") is a weak proxy AND `config-optimizer` already reads it, so making
-    it load-bearing inside the engine would freeze a UI string into a contract.
     """
     c, tmp = client
     pending = tmp / "routines" / "apir" / "questions" / "pending"

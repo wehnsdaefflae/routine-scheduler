@@ -1,30 +1,4 @@
-"""F539 — a fallback that steps DOWN in context window is a SUBSTITUTION the run can see.
-
-Two live pathologies are behind this:
-
-* `llmsectest-weekday:20260922-060001` — bound to a 200k-class model, served OpenRouter's
-  `z-ai/glm-5.2:free` (32,768 tokens), died at turn 106 having spent $1.03 on a run that was
-  unrunnable from turn 0: "prompt is too long and cannot be shrunk further: 57,250 estimated
-  tokens … provider maximum 32,768". Nothing was stale — the limits file was right, `window.py`
-  sized against it, `overflow.py` reported it accurately. Every component did its job and the
-  run still died, because the only part that could have stopped planning against a window it no
-  longer had was the RUN, and the run was never told.
-* `weightloss:20260923-220004` — stepped down two rungs (503 auth → 402 → GLM 5.2) and was never
-  told, then read its own field-shifted output and concluded "the model cannot reliably hold the
-  action schema; pick a stronger model". A false diagnosis about itself, $1.01 over 193 turns.
-
-D146-B already tells the run WHICH model is serving it — as the turn's debris
-(`engine/turndebris.py`), dropped the moment the turn's action is accepted. So a few turns later
-the run holds exactly one statement about its own window: the `CAPABILITIES` line composed at
-boot under the BOUND model's figure (`engine/capabilities.py`), which a downward substitution
-silently falsifies and which cannot be rewritten (the prompt is immutable under the caching
-contract). These tests pin the durable half — an ENGINE NOTE, once per downward step, that is
-still in the prompt the turn after.
-
-The module under test is imported INSIDE each unit test on purpose: a module-level import of a
-symbol that does not exist yet turns the whole file into a collection error, and the
-end-to-end test below is the one that has to fail BEHAVIOURALLY before the fix (red-first).
-"""
+"""F539 — a fallback that steps DOWN in context window is a SUBSTITUTION the run can see."""
 
 from types import SimpleNamespace
 
@@ -136,12 +110,6 @@ def test_the_correction_is_given_once_per_window_and_survives_a_resume():
     """A run holds ONE wrong figure, so it needs ONE correction per window it has been
     corrected down to — a note per switch regardless would be the layer talking about itself
     (`window._warn_before_eviction` is once-per-run for the same reason).
-
-    And the latch has to be rebuildable, because a resumed leg REPLAYS the note it was given
-    (that is what `enginenote` records it verbatim for) while starting its in-memory guards
-    empty: without the rebuild the run is handed a second copy the moment the chain steps
-    again. `engine/guardscope.py` is where that contract lives, so the floor rides the note's
-    own record as `substitution_floor` and is read back from it.
     """
     from rsched.engine import substitution
 
@@ -175,11 +143,7 @@ def test_the_correction_is_given_once_per_window_and_survives_a_resume():
 # ---- end to end: it is still there the turn after ------------------------------------------
 
 def _server(routines_home) -> ServerConfig:
-    """A two-rung chain whose rungs differ in WINDOW and in nothing else.
-
-    100k rather than the live specimen's 32,768: a 32k window minus the default 16,384-token
-    output reservation cannot hold this harness at all, so the run would die of the overflow
-    this note exists to explain instead of demonstrating the substitution."""
+    """A two-rung chain whose rungs differ in WINDOW and in nothing else."""
     s = ServerConfig(
         endpoints={"epA": EndpointConfig(kind="openai", base_url="http://127.0.0.1:1/v1"),
                    "epB": EndpointConfig(kind="openai", base_url="http://127.0.0.1:2/v1")},
@@ -219,12 +183,6 @@ def _wire(monkeypatch, server, replies_by_endpoint) -> dict[str, ScriptedEndpoin
 def test_the_smaller_window_is_still_in_the_prompt_the_turn_after(make_routine, monkeypatch):
     """The whole finding in one run: the primary dies, a HALF-SIZED fallback serves the rest of
     the run, and the question is what the run can still see about that on its SECOND turn.
-
-    Before this change the answer was nothing. The failover notice is the turn's debris and is
-    dropped on success; the transcript event and the `model_failover` health event are for
-    readers after the fact; the usage row names the serving model to an auditor, not to the
-    model. What the run was left holding is its boot-time CAPABILITIES line — 200,000 tokens —
-    while it is being served 100,000.
     """
     d = make_routine("substitution-window")
     server = _server(d.parent)

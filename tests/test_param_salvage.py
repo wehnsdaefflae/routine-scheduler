@@ -1,26 +1,4 @@
-"""A tool parameter that swallowed the ones after it — repaired before the validator sees it.
-
-MEASURED, on `birthday-admin:20261022-080004` (turns 84-95). The model closed its `summary`
-parameter with a MISMATCHED tag — `</summary>` instead of `</parameter>` — and the provider's
-pseudo-XML tool-call reader then ran on to the NEXT real `</parameter>`. So `summary` arrived
-carrying its own text PLUS `</summary>\\n<parameter name="accounting">[...]`, and `accounting`
-arrived ABSENT. The engine told the run "no entry for d1..g1"; the run could see the array in
-its own reply, so it spent TWELVE turns bisecting the field — each at full prompt price — and
-finally shipped a 47-character diagnostic stub as that run's permanent summary
-("Test call to diagnose accounting field parsing.") with placeholder accounting entries
-("d2 met: test"). The accounting check accepted the placeholders and the run landed `ok`.
-
-Measured shape, from that transcript: the swallow hits EVERY finish whose summary ran long
-(1470-5170 chars, 9 occurrences) and NO short one (47-103 chars, 5 occurrences) — the longer
-the parameter, the likelier the model loses the closing tag. A scan of 149 fleet transcripts
-over 14 days found it in that one run, so this is rare and expensive rather than common.
-
-The repair is the one `normalize_action` already exists to make: provider/grammar debris is
-stripped BEFORE the semantic validator judges the model's intent. It is not silent — each
-salvage files `tool_param_salvaged`, which is deliberately NOT blocked work (the turn did
-happen) and deliberately NOT a `wrong_turn_detected` reason (that event IS blocked work and
-its rows are the wrong-turn corpus).
-"""
+"""A tool parameter that swallowed the ones after it — repaired before the validator sees it."""
 
 from __future__ import annotations
 

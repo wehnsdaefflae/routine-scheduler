@@ -1,24 +1,4 @@
-"""F586 / D160-C, step B3: the CANCEL LEAVES A TRACE an audit can find.
-
-D160's resolution, verbatim (operator, 2026-09-30): option C, *"B plus a transcript event, so an
-audit of the run afterwards SEES the human intervention instead of inferring it from a gap"*.
-
-Why the observation's `cancelled` flag was not already enough: an observation records what the
-RUN was told. The event records that somebody OUTSIDE the run reached in — and that is the part
-a later reader cannot reconstruct, because a cancelled call and a call that failed fast are
-indistinguishable in a record of outcomes alone.
-
-These tests are written the way the ladder's step 6 proved they must be (2026-10-03). That
-feature shipped FOUR releases recording nothing at all: its four event types were missing from
-`EVENT_TYPES`, `Transcript.event` opens with `assert type_ in EVENT_TYPES`, and its caller
-caught `Exception` by design — so every record path raised and the fallback raised too. Its own
-suite could not see it, because the suite stubbed the transcript with a list-appending fake. So:
-
-* one test goes through the REAL `Transcript` (a fake that accepts anything cannot fail the way
-  production does), and
-* the vocabulary test DERIVES the types from the source that writes them instead of restating a
-  list — which is what found the ladder's forgotten fourth type.
-"""
+"""F586 / D160-C, step B3: the CANCEL LEAVES A TRACE an audit can find."""
 
 from __future__ import annotations
 

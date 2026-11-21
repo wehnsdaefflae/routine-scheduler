@@ -1,12 +1,4 @@
-"""`deploy/install.sh`, run for real against a throwaway HOME.
-
-The host install is a shell script, so nothing imported it and nothing checked it — and it had
-kept its own copy of config generation, which drifted from `bootstrap.ensure_config` the day
-the routine tier got its own token. Here it runs end to end with the three things that would
-reach outside the sandbox stubbed: `uv` (its `sync` is a no-op and its `run python` is this
-suite's interpreter, so the script's Python calls run the real package), `systemctl` and
-`loginctl`. HOME is the test's own, so the config, the unit and every data home land in tmp.
-"""
+"""`deploy/install.sh`, run for real against a throwaway HOME."""
 from __future__ import annotations
 
 import os

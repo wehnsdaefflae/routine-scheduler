@@ -1,26 +1,4 @@
-"""Where the OUTCOME goes in a finish summary — the schema and the outcome-first check agree.
-
-MEASURED (F806). `library-sync:20261028-233002` turn 24 and `bahnbonus-seat-position:
-20261022-193955` turn 18 were each rejected on a Done-when line of the form "the finish summary
-leads with the outcome as scripts/outcome.py counts it". library-sync's objection, verbatim: "it
-opens with a **Process:** paragraph about the export/sync details first, and only presents
-syncs_pushed/days_since_push in the second **Work:** paragraph". It conceded ("the outcome
-numbers should literally open the summary, not sit after Process") and re-finished with the
-counts on a line ABOVE `**Process:**` — accepted, and NOT the shape the action schema describes:
-"a SHORT summary in TWO labelled parts — `**Process:**` 1-2 lines on HOW the run went, then
-`**Work:**` 2-5 lines on the task". So a run following the schema literally failed the check, and
-a run passing the check deviated from the schema. Two independent routines, one clause, a week
-apart.
-
-WHICH SIDE MOVED, and why this one: the two-part format is the operator's own (2026-10-28) and is
-pinned in four places — `engine/actionschema.py`'s `summary` description, `engine/kindprose.py`'s
-finish bullet, `KIND_EXAMPLES["finish"]` and `docs/prompt-anatomy.md` §5.1 byte-for-byte — and
-`static/md.js`'s `outcomeLine` already reads the `**Work:**` part back as the one-line outcome
-every console row shows. The CHECK is generated in one place (`engine/outcome_words.done_when_line`)
-and read by one judge (`engine/verifier`). So the check names `**Work:**` as the outcome's place,
-the schema is untouched, and the `outcome-first` RULE — which says lead with the outcome and is
-not the thing that was wrong — is untouched too.
-"""
+"""Where the OUTCOME goes in a finish summary — the schema and the outcome-first check agree."""
 
 from __future__ import annotations
 

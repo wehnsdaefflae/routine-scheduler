@@ -1,17 +1,4 @@
-"""Resizable + hideable sidebars (operator request 2026-09-04) in the REAL console.
-
-Four sidebars share static/resizable.js: the main navigation rail, the routine page's recipe
-file-tree column, and the run/conversation views' LEFT and RIGHT rails — the last two grid
-columns whose widths ARE the dragged properties, at every width from 760px up (0.335.0). A grip on each one's
-inner border resizes it on drag (writing that surface's `*-set` custom property, persisted) and
-hides/shows it on a click (toggling that surface's hidden class, persisted).
-
-The invariant every one of them rests on: the module writes ONLY a custom property and a class,
-never inline geometry, so each stylesheet's responsive collapse stays authoritative. Two
-consequences are tested here per surface, because both are silent when broken — the grip is
-`display: none` in the narrow layout, and a sidebar hidden on a wide screen must come BACK there,
-since with no grip to click there would be no way to recover it.
-"""
+"""Resizable + hideable sidebars (operator request 2026-09-04) in the REAL console."""
 
 from __future__ import annotations
 

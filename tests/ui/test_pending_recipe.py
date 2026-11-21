@@ -1,12 +1,4 @@
-"""D200's card on the REAL Decisions page: a run's proposed revision to its OWN recipe.
-
-Its own band, because the two buttons are not the queued-creation pair: nothing is CREATED here.
-The proposing run already reasoned the change and could not write it (a scheduled run holds no
-`write_recipe`), so "apply it" hands that run the capability back — the leg is resumed with its
-recipe writable and makes the edit itself. A kind with no band falls through `pending.js
-summarize()` to the lane label carrying a "create it" button that can only 400, which is the
-failure that module's own comment records, so the band is what these tests are for.
-"""
+"""D200's card on the REAL Decisions page: a run's proposed revision to its OWN recipe."""
 
 from __future__ import annotations
 

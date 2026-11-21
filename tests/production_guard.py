@@ -1,35 +1,4 @@
-"""The sandbox floor under the whole suite: no test may touch the LIVE instance's data.
-
-`conftest._hermetic_home` redirects `~` for `rsched.config`, but that binds this process
-only. A test that spawns a subprocess escapes it completely — and in F394 (2026-08-27) one
-did: a stub patch stopped taking after a refactor moved the symbol it patched, the daemon's
-Runner spawned the REAL `rsched.cli engine-run`, and that fresh interpreter loaded
-`~/.config/routine-scheduler/config.yaml` and executed a tmp-homed fixture routine against
-production — eleven turns on a paid endpoint, two rows in the live report ledger, for a
-routine that has never existed on that instance. The engine spawn itself now refuses a
-config nobody pointed it at (`daemon.runner_state.engine_cmd`); this module is the wider
-net under the whole class, so the NEXT escape route fails on its first write instead.
-
-Two rules, one session-scoped autouse fixture (session, not function: the process-wide
-chokepoints are patched once and the cost is a string compare per write, where re-patching
-per test would buy nothing and pay 1900×):
-
-1. No write lands inside one of the instance's real data homes. Every Python write
-   chokepoint this codebase reaches is covered — `open`/`io.open`, the `mkstemp` + `replace`
-   pair behind `paths.atomic_write`, and the mkdir/unlink/rmdir/symlink family that
-   `Path` and `shutil` delegate to, including the `dir_fd`-relative calls `shutil.rmtree`
-   deletes through. A path is normalised before the check, so a `..` cannot walk around it.
-2. No test runs this package's CLI as a subprocess. That child would load the production
-   config by definition — it is a fresh interpreter with none of the test's redirections —
-   so the spawn is refused before it exists, whatever subcommand it names and whether it is
-   spelled `rsched`, `python -m rsched…` or through a launcher (`uv run rsched …`).
-
-The rule is "the instance's data homes", NOT "anything outside tmp_path": tests legitimately
-write to /tmp, to the checkout (`__pycache__`, `.pytest_cache`), and — through the real
-`uv run` that the util tests exercise — to the real `~/.cache` and `~/.local/share/uv`.
-Those are caches a machine rebuilds. These are the paths where a stray write costs money,
-rewrites a real routine's history, or leaks into a ledger nobody can un-append.
-"""
+"""The sandbox floor under the whole suite: no test may touch the LIVE instance's data."""
 
 from __future__ import annotations
 
@@ -54,14 +23,6 @@ def _instance_paths() -> tuple[Path, ...]:
     before any fixture redirects `~`, so these are the REAL ones even under the hermetic
     home. The homes come from `registry.all_homes` rather than an inline list, so a fourth
     home can never be added to the system and forgotten here.
-
-    The XDG STATE dir is here because it was the hole this guard could not see (F684): the
-    util-stats snapshot lives under `XDG_STATE_HOME` (default ~/.local/state) rather than in
-    any home, since a Landlock-jailed util can read that and not routines_home/.control — so
-    every test that finished an engine run rewrote the operator's live snapshot from fixture
-    data, and nothing refused it. Read the same way the production code does
-    (`readmodels/util_stats.snapshot_path`), at import time, so the REAL dir is protected even
-    once the hermetic fixture has pointed the variable at a tmp tree.
     """
     import os
 
@@ -88,11 +49,6 @@ def _absolute(target: object, base: str | None = None) -> str | None:
     (its path was checked when it opened) or for anything that is not a path. A relative path
     resolves against `base` when the call names one (`_fd_dir`, a symlink's own directory),
     against the cwd otherwise.
-
-    String work only, never resolve(): this runs on EVERY write in the process, and resolve()
-    would stat the filesystem each time (and follow symlinks out of the check). Normalising
-    is the part that matters — the check is a prefix compare, and `<tmp>/x/../<home>/f`
-    starts with no protected prefix while the kernel walks it straight into the home.
     """
     if isinstance(target, int):
         return None

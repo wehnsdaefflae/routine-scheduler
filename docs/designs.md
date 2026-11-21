@@ -25,50 +25,15 @@ decided in conversation before any finding exists says so and carries none.
 
 ---
 
-## One name for a child run: "subrun" and "subtask" go (decided 2026-10-17, in conversation)
+## One name for a child run: the transcript events (decided 2026-10-17, in conversation)
 
 **Decided by the operator in conversation 2026-10-17; no finding.** His words: *"sub-runs /
-subtasks (why two terms for the same thing? fix that)"*.
-
-**Problem.** CLAUDE.md and `engine/child.py` define ONE concept, the child run, with three
-scheduling modes. The vocabulary around it never followed. The same thing is called four names
-depending on where you look:
-- **child run** — `engine/child.py`, `engine/childrun.py`, docs/child-runs.md, the `CHILD RUN
-  FINISHED` notification;
-- **subrun / sub-run** — the budget keys `max_subruns` / `max_subrun_depth` (DEFAULT_BUDGETS,
-  every settings pattern, 36 live routine.yaml files), the `subruns` action kind, the transcript
-  events `subrun_start` / `subrun_end`, the console ("sub-runs" rail section, "sub-run tree",
-  "sub-run selector") — measured 2026-10-17: ~180 occurrences in src, ~180 in tests, 64 in static;
-- **subtask** — the `subtask` action kind (the sequential mode), ~90 in src;
-- **spawn** — the `spawn` action kind (the parallel mode).
-Worse, `static/components/subruntree.js` and `views.css` use "subtasks" for the SEQUENTIAL children
-and "subruns" for the PARALLEL ones, so "subrun" means both "any child" and "a parallel child".
-The operator, reading a routine's budget ("max_subruns") beside a recipe's "subtask", reasonably
-read them as two mechanisms.
-
-**Shape.** One noun everywhere a person or a model reads it: **child run** (plural "child runs";
-"children" where a short token is needed). Concretely:
-- budget keys `max_child_runs` / `max_child_depth`; the one-shot migration rewrites every
-  routine.yaml, every settings pattern and the conversation configs (MIGRATION marker, per the
-  migration rules), and `DEFAULT_BUDGETS` and the routine page's labels follow;
-- the action kinds: `spawn` and `subtask` become ONE kind, `child`, with a flat `mode` field
-  (`parallel` | `sequential`, the vocabulary `engine/child.py` already owns), and `subruns`
-  becomes `children`. KINDS, the schema, kindsurface, prompt-anatomy.md and its test move
-  together; the composer's kind copy says "child run";
-- transcript events `subrun_start` / `subrun_end` become `child_start` / `child_end` — EVENT_TYPES,
-  the web renderer and the meta routines move together, and stored transcripts are migrated
-  one-shot (a resume re-renders history, so old event names must not survive);
-- the console: "child runs" in the run rail, the tree and the selector; the tree marks mode with
-  its arrows, not with two nouns;
-- docs swept (CLAUDE.md, docs/child-runs.md, docs/architecture.md, help.js, docstrings).
-A conversation `branch` stays a mode of the same concept and keeps its user-facing verb.
-
-**First increment.** The model- and person-facing vocabulary: the `child` kind with `mode` (the
-two old kinds removed, not aliased — no backwards compatibility), `children` for `subruns`, the
-prompt wording and prompt-anatomy.md, and the console labels; red-first tests that the schema
-offers no `spawn`/`subtask`/`subruns` kind and that the rendered prompt never says "subrun" or
-"subtask". The budget keys, event names and their migrations are the second increment, in the
-same campaign.
+subtasks (why two terms for the same thing? fix that)"*. The kinds (`child` with `mode`,
+`children`) and the budget keys (`max_child_runs` / `max_child_depth`) have shipped. What remains:
+the transcript events `subrun_start` / `subrun_end` become `child_start` / `child_end` —
+EVENT_TYPES, the web renderer and the meta routines move together, and stored transcripts are
+migrated one-shot (a resume re-renders history, so old event names must not survive) — and any
+console label still saying "sub-run" says "child run".
 
 ---
 
@@ -101,7 +66,7 @@ vs DOM helpers, window's eviction warning, loop's observe/turn-record helpers. T
 permission to re-grow, which is why the gate reports one as a failure.
 
 The 20 worst are all test modules (`test_loop.py` 3268, `test_api.py` 3011, `ui/test_flows.py`
-2127) and `static/views.css` (2024); `docs/designs.md:380` covers the test-helper half.
+2127) and `static/views.css` (2024); "Shared test builders" below covers the test-helper half.
 
 **First increment.** `engine/inbox.py`, the most imported.
 
@@ -123,51 +88,6 @@ structural — one writer instead of N for a file no engine reads, and the per-r
 that only grows (the whole durable usage stream, parsed per run with nothing memoized). Two
 documented behaviour changes: `rsched run-once` no longer refreshes the snapshot by itself, and
 the file may lag a finish by up to 60 s.
-
----
-
-## After 0.372.2 reaches the instance (self-audit housekeeping)
-
-Self-audit's own items for the first run after the deploy that brings 0.372.2 — none needs the
-builder.
-
-- Tell `doppelcheck-maintainer` and `steward-hub-maintainer` (an addressed `report` each) that
-  their notes about Node are stale — doppelcheck's memory names `/usr/bin/node v20.20.2` and a
-  `/tmp` Node 22 workaround, steward-hub's state `/usr/bin/node`; the image now runs Node 24 LTS at
-  `/usr/local/bin`.
-- Delete `~/routines/.permissions-adopted.json`: its writer (`bootstrap.adopt_permissions`) is gone.
-- Read `.control/migrations/seed-utils.json` and `.control/migrations/enabled.json`: anything they
-  left as it was is named there. (The live library's `git`, `remote`, `pytest-run`,
-  `reminder-census` and `vision` were brought current by hand on 2026-10-01, library commits
-  7d06482 and 92bd051, and 0.372.1 made util-seed's `git` and `remote` the library's files — so
-  seed-utils should report the three utils it carries, `remote`, `vision` and `git`, "already
-  current". Anything else there is a real finding. (`reminder-census` was the fourth until the
-  operator deleted it from the library on 2026-10-05; `bootstrap.sync_seed_utils` never
-  resurrects a deleted util, so its seed, its test and its migration row were removed.)
-- Once library-sync has exported after the operator rotated the routine token, confirm the library
-  repo's `config/config.yaml` reads `routine_token: REDACTED`.
-- Confirm Opus answers through `claude-proxy` again. 0.372.0 stopped forcing the action tool, and
-  from the moment 0.372.1 went live every Opus turn came back `stop_reason: tool_use` with nothing
-  to read and failed its run over to GLM 5.3; 0.372.2 forces it again. Since the deploy there
-  should be no `empty completion` error on a claude-proxy model and no failover away from one for
-  it. Any empty completion now carries `stop_details.unread` — the reply's block types, a tool
-  call's name and its input's type: file that shape as a finding against
-  `endpoints/anthropic_api.py`, because the cause was never confirmed (the deployed proxy config
-  disables the cloak whose tool renaming would explain it).
-- Settle R2111. scheduler-builder reported
-  `tests/test_run_gate_checks.py::test_testing_the_gate_reports_without_running` failing on main at
-  e570769; it passes on 0.372.x in the review's environment. Run it on the instance and close the
-  row either way.
-- Tell `scheduler-builder` (an addressed `report`) what its `audit/D152` campaign will meet when it
-  merges main, unless it already has. The branch was pushed 2026-10-01 14:28 CEST from e570769 and
-  calls its release 0.371.0, but main has since shipped 0.371.0–0.372.2: the release takes the next
-  number above main's newest CHANGELOG header. Every file its commit message names changed on main
-  in between — `engine/loop.py` by ~540 lines, `engine/remind.py`, `reminders.py`,
-  `reminder_checks.py`, `engine/actionschema.py`, `docs/reminders.md`, `docs/prompt-anatomy.md`.
-  And its pushed commit holds only `tests/test_reminder_kinds.py`: the source changes the message
-  describes are not on origin, so they must be committed in its worktree before the merge.
-
-**First increment.** The three reports.
 
 ---
 
@@ -437,28 +357,3 @@ submission naming the validation split; the run gate skips a fire when no ticket
 
 **First increment.** The pattern file (lint-green), one worked example in docs/examples.md, and a
 first routine on predator's GPU for the GPT-2 demo track (its 6 GB only fits that).
-
----
-
-## A second opinion from another model family, as a library rule (decided 2026-11-08, in conversation)
-
-From a review of getpaseo/paseo, whose advisor/committee skills get an independent read from a
-DIFFERENT provider family, with no edit rights, before a contested decision.
-
-**(a) IS BUILT** — a catalog model carries a one-line `note` ("when to use this model"), edited
-on its catalog row and returned by `list_models` beside each name, so a run choosing a `model`
-for `spawn`/`subtask`/`llm` or a `role_swap` position reads why rather than only what exists.
-Advice, never a routing rule: nothing in the engine reads it to decide anything, and unset
-prints nothing at all. What remains is (b) alone.
-
-**Shape (b).** A library rule, `second-opinion`, whose operative line asks a run facing an
-irreversible or contested judgment (a release decision, a triage verdict, a reply that cannot be
-unsent) for one independent read from a child run on a model of a different family, briefed
-self-contained and with no write rights, and to name in its finish where the two disagreed. It
-names the capability, never a model or a util, and is bound per routine like every rule.
-
-**THE RULE IS WRITTEN** — authored to the live library and seeded in `library-seed/rules/`
-(0.528.0), with its provenance and the honest note that it rests on an argument rather than on
-effectiveness data in `docs/curated-rules.md`. What remains is not code: a rule binds NO routine
-until the operator's config says so, so the open step is **binding it to `self-audit` first** and
-then having rules-review read its use back. This entry stays only to carry that one step.

@@ -1,12 +1,4 @@
-"""Help: the guides, the index that reaches them, and what the page says when they are missing.
-
-The live console served `{"guides": [], "api": "api/rsched.html"}` — so Help was one entry
-("API reference") over pdoc's submodule index, and every written guide, `docs/getting-started.md`
-included, was unreachable from the console. Silence made it read as "this is all there is".
-
-With the source root fixed the other extreme arrives: three dozen guides. They are an index
-COLUMN in the server's reading order, not a wrapped wall of chips above the frame.
-"""
+"""Help: the guides, the index that reaches them, and what the page says when they are missing."""
 from __future__ import annotations
 
 import json

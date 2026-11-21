@@ -1,10 +1,5 @@
 """R2249 bug 1: a multimodal run calling the `vision` util on a file it can simply look at is
 REFUSED, in both dispatch paths, before any credential question is asked. No network.
-
-The refusal must be exactly as narrow as the engine's own native-view predicate: everything
-`vision` genuinely exists for — a text-only run, a media type the endpoint cannot carry, a file
-over the native cap, a URL, a flag — has to pass through untouched. These tests pin both edges,
-because a refusal that is too wide removes the fallback the engine depends on.
 """
 
 from __future__ import annotations

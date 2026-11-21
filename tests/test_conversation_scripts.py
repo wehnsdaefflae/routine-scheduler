@@ -1,14 +1,4 @@
-"""A conversation HOLDS scripts, and its rail can list them (F833).
-
-The operator, 2026-11-02: *"why do conversations not show the routine's scripts in the right
-side bar? routine runs seem to do it"* — decided 2026-11-05: conversations hold scripts. The
-engine already let them: a conversation's run resolves `script` against its own dir
-(`executor._script_homes` starts at `ctx.routine.dir`, which IS the conversation dir) and may
-create `scripts/` like any routine (it is neither sealed nor recipe) — 33 of 139 conversations
-on this instance hold 144 scripts between them. What was missing was the READ: the only scripts
-route resolved slugs through the routines home, so every conversation's list 404'd and the rail
-swallowed it. The conversation route is the routine route's twin, on the same reader.
-"""
+"""A conversation HOLDS scripts, and its rail can list them (F833)."""
 
 from __future__ import annotations
 

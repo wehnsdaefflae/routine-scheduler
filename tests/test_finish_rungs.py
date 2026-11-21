@@ -1,12 +1,4 @@
-"""The finish gate's ladder, declared and asked through the hook-point registry (D152 step 6).
-
-What these pin is the step's whole claim: `pre-finalize` now GOVERNS the gate instead of
-describing it. So the table must agree with the gate it describes (a rung the gate asks and the
-table omits, or the reverse, is the defect step 4 found in the reminder layer's two entries),
-the declared policy must be the one the gate enforces, and the registry must name the mechanism
-— because a point whose `fires` omits the layer that fires most at it is a registry read as
-fact that is not one.
-"""
+"""The finish gate's ladder, declared and asked through the hook-point registry (D152 step 6)."""
 
 from __future__ import annotations
 
@@ -136,13 +128,6 @@ def test_the_friction_counter_reads_the_declaration_instead_of_a_copy():
 def test_the_declaration_names_the_rungs_in_the_order_check_finish_asks_them():
     """A reader's list is only worth anything in the gate's own order — `frictions` picks the
     FIRST key a deferral carries, and the console names the rung from it.
-
-    Pinned against `check_finish`'s own body, not the module text: three rungs
-    (`final_undeclared`, `jobs_owed`, `accounting`) are asked inside the two helpers, which
-    Python defines ABOVE the ladder — so module-order is not ladder-order, and a test that read
-    it as one failed on its own premise rather than on a defect. The six asked directly must
-    appear in the declared relative order, and the three asked via a helper are named here so
-    the exemption is a statement rather than a gap.
     """
     body = next(n for n in ast.walk(ast.parse(inspect.getsource(finishgate)))
                 if isinstance(n, ast.FunctionDef) and n.name == "check_finish")

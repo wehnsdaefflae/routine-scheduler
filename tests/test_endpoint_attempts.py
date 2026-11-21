@@ -1,20 +1,4 @@
-"""The ATTEMPT seam: `with_retries` reports every retry boundary from INSIDE the retry loop.
-
-F655 (operator-reported, 2026-10-10). A resumed run's first call went to claude-proxy, the proxy
-never answered, the engine's 600 s read timeout cut it, and `with_retries` sent it again one
-second later; the second attempt answered in 1m10s. For those 11 minutes `llm-tasks.jsonl` held
-ONE `started` record and the console showed one call in flight — a hung run and a slow run were
-indistinguishable from outside, and the operator had to read the proxy's container log to find
-out which.
-
-The structural cause is an ordering one: instrumentation wraps the adapter from OUTSIDE
-(`endpoints/instrument.InstrumentedEndpoint.complete`) while the retry loop lives INSIDE it
-(`anthropic_api:268`, `openai_compat:251/299` → `base.with_retries`). So the task record sees ONE
-call however many attempts it took, worst case 3 × 600 s = 30 minutes behind a single `started`
-row. The boundary therefore has to be reported from inside the loop, which is what this module
-pins — and what the reporter is handed must be legible: an httpx timeout's `str()` is the EMPTY
-STRING, so the error that ended his attempt rendered as `claude-proxy: ` with no cause in it.
-"""
+"""The ATTEMPT seam: `with_retries` reports every retry boundary from INSIDE the retry loop."""
 
 from __future__ import annotations
 

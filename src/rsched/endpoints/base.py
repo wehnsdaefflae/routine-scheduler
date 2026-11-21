@@ -4,11 +4,8 @@ Adapters return complete responses (no token streaming — the engine streams wh
 events). Retryable transport errors are raised as EndpointError(retryable=True); the shared
 `with_retries` helper (tenacity) gives HTTP adapters a uniform 3-try exponential backoff.
 
-What media an endpoint may be handed lives NEXT DOOR, in `media_types.py`: the one
-modality-tagged allowlist (image / pdf / audio / video), the size and pixel bounds, and the
-`supports_media_type` core every adapter's `supports_media` is built from. It is a separate
-module because it is pure — tables and file-header reads, no transport — and because this file
-is over the house size bar and may only shrink.
+What media an endpoint may be handed lives in `media_types.py` (the modality allowlist,
+size bounds and the `supports_media_type` core every adapter's `supports_media` builds on).
 """
 
 from __future__ import annotations
@@ -22,30 +19,25 @@ from tenacity import Retrying, retry_if_exception, wait_exponential
 from . import attempts, errorsignal
 
 # {"role": "system"|"user"|"assistant", "content": str} — plus an OPTIONAL "media" list for
-# native media input: [{"path": <abs file>, "media_type": <mime>}], the mime being one of
-# `media_types.MEDIA_MODALITIES`. `content` stays a str always (so every str-assuming site keeps
-# working); only adapters whose model is multimodal read `media` and fold the files into the
-# provider payload at send time.
+# native media input: [{"path": <abs file>, "media_type": <mime>}] (`media_types.MEDIA_MODALITIES`).
+# `content` stays a str always; only multimodal adapters read `media`, at send time.
 Message = dict
 
 DEFAULT_TIMEOUT = 600
 
-#: How long to wait for the TCP/TLS handshake, separately from the 600 s a model may
-#: legitimately spend THINKING. httpx applies a scalar timeout to every phase, so one
-#: value meant a provider that stopped answering at the IP level (route flap, firewall)
-#: held a turn for 600 s × 3 tries = half an hour, with no observation and no cooldown
-#: until the end. A connect that has not completed in ten seconds is not slow, it is gone.
+#: The TCP/TLS handshake bound, separate from the 600 s a model may spend THINKING: a connect
+#: that has not completed in ten seconds is not slow, it is gone.
 CONNECT_TIMEOUT = 10.0
 
-# F220: the longest a server-sent Retry-After hint is honored before with_retries falls back
-# to its own schedule — bounds how long a single rate-limited attempt can pause a run.
+# The longest a server-sent Retry-After hint is honored — bounds how long one rate-limited
+# attempt can pause a run.
 RETRY_AFTER_CAP_S = 30.0
 #: A REFUSED connection is retried this long, at most STEP between tries (`retry_base_delay` units).
 UNREACHABLE_PATIENCE, UNREACHABLE_STEP = 120.0, 10.0
 
 class EndpointError(Exception):
     """A transport failure. `retryable` feeds the with_retries backoff, `auth` lets the UI say
-    "check the key", `signal` carries what the failure DECLARED (R3108: read it with
+    "check the key", `signal` carries what the failure DECLARED (read it with
     `errorsignal.of`, never by matching sentences in the message).
     """
 
@@ -56,12 +48,10 @@ class EndpointError(Exception):
         self.retryable = retryable
         self.unreachable = unreachable  # a REFUSED connection: retried for UNREACHABLE_PATIENCE
         self.auth = auth
-        # F220: the Retry-After hint (seconds) a 429 sent. with_retries honors it (capped) over
-        # its generic schedule, so a provider asking for longer is waited out, not failed over.
+        # Retry-After (seconds) from a 429; with_retries honors it (capped) over its schedule.
         self.retry_after = retry_after
-        # R3108: status + the provider's own error.code/type/param, decoded from the WHOLE body
-        # at the raise — `message` keeps only resp.text[:300], so an object past that cut
-        # reaches no decision point through the text (errorsignal.py states the whole design).
+        # Status + the provider's error.code/type/param, decoded from the WHOLE body at the
+        # raise — `message` keeps only resp.text[:300].
         self.signal = signal
 
 
@@ -78,41 +68,28 @@ class Completion:
 
     text: str                     # raw reply text ("" when only parsed content came back)
     parsed: dict | None = None    # object from the endpoint's native schema mode, if any
-    # The schema'd objects a reply carried AFTER `parsed`, in wire order — a reply that chains as
-    # several CALLS (F754); empty for a reply with one object or none. `parsed` stays exactly one
-    # object, which is what its ~30 readers mean by it; the rest live here, and
-    # `replyactions.reply_actions` folds them in after the text actions so chaining runs them in
-    # order. Dropping them was the R2443-R2445 false-claim shape on the call channel.
+    # The schema'd objects a reply carried AFTER `parsed`, in wire order (a reply chaining several
+    # CALLS); `parsed` stays exactly one object. `replyactions.reply_actions` folds these in after
+    # the text actions — never drop them.
     parsed_rest: list[dict] = field(default_factory=list)
     usage: dict = field(default_factory=lambda: {"in": 0, "out": 0})
     provider: str = ""            # serving provider behind an aggregator (OpenRouter), if reported
-    # Why generation stopped, VERBATIM from the provider (anthropic stop_reason, openai
-    # finish_reason, ollama done_reason) — "" when unreported. One mapped exception:
-    # openai_compat promotes the spec's dedicated `message.refusal` field to "refusal" when
-    # content is empty, so the same semantic isn't hidden behind a bare finish_reason
-    # "stop". The engine keys off this to tell a classifier refusal (HTTP 200, stop_reason
-    # "refusal"/"content_filter", usually an EMPTY reply) from a provider hiccup: a refusal
-    # is referred/failed over, NEVER blind-retried against the same model
-    # (engine/completion.py REFUSAL_STOPS).
+    # Why generation stopped, VERBATIM from the provider — "" when unreported. One mapping:
+    # openai_compat promotes an empty reply's `message.refusal` to "refusal". The engine keys
+    # off this to tell a classifier refusal from a hiccup (engine/completion.py REFUSAL_STOPS).
     stop_reason: str = ""
-    # Provider detail on WHY it stopped ({category, explanation, ...} verbatim on a Messages
-    # API classifier refusal, which can omit it; the promoted refusal's prose on
-    # openai_compat) — {} when unreported. The Anthropic adapter adds `unread` to a reply it
-    # could read nothing from: its content blocks by type, never a value. Diagnostic only:
-    # surfaced in the refusal and empty-completion error events so the transcript says what
-    # came back (F164, R5); the engine branches on stop_reason, never on this. It also adds
-    # `forced_reask` — what an unreadable `auto` reply carried — to the answer it got by asking
-    # once more with the tool forced, a turn that ran at the proxy's default effort.
+    # Provider detail on WHY it stopped ({category, explanation, ...}) — {} when unreported. The
+    # Anthropic adapter adds `unread` (content block types of an unreadable reply) and
+    # `forced_reask` (what an unreadable `auto` reply carried before the forced re-ask).
+    # Diagnostic only: the engine branches on stop_reason, never on this.
     stop_details: dict = field(default_factory=dict)
 
 
 class ChatEndpoint(Protocol):
     """What every adapter implements: one stateless completion in, a Completion out.
     No streaming, no state, no tools — endpoints are transports, never a second harness.
-    Nothing identifies the conversation: caching is the PROVIDER's, earned by a byte-stable
-    prefix (implicit for OpenAI-style providers, `cache_control` breakpoints for anthropic),
-    which the engine's append-only message list gives it without a key. Nor the model's
-    window: one endpoint serves many models, so the window rides the resolved ModelRef.
+    Caching is the PROVIDER's, earned by the engine's byte-stable prefix; the model's window
+    rides the resolved ModelRef, since one endpoint serves many models.
     """
 
     name: str
@@ -133,12 +110,9 @@ class ChatEndpoint(Protocol):
     def supports_media(self, media_type: str, *, multimodal: bool, audio: bool,
                        video: bool) -> bool:
         """Whether a file of `media_type` (a `media_types.MEDIA_MODALITIES` entry) can ride a
-        message's `media` list NATIVELY — given the resolved model's modality bits, which the
-        caller passes because one endpoint serves many models: `multimodal` always, plus
-        `audio` / `video` for the two time-based modalities. False → the engine routes that
-        file through the `vision` util (or refuses it, saying why). The adapter contributes
-        only the WIRE facts on top: PDFs ride the Anthropic adapter, audio rides the
-        OpenAI-compatible one, and each adapter answers False for what its wire cannot carry.
+        message's `media` list NATIVELY, given the resolved model's modality bits. False → the
+        engine routes it through the `vision` util (or refuses it). The adapter adds only its
+        WIRE facts (PDFs on Anthropic, audio on OpenAI-compatible).
         """
         ...
 
@@ -187,8 +161,7 @@ def api_key_source(*, api_key: str, key_var: str, key_env_file: str) -> dict:
     if key_env_file and key_var:
         if key_from_env_file(key_env_file, key_var):
             return {"source": "env_file", "var": key_var, "env_file": key_env_file}
-        # the resolver RAISES here (an env file was explicitly configured and the key
-        # is not in it) — reporting a benign "none" made the Settings card lie
+        # the resolver RAISES here, so this is not a benign "none"
         return {"source": "none", "var": key_var, "env_file": key_env_file,
                 "env_file_miss": True}
     return {"source": "none", "var": key_var or None}
@@ -233,11 +206,8 @@ def post_json(url: str, body: dict, headers: dict | None, timeout: int,
 
 
 def _transport_cause(exc: httpx.HTTPError, timeout: float) -> str:
-    """What ended the attempt, in words — because httpx's timeout exceptions carry an EMPTY
-    message (F655: `str(httpx.ReadTimeout(""))` is `""`), so the operator's 600 s read cut
-    reached his console as `claude-proxy: ` and said nothing about the bound it hit. The
-    attempt record this error travels in is only as useful as this string, and a timeout is
-    exactly the failure a reader needs named: which clock ran out, and what it was set to.
+    """What ended the attempt, in words — httpx's timeout exceptions carry an EMPTY message,
+    and a timeout needs naming: which clock ran out, and what it was set to.
     """
     text = str(exc).strip()
     if isinstance(exc, httpx.ConnectTimeout):
@@ -250,16 +220,14 @@ def _transport_cause(exc: httpx.HTTPError, timeout: float) -> str:
     return text or type(exc).__name__
 
 
-#: Which statuses mean "the request never got a verdict" now lives with the rest of the failure
-#: classification, in `errorsignal` (R3108). Re-exported: it is part of this module's surface.
+#: Re-exported from `errorsignal`, where the failure classification lives.
 RETRYABLE_STATUSES = errorsignal.RETRYABLE_STATUSES
 
 
 def raise_for_status(resp: httpx.Response, name: str) -> None:
     """The shared HTTP-status classifier: 401/403 → auth (the UI says "check the key"),
-    408/409/429/5xx and a held-credit 402 → retryable, any other non-200 → fatal. R3108: the 402
-    split reads what the provider DECLARED (`errorsignal.retryable_402`), not the sentence "in-
-    flight requests"; the signal is built HERE because `msg` keeps only the body's first 300.
+    408/409/429/5xx and a held-credit 402 → retryable, any other non-200 → fatal. The signal is
+    built HERE from the whole body, because `msg` keeps only its first 300 characters.
     """
     if resp.status_code == 200:
         return
@@ -289,10 +257,9 @@ def json_or_raise(resp, name: str) -> dict:
 
 def retry_base_delay() -> float:
     """The unit of every retry backoff in the system, read PER CALL from
-    RSCHED_RETRY_BASE_DELAY (default 1.0). The suite zeroes it so retry LOGIC runs while
-    the clock does not — which only holds if every schedule reads it from here. The two
-    schedules themselves differ on purpose and stay apart: this wrapper's exponential
-    wait, and the engine's linear empty-completion pause (engine/completion.py).
+    RSCHED_RETRY_BASE_DELAY (default 1.0); the suite zeroes it so retry LOGIC runs without the
+    clock. The exponential wait here and the engine's linear empty-completion pause differ on
+    purpose.
     """
     import os
 
@@ -302,15 +269,11 @@ def retry_base_delay() -> float:
 def with_retries(fn, *, tries: int = 3, base_delay: float | None = None):
     """Run fn(); on EndpointError(retryable=True) back off 1s/2s and retry (3 tries total).
     Non-retryable EndpointErrors propagate immediately; the last error is re-raised as-is.
-    The default backoff honors RSCHED_RETRY_BASE_DELAY (`retry_base_delay`, read per call):
-    the test suite zeroes it — dead-endpoint tests exercise the retry LOGIC, never the clock.
+    The default backoff unit is `retry_base_delay()`.
 
-    Every boundary is reported through `attempts.boundary` BEFORE the loop sleeps (F655). The
-    caller that observes a call wraps this from outside and therefore cannot see an attempt end:
-    one `started` record covered up to three attempts of `DEFAULT_TIMEOUT` each, so a retrying
-    call and a thinking one looked the same for as long as half an hour. Only the loop knows,
-    and this is where it says so. The terminal failure is NOT reported here — the observing
-    wrapper records that as the call's own `failed`, so nothing is booked twice.
+    Every boundary is reported through `attempts.boundary` BEFORE the loop sleeps — only the
+    loop can tell a retrying call from a thinking one. The terminal failure is NOT reported
+    here: the observing wrapper records it as the call's own `failed`.
     """
     if base_delay is None:
         base_delay = retry_base_delay()
@@ -323,10 +286,8 @@ def with_retries(fn, *, tries: int = 3, base_delay: float | None = None):
                               retry_in=float(state.upcoming_sleep or 0.0))
 
     def wait(state):
-        # F220: when the provider sent a Retry-After on a 429, wait exactly that (capped),
-        # so a rate limit asking for a longer pause is honored instead of exhausting the
-        # generic 1s/2s schedule and failing over. base_delay==0 (the test clock) short-
-        # circuits the hint too, so retry-LOGIC tests never sleep on a real header.
+        # A 429's Retry-After is waited exactly (capped) rather than failing over;
+        # base_delay==0 (the test clock) skips the hint too.
         exc = state.outcome.exception() if state.outcome else None
         hint = getattr(exc, "retry_after", None)
         if hint and base_delay:

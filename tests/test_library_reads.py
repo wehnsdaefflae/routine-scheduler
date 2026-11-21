@@ -1,9 +1,5 @@
 """The library's parsed documents, read once per change — and the bound that decides whether
 that memo survives a busy boot.
-
-`GET /api/library` re-linted every workflow, rule, permission, reminder and playbook plus 110
-util headers on EVERY call — 3.7-4.3 s on the live instance, fetched whenever a routine page
-opens.
 """
 from __future__ import annotations
 

@@ -1,19 +1,5 @@
 """`wrong_turn_detected`: the turn that came back WELL-FORMED AND WRONG, filed where a rate
 can be read (R2652, first increment — MEASUREMENT ONLY).
-
-`engine/degrade.py` is documented as "when a turn comes back WRONG" and carries four ordered
-nets — but all four fire on a turn that failed to ARRIVE (a transport error, an empty reply, a
-classifier refusal). A well-formed but WRONG turn is, to that ladder, a success: the engine
-rejects it, re-drives it, and the only trace is a transcript `error` event and two telemetry
-counters nothing files. So the thing the later effort-ladder increment needs — HOW OFTEN a turn
-comes back wrong, at which turn of a run, and at what effort — is measurable on this instance
-nowhere.
-
-This increment adds the TRIGGER and nothing else: one health event on the failures the engine
-ALREADY SEES, in the machine-checked vocabulary, readable through the reader that already
-exists. No effort is changed, no model is swapped, no retry is added, no routing layer appears
-— `test_nothing_about_effort_or_model_resolution_changed` is what holds that line, and it is
-meant to go red on the day someone wires the cascade here instead of deciding to.
 """
 
 from __future__ import annotations

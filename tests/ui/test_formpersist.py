@@ -1,9 +1,4 @@
-"""formpersist.js keeps a typed draft — and refuses anything credential-shaped by default.
-
-The guard used to key on an input's TYPE and its field key alone, so a credential that arrived
-in a TEXTAREA (the masked Secrets value box, the proxy sign-in paste box carrying an OAuth code
-and state) was stored in the tab's sessionStorage until each field was opted out by hand.
-"""
+"""formpersist.js keeps a typed draft — and refuses anything credential-shaped by default."""
 
 from __future__ import annotations
 

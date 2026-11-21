@@ -1,46 +1,16 @@
 """What a supervisor is told the run is FOR — its goal and its stopping conditions.
 
-Split out of `ladder.py` (F803) because the two readers that produced them were reading a
-config object that cannot carry what they asked it for, and the explanation of why is longer
-than the code.
-
-## The defect this module exists to end
-
-`ladder._goal` probed `ctx.routine` for `instruction`, then `task`, then `name`; `_stopping`
-probed it for `done_when` and `finish_line`. **`RoutineConfig` declares none of those four**
-(`config/routine.py`), and `_Config` sets `extra="ignore"` (`config/base.py`), so an undeclared
-key cannot survive as an attribute either. Measured on the live tree at 0.474.1:
-
-    >>> RoutineConfig(slug="self-audit", name="Self audit", dir=...,
-    ...               instruction="REAL GOAL TEXT", done_when=["d1 ..."])
-    >>> ladder._goal(ctx)      -> 'Self audit'     # the display label, via the `name` fallback
-    >>> ladder._stopping(ctx)  -> []               # every time, for every run
-
-So every rung ever dispatched judged drift against a two-word routine name, with an empty list
-of stopping conditions — while `_goal`'s own docstring promised "the instruction it was started
-with, never a paraphrase: a supervisor judging drift against a summary of the goal cannot see
-drift INTO that summary". A display name is the most extreme summary available.
-
-It survived a green suite because `tests/test_ladder_trigger.py`'s `_Routine` fake carries
-exactly those three forbidden attributes, so the suite proved the readers against a shape
-production never produces. That is the same class as R2348/R2352 in this same file, where the
-fake said `subs` and so did `ladder.py`, and every rung on every run died of an AttributeError
-for months behind green tests. The `getattr` defaults were not a safety net: they are what
-absorbed the mismatch silently. There are none here — the sources below either exist or the
-reader returns nothing, visibly.
+`RoutineConfig` carries no instruction, Done-when or finish line (and `extra="ignore"` drops
+undeclared keys), so these are read from where they really live (F803) — never from a
+`getattr` default, which once had every rung judge drift against the routine's display name.
+A supervisor judging drift against a summary of the goal cannot see drift INTO that summary.
 
 ## Where the real values live
 
-- the GOAL: a top-level run's goal is its RECIPE, not a transient string. `instruction.md` is a
-  compile seed that real routines do not persist (`engine/runtime.py` reads it as `""`), so
-  `loop.instruction` is non-empty only for a CHILD run (its `prompt`) and a conversation. For a
-  scheduled run the honest answer is the recipe's own `## Done when` — which is exactly what the
-  FINISH is held to (`engine/finishgate.py`).
-- the STOPPING conditions: `donewhen.read(dir)` for the recipe's `## Done when`,
-  `finishline.load(dir)`/`open_outcomes` for the routine's finish line, and `goals.owed(...)`
-  for what a person asked that no run has met yet. One composition, the same three sources the
-  accounting uses, so the supervisor and the finish gate can never disagree about what this run
-  is held to.
+- the GOAL: `loop.instruction` is non-empty only for a CHILD run and a conversation; a
+  scheduled run's goal is its recipe's `## Done when` — what the FINISH is held to.
+- the STOPPING conditions: `donewhen.read`, `finishline.open_outcomes` and `goals.owed` — the
+  same three sources the accounting uses, so the supervisor and the finish gate never disagree.
 """
 
 from __future__ import annotations

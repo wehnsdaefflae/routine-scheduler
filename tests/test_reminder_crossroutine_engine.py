@@ -1,9 +1,4 @@
-"""D152-C step 2, the ENGINE half: setting a hook on another routine, and the target's say.
-
-The store half (`test_reminder_crossroutine.py`) proves the file shapes. This proves the two
-runs: routine A emits `remind {op: add, target: B}` and the hook lands in B's store; B's next
-run meets it as FOREIGN, carries a disposition on the fire, and that disposition outranks A.
-"""
+"""D152-C step 2, the ENGINE half: setting a hook on another routine, and the target's say."""
 
 import pytest
 

@@ -1,44 +1,4 @@
-"""The ≤350-line house bar, enforced as a RATCHET — prose that nothing checked becomes a gate.
-
-CLAUDE.md's Standards have said "One responsibility per file, ≤ ~350 lines. Split rather than
-grow" for the life of the repo, and nothing ever read a file's length: `tests/test_quality.py`
-runs ruff, mypy and vulture, none of which can see a line count. So the bar was advice, and the
-tree drifted — the count and every ceiling are in `size_ratchet.json` beside this file.
-
-Two shapes were rejected before this one:
-
-* A FLAT check (`every file ≤ 350`) can never go green on this tree, and a gate that is red on
-  arrival is a gate someone deletes.
-* An ALLOWLIST of "known big files" excuses exactly the files it names — and the two the finding
-  named (`engine/background.py`, `daemon/runner.py`) were written by the same routine that would
-  maintain the allowlist. A standard you may exempt yourself from is not a standard.
-
-A RATCHET is what this repo already does where a standard arrived after the code did: pyproject's
-`mccabe max-complexity`, the `pylint max-args` family and coverage's `fail_under` each read
-"ratchet to current worst; lower over time". This is that, per file, with three rules:
-
-1. **A file at or under the bar may never cross it.** New drift stops today. The baseline cannot
-   be extended to cover a newly-over-bar file — `--update` refuses, by construction.
-2. **A file already over the bar may never grow.** Its current length is its ceiling. An addition
-   belongs in a new file, which is what "split rather than grow" means.
-3. **Shrinking is one-way.** A file that comes back under the bar loses its entry and can never
-   be over it again; a file that merely shrinks tightens its ceiling to the new count. Without
-   this, a file could shrink by 40 lines and silently re-grow by 40 later.
-
-Rule 3 is why a shrink is itself a (loud, one-command) failure: a ceiling nobody tightens becomes
-permission to re-grow, and that is the hole the whole ratchet exists to close.
-
-WHAT IS GOVERNED: the code this repo ships and the tests that gate it — `src/**/*.py`,
-`tests/**/*.py`, `static/**/*.js`, `static/**/*.css`. Deliberately outside:
-
-* `library-seed/` and `util-seed/` — a workflow depiction and a PEP 723 util ARE one file each, by
-  contract; they cannot be split and ruff excludes them for the same reason.
-* `docs/**` and the Markdown surfaces — a document's length is an editorial question, not a
-  responsibility boundary. `docs/architecture.md` is long because the architecture is.
-
-A line is what a human counts (`str.splitlines`), which equals `wc -l` for every file here since
-all end in a newline; a final unterminated line still counts as a line.
-"""
+"""The ≤350-line house bar, enforced as a RATCHET — prose that nothing checked becomes a gate."""
 
 import json
 import sys

@@ -1,11 +1,4 @@
-"""P1 — the engine writes the process record (`rsched/runledger.py`, `engine/ledgerentry.py`).
-
-Three things are pinned here: WHAT the engine writes (one entry per finished routine run leg,
-built from the summary, the accounting and the recipe-revision lines, and nothing for a child or
-a conversation), HOW it rotates (oldest whole entries out to a monthly archive, the preamble
-never touched), and that NO RUN can write it (the file-action gate on every write path, rendered
-through the render floor; the kernel half is in test_own_dir_seal.py).
-"""
+"""P1 — the engine writes the process record (`rsched/runledger.py`, `engine/ledgerentry.py`)."""
 
 from __future__ import annotations
 

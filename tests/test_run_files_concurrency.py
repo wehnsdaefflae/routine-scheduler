@@ -1,11 +1,4 @@
-"""F896: the served files endpoint overlaps real resolution without weakening D172.
-
-The transcript stays unchanged while files, symlinks and live grants change. A verdict cache
-would fail these tests even though the read model is legitimately memoized on that transcript —
-which is why the verdicts `web/fileverdicts.py` keeps are for rows on a NETWORK share only: every
-path here is local, so every one of these stays checked fresh on every request
-(tests/test_files_kept_verdicts.py covers the share side).
-"""
+"""F896: the served files endpoint overlaps real resolution without weakening D172."""
 
 from __future__ import annotations
 

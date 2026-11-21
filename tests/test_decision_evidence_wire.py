@@ -1,20 +1,5 @@
 """What a decision protocol puts in its evidence field, for every shape of evidence — BOTH of
 them, because the refusal these tests pin is the gateway's and not one wire shape's.
-
-Measured against `otari-decisions`, which serves all three of this instance's decision models
-over the `systemone` protocol: evidence given as a dict came back `HTTP 400 {"detail":"The
-provider rejected the request as invalid"}` five times across 2026-11-13/14, while the
-byte-exact announced string built from that same dict was answered by all three
-(`gemini-decision` 0.068, `jev` 0.050, `local-qwen-vl8b` 0.000) and prose was answered
-throughout. So every structured-evidence `decide` call failed on the default model — including
-every call carrying text `files`, because `decideaction._gather` folds those into a dict.
-
-The first fix (0.535.2) announced the evidence in the `openai` adapter only, reasoning from
-`input`'s string-or-message-list ambiguity. **It changed nothing live**: no model on this
-instance speaks `openai`, and `systemone` put the object raw into `state`. Hence
-`test_both_protocols_announce_structured_evidence` — a pin on one adapter cannot speak for the
-other. These tests also pin that ordinary text is still sent untouched: a prefix on every
-payload would change what every existing caller's model reads.
 """
 
 from __future__ import annotations

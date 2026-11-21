@@ -1,15 +1,4 @@
-"""SHARED STORES and the notes channel between the routines sharing one (F335).
-
-The design in one line: a routine SHARES a store by naming it among its own `fs_write_roots`;
-nothing else records the sharing — so these pin that the set of sharers is read back out of
-the routines' own files, that a note is delivered exactly once to a routine that shares the
-store it was written into, and that a note nobody would ever read is refused where it is
-WRITTEN (the engine's write gate), naming the channel that does reach its addressee.
-
-A NOTE is coordination; a REPORT is work somebody must act on, tracked until answered. The
-reader's half is here too: the state-digest block a drained note renders into, its backlog cap,
-and the harness paragraph that names each store and who else shares it.
-"""
+"""SHARED STORES and the notes channel between the routines sharing one (F335)."""
 
 from __future__ import annotations
 

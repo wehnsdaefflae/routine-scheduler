@@ -1,22 +1,4 @@
-"""Where read_file's document conversion is WRITTEN — the one path the util's own jail can take.
-
-`engine/docread.py` asks the `doc-read` util to convert a PDF or an Office file inside the
-RUN's jail (`sandbox.policy_for_ctx`), and that jail narrows the routine's own directory to its
-unsealed children (`ownseal`, D179): `.doc_cache/` — the engine's conversion cache — is one of
-`ownseal.SEALED_DIRS`, so the util has no right to create a name inside it. Landlock has no deny
-rule, so this is not something the engine can hand over by creating the file first: `--out`'s
-PARENT must be a directory the jail mounts read-write, because the util atomic-writes a temp file
-BESIDE its target before renaming (`util-seed/utils/doc-read/main.py:write_atomic`).
-
-It was silent for as long as it was, because `docread.converted` returns a CACHE HIT before it
-ever reaches the util — only a document never converted in that routine before bites. So the
-tests here convert a FRESH document, and the destination assertion is made against
-`ownseal.SEALED_DIRS` itself, so adding a sealed directory (or re-sealing an unsealed one)
-cannot quietly reintroduce it.
-
-tests/test_docread.py covers the conversion, the cache and the observation; this file covers
-only where the conversion may land. It is its own file because that one is at its size ceiling.
-"""
+"""Where read_file's document conversion is WRITTEN — the one path the util's own jail can take."""
 
 import json
 import tempfile
@@ -48,11 +30,6 @@ os.replace(tmp, target)
 def _converter(routine_dir: Path, monkeypatch):
     """`utils_run.run_util` as the JAIL answers it — the one seam the engine's call passes
     through, so the `--out` path under test is the one `docread` really builds.
-
-    The fake writes the Markdown the way the util does (`WRITE_BESIDE`) and REFUSES, with the
-    kernel's own message, when `--out` lands inside a sealed child of the routine dir: that is
-    what `ownseal.mount_own_dir` leaves the util able to do. `test_the_real_jail_…` below pins
-    the same refusal against the real kernel.
     """
     state = SimpleNamespace(outs=[])
 
@@ -87,11 +64,6 @@ def _run_ctx(tmp_path: Path):
 def test_the_conversion_destination_is_outside_every_sealed_dir(tmp_path, monkeypatch):
     """`--out` may not name a path inside ANY sealed child of the routine dir, and its parent
     must be somewhere the util jail actually mounts read-write.
-
-    Both halves matter. The first is the defect: `.doc_cache/` is sealed, so the engine's own
-    cache directory is invisible to the process it asks to fill it. The second is what keeps a
-    fix honest — `sandbox._toolchain` mounts `tempfile.gettempdir()` read-write for EVERY util
-    on every run, so a destination under it is legal for the call that must write there.
     """
     state = _converter(tmp_path, monkeypatch)
     _pdf(tmp_path / "fresh.pdf", ["Clause one applies."])
@@ -126,12 +98,7 @@ def test_a_never_converted_document_reads_as_markdown(tmp_path, monkeypatch):
 
 @needs_landlock
 def test_the_real_jail_refuses_the_cache_and_permits_the_drop_dir(make_routine, tmp_path):
-    """The kernel's own answer, with the own-dir mount shape the run's policy composes.
-
-    No blanket `/tmp` in the spec — pytest's `tmp_path` lives there, and a jail that mounted it
-    wholesale would let the sealed write succeed and prove nothing (which is exactly why the
-    end-to-end conversion test in tests/test_docread.py stayed green through the defect).
-    """
+    """The kernel's own answer, with the own-dir mount shape the run's policy composes."""
     d = make_routine()
     (d / docread.CACHE_DIR).mkdir()
     drop = tmp_path / "drop"

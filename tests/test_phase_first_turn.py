@@ -1,18 +1,4 @@
-"""Where each PHASE begins in the transcript — the datum the rail's nodes link to (D193).
-
-The rail used to be a read-only diagram: it knew a phase had 7 turns but not WHICH turns, so
-a reader who saw "act · 7 turns · 41k tok" had to scroll the transcript hunting for the
-divider. One number closes that gap — the first turn number recorded under each phase — and
-it comes out of the fold `statemap._phase_stats` already performs over `assistant_action`
-events. The sub-run rows get the same treatment from `subruntree.build_tree`: the parent turn
-that started the child.
-
-This file also pins the NAMING the same change settled (D193): the concept is `phase`
-everywhere the API and the UI speak of it — `/api/{routines,conversations}/{slug}/phasegraph`
-returning `{"phases": [...], "current": ...}`. `stages/` stays the recipe's FILE layout and
-`state` keeps its other, older meanings (run state, `state/`, read-model state); see
-CLAUDE.md's "Phase, stage, state" rule.
-"""
+"""Where each PHASE begins in the transcript — the datum the rail's nodes link to (D193)."""
 
 import json
 

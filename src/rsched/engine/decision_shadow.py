@@ -1,40 +1,21 @@
 """A decision model answers the SAME typed question as the chat model, and both are recorded.
 
-D287, answered by the operator 2026-11-14: *"Reroute the refusal classifier AND cascade the
-finish verifier: a typed screen over each claim, with the prose judge called only on the claims
-it flags"*. This is step 1 of that, and it REROUTES NOTHING — deliberately.
+Step 1 of D287 (reroute the refusal classifier, cascade the finish verifier), and it REROUTES
+NOTHING — deliberately. The chat model keeps deciding (`engine/refusal.py`: only an LLM
+classification subcall decides the non-obvious cases); the decision model answers beside it and
+the pair goes into a stream, so the swap can be decided on measured agreement rather than price.
+Measuring first matters because a typed model's argmax can stay stable while its probability
+mass moves under it — a reader of verdicts alone would see consistency that is not there.
 
-WHY THE MEASUREMENT IS THE FIRST INCREMENT, not a preamble to it. Every option the operator was
-offered carried the clause *"measured in parallel before it replaces anything"*, because of what
-the decision row measured on this instance's own models: on an underdetermined question,
-permuting the options moved `jev`'s probability mass by about 10 points while the argmax never
-moved. A system that reads only the verdict sees perfect consistency and learns nothing about
-the instability underneath. Routing a live classification to an instrument with that property,
-on the evidence that it is cheaper, is how a $0.0001 call costs a run its correctness.
+The stream is durable and instance-wide (`.control/decision-shadow.jsonl`): run dirs fall to
+retention and agreement is a question over hundreds of calls. Each row carries both verdicts,
+the probability (the argmax is what hides instability) and the threshold (so a reader can
+rescore).
 
-AND HIS OTHER CONSTRAINT GOVERNS THIS PATH ALREADY. `engine/refusal.py` quotes him from
-2026-08-22, after a marker-list approach had failed: *"only an LLM classification subcall
-(tool_call model, schema'd verdict) may decide the non-obvious cases either way"*. So the chat
-model keeps deciding here. The decision model answers beside it; the pair goes into a stream;
-the swap becomes a decision someone can take on numbers rather than on a price list.
-
-WHAT IT COSTS TO RUN: one decision call per classification — $0.0001 for all 22 of last month's
-decision calls together, against $11.37 for 191 chat subcalls — and no added latency on the
-path that matters, because the chat verdict is already in hand when the comparison is made.
-
-THE STREAM IS DURABLE AND INSTANCE-WIDE (`.control/decision-shadow.jsonl`), following
-`workflow-usage.jsonl`: run dirs fall to retention and the question here is whether two models
-agree over HUNDREDS of calls. Each row carries both verdicts, the probability and the threshold
-it was scored against — the probability because the argmax is exactly what hid the instability,
-and the threshold because the first question a reader of this stream will ask is what a
-different one would have decided.
-
-FAILURE DISCIPLINE: a measurement that can fail a run is worse than no measurement. Every
-failure mode — no decision model configured, a provider error, a malformed answer, an unwritable
-stream — returns the chat model's verdict untouched. An unanswered comparison records
-`decision_verdict: null` and `agree: null`, never `false`: an absent verdict and a negative
-verdict are different facts, and conflating them would make the stream lie in the direction that
-looks safe.
+FAILURE DISCIPLINE: a measurement that can fail a run is worse than none. Every failure mode —
+no decision model, a provider error, a malformed answer, an unwritable stream — returns the chat
+verdict untouched. An unanswered comparison records `decision_verdict: null` and `agree: null`,
+never `false`: an absent verdict is not a negative one.
 """
 
 from __future__ import annotations
@@ -56,9 +37,7 @@ log = logging.getLogger("rsched.engine.decision_shadow")
 #: The durable instance-wide stream, in `.control/` beside the usage and health streams.
 SHADOW_FILE = "decision-shadow.jsonl"
 
-#: The two sites the operator's answer names: `refusal · classify reply` (34 calls/month, 3.7 s)
-#: and `finish · verify claims` (184 calls, 24.5 s, $11.15 — all at the moment a run is ending).
-#: A third site would be scope this decision does not carry.
+#: The two sites D287 names: `refusal · classify reply` and `finish · verify claims`.
 SITES = ("refusal", "finish")
 
 #: P(yes) at or above this reads as a yes. 0.5 is the only threshold that is not a tuning
@@ -70,11 +49,8 @@ _TIMEOUT_S = 20
 
 def _ask_many(ctx, questions: list[DecisionQuestion], evidence: str):
     """Put SEVERAL typed questions over one evidence to this routine's decision model — the
-    transport boundary of this module. Raises on any transport failure; `compare` and
-    `compare_claims` are the ones that may not.
-
-    One seam for both forms, so what is measured is one code path: a second resolution of the
-    endpoint would be a second place for the role order to drift from `pick_decision_model`'s.
+    transport boundary of this module, one seam for both forms. Raises on any transport
+    failure; `compare` and `compare_claims` are the ones that may not.
     """
     endpoint, ref = pick_decision_model(ctx.server, None, images=False,
                                         roles=getattr(ctx.routine, "models", None))
@@ -108,14 +84,11 @@ def compare(ctx, *, site: str, question: str, evidence: str | dict | list,
             chat_verdict: bool, name: str = "") -> bool:
     """Record what a decision model would have said, and return `chat_verdict` UNCHANGED.
 
-    The return value is the contract: this function is an observer. Callers may wrap their
-    existing verdict in it without changing what the run does — which is what makes the
-    measurement safe to ship ahead of the decision it informs.
+    The return value is the contract: this function is an observer, so callers may wrap their
+    existing verdict in it without changing what the run does.
     """
     if not _available(ctx):
-        # An instance that configured no decision model would otherwise write one identical
-        # "not configured" row per classification — noise, and it would read in the fold as a
-        # disagreement rate nobody can interpret. Nothing to compare, nothing to record.
+        # nothing to compare, nothing to record — a "not configured" row per call is noise
         return chat_verdict
     verdict: bool | None = None
     probability: float | None = None
@@ -160,11 +133,8 @@ def compare_claims(ctx, *, question: str, evidence: str | dict | list,
     """Screen EVERY claim in ONE decision call and record a row per claim. Returns nothing:
     like `compare`, this changes no verdict.
 
-    One call rather than one per claim because that is what these models are fastest and
-    cheapest at — one evidence, many questions — and because it is the shape the cascade his
-    answer asks for would use: *"a typed screen over each claim, with the prose judge called
-    only on the claims it flags"*. Measuring the batch now means the eventual swap is measured
-    in the form it will ship in, not in a convenient stand-in.
+    One call rather than one per claim: one evidence, many questions is what these models are
+    cheapest at, and it is the shape the eventual cascade would ship in.
     """
     if not claims or not _available(ctx):
         return

@@ -1,13 +1,4 @@
-"""`subruns` covers EVERY child the run started — a backgrounded call too (R3600).
-
-The operator pointed this out mid-run in tv-show-tracker-seedbox-manager: a `background: true`
-script was in flight as `bg1`, and `subruns` answered *"no record of a child in THIS leg — and
-none on disk either, so none was started"*. Both halves of that sentence were false in the way
-that matters: work the run had started was running, and the one action whose job is to say what
-is running denied it. The two share the notification mechanism (a result appended at a later
-turn boundary, tagged with its handle) and `kill` already addresses both namespaces, so the
-status table was the only surface that knew about one and not the other.
-"""
+"""`subruns` covers EVERY child the run started — a backgrounded call too (R3600)."""
 
 from __future__ import annotations
 

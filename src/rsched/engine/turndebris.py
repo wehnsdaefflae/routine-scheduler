@@ -5,14 +5,8 @@ re-drives the turn, a failover notice: each earns its keep eliciting THIS reply 
 otherwise be re-read on every remaining turn, so `completion.next_action` drops them once the
 turn's action is accepted (the transcript's error events keep the record).
 
-They are remembered BY IDENTITY. The cleanup used to cut the list at a length taken at the
-top of the turn — but a model switch mid-turn re-fits the prompt to the new model's window
-(`completion._adopt_model`, and the oversize net in `overflow`), and a compaction there
-rebuilds the list. The length then named nothing: debris that survived into the compacted
-tail rode along for the rest of the run, and an ENGINE NOTE that compaction appended past the
-old length (the eviction warning) was cut from the live prompt while the transcript — and so
-every resume — kept it. Holding the debris itself also keeps each id unique while it is
-compared: a message object cannot be freed and its id reused while this list refers to it.
+They are remembered BY IDENTITY, never by a list length: a mid-turn model switch can compact
+and rebuild the list. Holding the debris itself also keeps each id unique while compared.
 """
 
 from __future__ import annotations
@@ -32,10 +26,8 @@ def append(loop, *messages: dict) -> None:
 def head_index(loop) -> int | None:
     """Where THIS turn's debris begins in the live prompt, or None while there is none.
 
-    An engine note the retry loop must post has to land BEFORE the debris, not after it: the
-    correction is the message the next reply is answering, and `schemamemo`'s whole mechanism
-    reads it as the LAST user message. Found by identity, like `drop`, because compaction may
-    have moved the block.
+    An engine note the retry loop posts must land BEFORE the debris: `schemamemo` reads the
+    correction as the LAST user message. Found by identity, like `drop`.
     """
     debris = getattr(loop, "_turn_debris", None) or []
     for position, message in enumerate(loop.messages):

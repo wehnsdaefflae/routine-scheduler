@@ -20,29 +20,16 @@ from . import (
 from .control import drain_injections
 from .finish_guard import unbacked_action_claims
 
-# `assist`, `goalreached` and `verifier` are imported HERE, at module scope, and must stay here
-# (F658). They used to be imported inside the function bodies below, and a lazy import on the
-# finish path is a loaded gun: the engine process holds this module's bytecode from its boot,
-# but a lazy import resolves its target FRESH FROM DISK at the moment it runs — so a run that
-# edits `src/rsched/` (which is one routine's whole job, twice a day) reaches its finish with an
-# OLD caller calling a NEW module. On 2026-10-09 that cost a run its entire authored summary:
-# `verifier.unentered()` had been renamed to `verifier.hinted()` in a release the same run
-# shipped, both sides consistent on disk, and the finish died with AttributeError
-# (`orphaned_run`, rc=1, no result.md). `verifier` was the worst case because nothing in a run
-# imports it until a finish claims something `met` — the mismatch is invisible for the whole run
-# and lands on the one turn whose loss costs the most.
-#
-# None of the three imports anything that imports this module back, so there is no cycle to
-# avoid; the laziness bought a few milliseconds of boot time and risked the only part of a run
-# that survives it. A new import on this path belongs at module scope for the same reason.
+# Every import on the finish path is at module scope and must stay there (F658): a lazy import
+# resolves FRESH FROM DISK, so a run that edits `src/rsched/` would reach its finish with an OLD
+# caller calling a NEW module — and lose its authored summary to an AttributeError.
 
 
 def rebuild(loop, events: list[dict]) -> None:
     """Re-seed the claim check's one-objection-per-line ledger (`loop._challenged`) from the
     challenges recorded inside the guard scope (engine/guardscope.py): each is a deferred
     finish, or a goal check left open, naming the lines it objected to
-    (`claims_unsupported`). Without it a resumed leg argued a line the run had already been
-    asked about, and a re-asserted verdict never stood.
+    (`claims_unsupported`), so a resumed leg does not re-argue a line already objected to.
     """
     loop._challenged = set()
     for ev in events:
@@ -52,13 +39,10 @@ def rebuild(loop, events: list[dict]) -> None:
 
 
 def _defer(loop, ctx, message: str, **why) -> None:
-    """Set this finish aside for one turn — the shape every rung shares (the R108 deferral).
+    """Set this finish aside for one turn — the shape every rung shares.
 
-    The observation records the rung's own keys (`why` — what the console's transcript reads
-    to name the rung) AND the message, because the message is what the model read: a resumed
-    leg replays the transcript through `format_observation`, which renders the stored message
-    verbatim. Without it the replay showed the bare payload as JSON — the missing accounting
-    ids, the refuted claims and the rule's line all gone from the prompt the run resumed with.
+    The observation records the rung's own keys (`why`, which names the rung) AND the message,
+    because a resumed leg replays the stored message verbatim as what the model read.
     """
     ctx.transcript.event("observation", {"kind": "finish", "rejected": True, **why,
                                          "message": message}, turn=ctx.turn)
@@ -128,16 +112,12 @@ def _unanswered(loop, ctx, owed: tuple[list[dict], list[dict]] | None,
     checkpoint, `deferred` if the run sets the task aside), so it can never trap a run.
 
     Then THE ACCOUNTING: one entry per Done-when line of the recipe and per open outcome of the
-    finish line, as a FIELD — checked for presence, shape and a content FLOOR, never semantics
-    (those stay the model's; the verifier reads the `met` claims). The floor
-    (`accounting.is_placeholder`) refuses an evidence clause that answers for nothing —
-    `d1 met: test`, on which a run finished `ok` (F748) — and names the entry. The main finish
-    only: a follow-up after the run ended answers the person, not the recipe.
+    finish line, as a FIELD — checked for presence, shape and a content FLOOR
+    (`accounting.is_placeholder`), never semantics. The main finish only: a follow-up after
+    the run ended answers the person, not the recipe.
 
-    PRESENCE is read from the raw field, not from the parsed verdicts (`arrived`, F805): a
-    field that never arrived parses to exactly what a field full of unparseable entries parses
-    to, and one run read nine "incomplete" verdicts about entries it could see in its own
-    reply before bisecting them one at a time. Absence gets its own head.
+    PRESENCE is read from the raw field (`arrived`): a field that never arrived parses like one
+    full of unparseable entries, and absence gets its own head.
 
     A FINAL conversation reply may not leave a goal unmet: `final` is the claim that what the
     person asked for is delivered, so `accounting.problems` refuses an unmet goal there.
@@ -155,13 +135,11 @@ def _unanswered(loop, ctx, owed: tuple[list[dict], list[dict]] | None,
 
 
 def check_finish(loop, action: dict, ctx) -> str | None:
-    # LADDER of guards: each rung is its own teaching deferral, and merging them would
-    # make the reasons interchangeable at exactly the moment the model needs the specific
-    # one.
+    # LADDER of guards: each rung is its own teaching deferral, never merged.
     """May this run END? Returns the run status when the finish stands, None when it is
-    set aside for one turn (the R108 deferral shape) and the loop should go round again.
+    set aside for one turn and the loop should go round again.
 
-    Split out of `EngineLoop.run` (F393). Nine guards, one question: an undrained user
+    Nine guards, one question: an undrained user
     message, an ask-back on an approval the finish itself filed, a conversation reply that
     leaves open goals without declaring itself final or not, a due task with no checkpoint
     (gated processing), an incomplete accounting, a
@@ -171,14 +149,8 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     exactly why — the engine never ends a run the model could have ended itself, so every
     rung hands the turn back rather than force-finishing.
     """
-    # R108/F268: a user message that landed in the window between this
-    # turn's inbox drain and the finish is DELIVERED, never silently
-    # outlived. The finish is set aside (a rejected observation, like the
-    # guards below) and the drained message(s) follow it, so the model
-    # addresses them and finishes again. The spent reserved-finish turn is
-    # the one exception — deferring it would force-finish the run with an
-    # engine string on the next boundary — so _finish_run surfaces the
-    # still-queued message to both sides instead.
+    # A user message that landed between this turn's inbox drain and the finish is DELIVERED,
+    # never silently outlived. On the spent reserved-finish turn _finish_run surfaces it instead.
     if (finish_rungs.eligible(loop, ctx, "pending_user_input")
             and inbox.has_pending_messages(ctx.routine.dir,
                                            vias=inbox.LIVE_MESSAGE_VIAS)):
@@ -189,12 +161,8 @@ def check_finish(loop, action: dict, ctx) -> str | None:
         drain_injections(loop)
         return None   # deferred — the loop goes round again
     # An ASK-BACK on the curated-reminder approval a `remind` op on THIS finish filed
-    # (engine/askback.py): the operator asked the run something and is owed the answer now. On
-    # any other action their words ride its observation; a finish that STANDS has none, so the
-    # run ended with their question unanswered and the approval open. Set aside like the user
-    # message above — the reminder note carrying their words rides this deferral
-    # (`EngineLoop._finish`). Every ask-back is fresh input, so no once-only limit; never the
-    # reserved turn, for the reason every rung here gives.
+    # (engine/askback.py): a finish that stood would leave the operator's question unanswered.
+    # Fresh input each time, so no once-only limit.
     if finish_rungs.eligible(loop, ctx, "asked_back") and loop.reminder_asked_back:
         _defer(loop, ctx,
                "OBSERVATION (finish deferred): the user replied to the approval this finish "
@@ -213,12 +181,9 @@ def check_finish(loop, action: dict, ctx) -> str | None:
         message, why = unanswered
         _defer(loop, ctx, message, **why)
         return None   # deferred — the loop goes round again
-    # A general rule the routine PRACTISES whose moment is the ending itself (a ledger
-    # entry not written, a review with no denominator). Same deferral shape as the rungs
-    # around it, same two guards — never the reserved turn, never a child — plus its own:
-    # `assist.at_finish` allows this at most ONCE per run (per reply, in a conversation), so
-    # a rule can ask for the ending to be reconsidered but can never negotiate over it. The
-    # deferral names the assists behind it: that record is what keeps "once" across a resume.
+    # A general rule whose moment is the ending itself. `assist.at_finish` allows this at most
+    # ONCE per guard scope, so a rule can ask but never negotiate; the deferral names the
+    # assists behind it, which keeps "once" across a resume.
     if (finish_rungs.eligible(loop, ctx, "assist")
             and (deferral := assist.at_finish(loop, action))):
         message, keys = deferral
@@ -226,32 +191,22 @@ def check_finish(loop, action: dict, ctx) -> str | None:
         return None   # deferred — the loop goes round again
     if (action["status"] == "ok" and loop.executed_actions == 0
             and finish_rungs.eligible(loop, ctx, "no_actions")):
-        # Fabrication guard: a top-level ok-finish as the very first action
-        # is a hallucinated completion (the classic no-tools failure mode) —
-        # no observation exists that could ground any of its claims.
-        # Exempt on the RESERVED finish turn, like every rung above: rejecting there
-        # returns to a loop whose budget is still violated, which force-finishes with an
-        # engine string — so the guard costs the run the very summary the reserve exists
-        # to author. A reserved turn that reached here executed nothing all run anyway.
+        # Fabrication guard: an ok-finish as the very first action has no observation to
+        # ground any claim. Exempt on the RESERVED finish turn, like every rung above.
         _defer(loop, ctx,
                "OBSERVATION (finish REJECTED): you have not executed a single action this "
                "run, so the workflow cannot be complete and none of your claims have "
                "observations behind them. Start at workflow step 1 and do the actual work.")
         return None   # deferred — the loop goes round again
     if action["status"] == "ok" and finish_rungs.eligible(loop, ctx, "unbacked_claims"):
-        # Claim guard (D31=B): a top-level ok-finish whose summary claims a
-        # high-signal action (report/ask_user/schedule_run) the run never
-        # took is narrated unperformed work — reject so the run either takes
-        # the action or drops the claim. Meta routines are exempt (they quote
-        # other runs' actions); see finish_guard.py.
+        # Claim guard: a summary claiming a high-signal action the run never took is narrated
+        # unperformed work. Meta routines are exempt (they quote other runs' actions).
         unbacked = unbacked_action_claims(
             action.get("summary", ""),
-            loop.executed_kinds,     # D243: what EXECUTED, never what was merely emitted
+            loop.executed_kinds,     # what EXECUTED, never what was merely emitted
             is_meta="meta" in (ctx.routine.tags or []))
         if unbacked and loop._finish_reserved:
-            # On the reserved turn the summary is the only thing that survives, and a
-            # rejection here loses it to the force-finish. Record the unbacked claim as a
-            # note the operator can read instead of refusing the finish over it.
+            # On the reserved turn a rejection would lose the summary; record it instead.
             ctx.transcript.event("error", {"where": "finish",
                 "message": "reserved finish turn: summary claims "
                            f"{', '.join(unbacked)} with no such action this run — the "
@@ -263,21 +218,10 @@ def check_finish(loop, action: dict, ctx) -> str | None:
                    "actually take the action now, or remove that claim from your summary, "
                    "then finish again.", unbacked_claims=unbacked)
             return None   # deferred — the loop goes round again
-    # The accounting proves each line was ANSWERED, not that the answer is true. So each `met`
-    # claim is checked once, by a second call on the `tool_call` role, against the run's own
-    # record — the ACTIONS it took and the tail of its conversation (engine/verifier.py).
-    #
-    # ONE judge, reading the evidence. A Done-when line may name the stage that produces it,
-    # and a run that never entered that stage used to be objected to with no model asked — and
-    # the blamed line was then excluded from the judge that would have looked at what it did.
-    # Stage entry is measured from module re-reads and phase-cursor writes, so it was wrong for
-    # every run that already knew its procedure (F620/R2228: three lines objected to, two of
-    # them produced in full, and the run filed a false `unmet` about its own work). The signal
-    # survives as a HINT on that claim, which the judge weighs against the actions.
-    #
-    # Fail-open at every level and at most ONE objection per line per run — per reply, in a
-    # conversation, and kept across a resume (`rebuild`): the model keeps the last word and
-    # the disagreement is recorded instead.
+    # Each `met` claim is checked once against the run's own record (engine/verifier.py). ONE
+    # judge reads the evidence; a stage never entered is only a HINT it weighs, since stage
+    # entry is an unreliable signal. Fail-open, at most ONE objection per line per guard scope
+    # (kept across a resume by `rebuild`): the model keeps the last word, the dispute is recorded.
     disputes: dict[str, str] = {}
     if owed is not None and finish_rungs.eligible(loop, ctx, "claims_unsupported"):
         claims = _claims(verdicts, *owed)
@@ -295,19 +239,14 @@ def check_finish(loop, action: dict, ctx) -> str | None:
         disputes = {o["id"]: o["evidence"] for o in objections}
         ctx.claims_disputed += len(disputes)
     loop.final_summary = action["summary"]
-    # F521/R1681: the finish STANDS — so say which declared stages this run never entered.
-    # Deliberately NOT a rung on the ladder above: skipping a stage is often the right call
-    # (a gather stage with nothing to gather), and refusing the finish would teach recipes to
-    # read modules they do not need. It is a NOTICE, like the residual an `unmet` condition
-    # carries: the run ends, and the gap is on the record for whoever reads it next.
+    # The finish STANDS — record which declared stages this run never entered. A NOTICE, not a
+    # rung: skipping a stage is often the right call.
     if ctx.depth == 0 and not reviseleg.active(loop):   # a revise leg enters no stage by design
         coverage = ctx.stage_coverage()
         if coverage["skipped"]:
             ctx.transcript.event("stages_skipped", {**coverage, "run_id": ctx.run_id})
-    # The accounting lands where every reader finds it: the run's status (the runs table, the
-    # dashboard, the next run's digest), the finish line's distances and `met` outcomes, and
-    # one `stopping_update` event. Depth 0 only and best-effort: a store write must never turn
-    # a finished run into a failed one.
+    # The accounting lands in the run's status, the finish line and one `stopping_update`
+    # event. Depth 0 only and best-effort: a store write never fails a finished run.
     if ctx.depth == 0 and verdicts:
         ctx.accounting = [str(e) for e in action.get("accounting") or []]
         newly: list[str] = []
@@ -318,10 +257,8 @@ def check_finish(loop, action: dict, ctx) -> str | None:
             except OSError as exc:
                 ctx.transcript.event("error", {"where": "finishline.record",
                                                "error": str(exc)})
-        # the goals' verdicts land on the ledger — only the lines this finish OWED, which are
-        # the ones the claim check read: a `met` on a reply that owed nothing (not final, a
-        # follow-up) was never checked and closes nothing — and the ledger rides the event:
-        # that snapshot is what a later leg replays the goals from (engine/goals.py)
+        # only the goal lines this finish OWED (the ones the claim check read) are stamped; the
+        # ledger rides the event, which is what a later leg replays the goals from
         owed_ids = {x["id"] for x in owed[0]} if owed is not None else set()
         stamped = goals.stamp(ctx.goals, {i: v for i, v in verdicts.items() if i in owed_ids
                                           and i.startswith("b")}, disputes=disputes,

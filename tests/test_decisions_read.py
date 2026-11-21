@@ -163,15 +163,6 @@ def test_every_decided_status_in_the_vocabulary_stops_the_ask(tmp_path, make_rou
                                                               monkeypatch):
     """F659: a decision the audit has already DISPOSED of is not an ask, whichever word of
     `docs/items.md`'s vocabulary it was disposed with.
-
-    `addressed` is the status a SHIPPED item carries, and it was missing from
-    `_DECIDED_STATUSES` — so every decision self-audit marked `addressed` came back as an
-    answerable card. On 2026-10-10 six already-shipped decisions (D167, D168, D169, D171,
-    D172, D173) were re-asked that way and the operator spent ~19 minutes re-answering them;
-    D167 came back with the OPPOSITE option to the one that had shipped, which is how a
-    ledger gets a resolution the code contradicts (F650/D166 is the case where that was
-    built). The `marker >= generated` gate cannot catch it: an answer's marker is always
-    older than the report written after it.
     """
     make_routine(slug="apir")
     server = _server(tmp_path)
@@ -218,12 +209,6 @@ def test_homes_are_memoized_apart(tmp_path, make_routine, monkeypatch):
 def test_an_answer_across_a_dst_change_is_not_re_asked(tmp_path, make_routine, monkeypatch):
     """F771: the answered-marker gate compared two ISO stamps as TEXT, and text ordering
     reverses across a DST change.
-
-    Europe/Berlin fell back 03:00 CEST -> 02:00 CET on 2026-10-25. The operator answered
-    D210-D215 between 02:07 and 02:17 CET (+01:00) — 27 to 38 minutes AFTER the 02:40 CEST
-    (+02:00) report that asked them. `marker >= generated` as text is False for every one, so
-    all six came back as open cards after the next daemon boot and he answered them again,
-    two of them with different wording. The markers here are his real stamps.
     """
     make_routine(slug="apir")
     server = _server(tmp_path)

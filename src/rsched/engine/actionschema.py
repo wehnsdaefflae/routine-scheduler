@@ -1,12 +1,10 @@
 """The action CONTRACT as data — the one flat JSON schema the orchestrator emits against.
 
-Split from the checker that enforces it (`actions.py`, F393): this file is what the contract
-IS, that one is what happens when a turn violates it.
+The checker that enforces it is `actions.py`.
 
-The schema is FLAT on purpose and must stay so. Weak models and Ollama grammars handle a flat
+The schema is FLAT on purpose and must stay so: weak models and Ollama grammars handle a flat
 object far better than `oneOf`, so every kind shares one property bag and the checker sorts out
-which fields that kind actually needs. Adding a variant-shaped schema here would buy tidiness
-and cost the small-model support the whole design is built around.
+which fields each kind needs.
 """
 
 from __future__ import annotations
@@ -16,23 +14,18 @@ from .childfields import MODE_FIELD_SHARED
 
 READ_PATHS_MAX = 8
 
-#: How many report ids one report may take over at once. Generous — a triage pass folding a
-#: whole queue into one hand-off is exactly the intended use, and the alternative is the batch
-#: of separate reports this field exists to prevent.
+#: How many report ids one report may take over at once — generous: folding a whole queue into
+#: one hand-off is the intended use.
 SUPERSEDES_MAX = 20
 
-#: How many rows one reply may terminally SETTLE (D134). Same generous cap as `supersedes` and
-#: for the same reason: a reply that disposes of a whole drained queue is the intended use, and
-#: the alternative — one reply per row — is the shape that left rows settled-in-prose and
-#: open-in-the-ledger (F497). `settles` differs from `supersedes` in WHO ends up holding the
-#: work: folding moves rows into this thread, settling declares them finished.
+#: How many rows one reply may terminally SETTLE (D134), generous for the same reason. Folding
+#: (`supersedes`) moves rows into this thread; settling declares them finished.
 SETTLES_MAX = 20
 
 
-#: The catalog's own verbs, answered by the `util` action itself (executor.do_util: the live
-#: catalog, one util's source, a keyword search) before the library is consulted. So they are
-#: discovery, never an execution to count or gate — and no library util may take one of
-#: these names, because the action would never reach it.
+#: The catalog's own verbs, answered by the `util` action itself (executor.do_util) before the
+#: library is consulted: discovery, never an execution to count or gate. No library util may take
+#: one of these names.
 PSEUDO_UTILS = ("list", "show", "search")
 
 KINDS = ("util", "websearch", "code_search", "write_util", "remove_util",
@@ -49,10 +42,8 @@ ACTION_SCHEMA: dict = {
     "additionalProperties": False,
     "required": ["say", "kind"],
     "properties": {
-        # HOW MUCH to say is the routine's deliberation level, worded ONCE in the harness
-        # contract (engine/deliberation.py, the user's knob). Restating a length here shipped
-        # a contradiction at every stop but `standard` — the model read "ONE terse clause"
-        # and "2-3 sentences" in one prompt. This description owns only the field's mechanics.
+        # HOW MUCH to say is worded once in the harness contract (engine/deliberation.py);
+        # restating a length here would contradict it. This owns only the field's mechanics.
         "say": {
             "type": "string",
             "description": "Your narration for this action, at the length the say contract "
@@ -67,12 +58,8 @@ ACTION_SCHEMA: dict = {
                            "engine files it to state/notes.md with a turn stamp, costing no "
                            "turn; don't repeat it in say.",
         },
-        # The consequence-reminder side fields (rsched/reminders.py) — like `note`, they ride
-        # ANY kind at no turn cost, and like `note` exist because the moment of realisation and
-        # the moment of recording have to be the same turn. Projected out of the schema entirely
-        # when the reminders capability is off (kindsurface). Both carry their own CAPS in their
-        # field descriptions, interpolated from the constants the write path enforces (F680): a
-        # limit learned only from a refusal costs a turn, and three routines paid it in one window.
+        # Consequence-reminder side fields: like `note`, they ride ANY kind at no turn cost;
+        # projected out when the reminders capability is off (kindsurface).
         "remind": schema_remind.REMIND_FIELD,
         "remind_feedback": schema_remind.REMIND_FEEDBACK_FIELD,
         "role_swap": roleswap.ROLE_SWAP_FIELD,   # D185: the run swaps its own model (roleswap)
@@ -103,9 +90,7 @@ ACTION_SCHEMA: dict = {
                            "shell: seconds before the command is killed (default 120) · "
                            "wait: max seconds to block (default 600)",
         },
-        # D118's flag, in its own module: phase 3 had to GROW this description (the mutations
-        # that may now defer, and the ordering promise that makes them safe) and this file is
-        # over the size bar, so the field followed `remind`/`role_swap` out (schema_background).
+        # D118's flag, in its own module (this file is over the size bar).
         "background": schema_background.BACKGROUND_FIELD,
         "command": {
             "type": "string",
@@ -254,19 +239,14 @@ ACTION_SCHEMA: dict = {
                               "job's kebab-case id (create: the new one's; open without it "
                               "opens the next due job) · goal change/check/drop: the goal's "
                               "id (b1, b2, …)"},
-        # manage_lane — CRUD/fire routine LANES from a conversation (D61). Offered to every
-        # depth-0 run; a root conversation applies a verb, any other run queues a proposal (F328)
+        # manage_lane — CRUD/fire routine LANES (D61); a root conversation applies a verb, any
+        # other depth-0 run queues a proposal
         "verb": {"type": "string",
                  "enum": ["list", "create", "update", "delete", "set-default", "run", "open",
                           "checkpoint", "set", "add", "change", "check", "drop"],
-                 # EVERY clause carries its kind's lead. `kindsurface._project_description`
-                 # splits on " · " and KEEPS a clause that names no kind, so an un-led
-                 # continuation of job's list survives into a run that holds manage_lane and
-                 # not job — and reads there as a manage_lane verb. Measured in a live
-                 # self-audit prompt, which rendered job's create/update/open/checkpoint/delete
-                 # as manage_lane's own (the lead clause was dropped correctly; its orphans
-                 # were not). The shared `enum` above is deliberate (actions.py validates each
-                 # kind's verbs separately); only the prose must be per-kind.
+                 # EVERY clause carries its kind's lead: `kindsurface._project_description`
+                 # keeps a clause that names no kind, so an un-led one would read as another
+                 # kind's verb. The shared `enum` is deliberate (actions.py validates per kind).
                  "description": "manage_lane: the operation — list (the whole store) · "
                                 "manage_lane: create (needs name) · manage_lane: update (needs "
                                 "target) · manage_lane: delete (needs target) · manage_lane: "
@@ -324,8 +304,7 @@ ACTION_SCHEMA: dict = {
                                   "record appended to a `.jsonl`/`.ndjson` file gets the "
                                   "newline it needs so it cannot merge into the row before "
                                   "it (every other file is appended byte-faithfully)"},
-        # memory_write (memory_read: `name`, or `args` to search). The four specs live in
-        # engine/notemeta.py beside the INDEX rendering that reads them (this file may only shrink).
+        # memory_write (memory_read: `name`, or `args` to search); specs live in engine/notemeta
         "about": notemeta.ABOUT_FIELD,
         "delete": notemeta.DELETE_FIELD,
         "stale_after": notemeta.STALE_AFTER_FIELD,   # D268: a note's expiry, as data
@@ -339,8 +318,8 @@ ACTION_SCHEMA: dict = {
                                   "clarified task instruction, decomposed into the new routine's "
                                   "stages (say WHAT it should do, not when it runs)"},
         "system": {"type": "string", "description": "llm: optional system prompt"},
-        # decide — a typed question to a DECISION model (engine/decideaction.py). `question`,
-        # `options` and `model` are shared with ask_user / llm and described there too.
+        # decide — a typed question to a DECISION model (engine/decideaction.py); `question`,
+        # `options` and `model` are shared with ask_user / llm
         "answer_type": {"type": "string", "enum": ["yes_no", "choice", "score"],
                         "description": "decide: yes_no (the answer is P(yes); no options) · "
                                        "choice (one of `options`) · score (a position on "
@@ -373,7 +352,7 @@ ACTION_SCHEMA: dict = {
                                     "(default general-task) — pick the pattern matching its "
                                     "purpose · create_routine: the library workflow pattern the "
                                     "new routine is materialized from (default general-task)"},
-        # D198: the fields only this kind uses live in `schema_routine` (this file is shrink-only).
+        # create_routine's own fields (D198)
         **schema_routine.ROUTINE_FIELDS,
         "label": {"type": "string",
                   "description": "child/detach: short name shown in the run tree"},
@@ -404,8 +383,7 @@ ACTION_SCHEMA: dict = {
                      "description": "ask_user: the question, self-contained (simple Markdown "
                                     "renders in the UI) · decide: what to decide, phrased as "
                                     "the question the options answer"},
-        # Shared by two kinds, as `question` and `options` are: one property cannot carry two
-        # enums, so the union and the reasoning live in childfields.MODE_FIELD_SHARED.
+        # shared by two kinds: one property cannot carry two enums (childfields)
         "mode": MODE_FIELD_SHARED,
         "options": {
             "type": "array", "items": {"type": "string"}, "maxItems": 26,
@@ -552,12 +530,8 @@ LIST_KINDS = ("read_file", "view_image")
 
 
 def brief_value(action: dict) -> str:
-    """The VALUE of the action's most identifying field — no kind, no truncation.
-
-    The sites that record a turn (`compaction.turn_record` — shared by the live loop and the
-    resume replay — and the admin audit line in `loop`) store the kind SEPARATELY and want only
-    this value, and each carried its own copy of the same lookup with a different truncation.
-    The widths stay theirs; the derivation is now one function.
+    """The VALUE of the action's most identifying field — no kind, no truncation (callers that
+    record a turn store the kind separately and apply their own width).
     """
     kind = str(action.get("kind") or "")
     if kind == "ask_user" and action.get("questions"):
@@ -569,16 +543,9 @@ def canon(action: dict) -> str:
     """THE canonical one-line rendering of an action — the stable, legible string identifying what
     a turn actually did.
 
-    This is the documented MATCH TARGET. Anything deciding "is this the action I meant?" — a
-    reminder regex, a rule's relevance trigger, a history-recall keyword overlap — matches against
-    this string, and anything showing a person or a model WHAT matched renders the same string.
-    That is the entire reason it lives in one place: precision and recall are only tunable if the
-    thing being matched is stable and legible, and before this the same line was derived five
-    different ways (three truncations of the field value, a separate name/path/paths rule in
-    `notes.py`, and a richer JS version in the transcript component that had already drifted ten
-    kinds behind once).
-
-    The forms, and why they differ:
+    This is the documented MATCH TARGET — a reminder regex, a rule's relevance trigger, a
+    history-recall overlap all match against it, and what matched is shown with the same string,
+    so precision and recall stay tunable. The forms:
 
         util:code-search map --json   a util call is identified by its name AND its arguments —
                                       `util:code-search` alone cannot tell `map` from a search
@@ -592,13 +559,11 @@ def canon(action: dict) -> str:
                                       it is (`finish status=ok` too)
         subruns                       a kind with no identifying field is just itself
 
-    Untruncated on purpose: a caller needing a width applies its own. Matching a pre-truncated
-    string would silently change what a regex can see as an action's arguments grow.
+    Untruncated on purpose: a truncated match target would change what a regex can see.
     """
     kind = str(action.get("kind") or "?")
     if kind in ("job", "goal"):
-        # the verb is what the turn DID to the job — `job id=x` cannot tell an open from a
-        # checkpoint, the one distinction a reader of the turn needs (a goal's add from its drop)
+        # the verb is what the turn DID — `job id=x` cannot tell an open from a checkpoint
         tid = str(action.get("id") or "")
         return f"{kind}:{action.get('verb') or '?'}{f' {tid}' if tid else ''}"
     if kind in ("util", "script"):
@@ -615,9 +580,8 @@ def canon(action: dict) -> str:
 
 
 def example_action() -> dict:
-    """The few-shot example embedded in the harness contract — models on-demand step
-    reading with a finding-first `say` (NOT util discovery: the catalog is already in
-    CAPABILITIES, so opening a run by re-listing it just re-buys known information).
+    """The few-shot example embedded in the harness contract — on-demand stage reading with a
+    finding-first `say` (not util discovery: the catalog is already in CAPABILITIES).
     """
     return {
         "say": "Digest puts this run at the scan stage — reading its module before acting.",

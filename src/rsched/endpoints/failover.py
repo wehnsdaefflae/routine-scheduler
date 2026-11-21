@@ -26,32 +26,19 @@ re-marks it if the outage persists.
 
 ## Forward-only: which member is SERVING a chain
 
-A cooldown expires; a quota does not. When the head of a chain is out of weekly quota, a
-cooldown-only `pick` hands the run straight back to it the moment the 300 s mark lapses —
-so the run oscillates for its whole life, paying the failed model's retry cycle and a COLD
-CACHE WRITE on both models at every swing. Measured 2026-09-12..09-22: 123 switches across
-28 runs, p50 390 s apart, and 6.5 M cache-WRITE tokens in the 18 full-prefix rewrites that
-landed within 90 s of a switch.
+A cooldown expires; a quota does not. A cooldown-only `pick` would hand a run back to a
+quota-exhausted head every time the mark lapsed, paying a retry cycle and a cold cache write
+on both models at every swing. So a chain remembers which member is SERVING it and the mark
+only moves FORWARD: `pick` starts the scan there. A fresh run (process) still probes the head
+once, so a recovered provider comes back with nothing to reset.
 
-So a chain remembers which member is SERVING it and the mark only ever moves FORWARD:
-`pick` starts the scan there instead of at the head. Within a process — one engine
-subprocess is one run tree — a model the run has already abandoned is never picked again; a
-fresh run still probes the head once, which is what makes a recovered provider come back
-without anything to reset.
+The mark names the member by its CATALOG name (the identity `resolve_chain` dedups by): a
+chain stepping down in effort holds one provider model twice (`Opus high`, `Opus low`). The
+cooldown itself stays per provider model, where a failure belongs.
 
-The mark names that member by its CATALOG name — the identity `resolve_chain` dedups a chain
-by, and the one `next_after` finds the failed member with. The provider model is not an
-identity here: a chain stepping down in effort holds one model twice (`Opus high`, then
-`Opus low`), and a mark on the second read back as the first, so `pick` restarted at the
-member the run had abandoned the moment its cooldown lapsed. The cooldown itself stays per
-provider model, where a failure belongs.
-
-ONLY `next_after` writes the mark, because only the engine's mid-turn failover is a
-DELIBERATE abandonment. `pick` reading it but never writing it is the whole safety of the
-scheme: the mark is keyed by chain HEAD and roles share heads (a routine with
-`main: Astra high` and an `llm` role on the same model resolves one head), so a write from
-`pick` would let one transient 5xx on a cheap subcall demote the main turn loop for the
-rest of the run.
+ONLY `next_after` writes the mark — the engine's mid-turn failover is the one DELIBERATE
+abandonment. The mark is keyed by chain HEAD and roles share heads, so a write from `pick`
+would let one transient 5xx on a cheap subcall demote the main turn loop for the whole run.
 """
 
 from __future__ import annotations
@@ -82,11 +69,8 @@ def mark_failed(endpoint: str, model: str, *, cooldown_s: float = COOLDOWN_S) ->
 
 
 def cooldown_for(exc) -> float:
-    """How long to avoid a model that just failed: the default, unless the provider ASKED
-    for longer. A `Retry-After` is the provider stating when it will serve again, and
-    re-probing before then is a guaranteed failure — the engine's 5-minute default is a
-    guess, the header is not. (`with_retries` caps the same hint at 30 s, but that bounds
-    how long ONE attempt may sleep; nothing is waiting here.)
+    """How long to avoid a model that just failed: the default, unless the provider's
+    `Retry-After` asks for longer (re-probing before then is a guaranteed failure).
     """
     return max(COOLDOWN_S, float(getattr(exc, "retry_after", None) or 0.0))
 
@@ -151,22 +135,14 @@ def _serve(chain: list, index: int) -> None:
 def fits(ref: ModelRef, *, has_media: bool, prompt_tokens: int) -> bool:
     """Can this member take the request the failed one was holding, AS IT STANDS?
 
-    A fallback is only a fallback if the same request can travel to it. Two properties
-    travel with the request and are knowable before the call: images (a text-only model
-    answers `HTTP 400 … does not support image inputs`) and size (a 32 k member answers
-    `maximum context length is 32768 … you requested about 165078`). Trying either costs a
-    round trip AND marks a perfectly healthy model as cooling for five minutes — on
-    2026-09-22 `Fable Max` walked its whole chain that way, three text-only members deep,
-    and the conversation died on a provider error instead of a finish.
+    Two properties travel with the request and are knowable before the call: images (a
+    text-only member 400s) and size. Trying a misfit costs a round trip AND marks a healthy
+    model as cooling.
 
-    `prompt_tokens` is the engine's estimate, compared against what is left of the
-    member's window once its own output cap is reserved; 0 means "not measured" and skips
-    the size test.
+    `prompt_tokens` is the engine's estimate, compared against the member's window minus its
+    output cap; 0 means "not measured" and skips the size test.
 
-    A PREFERENCE, never a veto — see `next_after`. The engine repairs both properties when
-    it has to (images to vision-util text, an oversize prompt by compacting into the new
-    member's window), so a member that does not fit as-is is the worse choice, not an
-    impossible one.
+    A PREFERENCE, never a veto — see `next_after`: the engine can repair both properties.
     """
     if has_media and not ref.multimodal:
         return False
@@ -192,13 +168,9 @@ def next_after(chain: list, failed: ModelRef, *,
     """The next usable chain member strictly AFTER the one that just failed (which
     InstrumentedEndpoint has already marked cooling), skipping members already cooling.
 
-    Among those, one that `fits` this request wins over one that does not: order is
-    preserved inside each group, so an author's chain still reads the way they wrote it,
-    and a text-only or too-small rung is simply passed over while a capable one remains.
-    When NONE of them fits, the first is taken anyway — the engine repairs what it can
-    (media → vision-util text, an oversize prompt → compacted into the new member's
-    window), and a chain that reports itself exhausted while a usable model is left would
-    kill the run outright.
+    Among those, the first that `fits` wins (chain order kept); when none fits, the first is
+    taken anyway — the engine repairs what it can, and reporting the chain exhausted while a
+    usable model is left would kill the run.
 
     The returned member becomes the chain's serving mark, so the rest of the run starts
     from it. None = chain exhausted — the caller propagates the failure.

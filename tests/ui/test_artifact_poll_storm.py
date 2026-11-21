@@ -1,18 +1,4 @@
-"""Many artifact writes in one transcript cost ONE list fetch, not one each.
-
-components/chat.js fires `onArtifact` for every write_file/edit_file observation that lands in
-a deliverable dir, and opening a conversation REPLAYS the whole transcript — so a long
-conversation's history fired one full `/artifacts` fetch per historic write. Measured in
-`.ui-traces` on 2026-11-13: 25 bursts, the largest 70 identical fetches in 9.6 s, each ~4 s and
-climbing to 13 s as they queued against each other; inside those 305 s of windows every OTHER
-endpoint's slow rows ran 39% slower (3,786 ms vs 2,721 ms median). The panel now coalesces the
-burst the way `fileactivity.js` already did (F891).
-
-The sub-run card had the same shape and is pinned here too: `views/conversations.js` called
-`subRunTree.refresh()` per subrun event, replayed ones included — 676 of 827 client-stamped
-`/tree` rows in the same two trace days arrived under a second apart, 695 of them inside the
-artifact bursts (F892).
-"""
+"""Many artifact writes in one transcript cost ONE list fetch, not one each."""
 
 from __future__ import annotations
 

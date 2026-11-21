@@ -1,10 +1,4 @@
-"""Reasoning EFFORT as a setting of its own, in a browser.
-
-The routine page's Models group puts an effort picker beside each role's model and the choice
-rides the ONE accept to `efforts:` in routine.yaml; the conversation composer and header carry
-the same pickers; the run page's switch changes the effort of a live run without touching its
-model. One catalog model serves every level — none of these needs a row per level.
-"""
+"""Reasoning EFFORT as a setting of its own, in a browser."""
 
 import json
 import re

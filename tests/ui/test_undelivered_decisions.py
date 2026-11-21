@@ -1,15 +1,4 @@
-"""An answer NO run will read is the operator's again — on the page, in the badge (2026-11-09).
-
-Two conversation answers sat unread for seven weeks while this page filed them under Settled as
-"answered · queued" — exactly how it shows an answer a run reads tonight. What a person sees
-now, and what is asserted here through the real page:
-
-* an answered decision whose routine has no schedule, lane or trigger is in UNDELIVERED, a band
-  that waits on a person, with the reason no run will read it;
-* the header badge counts it among what waits on him;
-* "settle without a run" archives it with no run started, and it stops waiting;
-* "deliver now" starts exactly one manual run of the routine that asked.
-"""
+"""An answer NO run will read is the operator's again — on the page, in the badge (2026-11-09)."""
 
 import yaml
 from playwright.sync_api import expect

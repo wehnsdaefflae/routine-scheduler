@@ -1,24 +1,4 @@
-"""F527 — the browser screen must be served from the CONSOLE's own origin.
-
-0.359.0 shipped the screen as a raw `browser_view_url` in an iframe. That works when the
-console is reached over http on the LAN, and fails exactly where the operator actually uses
-it: over `https://ubuntuserver.taild5768c.ts.net`, both the page and the right-rail preview
-came out blank.
-
-Measured with `gu mixed-content-probe` rather than guessed:
-  * the http iframe itself LOADS — mixed content is only a *warning* for a bare-IP host,
-    because Chromium does not upgrade IP hosts;
-  * then noVNC opens `ws://100.77.58.75:6080/websockify` and the browser reports
-    "attempted to connect to the insecure WebSocket endpoint ... should be available via
-    WSS. Insecure access is deprecated." On a NAMED https origin that socket is refused,
-    so the client never gets a framebuffer and the screen stays empty.
-
-A URL the user types can never fix this: the socket's scheme is decided by the embedding
-page's origin. So the console proxies the endpoint — `/browser-view/*` for the assets and
-`/browser-view/websockify` for the upgrade — and the frame becomes same-origin, inheriting
-whatever TLS the console itself is served with. A `wss://` then happens automatically,
-with no certificate for the noVNC port and no second hostname to publish.
-"""
+"""F527 — the browser screen must be served from the CONSOLE's own origin."""
 
 from __future__ import annotations
 

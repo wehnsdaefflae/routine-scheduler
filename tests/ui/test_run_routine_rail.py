@@ -1,22 +1,4 @@
-"""The run page's ROUTINE RAIL (components/routine-rail.js) — the conversation list's counterpart.
-
-OPERATOR ORDER (F619, 2026-10-04): *"i want a list of all routines next to a routine run page
-just like there's a list of all conversations next to a conversation. the only difference is that
-the routines can be expanded to the previous runs"*.
-
-Four claims, all about what a PERSON sees beside a run:
-
-- every routine is listed in a LEFT rail beside the run, the way `views/conversations.js` lists
-  conversations beside a chat — and the routine THIS run belongs to is the marked one;
-- the marked routine arrives EXPANDED to its previous runs, each one a link into that run: the
-  "only difference" the order names is the whole point of the rail, so it is not behind a click
-  on the row you are already reading;
-- another routine's row starts closed and expands on click, fetching ITS runs only then — a rail
-  that listed forty routines' runs on arrival would cost forty reads nobody asked for;
-- the rail obeys the rail contract the right rail already has (static/resizable.js): a resizable
-  column while the viewport can hold one, and CLOSED on a phone, where it stacks in the page flow
-  and an open one would put every routine above the run the reader came for.
-"""
+"""The run page's ROUTINE RAIL (components/routine-rail.js) — the conversation list's counterpart."""
 
 from __future__ import annotations
 
@@ -85,9 +67,6 @@ def test_a_previous_runs_date_stays_on_one_line(ui, ui_page):
     draft let "2026-10-11 09:00 finished" break over two lines, and a column of half-wrapped
     dates reads as a fault. The date is the run's IDENTITY so it never wraps; the state word
     gives way instead, which it can — its dot carries the same meaning in colour.
-
-    Found by LOOKING at the rail, not by the four green tests around this one (the lesson
-    static/rail.css records for the jobs card's separator).
     """
     ui.seed_run("uir", TS, "finished", summary="done")
     ui.seed_run("uir", OLD_TS, "waiting_user", summary="asked")

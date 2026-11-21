@@ -1,22 +1,12 @@
 """WHOSE exit status a `shell` observation reports — said when the command line hides it.
 
-A shell command's exit status is the status of the LAST command the shell ran, and a run reads
-`exit 0` as "it passed". That reading is wrong for the shapes a run writes most when it checks
-its own work: `pytest -q | tail -20` exits with `tail`'s status, `make test || true` exits 0
-whatever `make` did, `pytest; echo done` exits with `echo`'s. The run then states a check passed
-on evidence that never said so, and the finish verifier (engine/verifier.py), reading the same
-observation, has no way to tell either.
+A run reads `exit 0` as "it passed", but `pytest | tail` exits with `tail`'s status,
+`make test || true` exits 0 whatever `make` did, `pytest; echo done` with `echo`'s. When the
+exit is not the first command's, the observation SAYS whose it is.
 
-Hermes Agent's verification ledger draws the same line (its `verify_evidence` counts a check's
-exit only when the shell proves it: `||` and `&` hide it, `&&` proves it only on success, a pipe
-only through PIPESTATUS when the check leads it). This module does the narrow half that needs no
-ledger: when the command's exit is not the first command's, the observation SAYS whose it is.
-
-Deterministic over the stored command, so a resumed leg's replay renders the same words. Quoting
-and `$(…)` are respected by a small scanner rather than a shell parser: a false positive costs a
-parenthetical, a false negative costs what the run would have read anyway. Nothing is said when
-the exit is non-zero (a failure is already a failure, whoever reported it) or when the script
-turned on `pipefail` (then a pipe's status IS any stage's failure).
+Deterministic over the stored command, so a resumed leg's replay renders the same words. A
+small scanner (not a shell parser) respects quoting and `$(…)`: a false positive costs a
+parenthetical. Nothing is said for a non-zero exit or under `pipefail`.
 """
 
 from __future__ import annotations

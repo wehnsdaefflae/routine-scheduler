@@ -1,16 +1,4 @@
-"""The per-run cost profile's ROUTE (D163): `GET /api/changes/{slug}/cost`.
-
-`readmodels/cost_profile.py` shipped in 0.495.0 reading the per-RUN cost of a routine, and
-nothing imported it but its own test — a reader the operator who asked for it could not see.
-It rides `api_changes.py` rather than a module of its own because the DEVELOPMENT view is
-where it is read (#/changes/<slug>, beside Outcome, Model fit and Recipe health) and that
-module already serves that view's other per-routine read models through one `_routine_home`
-guard.
-
-What is pinned here: the route answers the reader's own shape, a window the reader calls
-MIXED is served AS mixed (the console cannot warn about what the payload drops), and an
-unknown slug is a 404 like every sibling.
-"""
+"""The per-run cost profile's ROUTE (D163): `GET /api/changes/{slug}/cost`."""
 
 from __future__ import annotations
 

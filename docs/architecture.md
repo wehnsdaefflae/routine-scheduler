@@ -1276,9 +1276,8 @@ and the capabilities digest's catalog listing):
   PROJECTION (`rsched/hooks/reportproj`), lifecycle events included, and a hook that cannot be
   written refuses the filing — while `reports.read_reports`, the one seam ~20 modules read
   through, folds the STREAM (`rsched/hooks/reportread`, step 9). No caller changed; what the
-  step cost was the HISTORY, which had to be complete first: the pre-stream backfill
-  (`migrate_report_hooks`), then a repair of 8 mirror-era rows whose hooks carried no disposal
-  at all (`migrate_mirror_hooks` — without it six settled exchanges would have read as open).
+  step cost was the HISTORY, which had to be complete first: a one-shot pre-stream backfill,
+  then a repair of 8 mirror-era rows whose hooks carried no disposal at all.
   One rule governs the read, chosen so that no reading can LOSE a report: the stream decides,
   and when the ledger names a report the stream's fold does not, the ledger is served and the
   shortfall is filed (`hook_stream_diverged`, or `hook_stream_unreadable` when the stream holds
@@ -1563,12 +1562,8 @@ rules + permissions + playbooks),
 what every `util` action ultimately invokes and the reader of a util's `net:`/`secrets:` header —
 the declarations that decide which network access and which credentials fold into its sandbox — so
 it is repo code with a test suite (`tests/test_dispatcher_seed.py`) and the release gate, not an
-unversioned file beside the library. `utils_lib.ensure_library` still installs the MINIMAL
-`utils_lib.DISPATCHER` stub (run a util, list the catalog) on a fresh library and
-`_install_dispatcher` never overwrites an existing dispatcher, so the tracked one reaches an
-instance carrying that stub only through a one-shot migration
-(`migrate_dispatcher_seed`), which replaces it only while it IS that stub byte for byte, keeps it
-as `gu.stub.bak` in the library root and names anything else it left. There is NO routine seed: a meta routine is authored like any other
+unversioned file beside the library. `utils_lib.ensure_library` installs it on a fresh library
+and never overwrites an existing dispatcher. There is NO routine seed: a meta routine is authored like any other
 routine, through the scaffold path, and a fresh instance starts with none — the dashboard shows
 a notice while every meta routine it does have is disabled. `self-audit`
 works LOOKUP-FIRST from `.codemap/` — a compact derived map of this repo (module API surface,
@@ -2668,8 +2663,7 @@ silent way. Three rules close that, each where it happened:
   the commit's scope still differs from HEAD once git has answered, never by parsing git's
   localized messages. `routines_home` — whose health stream hears about it — is a REQUIRED
   argument, so every call site decides; only install-time seeding and a repo's first commit pass
-  None. A migration that commits per routine records a commit that did not land under `failed`
-  (`migrate_dead_reserved_utils`).
+  None.
 
 **A stale lock is removed automatically — only when PROVABLY stale** (`gitlock`). The other
 choice was to leave every lock to a person behind a one-click remedy. It was rejected because

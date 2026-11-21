@@ -82,19 +82,11 @@ class EndpointRegistry:
         multimodal = (mc.multimodal if mc.multimodal is not None
                       else ep_cfg.kind in NATIVE_MM_KINDS)
         temperature = mc.temperature if mc.temperature is not None else ep_cfg.temperature
-        # ONE precedence chain, and the ORDER is the whole design (endpoints/limits.py):
-        #
+        # ONE precedence chain (endpoints/limits.py):
         #   per-MODEL config  →  what the PROVIDER reports  →  the endpoint default  →  the floor
-        #
-        # A per-model value is the operator speaking about THIS model — sizing down on purpose for
-        # a cost budget or a slow provider — and `engine/window.py` already promises to honour it,
-        # so discovery must not overrule it. An ENDPOINT value sits BELOW discovery because that
-        # is what it has always been documented as: "DEFAULTS a catalog model inherits when it
-        # leaves the field unset" (config/modelconf.py). One guess made once for a whole endpoint
-        # is exactly the thing the provider's own answer should replace — and keeping it as the
-        # fallback means nothing has to be deleted from a config.yaml that is not versioned.
-        # Read-only from the cache: `resolve` is on the per-turn path and never makes a network
-        # call, so a miss is simply the next tier down.
+        # A per-model value is the operator sizing THIS model on purpose, so discovery never
+        # overrules it; an endpoint value is a default the provider's answer should replace.
+        # Read-only from the cache: `resolve` is on the per-turn path and never fetches.
         found = limits.lookup(self.server.routines_home, mc.endpoint, mc.model) or {}
         ref = ModelRef(endpoint=mc.endpoint, model=mc.model, effort=effort or None,
                        multimodal=multimodal, audio=mc.audio, video=mc.video,
@@ -112,28 +104,20 @@ class EndpointRegistry:
     def for_endpoint(self, spec: str,
                      effort: str | None = None) -> tuple[InstrumentedEndpoint, ModelRef]:
         """`<endpoint name>/<provider model id>` → that endpoint's adapter + a ModelRef for an
-        id the CATALOG does not carry. The arbitrary-endpoint path (F868).
+        id the CATALOG does not carry — the arbitrary-endpoint path.
 
-        Why the endpoint is still named from config and never as a URL: the destination set is
-        the operator's, and the `llm` action runs in the engine rather than in the util jail, so
-        a bare URL would be a network destination chosen by a model with nothing to review it.
-        What the catalog made impossible was the other half — naming a model id the operator has
-        not pre-registered — and that is what opens here. The spec reads exactly as the run's own
-        prompt already names its model (`Model: otari/claude-opus-5`, engine/capabilities.py),
-        so there is one vocabulary and nothing new to teach.
+        The endpoint is named from config, never as a URL: the `llm` action runs in the engine,
+        outside the util jail, so a URL would be a destination chosen by a model with nothing to
+        review it. The spec reads as the run's prompt names its model (`otari/claude-opus-5`).
 
-        The per-model attributes a catalog entry would carry come from the endpoint's own
-        defaults, with the provider's published window/output cap in between (`limits`), which is
-        the same precedence `resolve` applies minus the per-model tier. `name` stays EMPTY: there
-        is no catalog entry, and inventing one would make an unregistered id indistinguishable
-        from a registered one everywhere a ref is reported.
+        Attributes come from `resolve`'s precedence minus the per-model tier. `name` stays EMPTY
+        so an unregistered id is never indistinguishable from a catalog entry.
         """
         ep_name, _, model_id = spec.partition("/")
         ep_cfg = self.server.endpoints.get(ep_name)
         if ep_cfg is None:
-            # A decision endpoint is a DIFFERENT wire (one typed answer, no free text), so
-            # naming one here is a wrong-action mistake and is answered as one rather than as
-            # a missing endpoint.
+            # A decision endpoint is a different wire (one typed answer): a wrong-action
+            # mistake, answered as one rather than as a missing endpoint.
             if ep_name in (self.server.decision_endpoints or {}):
                 raise EndpointError(
                     f"{ep_name!r} is a DECISION endpoint, which answers typed questions "
@@ -162,20 +146,10 @@ class EndpointRegistry:
         loader flags them as problems) — a bad chain entry must never break the primary's
         resolution.
 
-        Transitive because a flat chain silently contradicts the config that declares it
-        (R1504/R1492). `Astra high`'s fallbacks are `[Opus high]` and `Opus high` declares
-        none, so the chain was two models long and its second member sat on the same
-        cliproxy endpoint as the first — one failure domain, no way out. On 2026-09-14 that
-        killed eight routines at turn 0 on a single credential expiry, and it is also what
-        ends a run on a classifier refusal: `engine/degrade` walks this chain for both, and
-        an empty walk is a dead run. Following each entry's OWN fallbacks makes the reachable
-        set what a reader of config.yaml would already expect it to be — `Astra max` reaches
-        `GLM 5.3` through `Opus 5 max` — with no config edit and nothing to keep in sync.
-
-        Breadth-first, not depth-first, so the ORDER still expresses intent: every fallback
-        the primary itself declared is tried before anything only a fallback declared. A
-        model's chain is therefore "my own alternatives first, then theirs", which is the
-        reading its author had in mind when they wrote the list.
+        Transitive because a flat chain contradicts the config that declares it: a fallback's
+        own fallbacks are reachable to a reader of config.yaml, and `engine/degrade` walks this
+        chain on a hard failure or a classifier refusal, where an empty walk is a dead run.
+        Breadth-first so a model's own alternatives are tried before its fallbacks' ones.
 
         Every member runs at the ONE `effort` the caller chose for the role: effort belongs to
         the use, not to the model, so a failover never changes how hard the work is thought about.

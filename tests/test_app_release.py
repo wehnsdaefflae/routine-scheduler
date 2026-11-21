@@ -1,12 +1,4 @@
-"""An app `create_app` built is FREED once nothing holds it (web/api_core.py).
-
-FastAPI classifies endpoint and dependency callables through process-lifetime `lru_cache`s keyed
-on the callable, so a route handler defined as a closure inside `create_app` pinned its whole
-app (~5 MB) for the life of the process. The daemon builds one app; the suites build one per
-test, and on 2026-11-16 the browser suite held 40 apps after 40 tests and every worker was
-OOM-killed near the end of the run. These pins fail on any handler or dependency that closes
-over an app again.
-"""
+"""An app `create_app` built is FREED once nothing holds it (web/api_core.py)."""
 
 from __future__ import annotations
 

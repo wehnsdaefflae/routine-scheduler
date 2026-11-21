@@ -1,9 +1,4 @@
-"""The third layer: a library change that arrives with no writer to gate.
-
-The engine's authoring approval and the Library tab's confirm digest cover the two interactive
-writers. This covers the rest — a sync pull, a hand edit, a restored bundle — which are exactly
-the paths nobody is watching when they happen.
-"""
+"""The third layer: a library change that arrives with no writer to gate."""
 from __future__ import annotations
 
 import subprocess
@@ -27,12 +22,7 @@ def _git(repo: Path, *args: str) -> None:
 
 
 def build_world(tmp_path, monkeypatch):
-    """A library repo with one holder routine — the world both drift suites resolve against.
-
-    A plain function rather than the fixture itself, because `tests/test_library_drift.py`
-    needs the same world and IMPORTING a fixture makes every test that takes it read as a
-    redefinition (ruff F811). One builder, a thin fixture per file.
-    """
+    """A library repo with one holder routine — the world both drift suites resolve against."""
     monkeypatch.setattr("rsched.secrets.load_secrets", dict)
     lib, routines = tmp_path / "lib", tmp_path / "routines"
     for sub in ("utils", "permissions", "rules"):

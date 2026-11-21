@@ -1,17 +1,4 @@
-"""Sending a message must not rebuild the conversation.
-
-A conversation is ONE run resumed IN PLACE (api_conversations.message → runner.resume_terminal
-→ runner.resume, same run dir, same run id), so a message changes the transcript and nothing
-above it. The view nevertheless remounted the whole thing after every send: the detail read,
-the head — whose rule picker GETs /api/library, and that endpoint lints the entire library on
-every call — the connections card, the lineage, and the eight rail reads, plus a re-render of
-the thread from offset 0 which re-fetched every attachment thumbnail. A five-message exchange
-cost five full library lints and ~50 requests, while the reply's first tokens waited behind
-the daemon answering them.
-
-What a send needs instead is the one thing that actually changed: the tail had ENDED, and there
-are new events after its last offset. stream.js `resume()` re-attaches there.
-"""
+"""Sending a message must not rebuild the conversation."""
 
 from __future__ import annotations
 

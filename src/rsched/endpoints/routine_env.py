@@ -5,35 +5,20 @@ Two env vars carry it to a util subprocess, both under the declared-only injecti
 (`utils_run._child_env`): `RSCHED_LLM` — non-secret endpoint metadata (base_url/kind/whether a
 key exists, plus which endpoint each of the routine's model ROLES resolves to) — and
 `RSCHED_LLM_KEYS` — {endpoint name: api key}, a credential (its name ends in KEYS, so the
-util-authoring gate forces its declaration). Same shape as `machines.py`, deliberately: an
-operator who has read one has read both.
+util-authoring gate forces its declaration). Same shape as `machines.py`.
 
-WHY IT EXISTS. Every LLM-calling util used to HARDCODE a provider, because nothing told it which
-endpoint its own routine runs on — a util could be handed a key named `OPENROUTER_UTIL_KEY` but
-never the fact that this instance serves its models through a local gateway. So a routine
-configured for a LOCAL model still shipped its prompt to a cloud one, which for the files
-`folder-reorg` reads (private scans that must never leave the box) is not a cost problem but a
-privacy breach. The routine's effective endpoint is engine knowledge, it cannot be forged by a
-caller, and it is exactly what `RSCHED_ROUTINE` is for WHO — so it rides the same channel.
+WHY: without it a util must hardcode a provider, so a routine configured for a LOCAL model
+could ship private data to a cloud one. The routine's effective endpoint is engine knowledge a
+caller cannot forge, so it rides the same channel as `RSCHED_ROUTINE`.
 
-WHAT A KEY IS NOT GIVEN FOR. Metadata covers EVERY configured endpoint (so a util can see that a
-local, keyless one exists and reach it), but `RSCHED_LLM_KEYS` carries keys ONLY for the
-endpoints this routine's own roles resolve to. A key for any other endpoint stays where the
-operator decided it: the named store secret with its own four-state `secret:<NAME>` grant row. An
-engine-injected blob of every endpoint key would route around that decision, which is not a
-widening a run gets to make for him.
+Metadata covers EVERY configured endpoint, but `RSCHED_LLM_KEYS` carries keys ONLY for the
+endpoints this routine's own roles resolve to; any other key stays behind its own
+`secret:<NAME>` grant row, which an injected blob of every key would route around.
 
-WHY THIS IS NOT THE THING `STRIP_VARS` FORBIDS. `utils_run.STRIP_VARS` scrubs
-`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_BASE_URL` and friends from every jailed
-subprocess unconditionally, so that no util "inherit[s] the orchestrator's keys and silently
-mis-bill[s] or use[s] the wrong account". That rule is about INHERITANCE: a credential arriving
-under a provider's well-known name, from whatever account the daemon happened to be configured
-with, invisible in the util's own header. This is the opposite on every count — the var is
-named for this engine, it must be DECLARED to arrive at all (so it is visible in the header the
-operator reads and in `rsched validate`), and what it carries is the key for the endpoint the
-routine is configured to use, resolved per run. A util that reads it bills the account its own
-routine runs on, which is what STRIP_VARS protects and could not express. Those provider names
-stay stripped: nothing here puts a key back under one.
+Not what `utils_run.STRIP_VARS` forbids: that rule stops a util INHERITING the daemon's keys
+under a provider's well-known name, invisibly. These vars are engine-named, must be DECLARED to
+arrive, and carry the key of the routine's own configured endpoint. The provider names stay
+stripped.
 """
 
 from __future__ import annotations
@@ -61,12 +46,8 @@ LLM_KEYS_VAR = "RSCHED_LLM_KEYS"  # env var NAME (carries the per-endpoint api k
 ROLES = ("main", "tool_call", "uncensored")
 
 
-#: The same two vars for the DECISION catalog (D288, goal b6). A util reaching a decision
-#: endpoint had no way to learn which one its routine runs on — the inference half has had that
-#: since this module shipped, and the asymmetry is why `decide` could only ever be an ACTION:
-#: the engine knew the catalog and a util did not. One `model` util with both capabilities needs
-#: both injections, so they live here, beside each other, deliberately: a reader who has
-#: understood one has understood the other, and they cannot drift into two designs.
+#: The same two vars for the DECISION catalog (D288), kept beside the inference pair so the two
+#: cannot drift into two designs.
 DECISIONS_VAR = "RSCHED_DECISIONS"            # non-secret catalog metadata
 DECISIONS_KEYS_VAR = "RSCHED_DECISIONS_KEYS"  # the per-endpoint api keys
 
@@ -149,13 +130,9 @@ def llm_env_for_routine(slug: str, models: dict[str, str],
         endpoints[name] = endpoint_public(cfg, key_set=bool(key), name=name)
         if key and name in keyed:
             keys[name] = key
-    # The CATALOG by name, shaped exactly as the decision half carries it (D288, goal b6): the
-    # `llm` action's `model` field takes a catalog NAME, so a util told only about ROLES could
-    # not honour an override that 7 of the 18 live `llm` calls pass. An entry whose endpoint is
-    # not configured is left out rather than offered — a call formed against it would fail at
-    # the wire with nothing naming the cause, which is why `role_endpoints` drops such a role
-    # too. Keys are unchanged: ROLE endpoints only, so a name reaching the util never reaches
-    # around the operator's own `secret:<NAME>` decision.
+    # The CATALOG by name (as the decision half carries it), so a util can honour an `llm`
+    # `model` override. An entry whose endpoint is not configured is left out rather than
+    # offered. Keys stay ROLE endpoints only.
     catalog = {name: {"endpoint": mc.endpoint, "model": mc.model}
                for name, mc in sorted((server.models or {}).items())
                if mc.endpoint in (server.endpoints or {})}
@@ -170,13 +147,9 @@ def decision_roles(models: dict[str, str], server: ServerConfig) -> dict[str, di
     None — the decision-catalog twin of `role_endpoints`.
 
     An unset role falls back to the INSTANCE default (`decision_model` /
-    `decision_media_model`), which is what `endpoints/decisions.pick_decision_model` does when a
-    call names no model: a util told only about the routine's own bindings would reach a
-    different model than the engine does for the same routine, which is the kind of divergence
-    that makes a util a second implementation rather than a second front door.
-
-    A role naming a model the catalog no longer carries is a warning and reads as None — never
-    substituted, for the reason `role_endpoints` gives: a default going missing must be visible.
+    `decision_media_model`), as `endpoints/decisions.pick_decision_model` does, so a util
+    reaches the same model the engine would. A role naming a model the catalog no longer
+    carries is a warning and reads as None — never substituted.
     """
     from ..config.base import DECISION_ROLES
 
@@ -205,15 +178,11 @@ def decision_env_for_routine(slug: str, models: dict[str, str],
 
     `RSCHED_DECISIONS` carries every configured decision endpoint and model plus the role map,
     so a util can tell "this instance has no media-capable decision model" from "I was told
-    nothing". `RSCHED_DECISIONS_KEYS` carries keys for the ROLE endpoints only, exactly as the
-    inference half does: a blob of every endpoint key would route around the operator's own
-    `secret:<NAME>` decision, which is not a widening a run gets to make for him.
+    nothing". `RSCHED_DECISIONS_KEYS` carries keys for the ROLE endpoints only, as the
+    inference half does.
 
-    **The PROTOCOL rides the metadata, and that is not decoration.** F888 cost nine days because
-    the two documented ways of passing structured evidence were both dead on the default decision
-    model, and the 0.535.2 fix landed in the `openai` adapter while all three of this instance's
-    models speak `systemone`. A util that cannot see which protocol it is talking to can only
-    rediscover that by failing; told it, it can send the right wire body or refuse clearly.
+    The PROTOCOL rides the metadata so a util can send the right wire body (or refuse
+    clearly) instead of rediscovering the protocol by failing (F888).
     """
     roles = decision_roles(models or {}, server)
     keyed = {r["endpoint"] for r in roles.values() if r}
@@ -237,10 +206,8 @@ def decision_env_for_routine(slug: str, models: dict[str, str],
 def decision_endpoint_key(cfg) -> str:
     """One DECISION endpoint's api key through its own ladder, or "".
 
-    Separate from `endpoint_key` because the fallback var differs: a decision endpoint whose
-    `key_var` is unset falls back to `DECISION_KEY_VAR_DEFAULTS[protocol]`, which the inference
-    config has no equivalent of. Never raises, for the same reason: a missing key is a warning
-    for the operator, not a failed util call.
+    Separate from `endpoint_key` because an unset `key_var` falls back to
+    `DECISION_KEY_VAR_DEFAULTS[protocol]`. Never raises: a missing key is only a warning.
     """
     from ..config.decisionconf import DECISION_KEY_VAR_DEFAULTS
 

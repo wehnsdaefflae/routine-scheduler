@@ -1,15 +1,6 @@
 """`GET /api/credential-screen` — what a screen of an admitted path REPORTS: the credential
 names it carries, how far the comparison reached, and the digest of the bytes it read (D296,
 operator decision 2026-11-19, option a).
-
-Which paths may be screened at all is the other half, in `test_credential_screen_bounds.py`.
-The operator's option named the regression set and the two modules together cover it:
-synthetic-secret, escaped-secret, boundary-size and partial-source here; symlink/race and the
-pruning refusals there.
-
-Above all of them sits the property the names route is built on: no response may carry a
-credential VALUE. It is asserted over the whole serialized body, so a value cannot hide in a
-key, a finding list or a field these tests do not know about.
 """
 
 from __future__ import annotations
@@ -191,16 +182,7 @@ def test_an_unreadable_store_makes_coverage_partial_and_forbids_clean(inside, st
 
 
 def test_a_denied_store_directory_is_unreadable_not_empty(tmp_path, stores):
-    """A store directory nobody can enter must count as UNREADABLE, never as empty.
-
-    The parent is readable and `secrets.d` itself is not, which is the only shape that tells
-    the two listing calls apart: `is_dir()` succeeds (its own stat comes from the readable
-    parent), and then `Path.glob` swallows the PermissionError and yields NOTHING while
-    `iterdir` raises it. A reader using glob therefore reports `full` coverage over a store it
-    never looked at — the reproducible defect the export was found to have, and a wrong answer
-    in the reassuring direction. Measured the same day: pathlib's exists()/is_dir() do not hide
-    EACCES (only ENOENT, ENOTDIR, EBADF, ELOOP), so the LISTING call is the guard.
-    """
+    """A store directory nobody can enter must count as UNREADABLE, never as empty."""
     scoped = stores / "secrets.d"
     assert scoped.is_dir()                       # seeded by the fixture, readable until now
     scoped.chmod(0o000)

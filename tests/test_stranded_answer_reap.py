@@ -1,11 +1,4 @@
-"""The post-finish sweep re-opens a CONVERSATION for an answer filed during its last turn.
-
-2026-09-21: two conversations asked a question in their closing turn and were answered seconds
-before they finished. The answer route saw a LIVE run, so it did not resume it (F39 resumes a
-finished one); the run then finished without draining the answer, and nothing read it for
-seven weeks. A routine's answer waits for its next fire by design, so only a conversation is
-re-opened here.
-"""
+"""The post-finish sweep re-opens a CONVERSATION for an answer filed during its last turn."""
 
 from rsched.daemon.runner_state import stranded_input
 from rsched.paths import atomic_write_json

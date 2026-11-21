@@ -66,34 +66,17 @@ def _note_if_killed(ctx: RunContext, kind: str, name: str, code: int) -> dict:
     """A child command the KERNEL stopped: emit `util_killed`, and SAY SO IN THE OBSERVATION.
 
     Returns the fields the author's observation needs (empty for an ordinary exit), so the one
-    measurement taken here reaches both surfaces. F622: this function already computed the
-    signal and the peak child memory and spent them on the health stream alone — the
-    OPERATOR's surface — while all three call sites built the observation from `code` alone.
-    The author therefore read `exit: -9` with empty output, which is indistinguishable from an
-    ordinary crashed command, and a run told that RETRIES: conversation c-20261002-194128
-    re-ran `classify_candidates` at turn 93 and again at turn 95, six minutes apart, with an
-    identical 5,103,384 kB high-water mark. An author told "killed by SIGKILL, peak child
-    memory 4.9 GB, the cgroup OOM killer" chunks the work instead.
+    measurement reaches both the health stream and the run: a bare `exit: -9` reads like an
+    ordinary crash and gets retried, while "killed by SIGKILL, the cgroup OOM killer" gets the
+    work chunked instead (F622).
 
     The verdict comes from `runner_reap.classify_cause` — the SAME classifier the daemon
-    applies to a dying engine, deliberately not a second one. It already encodes F569's lesson
-    (`_OOM_PLAUSIBLE_FRACTION`: a 60 MB peak is not called an OOM), and the child case feeds it
-    better data than the engine case ever had, measured at the moment of death.
+    applies to a dying engine, deliberately not a second one (a small peak is not called an
+    OOM). `children_vm_hwm_kb` is this run's high-water mark across ALL its finished children
+    — an upper bound on the one that died.
 
-    A negative exit status is a signal, and -9 inside this container is the cgroup OOM
-    killer. The engine survives it — only the child died — so the run reports an ordinary
-    failed command and the health stream held NOTHING: five python children were killed
-    that way on 2026-09-14 and 09-17 (anon-rss 1.86-2.05 GB, `/var/log/kern.log`) with no
-    event of any kind. `children_vm_hwm_kb` is this run's high-water mark across ALL its
-    finished children — an upper bound on the one that died, and the figure that says which
-    ceiling refused it.
-
-    Negative therefore has to mean a SIGNAL and nothing else, which is why the deadline
-    exits `utils_run.TIMEOUT_EXIT` (124, positive) for all three kinds. The util kind spelled
-    it -1 until 0.366.2 and every timeout was filed here as "killed by signal 1" — a SIGHUP
-    nothing in this system sends. routine-improver's three timeouts on 2026-09-23 read as
-    three kernel kills, on the one event an operator consults to decide whether a ceiling is
-    too low.
+    Negative must mean a SIGNAL and nothing else, which is why the deadline exits
+    `utils_run.TIMEOUT_EXIT` (124, positive) for all three kinds.
     """
     if code >= 0:
         return {}
@@ -117,10 +100,8 @@ def _note_if_killed(ctx: RunContext, kind: str, name: str, code: int) -> dict:
     cause = classify_cause(code, vm_hwm_kb=peak)
     fields: dict = {"killed_by": signame, "signal": -code, "kill_cause": cause}
     if cause == "oom_kill":
-        # The peak rides the observation ONLY where it supports the verdict. On a
-        # `signal_kill` it is the run's whole-children high-water mark and says nothing about
-        # the death — putting a number there invites the author to diagnose memory for a
-        # deploy or a manual stop.
+        # The peak rides the observation ONLY where it supports the verdict: on a
+        # `signal_kill` it says nothing about the death.
         fields["children_vm_hwm_kb"] = peak
     return fields
 
@@ -128,31 +109,24 @@ def _note_if_killed(ctx: RunContext, kind: str, name: str, code: int) -> dict:
 
 
 def _ended_by_abort(ctx: RunContext, code: int) -> bool:
-    """Whether the run's abort ended this util or script call (`utils_run.run_jailed`). The
-    runner's own note on stderr says so in words; the observation also says it in a field
-    (`aborted`), as `shell`'s does, for the transcript's readers. A command that exited
-    `ABORT_EXIT` by itself just as its run was aborted reads as ended by the abort — it would
-    have been, a quarter-second later.
+    """Whether the run's abort ended this util or script call (`utils_run.run_jailed`). A
+    command that exited `ABORT_EXIT` by itself just as its run was aborted counts as ended by
+    the abort — it would have been, a moment later.
     """
     return code == utils_run.ABORT_EXIT and ctx.aborted()
 
 
 def _ended_by_cancel(code: int) -> bool:
-    """Whether a PERSON stopped this call (F586, decided as D160-C). Unlike `_ended_by_abort`
-    this needs no second look at the run's state: `CANCEL_EXIT` is reported by `run_jailed`
-    only when its own `cancelled` callback said so, so the code alone is the evidence. The
-    observation says it in a field for the same reason the abort does — the three endings a
-    call can have (deadline, abort, cancel) call for three different next moves, and a run told
-    the wrong one retries a call a person deliberately stopped.
+    """Whether a PERSON stopped this call (D160-C). `CANCEL_EXIT` is reported by `run_jailed`
+    only when its own `cancelled` callback said so, so the code alone is the evidence. Deadline,
+    abort and cancel call for three different next moves, so the observation names which.
     """
     return code == utils_run.CANCEL_EXIT
 
 
 def _ended_by_a_person(ctx: RunContext, code: int) -> str | None:
-    """Which DELIBERATE ending this call had, as the observation field that names it — or None
-    for every other outcome. The two share one answer because they share one consequence: a
-    call a person ended is not a util failure, so it earns no reliability tick, no `usage`
-    block and no repair route, and the only thing the run needs is to be told which it was.
+    """Which DELIBERATE ending this call had, as the observation field that names it — or None.
+    A call a person ended is not a util failure: no reliability tick, no `usage`, no repair route.
     """
     if _ended_by_abort(ctx, code):
         return "aborted"
@@ -161,24 +135,20 @@ def _ended_by_a_person(ctx: RunContext, code: int) -> str | None:
     return None
 
 
-def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/show dispatch, many small exits
+def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — many small exits
     name = action["name"]
     args = [str(a) for a in (action.get("args") or [])]
     home = ctx.server.libraries_home
     if name == "list":  # discovery: `gu list` — the catalog is derived live, never stale
-        # With a util name in args, list ONLY that util's entry (usage + tags + secrets):
-        # the full catalog is already in CAPABILITIES, so re-listing everything to learn
-        # one util's flags re-buys ~3k tokens of known information.
+        # With a util name in args, list ONLY that util's entry — the full catalog is
+        # already in CAPABILITIES.
         target = next((a for a in args if not a.startswith("-")), "")
         if target and target != "all":
             entry = next((u for u in utils_lib.list_utils(home) if u["name"] == target), None)
             if entry is None:
                 return {"kind": "util", "name": "list", "target": target, "missing": True,
                         "available": [u["name"] for u in utils_lib.list_utils(home)]}
-            # the WHOLE usage block (F505): for a verb-dispatched util the first line is
-            # `gu <name> <verb> …` or just its first verb, and that is exactly what a caller
-            # asking for ONE util's entry needs in full. Interpolating the block into one
-            # indented line left its continuations reading as part of the table.
+            # the WHOLE usage block: a verb-dispatched util's first line names one verb only
             lines = utils_lib.entry_lines(entry, full_usage=True)
             if entry.get("tags"):
                 lines.append(f"    tags: {', '.join(entry['tags'])}")
@@ -193,8 +163,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         if source is None:
             return {"kind": "util", "name": "show", "target": target, "missing": True,
                     "available": [u["name"] for u in utils_lib.list_utils(home)]}
-        # D42-A: repairing a big util needs the COMPLETE source — the default head+tail cap
-        # made >24k utils unfixable for shell-less routines. --full returns everything;
+        # Repairing a big util needs the COMPLETE source (D42-A): --full returns everything;
         # --range FIRST LAST pages by 1-based inclusive line numbers.
         flags = [str(a) for a in args[1:]]
         if "--full" in flags:
@@ -233,25 +202,21 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         return {"kind": "util", "name": "search", "query": query,
                 "listing": utils_lib.search_listing(home, query)}
     if not utils_lib.exists(home, name):
-        # A schema-valid FIELD SHIFT (`name: "300"`) reaches this miss without any rejection,
-        # and counting it would mint the phantom Stats row F546 closed at the validation seam.
+        # A schema-valid FIELD SHIFT (`name: "300"`) is not a util and must not mint a Stats row.
         if could_be_util(name):
             ctx.count_util(name, "missing")
         obs = {"kind": "util", "name": name, "missing": True,
                "available": [u["name"] for u in utils_lib.list_utils(home)]}
-        # R367: the name may be a ROUTINE-LOCAL script, which the util action never resolves —
-        # the observation hands back the exact `script` call, args included (P3: told, not guessed)
+        # the name may be a ROUTINE-LOCAL script: hand back the exact `script` call, args included
         if script_home(ctx, name) is not None:
             obs.update(script_match=True, args=args)
         return obs
-    # F290 + F756: a declared secret the routine may not see is WITHHELD from the child env
-    # rather than blocking the call — an optional (`?`) one silently, and a REQUIRED one the
-    # user DECLINED, because a decline protects the credential, not the util. The observation
-    # says what was lost (undecided names are requestable; declined is a count — R17).
+    # A declared secret the routine may not see is WITHHELD from the child env rather than
+    # blocking the call — an optional (`?`) one, or a REQUIRED one the user DECLINED (a decline
+    # protects the credential, not the util). The observation says what was lost.
     from .secretgate import withheld_for_util, withheld_verb_scoped
     withheld = withheld_for_util(ctx, name)
-    # One policy object, used twice: for the jail itself and for the dead-root note (R2260) —
-    # so what the run is told about its roots is what the jail actually decided about them.
+    # One policy object for the jail AND the dead-root note, so the two cannot disagree.
     policy = sandbox.policy_for_ctx(ctx)
     code, out, err = utils_run.run_util(
         home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S),
@@ -261,8 +226,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         cancelled=cancelled_for_turn(ctx))
     killed = _note_if_killed(ctx, "util", name, code)
     ended = _ended_by_a_person(ctx, code)
-    # Per-util reliability telemetry (util_stats → the Stats tab). A call a person ended — the
-    # run's abort or this one call's cancel — says nothing about the util, so it is not counted.
+    # Per-util reliability telemetry; a call a person ended says nothing about the util.
     if ended is None:
         ctx.count_util(name, "ok" if code == 0
                        else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))
@@ -270,18 +234,14 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
            **command_output(ctx, name, out, err, code), **withheld.note(ctx),
            **withheld_verb_scoped(ctx, name, args), **_jail_notes(policy), **killed}
     if ended is not None:
-        # Not a failure, so no repair route: a resumed run replays this observation, and
-        # "the util itself may be broken — fix it" would send it after a util that is fine.
-        obs[ended] = True
+        obs[ended] = True   # not a failure, so no repair route
     elif code != 0:
-        # A failed call teaches the correct one — and the repair path. Without this nudge
-        # the model's rational move is a silent workaround, and the next routine hits the
-        # same wall (seen live: page-fetch broken, run fell back to websearch, nobody told).
+        # A failed call teaches the correct one — and the repair path, so a broken util is
+        # fixed or escalated instead of silently worked around.
         entry = next((u for u in utils_lib.list_utils(home) if u["name"] == name), None)
         if entry and entry.get("usage"):
             obs["usage"] = entry["usage"]
-        # The repair route depends on the routine's grants: with util authoring, fix it in
-        # place; without, escalate — never let it silently work around a broken util.
+        # With util authoring, fix it in place; without, escalate.
         if ctx.grants is None or ctx.grants.allows_kind("write_util"):
             repair = (f'If the inputs were right, the util itself may be broken — read it with '
                       f'{{"kind": "util", "name": "show", "args": ["{name}"]}}, fix it, and '
@@ -295,8 +255,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
                       f'file a deferred ask_user naming the util, the failing call, and the '
                       f'error (this routine holds no util-authoring permission, so it cannot '
                       f'revise utils itself). Never silently work around a broken util.')
-        # A missing CONNECTION binding outranks the generic repair route: the call is not
-        # broken, it is ungranted, and the fix is one typed request (F321).
+        # A missing CONNECTION binding outranks the repair route: ungranted, not broken.
         conn_route = _unbound_connection_request(ctx, name)
         obs["hint"] = (
             conn_route
@@ -307,13 +266,10 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
 
 
 def do_script(action: dict, ctx: RunContext) -> dict:
-    """Run one of the routine's OWN scripts/<name>.py helpers: declared-only secrets
-    (the util model — only header-declared AND granted names reach the env, engine
-    extras like connection tokens included only if declared, resolved transitively over
-    the utils the script's `calls:` line declares), the recipe's fs jail, and `gu` on
-    PATH only for a script that declares those calls. Same truncation + spill as a util
-    call, and the same F290 note naming an optional secret that was withheld. The loop's
-    secret gate (declared-required-undecided → the blocking ask) ran before this.
+    """Run one of the routine's OWN scripts/<name>.py helpers: declared-only secrets (only
+    header-declared AND granted names reach the env, transitively over the `calls:` utils),
+    the recipe's fs jail, and `gu` on PATH only for a script that declares calls. Same
+    truncation + spill as a util call. The loop's secret gate ran before this.
     """
     from .. import scripts
     from ..secrets import load_secrets
@@ -339,8 +295,7 @@ def do_script(action: dict, ctx: RunContext) -> dict:
                 "sibling would run without them. Fix the header — e.g.\n"
                 "    calls: gmail, ftp\n— then rerun."}
     declared, _net, optional = scripts.needs(home, name, ctx.server.libraries_home)
-    # Only a GRANTED name is injected, so a declined one (F756) never reaches the env here —
-    # the gate was the only thing that refused this call; `withheld` reports what was lost.
+    # Only a GRANTED name is injected; `withheld` reports what was lost.
     withheld = withheld_for_call(ctx, declared, optional)
     env_secrets = {k: v for k, v in load_secrets().items()
                    if k in declared and secret_state(ctx, k) == "granted"}
@@ -365,38 +320,21 @@ def do_script(action: dict, ctx: RunContext) -> dict:
 
 def do_shell(action: dict, ctx: RunContext) -> dict:
     """Run ONE ad-hoc command through `bash -c` inside the run's Landlock jail — the escape
-    hatch, gated by the `shell` capability so a routine without it cannot even generate the
-    call. No call-time secret gate: the command is handed NO store secret at all, so there is
-    nothing to ask exposure for. The jail and the empty secret env are `shellrun`'s; the 1 MB
-    per-stream capture, the timeout and the end of a command whose run is aborted are the shared
-    runner's (`utils_run.run_jailed`); the observation truncation and the `.util_outputs/` spill
-    are the same ones a util call gets, so a command that prints more than the observation
-    carries is saved rather than lost.
+    hatch, gated by the `shell` capability. No call-time secret gate: the command is handed NO
+    store secret. The jail and empty secret env are `shellrun`'s; capture, timeout and abort
+    are the shared runner's (`utils_run.run_jailed`); truncation and the `.util_outputs/`
+    spill are the same a util call gets.
 
-    The observation carries no advisory tail, unlike `util`'s. A non-zero exit here is usually
-    the ANSWER (`grep -q`, `test -f`, a failing suite the run is iterating on), not a mistake to
-    be corrected — and "promote this to a util" is standing conduct that already lives in the
-    kind's prompt bullet and the shell permission's body, where it costs no turn to repeat.
+    No advisory tail, unlike `util`'s: a non-zero exit here is usually the ANSWER (`grep -q`,
+    `test -f`, a failing suite), not a mistake to correct.
 
-    **A shell write is an UNGATED write, deliberately, and the observation says so** (D158, from
-    R1980). Every write protection the engine has lives in the FILE-action gate
-    (`engine/fileops.py:_write_gate`): the `.memory/` seal, the engine-ownership of `runs/`,
-    `.util_outputs/` and `.doc_cache/`, the `routine.yaml` config refusal, and the
-    recipe-authoring boundary. A `bash -c` redirect calls none of it — but inside the routine's
-    OWN dir the kernel refuses those writes regardless (D179: `ownseal` withholds exactly those
-    paths from the jail), so what stays ungated is every path OUTSIDE it, which is the point of
-    an escape hatch. Deciding WHICH writes a shell line performs is
-    undecidable in general (a command can write through a script, a heredoc, an editor, a
-    compiler), so nothing here tries to refuse one. What it does instead is leave a MARKER:
-    `ungated_write` on the observation whenever the command's shape suggests a write, so a
-    person auditing the run afterwards can find the writes that no gate saw. The flag is
-    deliberately conservative in one direction only — it claims "this may have written", never
-    "this did not".
-
-    The marker's READER is the health stream (R2654): the first write-shaped command of a run
-    also files one `ungated_write` health event, because for two years the only consumer of
-    this flag was its own test. `engine/shellwrite.py` holds the shapes, the per-run latch and
-    that reasoning.
+    **A shell write is an UNGATED write, deliberately, and the observation says so** (D158).
+    Every write protection lives in the FILE-action gate (`fileops._write_gate`); a `bash -c`
+    redirect calls none of it — inside the routine's OWN dir the kernel refuses those writes
+    regardless (D179, `ownseal`), so what stays ungated is every path OUTSIDE it. Which writes
+    a shell line performs is undecidable, so nothing refuses one; instead `ungated_write` marks
+    any write-shaped command ("may have written", never "did not"), and the first one per run
+    files an `ungated_write` health event (`engine/shellwrite.py`).
     """
     command = str(action.get("command") or "")
     cwd = work_dir(ctx)
@@ -415,9 +353,7 @@ def do_shell(action: dict, ctx: RunContext) -> dict:
            **_jail_notes(policy), **killed}
     obs["truncated"] = obs["truncated"] or result["truncated"]
     if marks_a_write(command):
-        # D158: no gate saw this write, so the record is the only place it exists — and R2654
-        # connected that record to a reader: the run also files ONE `ungated_write` health
-        # event, so an audit finds the run instead of having to grep every transcript.
+        # D158: no gate saw this write, so the record (and one health event) is all there is.
         obs["ungated_write"] = True
         record_ungated_write(ctx, command)
     if str(cwd) != str(work_dir(ctx)):

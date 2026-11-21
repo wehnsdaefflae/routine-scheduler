@@ -1,12 +1,5 @@
 """Provider-discovered model limits — the operator's "max out the token window without setting
 it up".
-
-The two things worth pinning are the PRECEDENCE (an explicit config value is an operator sizing
-on purpose and must still win) and that BOTH knobs are the route's published maximum (operator,
-2026-11-20: "not below") — with one guard, for a published output figure that is the window
-restated rather than a maximum (`routecatalogs.is_placeholder`): providers validate
-`input + requested_output <= window`, so asking for it would leave the prompt nothing.
-Gateway routes are pinned in test_route_limits.py.
 """
 
 from __future__ import annotations

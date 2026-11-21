@@ -1,26 +1,5 @@
 """F807: a BLOCKING question carrying a `config_patch` must be answerable — and appliable —
 where it was asked.
-
-R3060: a routine filed a blocking `ask_user` with a `config_patch` (added Gmail OAuth scopes)
-and the operator could only answer it on the Decisions page, not in the conversation he was
-reading. The cause is not a route that forbids it; it is a field that never arrives.
-
-`interact.handle_ask` files the durable record with the patch (`inbox.file_question`) and then
-publishes a SECOND, smaller copy of the question into the live run status
-(`ctx.write_status("waiting_user", question=...)`). Everything the operator reads while the run
-blocks comes from that copy:
-
-* the conversation's pinned panel and the run page's panel (`static/components/answerform.js`
-  `questionPanel`, fed by the state stream's `status.json` question — `web/streams.py` L80);
-* the Decisions page's row for a LIVE blocking question, which `web/decisions_read.py`
-  L267-274 builds from `active.question` and NOT from the durable record (it skips the pending
-  file by qid at L276-277).
-
-So while the run waits, the patch exists only on disk: no surface can offer `approve & apply`,
-and the chat card showed the question with no way to apply what it proposed. These tests pin
-the live copy as SELF-DESCRIBING — carrying the patch, the target it resolved and the home that
-decides which PATCH route applies it — so the one apply component can mount wherever the
-question is rendered.
 """
 
 from __future__ import annotations
@@ -38,12 +17,7 @@ PATCH = {"budgets": {"max_turns": 120}}
 
 
 def _watch_status(run_dir, holder: dict, *, timeout_s: float = 8.0) -> threading.Thread:
-    """Catch the LIVE question status.json publishes while the run blocks, then answer it.
-
-    The published copy exists only for the duration of the wait: `handle_ask` clears it in a
-    `finally` (`write_status("running", question=None)`), so the assertion has to read it from
-    beside the waiting run, exactly as the console's state stream does.
-    """
+    """Catch the LIVE question status.json publishes while the run blocks, then answer it."""
     def watch() -> None:
         deadline = time.time() + timeout_s
         while time.time() < deadline:
@@ -105,14 +79,7 @@ def test_a_plain_blocking_ask_publishes_no_patch_fields(make_routine, scripted):
 
 
 def test_the_live_decisions_row_carries_the_patch_while_the_run_blocks(make_routine):
-    """The same fix reaches the Decisions page's LIVE row, which is not the durable record.
-
-    `web/decisions_read._all_questions_fresh` builds a row for a live blocking question from
-    `active.question` and SKIPS that question's pending file by qid — so the apply button was
-    missing even on the page the operator was sent to, for as long as the run waited. Nothing
-    in `decisions_read` changes: the row is `{**active.question, ...}`, so publishing the
-    fields is what restores it.
-    """
+    """The same fix reaches the Decisions page's LIVE row, which is not the durable record."""
     from rsched.web.decisions_read import open_decisions
 
     d = make_routine(slug="liverow")

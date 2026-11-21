@@ -1,14 +1,4 @@
-"""Stage-boundary compaction: archive the middle when doing it now costs less than carrying it.
-
-The size gate alone almost never fires on a 1M-token window (14 passes in 160 fleet runs), while
-every finished stage is re-read on every turn the run has left. `engine/boundary.py` prices the
-two against each other at each boundary — SoL-Pi's Online Context Compact test.
-
-The gate fixture (`_gate_loop`) is 40 messages of ~1,751 estimated tokens against a 100k window:
-70k, under the cached 0.8 gate. A pass keeps head 6 + tail 24, so it leaves ~52.6k and archives a
-~17.5k middle; with cache reads and writes priced that is a ~48-turn breakeven, and the pass is
-taken when the run has twice that ahead (`boundary.MARGIN`).
-"""
+"""Stage-boundary compaction: archive the middle when doing it now costs less than carrying it."""
 
 from __future__ import annotations
 

@@ -1,24 +1,15 @@
 """The `ask_user` action's GRAMMAR — one question, or a batch of them (D212).
 
-Moved out of `engine/actions.py` the way `engine/decideaction.field_problems` and
-`engine/jobfields` were: that file is the action contract's single home, it is over the repo's
-size bar and may only shrink, so a kind whose grammar is a block of its own lives in its own
-module. This one grew a batch to check.
+Its own module because `engine/actions.py` may only shrink. An `ask_user` carries EITHER one
+question (`question` + its `options` / `default` / `request` / `config_patch` / `blocks_work`)
+OR a `questions` list, each entry carrying those fields for itself — never both, or the applier
+would have to pick one silently.
 
-An `ask_user` carries EITHER one question (`question` + its `options` / `default` / `request` /
-`config_patch` / `blocks_work`) OR a `questions` list, each entry carrying the same fields for
-itself. Never both: two shapes in one action say nothing about which the user is being asked,
-and the applier would have to pick one silently.
+The `questions` item schema is shared with `decide` (the schema is flat), so decide's `name` and
+`answer_type` are refused HERE by name rather than silently ignored.
 
-The `questions` ITEM schema is shared with `decide` (engine/schema_questions.py), because
-`ACTION_SCHEMA` is flat by design — so `name` and `answer_type`, which are decide's, reach an
-ask_user batch as valid JSON and are refused HERE, by name, rather than ignored. A sub-field
-nobody refuses and nobody reads is the shape that makes a model repeat it.
-
-A batch never blocks the process. `mode: "blocking"` is the separate, orthogonal thing — the
-run's own process sitting out the ask timeout — and over the 282 question records measured
-before this existed it was used 0 times, with 0% of answers arriving within the hour. Asking
-five questions and waiting on the first would hold the run for all five.
+A batch never blocks the process: `mode: "blocking"` parks the run on ONE answer, which means
+nothing for several; `blocks_work` marks the questions that stop the work instead.
 """
 
 from __future__ import annotations
@@ -26,8 +17,7 @@ from __future__ import annotations
 #: ask_user's pick-one list, per question. The shared schema field allows decide's longer
 #: lists, so this cap is held here rather than by the schema.
 ASK_OPTIONS_MAX = 5
-#: Questions one action may ask at once — the schema's `maxItems`, restated where it is
-#: enforced. 6 was the most any real run ever asked across the 282 records measured.
+#: Questions one action may ask at once — the schema's `maxItems`, restated where enforced.
 ASK_QUESTIONS_MAX = 16
 #: The single-question fields a batch moves INTO each question.
 _PER_QUESTION = ("options", "default", "request", "config_patch", "blocks_work")
@@ -80,8 +70,7 @@ def field_problems(obj: dict) -> list[str]:
         problems.append("kind=ask_user takes 'question' (one question) or 'questions' "
                         "(several in one action), not both — put the single one in the list")
     # Truthiness, not presence: a constrained decoder emits other kinds' fields as empty
-    # strings / false / null (see `actions.normalize_action`), and refusing a batch over
-    # `blocks_work: false` would reject an action that asked for nothing of the sort.
+    # strings / false / null (see `actions.normalize_action`).
     if riding := [f for f in _PER_QUESTION if obj.get(f)]:
         problems.append(f"kind=ask_user: {riding} belong to EACH question when you pass "
                         "'questions' — move them into the entries they are about")

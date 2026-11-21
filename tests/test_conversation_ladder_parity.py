@@ -1,23 +1,4 @@
-"""A conversation can be supervised the way a routine can — D216 (d), the last part.
-
-The operator ordered the remaining parity gaps *"All four, in the order (c), (b), (a), (d)"*, and
-(d) is this: the escalation LADDER and the `supervisor` model role reached neither conversation
-surface.
-
-Nothing in the ENGINE changes, and that is what makes this a surface gap rather than a feature.
-`engine/ladder.ladder_settings` reads `ctx.routine.ladder` with no conversation gate; a
-conversation IS a `RoutineConfig`, so the field exists and the engine honours it. What was
-missing: `ladder` and its two turn knobs were absent from `CONVERSATION_PATCH_FIELDS` and from
-`ConversationPatch` (which is `extra="forbid"`, so naming one was a 422 — proven red-first), the
-conversation GET served neither, and the header's model save built a body of
-main/tool_call/uncensored/decision — dropping a stored `supervisor` on every save it made.
-
-That last one is the defect worth stating plainly: a `supervisor` role put into a conversation's
-`routine.yaml` by hand was ERASED the next time anyone saved its models from the header, because
-`validate_models` replaces the block wholesale and the body is built from scratch. D216 (b) was a
-no-op in the engine and shipped as the pin that proved it; this part is not — two of its three
-halves move real code.
-"""
+"""A conversation can be supervised the way a routine can — D216 (d), the last part."""
 
 from __future__ import annotations
 
@@ -36,14 +17,7 @@ _HEAD = Path(__file__).resolve().parents[1] / "static" / "views" / "conversation
 
 
 def _conversation(tmp_path, slug: str = "c-20261106-120000"):
-    """A conversation as the registry reads one, written to disk.
-
-    NOT `POST /api/conversations`: that route spawns the first reply as a real engine
-    subprocess, which `tests/production_guard.py` refuses (a fresh interpreter inherits none of
-    the test's redirections and would load the PRODUCTION config). `conversations_home` is named
-    explicitly for the same reason `conftest.seeded_server` names it — `make_test_server` leaves
-    it pointing at the live `/home/mark/conversations`.
-    """
+    """A conversation as the registry reads one, written to disk."""
     server = make_test_server(tmp_path, conversations_home=str(tmp_path / "conversations"))
     conv = server.conversations_home / slug
     conv.mkdir(parents=True, exist_ok=True)
@@ -148,11 +122,6 @@ def test_the_header_mounts_the_ladder_controls_the_routine_page_uses():
     speak the server's vocabulary (its `MIN_TURNS` mirrors `engine/ladder.MIN_OVERSIGHT_TURNS`,
     its derived-turns hint mirrors `oversight_turns_for`). A second copy of those controls would
     drift from those floors, which is exactly what `ladder-settings.js` was extracted to stop.
-
-    So this pins the CHAIN, not a name: the header imports the panel from that module, and the
-    panel composes the two existing controls rather than reimplementing them. The routine page
-    mounts them separately because its two authority classes save in different groups; a
-    conversation has one panel and no accept bar.
     """
     source = _HEAD.read_text(encoding="utf-8")
     assert "ladder-settings.js" in source, "the header does not import the ladder component"

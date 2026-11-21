@@ -1,15 +1,4 @@
-"""A too-long prompt is a fault of the REQUEST, not of the model.
-
-Live specimen (self-audit:20260921-000321, the run this test exists because of): the same
-turn 400'd four times with a prompt that GREW each time — 1,017,305 → 1,025,019 →
-1,038,220 → 1,045,385 tokens against a 1,000,000 maximum — and each 400 advanced the
-fallback chain and cooled a perfectly healthy model for 300 s. Every other model would
-have received the identical oversize prompt.
-
-So: parse the provider's own numbers whatever the vendor's wording, shrink on the SAME
-model, never mark it failed, and if it still does not fit, fail the turn saying so.
-Drives completion.next_action directly with fake endpoints (no network).
-"""
+"""A too-long prompt is a fault of the REQUEST, not of the model."""
 
 from __future__ import annotations
 

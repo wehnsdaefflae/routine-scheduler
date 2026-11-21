@@ -1,30 +1,18 @@
 """The assist layer's `action` RUNG — a rule that DOES the thing its moment calls for.
 
-`engine/assist.py` owns the four moments and their deliveries (a held action, an observation
-tail, an engine note, a finish deferral); this owns the one payload that is not prose. Split out
-rather than added to it for the repo's usual reason — that file is the moment seam and was at the
-350-line bar — and for a sharper one: everything here is about an action the RUN DID NOT CHOOSE,
-which needs its own vocabulary of reporting and its own refusal renderer.
+`engine/assist.py` owns the moments and their prose deliveries; this owns the one payload that
+is not prose — an action the RUN DID NOT CHOOSE, with its own reporting and refusal renderer.
+`hooks/perform.py` is the channel that performs it.
 
-The operator asked for this rung twice. *"Any action. This includes utils and therefore
-scripts"* (2026-10-26) said what a hook may run, and *"The hook system also should allow to
-extend the implementation of parts of the harness^2 features we already started"* said why it
-matters: a rule that can only SAY something at the right moment leaves the acting to a model turn
-that may not come. `assists.py` recorded the rung as unbuilt "because each needs a helper channel
-that is not built" — `hooks/perform.py` is that channel.
+Three properties hold:
 
-Three properties hold here, none of them this module's own invention:
-
-- **It performs and REPORTS.** The assist's line is appended whatever the action does, and the
-  outcome beside it. A failure changes nothing about what the run then does — his second ruling
-  the same day: *"No veto ever — a hook performs and reports; only a hold (prose to the model)
-  can stop an action."* There is no branch on success here, and there must never be one.
+- **It performs and REPORTS.** The assist's line is appended whatever the action does, with the
+  outcome beside it. No veto ever: only a hold can stop an action, so there is no branch on
+  success here and there must never be one.
 - **It can never exceed the firing routine.** `hooks/perform` runs the action through the model's
-  own gates (schema → `validate_action` against the run's workflow tools ∩ capabilities →
-  `actionroute.dispatch_action`), so a rule held by a routine without the capability performs
-  nothing and the refusal is what the run reads.
-- **It cannot fail the turn.** `perform` absorbs every failure into the observation it returns,
-  so the worst case is a note saying so.
+  own gates (schema → `validate_action` → `actionroute.dispatch_action`), so a routine without
+  the capability performs nothing and the refusal is what the run reads.
+- **It cannot fail the turn.** `perform` absorbs every failure into the observation it returns.
 """
 
 from __future__ import annotations
@@ -37,11 +25,8 @@ from .observations import is_failure
 def act(loop, assist: Assist, *, point: str = "turn-boundary") -> None:
     """Perform an `action`-payload assist's action, and tell the run what came of it.
 
-    `point` is the hook point the fire belongs to — `turn-boundary` for the turn moment and
-    `child-exit` for the run-tree one. It is passed through to `perform` rather than assumed,
-    because `perform` validates the payload against that point's own table: a point which does
-    not carry `action` performs nothing and says so, which is how a future moment cannot
-    silently acquire the rung by calling this function.
+    `point` (`turn-boundary` or `child-exit`) is passed through, not assumed: `perform` validates
+    the payload against that point's own table, so a moment cannot silently acquire the rung.
     """
     if assist.payload != "action" or not assist.action:
         return
@@ -54,16 +39,9 @@ def act(loop, assist: Assist, *, point: str = "turn-boundary") -> None:
 def outcome(assist: Assist, obs: dict) -> str:
     """What the run reads about an action a rule performed on its behalf.
 
-    It names the rule, the action and the result in one line, because the run did not choose
-    this action and has to be able to tell it from its own: an unexplained observation in a
-    transcript is indistinguishable from a turn the model forgot taking.
-
-    Failure is `observations.is_failure`, never a check of `error` alone — that is the engine's
-    ONE classifier for "did this observation report a failure", and the only thing that reads
-    every spelling: a refusal's `declined`/`reason`, a non-zero `exit`, a failed gate flag, a
-    `paths` batch where one file of eight is unreadable. The first version tested `error` and
-    told the run a DECLINED `write_util` "completed" — which also found the classifier's own
-    gap (`header_ok`, fixed in `observations.is_failure` the same day).
+    It names the rule, the action and the result in one line, so the run can tell an action it
+    did not choose from its own. Failure is `observations.is_failure` — the engine's ONE
+    classifier, reading every spelling — never a check of `error` alone.
     """
     kind = str((assist.action or {}).get("kind") or "?")
     if is_failure(obs) or obs.get("error"):
@@ -76,12 +54,9 @@ def outcome(assist: Assist, obs: dict) -> str:
 def _why_not(obs: dict) -> str:
     """Why a performed action did not run, read off the observation a REFUSAL carries.
 
-    Separate from `_result_line` deliberately: that one renders a RESULT and ends in "it
-    completed", which is the exact sentence a refusal must never produce. The first version fell
-    back to it, so a `write_util` the doc-standard gate refused was reported as "its action did
-    NOT run — it completed". Failure is spelled per kind (`observations._FAILURE_KEYS`), so the
-    keys are read in the order a reader wants them: the engine's own message, the refusal's
-    reason, the gate's problem list, then the flag itself.
+    Separate from `_result_line`, which ends in "it completed" — a sentence a refusal must never
+    produce. Keys in reader order: the engine's message, the refusal's reason, the gate's
+    problem list, then the flag itself.
     """
     for key in ("error", "reason", "output"):
         if value := str(obs.get(key) or "").strip():
@@ -99,9 +74,7 @@ def _why_not(obs: dict) -> str:
 def _result_line(obs: dict) -> str:
     """The one line of a performed action's observation the note carries.
 
-    Deliberately short and deliberately not the whole observation: the full record is in the
-    transcript, which `perform` wrote, and a boundary note is read by a model about to do
-    something else.
+    Deliberately short: the full record is in the transcript, which `perform` wrote.
     """
     for key in ("stdout", "text", "result", "summary"):
         value = str(obs.get(key) or "").strip()

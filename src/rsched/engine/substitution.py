@@ -1,56 +1,18 @@
 """What a SUBSTITUTED model is told about its own situation (F539, D146-B).
 
-A failover is recorded in four places and, until this module existed, three and a half of them
-were for a reader AFTER the fact: the transcript `error` event with its `failover` payload, the
-`model_failover` health event with `from_model`/`to_model`/`reason`, the usage row that
-attributes each turn to the model that served it — and, for the one turn it was written for, an
-appended notice that `completion` then drops with the rest of the turn's debris.
+`engine/capabilities.py` states the context window ONCE, at boot, for the BOUND model. A
+fallback chain may step DOWN in window (`failover.fits` prefers a fitting rung but never vetoes
+one), so after a downward switch that standing figure is false, and the prompt is append-only.
 
-The RUN is the reader that can still act, and the one thing it needs most is the one nothing
-carried. `engine/capabilities.py` states the window ONCE, at boot, under the model the routine
-was BOUND to ("Model: <endpoint>/<model> — context window ≈ 200,000 tokens; the engine archives
-the middle … at ~60-80% of that, so budget your reads"). A fallback chain may step DOWN in
-window — a chain is ordered by preference, and `endpoints/failover.fits` prefers a rung that
-holds the request but deliberately never vetoes one that does not, because a chain reporting
-itself exhausted while a usable model remains would kill the run outright. So after a downward
-switch the single standing statement a run holds about its own window is false, by as much as a
-factor of six, and the prompt cannot be rewritten to correct it (it is immutable under the
-caching contract — only appended to).
+Two things are said at a switch, with different lifetimes:
 
-Two live runs paid for this:
+* WHO is serving (`_notice`) — turn debris, steering only the inherited reply.
+* WHAT THE RUN NOW HAS TO BUDGET AGAINST (`_window_correction`) — a durable engine note,
+  emitted only when the window shrank against the BOUND model's figure and further than the
+  run has already been told.
 
-* `llmsectest-weekday:20260922-060001` — bound to a 200k-class model, served OpenRouter's
-  `z-ai/glm-5.2:free` (32,768 tokens), died at turn 106 having spent $1.03 on a run that was
-  unrunnable from turn 0: "prompt is too long and cannot be shrunk further: 57,250 estimated
-  tokens … provider maximum 32,768". Nothing was stale; every component did its job. The only
-  part that could have planned differently was the run, and the run was never told.
-* `weightloss:20260923-220004` — two rungs down (503 auth → 402 → GLM 5.2), never told, read its
-  own field-shifted output and concluded "the model cannot reliably hold the action schema; pick
-  a stronger model". A false diagnosis about itself. $1.01 over 193 turns.
-
-So there are exactly two things to say at a switch, and they have different lifetimes, which is
-why they are one module and not one message:
-
-* WHO is serving (`_notice`) — the turn's debris, because it exists to steer THIS reply: the
-  inherited turn is the one at risk of being written as though the bound model were answering.
-* WHAT THE RUN NOW HAS TO BUDGET AGAINST (`_window_correction`) — durable, through the engine's
-  one note seam (`engine/enginenote.py`), because it corrects a standing fact. A run reads its
-  CAPABILITIES window on every planning decision it makes for the rest of the run.
-
-The window correction is emitted only when the window actually shrank against the BOUND model's
-figure, and only when it shrank further than the run has already been told. A note per switch
-regardless would be the layer talking about itself, and that is this repo's standing rule for
-engine notes (`window._warn_before_eviction` is once per run for the same reason).
-
-NOT a refusal. Nothing here vetoes a rung, refuses a boot or aborts a run: this module only ever
-appends prose. Whether a run whose incompressible floor exceeds the resolved window should be
-stopped BEFORE it starts was a separate, behaviour-changing question, and the operator answered
-it as D223: the run starts, and the engine's first act is a hard compaction that drops the
-middle to whatever fits and states the loss (`engine/promptfloor.py`, fired from `boot`). Still
-not a veto — and the reason is the figure this module's own prose gives: the window stated here
-is the CATALOG window, which an F278 run-local correction can make smaller than the real clamp.
-Refusing on an approximation would turn a degraded run into no run; compacting on it costs
-context the run can still read off disk.
+Never a veto: this module only appends prose. A floor exceeding the window is handled by the
+boot-time hard compaction (D223, `engine/promptfloor.py`).
 """
 
 from __future__ import annotations
@@ -68,17 +30,12 @@ def announce(loop, chain, failed_ref, new_ref, exc: EndpointError) -> None:
 def _notice(loop, failed_ref, new_ref, exc: EndpointError) -> None:
     """Tell the MODEL that is now serving that it is the fallback (D146-B).
 
-    One appended line, at the switch, never re-rendered per turn: the message list is
-    appended-to and never mutated (CLAUDE.md), and a failover has already invalidated the
-    provider cache by changing model, so the append costs nothing extra. It is the turn's
-    debris like the retries around it (`turndebris`): it informs the reply it was written for,
-    and the transcript's failover event is the durable record.
+    One appended line at the switch (the model change already invalidated the cache). It is
+    turn debris (`turndebris`); the transcript's failover event is the durable record.
     """
     rungs = loop.ctx.failover_rungs
     step = "one rung" if rungs == 1 else f"{rungs} rungs"
-    # One naming convention for all three models in the sentence. `ctx.configured_model` is
-    # "<endpoint>/<model>" while a ModelRef's `name` is its catalog alias, and mixing them put
-    # three spellings of the same kind of thing in one paragraph.
+    # one naming convention ("<endpoint>/<model>") for all three models in the sentence
     failed = f"{failed_ref.endpoint}/{failed_ref.model}"
     serving = f"{new_ref.endpoint}/{new_ref.model}"
     configured = loop.ctx.configured_model or failed
@@ -97,14 +54,9 @@ def _notice(loop, failed_ref, new_ref, exc: EndpointError) -> None:
 def _step_down(loop, bound: int, serving: int) -> bool:
     """Whether this substitution costs the run window it has not already been told about.
 
-    Measured against the BOUND model — the chain HEAD, whose figure is the one
-    `capabilities.capabilities_digest` composed the prompt's CAPABILITIES line from — and never
-    against the rung that happened to fail last. `weightloss:20260923-220004` is why: 200k →
-    200k → 32k contains no shrinking STEP, and a run served from its third rung is nevertheless
-    168k short of what it was told.
-
-    Then latched at the smallest window announced so far, so a later switch between two equally
-    small rungs does not repeat a correction the run is already holding.
+    Measured against the BOUND model (the chain HEAD, whose figure CAPABILITIES states), never
+    the last failed rung — 200k → 200k → 32k has no shrinking step but a 168k loss. Latched at
+    the smallest window announced so far, so a correction is never repeated.
     """
     if not (bound and serving) or serving >= bound:
         return False
@@ -119,10 +71,7 @@ def rebuild(loop, events: list[dict]) -> None:
     """The guard scope's resume seed (engine/guardscope.py): a window already announced in this
     leg stays announced.
 
-    A resumed leg REPLAYS the note it was given (that is what `enginenote` records it verbatim
-    for), so a leg that starts with the latch empty would hand the run a second copy the moment
-    the chain stepped again — and the smallest window announced is exactly the figure the note
-    carries, so it is read back from the note rather than recomputed from a chain the resumed
+    Read back from the replayed note's payload rather than recomputed from a chain the resumed
     leg may resolve differently.
     """
     floors = [int(payload["substitution_floor"])
@@ -135,9 +84,8 @@ def rebuild(loop, events: list[dict]) -> None:
 def _window_correction(loop, chain, new_ref) -> None:
     """Correct the run's standing window figure — durably, because it plans against it.
 
-    The numbers ride as NUMBERS and the prompt section is named, because the run holds a
-    contradiction otherwise: a CAPABILITIES line it was told to budget reads against, and a
-    transport notice that says a different model is serving without saying what that costs.
+    The numbers ride as numbers and the CAPABILITIES section is named, so the run can resolve
+    the contradiction with its stale figure.
     """
     bound = chain[0][1] if chain else new_ref
     if not _step_down(loop, bound.context_tokens, new_ref.context_tokens):

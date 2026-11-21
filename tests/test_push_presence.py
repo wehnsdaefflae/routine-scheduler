@@ -1,19 +1,4 @@
-"""A push holds back while the operator is AT the console — D280.
-
-Tier 2 (Web Push) exists for an operator who is AWAY. While he is here the ask is already on
-his Decisions page and on the header badge, so pushing his phone for it is the noise that
-trains a person to ignore the channel.
-
-DEFERRED, never dropped — which is the half an implementation gets wrong, because the obvious
-shortcut (mark it notified, skip the send) loses the notification forever. So the three cases
-the order names are pinned here: no push while present, exactly one push once the window
-lapses, and none at all if he settled it meanwhile. Plus the two a reader would ask about: a
-WITHDRAWAL is never held (it clears an alert already on his phone), and every unreadable
-presence shape reads as ABSENT, because the conservative direction is pushing.
-
-Its own module rather than more lines in `test_push.py`: that file was 277 lines and these
-tests took it over the 350-line house bar, and presence is a subject of its own.
-"""
+"""A push holds back while the operator is AT the console — D280."""
 
 from __future__ import annotations
 

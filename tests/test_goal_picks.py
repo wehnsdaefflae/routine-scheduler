@@ -1,27 +1,4 @@
-"""F731 — a numbered answer to a question's own numbered picks grounds a goal.
-
-The measured defect (vodafone-outage-claims run 20261019-031230, turn 29 onward): the operator
-answered a deferred question by picking a number, so his whole reply was the literal text `1.`
-— and the `goal set` that recorded his approval was REFUSED with "the words '1.' are not in
-anything the person wrote to this run. Quote them verbatim". The engine renders the numbered
-picks itself (static/components/answerform.js labels each option button "<n> · <option>" and
-digit keys 1-9 prefill one) and then refused the keystroke it had invited, so a routine that
-correctly recorded an approval as a goal could not.
-
-What the console actually sends, measured on 2026-10-24 in the live state rather than assumed:
-`/home/mark/routines/vodafone-outage-claims/questions/answered/q-20261019-031230-29.json` holds
-`"answer": "1."` and `/home/mark/routines/tv-show-tracker-seedbox-manager/questions/answered/
-q-20260923-222843-75.json` holds `"answer": "3"` — and BOTH carry `"options": []`, with the
-choices numbered in the question's own PROSE. Clicking a real option button submits the option
-TEXT (answerform.js `onclick: () => { input.value = o; submit(false); }`), so a bare number
-arrives when the person types the pick he was shown. The choices a pick resolves against are
-therefore the question's `options` when it carried them AND the numbered list when the question
-offered one as prose.
-
-Nothing else about the grounding rule moves: a quote matching neither the person's words nor a
-choice he picked is still refused (test_a_quote_that_matches_no_words_and_no_choice...), and a
-choice he did NOT pick is not his words either.
-"""
+"""F731 — a numbered answer to a question's own numbered picks grounds a goal."""
 
 from __future__ import annotations
 
@@ -58,14 +35,7 @@ OPTIONS = ["keep waiting and nudging", "try a 720p WEB-DL fallback", "drop the e
 
 def _loop(make_routine, slug: str, *, answer: str, options: list[str] | None = None,
           question: str = QUESTION, deferred: bool = True) -> SimpleNamespace:
-    """A run whose transcript holds one answered question, in either shape the engine writes:
-
-    `deferred` — the Decisions-page answer a later run's boot records, which carries the
-    question's text on the answer event itself (engine/boot.py) and has no `question` event of
-    its own, because the asking happened in an earlier run. This is the measured vodafone path.
-    Otherwise the BLOCKING shape: the `question` event engine/interact.py writes with the
-    `options` it carried, then the answer.
-    """
+    """A run whose transcript holds one answered question, in either shape the engine writes:"""
     d = make_routine(slug=slug)
     ctx = run_context(d, TS)
     if deferred:

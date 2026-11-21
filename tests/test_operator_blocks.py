@@ -1,11 +1,4 @@
-"""Blocks only the operator can clear (F796): the classification, the served count, the badge.
-
-The blocked-work fold answers "what did the fleet owe and not deliver". These tests pin the
-second question it never answered — who can clear it — and the surface that follows from it:
-`GET /api/health/blocked` carries `operator_total` and marks each row, so a block waiting on a
-person is counted where he cannot miss it instead of only inside one Stats panel's 7-day
-window.
-"""
+"""Blocks only the operator can clear (F796): the classification, the served count, the badge."""
 
 import json
 from datetime import UTC, datetime, timedelta

@@ -1,15 +1,11 @@
-"""CHILD RUN scheduling: a parent routine runs child routines materialized from workflow
-patterns, in either in-engine `child` MODE — PARALLEL (non-blocking) or SEQUENTIAL (the parent
-waits). One concept, defined once in `engine/child.py`; both modes are built by the shared
-executor (childrun.build_child). This module owns their LIFECYCLE: start each in a thread,
-monitor (`children`), block or `wait`, `kill`, and announce every exit to the parent at a
-turn boundary. Children never outlive the parent: its finish/abort kills them.
+"""CHILD RUN lifecycle for both `child` modes — PARALLEL and SEQUENTIAL;
+the concept is `engine/child.py`, the build `childrun.build_child`. Start each in a thread,
+monitor, `wait`, `kill`, announce exits at a turn boundary; children never outlive the parent.
 
-Threading model: each child EngineLoop runs in its own thread and writes ONLY its own transcript
-under sub/<n>/; all parent-transcript events are emitted from the parent thread (single writer
-per file). Children carry a per-loop abort Event so one can be killed without touching siblings.
-The one state the whole tree shares — the `max_child_runs` allowance and the child numbers — is
-decided under the tree's one lock, in one step (`_admit`).
+Threading: each child EngineLoop writes ONLY its own transcript under sub/<n>/; parent events
+come from the parent thread (one writer per file). A per-loop abort Event kills one child alone.
+The tree-wide allowance and child numbers are decided under the tree's lock in one step
+(`_admit`).
 """
 
 from __future__ import annotations
@@ -22,20 +18,15 @@ from .childrun import Subrun, build_child, claim_child
 from .observations import truncate
 
 MAX_PARALLEL = 4
-#: How long `kill` and the parent's exit wait for children to stop — ONE deadline for the
-#: parent's exit however many are still running, never one per child. A child whose abort is
-#: ending a util or script group (`utils_run.run_jailed`) may take up to
-#: `procgroup.TERM_GRACE_S` (30 s) — longer, on purpose: after a `kill` it finishes in its own
-#: thread; after the parent's exit the backstop `procgroup.terminate` armed delivers the
-#: group's SIGKILL.
+#: How long `kill` and the parent's exit wait for children — ONE deadline for all, never per
+#: child. Shorter than `procgroup.TERM_GRACE_S` on purpose: a straggler finishes in its own
+#: thread, and procgroup's armed backstop delivers the SIGKILL.
 KILL_JOIN_S = 12.0
 
 
 def _usage_snapshot(usage: dict) -> dict:
-    """Copy a possibly-still-mutating usage dict (a child that ignored its abort long
-    enough for kill_all to give up on it). A concurrent key insert can make dict(x)
-    raise — retry, then fall back to the guaranteed keys. Spend the straggler adds
-    AFTER the snapshot is lost; that is the price of not blocking the parent's exit.
+    """Copy a possibly-still-mutating usage dict (a child that ignored its abort): retry a
+    concurrent-insert RuntimeError, then fall back to the guaranteed keys. Later spend is lost.
     """
     for _ in range(3):
         try:
@@ -46,18 +37,14 @@ def _usage_snapshot(usage: dict) -> dict:
 
 
 class SubrunManager:
-    """The parent loop's window onto its CHILD RUNS: start one in either `child` mode
-    (parallel or sequential), monitor (`children`/`wait`), `kill`, auto-announce exits at
-    turn boundaries. Both modes share the budget/depth/parallel caps, the child-run executor
-    and the hand-back — they differ only in scheduling (engine/child.py).
+    """The parent loop's window onto its CHILD RUNS. Both modes share the caps, the executor
+    and the hand-back; they differ only in scheduling (engine/child.py).
     """
 
     def __init__(self, parent_loop):
         self.parent = parent_loop
         self.subruns: dict[int, Subrun] = {}
-        # Completion hook: every child exit sets this, so a parent blocked in `wait` or on a
-        # sequential child wakes IMMEDIATELY instead of sleeping out a poll interval (or a whole
-        # timeout).
+        # set by every child exit, so a parent blocked in `wait` wakes immediately
         self.exit_event = threading.Event()
 
     # -- caps + start (shared by both schedulers) -----------------------------------
@@ -68,12 +55,8 @@ class SubrunManager:
         """
         ctx = self.parent.ctx
         if ctx.sub_counter[0] >= ctx.budgets.max_child_runs:
-            # Say that the budget is SHARED (D147-A). It is one cumulative lifetime total for
-            # the whole tree — `sub_counter` is shared and never decremented — so a child
-            # refused at its own FIRST spawn reads a ceiling its siblings spent. Without this,
-            # the refusal is indistinguishable from a fault in the child's own call: the
-            # specimen (R1870/F549) is three children numbered 5, 7 and 8, every one refused
-            # at its first attempt and every one finishing partial.
+            # Say the budget is SHARED and never refills (D147-A), or a child refused at its
+            # first spawn reads its siblings' spend as a fault in its own call.
             return (f"{noun} budget exhausted — all {ctx.budgets.max_child_runs} are spent. That "
                     f"budget is shared across this run tree (every node's children count "
                     f"against one total, and it never refills), so this is not a fault in your "
@@ -86,10 +69,8 @@ class SubrunManager:
         return None
 
     def _model_reason(self, action: dict) -> str | None:
-        """Why the action's `model` override cannot serve a child, or None. The field
-        takes a ROLE (main/tool_call; uncensored needs the role configured) or a CATALOG
-        model NAME — validated here so a bad override is a teaching rejection naming the
-        alternatives, never a crash inside the child build.
+        """Why the action's `model` override (a ROLE or a CATALOG name) cannot serve a child,
+        or None — a teaching rejection instead of a crash inside the child build.
         """
         ctx = self.parent.ctx
         sel = str(action.get("model") or "")
@@ -102,10 +83,7 @@ class SubrunManager:
                         "Models). Drop the override, or ask the user to set one.")
             return None
         if "/" in sel:
-            # F868: `<endpoint>/<model id>` reaches an off-catalog model on an `llm` call. A
-            # CHILD cannot take one: a child run is configured with `models["main"] = <catalog
-            # name>` (engine/childrun.py), so every resolution inside it goes through the
-            # catalog — an endpoint spec would be a name it cannot find, at its first turn.
+            # an endpoint spec is `llm`-only: a child resolves everything through the catalog
             return (f"model {sel!r} is an '<endpoint>/<model id>' spec, which only the `llm` "
                     "action takes — a child run's model must be a catalog name (its whole "
                     "config resolves through the catalog). Name a catalog model, or make the "
@@ -120,12 +98,9 @@ class SubrunManager:
     def _admit(self, action: dict) -> int | str:
         """Admit ONE new child — its claimed number — or the reason it cannot start.
 
-        The `model` override is judged first (D81 extended, 2026-08-22): it is the CALL's own
-        fault, and the cap refusal tells the run its call was fine. The allowance check and
-        the claim then happen in one step under the tree's lock: `sub_counter` is shared by
-        every node of the tree and parallel children reach it from their own threads, so an
-        allowance read outside the lock that guards the increment let two siblings both take
-        the last child.
+        The `model` override is judged first (the call's own fault; a cap refusal says the call
+        was fine). Check and claim then happen in one step under the tree's lock, or two
+        siblings could both take the last child.
         """
         if reason := self._model_reason(action):
             return reason
@@ -187,13 +162,9 @@ class SubrunManager:
     # -- subtask (sequential) -------------------------------------------------------
 
     def subtask(self, action: dict) -> dict:
-        """Start ONE SEQUENTIAL child — NON-BLOCKING, so the conversation stays live while it
-        runs. Mechanically a subrun tagged `sequential` + a `turns` budget: it runs in its own
-        thread and its finish is delivered by the turn-boundary hook (`announce_finished_subruns`),
-        never by monopolizing this turn. The parent keeps sequential order by WAITING for it (a
-        responsive `wait n=N`, which yields to user input) before starting the next subtask, and
-        folds the announced result into that next brief. `turns` pins its budget (else half the
-        parent's remainder).
+        """Start ONE SEQUENTIAL child — NON-BLOCKING, so the conversation stays live. Its finish
+        arrives at a turn boundary (`announce_finished_subruns`); the parent keeps order by
+        `wait n=N`. `turns` pins its budget (else half the parent's remainder).
         """
         turns = action.get("turns")
         overrides = {"turns": int(turns)} if isinstance(turns, int) and turns > 0 else None
@@ -202,8 +173,7 @@ class SubrunManager:
         if isinstance(sub, str):
             return {"kind": "child", "mode": child.SEQUENTIAL, "rejected": True,
                     "label": action.get("label") or "", "reason": sub}
-        # `note` says when the requested pattern was unavailable and the child runs on the
-        # builtin fallback — the parent has to know its child is not running what it asked for.
+        # `note` says when the child fell back to the builtin pattern
         return {"kind": "child", "mode": child.SEQUENTIAL, "n": sub.n, "label": sub.label,
                 "workflow": sub.workflow, "note": sub.note, "started": True}
 
@@ -221,26 +191,17 @@ class SubrunManager:
     def _collect(self, sub: Subrun) -> None:
         if not sub.collected:
             sub.collected = True
-            # The hand-back happens HERE, at the child's single finalization point, because
-            # there are two paths that can REPORT an exit — `wait` (which consumes finished
-            # children directly) and the turn-boundary announcement — and a child that
-            # finished during a wait must hand its files back exactly like one that finished
-            # between turns. Collecting in either reporter made it a race (F338). The child
-            # wrote what it hands back into its OWN artifacts/ (children keep their own dirs,
-            # so siblings never race a shared tree); a child built without a parent_dir
-            # hands back only its summary.
+            # The hand-back happens HERE, the single finalization point: two paths report an
+            # exit (`wait` and the turn boundary), and collecting in either raced. Without a
+            # parent_dir only the summary is handed back.
             if sub.parent_dir is not None:
                 sub.collected_paths = child.collect_handback(
                     sub.ctx.routine.dir / "artifacts", sub.parent_dir, child.SUB, sub.n)
-            # kill_all can collect a child that REFUSED to stop (still running in its
-            # thread, still mutating its usage dict) — snapshot defensively so the fold
-            # and the event agree, and a concurrent key insert can't blow the copy.
+            # kill_all may collect a child still running — snapshot so fold and event agree
             usage = _usage_snapshot(sub.ctx.usage)
             self.parent.ctx.add_usage(usage)
             self.parent.ctx.referrals += sub.ctx.referrals
-            # `collected` rides the event because the announcement a resumed leg rebuilds
-            # from it (history.replay_messages) has to name the same hand-back the live one
-            # did — a payload EXTENSION, present only when something was handed back.
+            # `collected` rides the event so a resumed leg's replay names the same hand-back
             self.parent.ctx.transcript.event("subrun_end", {
                 "n": sub.n, "label": sub.label, "workflow": sub.workflow, "mode": sub.mode,
                 "status": sub.status, "summary": sub.summary,
@@ -255,18 +216,15 @@ class SubrunManager:
                                depth=sub.ctx.depth, status=sub.status or "unknown",
                                turns=sub.ctx.turn, usage=usage,
                                referrals=sub.ctx.referrals,
-                               # the child ran under the parent's recipe version; its util
-                               # counts are its OWN (parents never fold them — the Stats
-                               # read-model sums records at every depth, so folding would
-                               # double count)
+                               # util counts are the child's OWN: Stats sums every depth,
+                               # so a parent fold would double count
                                recipe_commit=pctx.recipe_commit, utils=sub.ctx.util_stats,
                                asks_deferred=sub.ctx.asks_deferred,
                                compression=sub.ctx.compression_stats)
 
     def status_table(self) -> dict:
-        # Backgrounded calls belong here too (R3600): same mechanism to the reader — work
-        # started, not in hand, delivered at a later boundary — and `kill` already took both
-        # namespaces. A separate key, so `count` keeps meaning children.
+        # backgrounded calls too (same shape to the reader), under their own key so `count`
+        # keeps meaning children
         from . import background_status
 
         rows = subsalvage.rows(self.subruns, self.parent.ctx.run_dir)
@@ -299,10 +257,8 @@ class SubrunManager:
                 for s in finished]
 
     def kill_all(self, *, reason: str) -> int:
-        """Parent is exiting — children never outlive it. Every running child is told to stop
-        at once, and they share ONE `KILL_JOIN_S` to do it: a wait per child let four children
-        stuck in model calls (which no abort interrupts) hold the parent's finish for four
-        times the grace the rest of the system plans around (procgroup's backstop arithmetic).
+        """Parent is exiting — children never outlive it. All are told to stop at once and
+        share ONE `KILL_JOIN_S` (a model call ignores abort; per-child waits would multiply it).
         """
         running = [sub for sub in self.subruns.values() if not sub.done.is_set()]
         for sub in running:

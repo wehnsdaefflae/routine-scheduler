@@ -1,10 +1,4 @@
-"""REASONING EFFORT is a setting of its own, beside the model it applies to.
-
-The catalog once carried "Opus high", "Opus xhigh", … as one row per level of one model, so every
-routine that wanted another level needed another row. Now a routine sets `efforts: {role: level}`
-(and the server a `system_effort`), the registry applies it to whichever model serves the role, and
-the model catalog carries no effort at all.
-"""
+"""REASONING EFFORT is a setting of its own, beside the model it applies to."""
 
 from __future__ import annotations
 
@@ -100,15 +94,7 @@ def test_an_effort_the_loader_cannot_use_is_named_and_dropped(make_routine):
 
 
 def test_an_uncensored_effort_with_no_uncensored_model_is_reported_as_a_lost_role(make_routine):
-    """The shape a LOST role leaves behind (R3227/R3228, two incidents in seven days).
-
-    A `models:` PATCH replaces the map wholesale, so an edit that re-sends it without
-    `uncensored` clears that role while `efforts.uncensored` stays behind. `self-audit` ran that
-    way for three days and `routine-improver` for 27 minutes with every check on this instance
-    green — `load_routine` said nothing, no health event was filed, and `for_uncensored`
-    returning None is a legitimate "referral off". The consequence is a FAILED run: with no
-    uncensored target a classifier refusal advances the chain and `engine/degrade` raises.
-    """
+    """The shape a LOST role leaves behind (R3227/R3228, two incidents in seven days)."""
     d = make_routine(slug="lost-role")
     _routine_yaml(d, efforts={"uncensored": "max"}, models={"main": "prime"})
     cfg, problems = load_routine(d)

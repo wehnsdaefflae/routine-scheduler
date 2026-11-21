@@ -3,8 +3,6 @@ jail and the same seals as write_file (fileops._write_gate), fs-ops' proven sema
 (recursive required for a tree, move never overwrites, mkdir -p), and the destructive-op
 grounding rule: a path OUTSIDE the routine's own dir that this run has not read cannot be
 deleted or moved away.
-
-Validation lives in engine.actions.validate_action; the handlers in engine.fsops.
 """
 
 from __future__ import annotations

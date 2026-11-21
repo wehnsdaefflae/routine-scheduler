@@ -1,9 +1,4 @@
-"""F903: every actual schema-free request retains the full action contract.
-
-These pins drive the shared completion loop, not a transport-specific helper. The
-ordinary request keeps its compact prefix; a within-turn shed or failover appends the
-existing persistent contract note before the first request that needs it.
-"""
+"""F903: every actual schema-free request retains the full action contract."""
 
 from __future__ import annotations
 
@@ -98,14 +93,7 @@ def test_recalled_error_gets_the_contract_on_the_second_attempt_and_only_once(ma
 
 
 def test_the_contract_note_never_displaces_the_correction_from_the_end(make_routine):
-    """The contract arrives BEFORE this turn's debris, so the correction stays last.
-
-    D287's repeat mechanism is legible only as the LAST user message of the retry's request
-    (`schemamemo`, pinned by test_schema_memo). Appending the contract note instead of
-    inserting it put the schema dump after the correction and silently turned that mechanism
-    off — the conflict self-audit decided in R3584, answered by position rather than by
-    narrowing the recovery to the first attempt.
-    """
+    """The contract arrives BEFORE this turn's debris, so the correction stays last."""
     endpoint = RecordingEndpoint([INVALID, VALID, INVALID, VALID, VALID])
     loop = _loop(make_routine, _FakeRegistry(endpoint, main_name="contract-order"))
     prepare(loop)

@@ -1,17 +1,5 @@
 """A malformed number in the durable usage stream is NO READING — never a TypeError out of the
 read model, and never a silent 0 (R3138, raised by scheduler-builder).
-
-`regression_flag.profile` and `_by_version` both did `float(rec["volume"])` behind an
-`is not None` guard, so a row whose `volume` was written as a dict or a stray string raised
-`TypeError: float() argument must be a string or a real number` out of three production
-surfaces: the routine page's development line (`recipe_regression` →
-`api_changes.routine_summary`), `GET /routines/{slug}/health` (`routine_health`), and run-end
-telemetry (`engine/runtime._log_cost_trend` → `recent_trend`). `fold_legs` sanitizes only runs
-with SEVERAL legs — "a run with one leg keeps its raw values" — so a single-leg row arrives
-exactly as written.
-
-A 0 is not an acceptable stand-in either: it is itself a reading, and one of them drags a
-median far enough to fire a regression flag on its own.
 """
 
 from rsched.readmodels.run_health import recent_trend, regression_flag

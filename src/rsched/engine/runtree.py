@@ -1,41 +1,20 @@
-"""RUN-TREE hook addressing — F695 as a case of the one mechanism (D152, step 3).
+"""RUN-TREE hook addressing — messages between a run and its children (D152).
 
-The operator, 2026-10-18: *"communication between subruns and between subruns and their parent
-run is a type of hook as well. maybe even a type of message. so implement hooks first as a single
-mechanism unifying a), b) and c) and make sure f695 is a special case of that as well"*. This
-module is that special case, and it adds NO action kind and NO store: a run-tree hook is the
-`report` action with a run-tree `target`, recorded in `.control/hooks.jsonl` like every other
-hook and delivered through the inbox like every other message.
+Adds NO action kind and NO store: a run-tree hook is the `report` action with a run-tree
+`target`, recorded in `.control/hooks.jsonl` and delivered through the inbox.
 
-F695 measured three closed seams. Two of them are opened here:
+- **CHILD→PARENT, mid-flight:** `target: "parent"`.
+- **PARENT→CHILD, after the spawn:** `target: "child:<label>"`.
 
-- **CHILD→PARENT, mid-flight.** Before this, a child could only speak at its exit (its finish
-  summary and `artifacts/from-sub-<n>/`). A child that learns at turn 5 that its brief is wrong
-  had to spend its whole budget before saying so. `target: "parent"`.
-- **PARENT→CHILD, after the spawn.** Before this, the `prompt` at spawn time was the parent's
-  one and only word to a child. `target: "child:<label>"`.
+SIBLING→SIBLING stays closed ON PURPOSE: *the run tree is the only addressing scheme*. A child
+names `parent` and the parent re-addresses downward, so no run reaches a run it does not own.
 
-The third — SIBLING→SIBLING — stays closed ON PURPOSE, and refusing it here is rule 1 of the
-design: *the run tree is the only addressing scheme*. A child names `parent`; the parent, which
-holds the labels, re-addresses downward. Nothing has to resolve a name outside its own subtree,
-so no run can reach a run it does not own.
+Nothing blocks, polls or wakes anyone: the addressee picks freight up at its next turn boundary
+(`control.drain_injections`), so a messaged child stays killable and buys no turns. `resolve`
+refuses an exited child, which would never drain again.
 
-## Why delivery rides an EXISTING turn boundary and nothing waits
-
-The finding's own constraint: a child that can be messaged mid-flight must stay KILLABLE and
-must not extend its own turn budget by waiting. So nothing here blocks, polls or wakes anyone.
-The sender files freight and returns in the same turn; the addressee picks it up at the next
-turn boundary it was going to take anyway (`control.drain_injections`). A child that never takes
-another boundary never reads it — which is why `resolve` refuses a child that has already
-exited rather than filing into a directory nobody will drain again.
-
-## Why a run-tree hook is NOT an `R<n>` ledger row
-
-An item in `.control/reports.jsonl` is owed an answer by a ROUTINE, and lives until something
-settles it. The parent and the child are both gone in minutes, so a row for one would sit open
-forever with no one able to close it — exactly the backlog pathology the item ledger exists to
-make visible. A run-tree hook is therefore addressing, not an item: it gets a hook row (`hk-…`)
-and no `R` id. The ledger keeps meaning what it meant.
+A run-tree hook is NOT an `R<n>` ledger row: both parties are gone in minutes, so a row would
+sit open forever. It gets a hook row (`hk-…`) and no `R` id.
 """
 
 from __future__ import annotations
@@ -68,16 +47,12 @@ def is_runtree(target: str) -> bool:
 def parent_dir(run_dir: Path) -> Path:
     """The directory whose `inbox/` the PARENT of the run at `run_dir` drains.
 
-    A run drains `routine.dir/inbox/`, and a child's `routine.dir` IS its `sub/<n>/` run dir
-    (`childrun._sub_routine`), so the answer differs by depth and that is why it is computed
-    here once instead of at the call site:
+    A child's `routine.dir` IS its `sub/<n>/` run dir, so the answer differs by depth:
 
-    - a depth-1 child sits at `<routine>/runs/<ts>/sub/<n>`, and its parent is the ROUTINE
-      (`<routine>`), four levels up;
-    - a deeper child sits at `<parent sub dir>/sub/<m>`, and its parent is that sub dir itself.
+    - a depth-1 child sits at `<routine>/runs/<ts>/sub/<n>`; its parent is the ROUTINE;
+    - a deeper child sits at `<parent sub dir>/sub/<m>`; its parent is that sub dir.
 
-    The `runs` component is what tells the two apart, and it is a fixed part of the layout
-    (`registry.run_index`, every run home) rather than a guess.
+    The fixed `runs` component of the layout tells the two apart.
     """
     base = run_dir.parent.parent          # drop `sub/<n>`
     return base.parent.parent if base.parent.name == "runs" else base
@@ -90,9 +65,8 @@ def _child_label(target: str) -> str:
 def resolve(loop, target: str) -> tuple[Path | None, str, str]:
     """Where a run-tree hook goes: `(directory, addressee, refusal)`.
 
-    Exactly one of `directory` and `refusal` is set. A refusal is prose for the sending run's
-    observation and names what it CAN address, because an addressing mistake is the one error a
-    run can fix on its next turn — and cannot fix from "unknown target".
+    Exactly one of `directory` and `refusal` is set. A refusal names what the run CAN address,
+    so it can fix the mistake on its next turn.
     """
     ctx = loop.ctx
     target = str(target or "").strip()
@@ -129,17 +103,15 @@ def _live_labels(subs: list) -> str:
 
 
 def hook_id(run_id: str, turn: int) -> str:
-    """The hook's id, and the inbox filename's stem: deterministic, so a retry of the same
-    turn REPLACES its own delivery instead of queuing a second copy (F697's bug class — a
-    record that cannot be recognised as already written is delivered twice).
+    """The hook's id and inbox filename stem: deterministic, so a retry of the same turn
+    REPLACES its own delivery instead of queuing a second copy.
     """
     return f"hk-{run_id}-t{turn}"
 
 
 def message_text(*, sender: str, title: str, detail: str) -> str:
-    """What the addressee reads. It says WHO is speaking and WHAT is owed, because a run that
-    cannot tell a hook from its operator answers the wrong party (the mistake
-    `inbox.VIAS` was closed to fix).
+    """What the addressee reads: WHO is speaking and WHAT is owed, so a run never mistakes a
+    hook for its operator.
     """
     head = f"HOOK FROM {sender} — {title}" if title else f"HOOK FROM {sender}"
     body = f"{head}\n\n{detail}" if detail else head
@@ -151,23 +123,9 @@ def message_text(*, sender: str, title: str, detail: str) -> str:
 def drain_child(loop) -> None:
     """A CHILD's turn boundary: take the run-tree hooks addressed to it, and nothing else.
 
-    This is the lifted half of F695's first seam. `control.drain_injections` used to return
-    immediately for any `ctx.depth > 0`, so a child drained nothing at all — the gate that made
-    PARENT→CHILD a one-shot (the `prompt` at spawn time) and left the operator unable to speak
-    to a child at all.
-
-    What is drained is narrowed to `VIA` on purpose, rather than opening the LIVE set to
-    children:
-
-    - the operator's channels belong to the ROOT run. A child's inbox is its `sub/<n>/` dir,
-      which no console writes to; widening the set here would only let a child consume freight
-      addressed to the routine, and D92/D93 is exactly that bug (a follow-up leg eating the
-      night run's decision answers).
-    - the deferred-answer bridge stays the root's too: a child holds no `ask_user`.
-
-    Appends, never rewrites, like every other boundary step — and it blocks on nothing, so a
-    messaged child stays killable and buys no extra turn by being reachable (the finding's own
-    constraint).
+    Narrowed to `VIA` on purpose: the operator's channels and the deferred-answer bridge belong
+    to the ROOT run (a child holds no `ask_user`), and a wider set would let a child consume
+    freight addressed to the routine. Appends, never rewrites, and blocks on nothing.
     """
     ctx = loop.ctx
     for m in inbox.drain_messages(ctx.routine.dir, loop.consumed_dir, vias=(VIA,)):
@@ -175,31 +133,25 @@ def drain_child(loop) -> None:
 
 
 def inject_message(loop, m: dict) -> None:
-    """Put one drained hook into the child's conversation. Separate from
-    `control.inject_user_message` because a hook is NOT the user talking: it must not advance
-    `ctx.user_replies`, must not count as an intervention, and says in its own text who spoke.
+    """Put one drained hook into the child's conversation, stamped `VIA`: a hook is NOT the user
+    talking, so it must not advance `ctx.user_replies` or count as an intervention.
     """
     from .control import inject_user_message
 
     inject_user_message(loop, {**m, "via": VIA})
 
 
-#: The `report` fields that dispose of LEDGER rows, in the order a reader meets them. A run-tree
-#: message has no row (this module's own docstring: "it is not an item and owes the ledger
-#: nothing"), so each one is inert here — and `reportfields` deliberately no longer refuses them,
-#: because refusing cost the turn without disposing of anything (F859).
+#: The `report` fields that dispose of LEDGER rows. Inert on a run-tree message (it has no row);
+#: named back rather than refused, since a refusal costs the turn and disposes of nothing.
 DISPOSAL_FIELDS = ("answers", "settles", "supersedes")
 
 
 def ignored_disposal(disposal: dict | None) -> str:
     """What to tell a sender that named ledger rows on a hook — "" when it named none.
 
-    `closes` is left out on purpose: it names no row, so there is nothing a sender could be
-    mistaken ABOUT, and a line that scolds every terminal reply would teach runs to stop
-    replying. The other three DO name rows, and until F859 they were dropped unread by
-    `admin_handlers.report` — so the sender's own belief that a row was answered, settled or
-    taken over was false and nothing said so. It is said here, in the observation of the action
-    that wrote them, with the ids, because a correction that names no row cannot be acted on.
+    `closes` is left out: it names no row, and scolding every terminal reply would teach runs
+    to stop replying. The other three are named with their ids so the sender knows those rows
+    are still open.
     """
     named: list[str] = []
     for field in DISPOSAL_FIELDS:
@@ -218,11 +170,8 @@ def ignored_disposal(disposal: dict | None) -> str:
 def send(loop, *, target: str, title: str, detail: str, disposal: dict | None = None) -> dict:
     """File a run-tree hook, or refuse it. The observation for the `report` action, either way.
 
-    `disposal` is the ledger-disposal fields the action carried, if any: they cannot act here
-    and are NAMED back rather than silently dropped (`ignored_disposal`).
-
-    Best-effort on the WRITE, like every other hook: a failed delivery reports `delivered:
-    False` and never aborts the sending run, whose real work is elsewhere.
+    Ledger-disposal fields in `disposal` are NAMED back (`ignored_disposal`). Best-effort on the
+    WRITE: a failed delivery reports `delivered: False` and never aborts the sending run.
     """
     from ..hooks import store
 
@@ -245,9 +194,7 @@ def send(loop, *, target: str, title: str, detail: str, disposal: dict | None = 
                          title=title, delivered=delivered)
     note = ("delivered at that run's next turn boundary; it is a hook, not an item, so "
             "it has no R id and nothing is owed to the ledger")
-    # The warning rides the EXISTING note rather than a new observation key: `obs_admin` renders
-    # this note verbatim and that module sits exactly at the repo's size bar, so a second branch
-    # there would have to buy its own room. One key, one renderer, no new wording to keep aligned.
+    # The warning rides the EXISTING note, which `obs_admin` renders verbatim — no new key.
     if warning := ignored_disposal(disposal):
         note = f"{note}. {warning}"
     return {"kind": "report", "target": target, "runtree": True, "delivered": delivered,

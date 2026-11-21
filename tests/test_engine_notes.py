@@ -1,14 +1,4 @@
-"""ENGINE NOTES — one seam writes them, one renderer replays them.
-
-The defect: every engine-authored message was recorded as a `user_injection` carrying a short
-STUB ("[engine] setup gaps at boot") while the model read the full prose, and
-`history.replay_messages` rendered every `user_injection` as "USER MESSAGE (injected mid-run)"
-with no test of `source`. A resumed conversation therefore read ~380 phantom user messages in
-21 days — mislabelled (the harness contract says an injected message IS the user talking) and
-lossy (the gap list, the compaction warning and the archive pointer were gone), and a second
-resume replayed the stub where the previous leg carried the prose, so the prompt prefix
-differed between legs and the provider cache was re-written instead of re-read.
-"""
+"""ENGINE NOTES — one seam writes them, one renderer replays them."""
 
 from types import SimpleNamespace
 
@@ -49,9 +39,6 @@ def test_a_resumed_leg_with_nothing_above_it_is_framed_as_a_kickoff():
     also the one case where the sentence was false twice over, telling the run to continue
     from a last observation that does not exist AND not to start from step 1 — leaving it no
     permitted action at all.
-
-    Fails if the two cases collapse back into one wording, or if the empty one ever tells a
-    run to continue from what is above it.
     """
     from rsched.engine.rewind import resume_framing
 

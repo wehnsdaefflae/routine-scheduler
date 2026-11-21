@@ -102,9 +102,7 @@ def test_native_media_carries_bytes_so_a_later_overwrite_cannot_unshow_it(tmp_pa
     re-rendered a check artifact into the same filename (or cleaned it up) invalidated an
     attachment the model had already been told to look at — and the failure surfaced inside the
     endpoint, appended to the end of the very line that said "shown to you below; look at it now".
-
-    Pins the fix at both layers: the engine captures the bytes at the one moment it verified the
-    file, and the endpoint renderers prefer those bytes over re-reading the path."""
+    """
     shot = tmp_path / "shot.png"
     shot.write_bytes(b"ORIGINAL")
     obs = executor.do_view_image({"kind": "view_image", "path": "shot.png"},
@@ -335,14 +333,7 @@ def test_apply_media_fallback_converts_every_message_not_just_the_tail(
 
 def test_the_media_fallback_keeps_the_limit_the_provider_named(
         make_routine, tmp_path, monkeypatch):
-    """F623: the provider's refusal is recorded far enough to say WHICH bound it refused on.
-
-    The real Anthropic 400 for an oversized image is long, and the part a reader needs — the
-    constraint's name and its value — sits well past the 120 characters the event used to
-    keep. The recorded message stopped at `messages.696.content.2.image.`, one character
-    before the name, so the one fact worth having was the one fact lost and the finding could
-    be neither confirmed nor refuted from disk.
-    """
+    """F623: the provider's refusal is recorded far enough to say WHICH bound it refused on."""
     from rsched.engine.transcript import read_events
     from rsched.engine.window import apply_media_fallback
 

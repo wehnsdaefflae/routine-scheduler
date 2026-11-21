@@ -1,9 +1,5 @@
 """The Decisions page's `approve & apply`: the patch lands on the routine the engine resolved,
 not on whoever asked.
-
-D123/F458: a config_patch may be FOR another routine (config-optimizer's whole job). The engine
-resolves and validates that slug at ask time and the record carries it as `config_target`; a
-record without one is a proposal for the asking routine itself.
 """
 
 from __future__ import annotations
@@ -87,10 +83,6 @@ def test_answering_keeps_the_card_and_its_apply_button(ui, ui_page):
     the card away — the operator ruled it (2026-10-05, option 3: "only the button; answering
     warns and keeps the patch available"), because the second report carried an option reading
     literally "Ja — Patch übernehmen" and the proposed change evaporated with the card.
-
-    Loads what the person sees, not the attribute that points at it: after answering, the
-    proposal, the apply button and a warning that nothing was applied must all still be there,
-    and the button must still WORK.
     """
     ui.seed_question("uir", "q-20261008-070000-1", "Raise the turn budget to 95?",
                      extra={"config_patch": {"budgets": {"max_turns": 95}}})
@@ -131,11 +123,6 @@ def test_answering_keeps_the_card_and_its_apply_button(ui, ui_page):
 def test_a_server_patch_applies_to_the_instance_config(ui, ui_page):
     """The THIRD surface (operator, 2026-10-19): a patch naming `{"server": {...}}` PATCHes
     /api/settings/server and lands in the instance's own config.yaml — not in any routine's.
-
-    Loads what the person sees, because the whole defect R2702 records is a decision card whose
-    button cannot work: before this surface existed, an approved instance-wide change had no
-    route at all and sat 10 days. The copy must say INSTANCE, so the operator is not told a
-    routine was changed.
     """
     ui.seed_question("uir", "q-20261019-150000-1",
                      "Point the system model at the catalog entry m?",
@@ -163,11 +150,6 @@ def test_applying_after_answering_tells_the_run_the_patch_is_live(ui, ui_page):
     the button posts no answer at all. The record said `config_patch_applied: false` while the
     patch was live, and a run told "NOT APPLIED" about an applied change is worse off than the
     run that was told nothing.
-
-    Loads what the person sees and asserts on the TEXT a reader scans: before the click the card
-    says NOT applied, after it the card says applied and the contradicting warning is GONE (with
-    the receipt mounted beside the warning instead of replacing it, one card carried both labels
-    at once). Then the answer file — what the run actually reads — must agree with the card.
     """
     ui.seed_question("uir", "q-20261022-010003-1", "Raise the turn budget to 600?",
                      extra={"config_patch": {"budgets": {"max_turns": 600}}})

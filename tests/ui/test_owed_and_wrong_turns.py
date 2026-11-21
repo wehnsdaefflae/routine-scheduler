@@ -1,9 +1,5 @@
 """2026-11-19 on the real console: the blocked-work list holds only what still holds, wrong turns
 have their own by-cause panel, and an obligation waiting on the operator is his Decisions card.
-
-The three were one complaint: the blocked-work list had 285 incidents, ~230 of them wrong turns
-that were re-driven while their runs went on, beside standing rows for conditions already over
-and obligations no routine could ever clear by itself.
 """
 
 from __future__ import annotations

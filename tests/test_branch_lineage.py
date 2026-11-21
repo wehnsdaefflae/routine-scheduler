@@ -1,21 +1,4 @@
-"""A branch of a branch: the WHOLE fork chain, and why child numbering needed no fix (E3.7).
-
-One subject, in its own file because `tests/test_branches.py` and `tests/test_refusal_flag.py`
-are both at their size-ratchet ceilings and a file over the bar may only shrink.
-
-THE DEFECT (b). A branch recorded only its immediate fork point (`branched_from`), and
-`rewind._leg_start` bounds a reply at the LATEST `finish` or fork cut before it. A fork is
-indexed by TURN, so it can land MID-REPLY — the inherited reply it cut then has no finish of its
-own. One level deep that is fine: the single recorded fork is the latest bound there is. Two
-levels deep, an INHERITED reply lying before the immediate fork found no bound at all, because
-the fork cut is after it and the grandparent's fork (nowhere in the header) had cut its
-predecessor in half. Such a reply read as the conversation's FIRST — so the operator's ⚑ refusal
-flag would have discarded the entire inherited history and re-sent `instruction.md` in place of
-the message that really opened it.
-
-THE SIBLING WORRY (a) NEEDED NO FIX, and is pinned here instead of built: a branch copies no
-`runs/`, and a child number is claimed from the DISK rather than from the transcript.
-"""
+"""A branch of a branch: the WHOLE fork chain, and why child numbering needed no fix (E3.7)."""
 
 from __future__ import annotations
 
@@ -170,21 +153,6 @@ def test_a_branch_of_a_branch_records_the_whole_lineage(server):
 def test_a_branchs_first_child_cannot_reuse_an_inherited_number(server):
     """E3.7(a), verified rather than built — the order said "fix it, or delete this half if it
     does not", and it does not.
-
-    The worry was real in shape: a branch copies its parent's transcript, `subrun_start` events
-    included, and the sub-run tree and every hand-back path key on the child NUMBER. Two facts
-    make the collision impossible, and both are load-bearing enough to pin:
-
-    1. A branch copies `state` and `attachments` only (`branches.COPIED_TREES`) — never `runs/`
-       — so no child DIRECTORY is inherited. The copied `subrun_start` events are history of a
-       run in another conversation.
-    2. A number is claimed from the DISK: `childrun.claim_child` takes
-       `_highest_child_number(root_run_dir) + 1` and still guards the mkdir against
-       FileExistsError. What the inherited transcript says never enters the allocation.
-
-    Either changing would reintroduce the collision silently — a future `COPIED_TREES` carrying
-    `runs` would hand a branch its parent's child dirs, and an allocator reading the transcript
-    would collide on the very first child.
     """
     from rsched.engine import childrun
 

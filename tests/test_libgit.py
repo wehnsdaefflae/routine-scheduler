@@ -177,9 +177,6 @@ def test_ensure_library_refuses_to_reinit_a_repo_that_lost_its_git(tmp_path):
     """Re-initialising discarded the history (844 commits on the live instance), overwrote the
     real `.gitignore` with the two-line seed one, and then committed and PUSHED the runtime state
     that `.gitignore` existed to exclude. A loud refusal beats a silent rewrite.
-
-    The discriminator is the `gu` dispatcher — written by ensure_library and nothing else — so a
-    dir someone merely populated is still a fresh tree (see the test below).
     """
     lib = tmp_path / "lib"
     utils_lib.ensure_library(lib)
@@ -225,14 +222,7 @@ COMMIT_FORWARDERS_HELD_BACK: frozenset[str] = frozenset()
 
 
 def _commit_forwarders() -> set[str]:
-    """Every module-level function whose WHOLE body is `return libgit.commit(...)`.
-
-    That shape is a pass-through: no guard, no default, no decision of its own. It adds a name
-    a reader must follow before the lock-aware, SIGTERM-first, failure-filing primitive comes
-    into view, and it is where a divergent default would go unnoticed. A function that GUARDS
-    the commit (`web/routines_common._git_commit`, which returns early for a dir with no
-    `.git`) or does work around it (`bootstrap.sync_seed_library_docs`) is not one of these.
-    """
+    """Every module-level function whose WHOLE body is `return libgit.commit(...)`."""
     found = set()
     for path in sorted(SRC.rglob("*.py")):
         if "__pycache__" in path.parts:
@@ -257,11 +247,6 @@ def test_no_pass_through_forwarder_stands_in_front_of_libgit_commit():
     """C1.10: every git write goes through `libgit.commit` — the per-repo lock, the stale-lock
     clearance, the SIGTERM-first timeout and the `commit_failed` health event are all in there,
     and a call site that cannot see which primitive it reached cannot be reasoned about.
-
-    Three byte-identical `git_commit(home, message, *, routines_home, paths)` forwarders stood
-    in front of it, one per library-doc kind, each only returning `libgit.commit(...)`. They are
-    what F285 closed for `libgit.git` and the same drift risk one layer up: the day one of them
-    grows a default (`routines_home=None`, an unscoped stage), its callers inherit it silently.
     """
     extra = sorted(_commit_forwarders() - COMMIT_FORWARDERS_HELD_BACK)
     assert not extra, (
@@ -278,10 +263,6 @@ def test_the_library_write_endpoints_commit_the_subjects_they_always_did(tmp_pat
     """"Keeping each message" is the conversion's hard requirement, so the subjects are pinned
     where a reader can see them: history is how the library's writes are read back, and a
     normalised or re-worded subject is an unreadable `git log` nobody notices until they need it.
-
-    Four of the seven converted call sites are reachable here (both playbook routes, both
-    workflow routes); the other three — `workflows.generate`, and Save/Update playbook from a
-    conversation — need an inference and are exercised by their own suites.
     """
     from conftest import authed_client, seeded_server
 

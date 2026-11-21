@@ -1,9 +1,5 @@
 """The `outcome-questioned` assist predicate (engine/assist_outcome.py) — a person's words question
 what the routine PRODUCES, so the `outcome-first` rule's line reaches the run at that moment.
-
-Every one of the operator's outcome complaints in 2026-07..10 became more self-checking; these
-are their own words, and the predicate must hear each of them — and must not hear an ordinary
-instruction, which would make the line noise the run learns to skip.
 """
 
 from __future__ import annotations

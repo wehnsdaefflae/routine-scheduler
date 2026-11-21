@@ -1,52 +1,4 @@
-"""docs/ is the system's self-portrait — three of its claim types, made falsifiable corpus-wide.
-
-The Help tab (`static/views/help.js`) serves this repo's own `docs/*.md`, rebuilt at boot from
-the source the daemon is running (`docs_build.GUIDE_ORDER`), beside the generated pdoc
-reference, so a reader is entitled to read the guides as what the system IS. Two checks existed:
-`tests/test_doc_counts.py` pins 3 claims in 2 documents (and the NAMES behind two of them), and
-`tests/test_prompt_anatomy_example.py` pins §5 of one. The other ~37 guides were unchecked and
-served as the live system — F672 measured ONE section of ONE of them and found three
-simultaneous drifts, one of which (a `subtask` bullet offering `workflow: "generate"`, real for
-`create_routine` alone) would have had a run's child REFUSED.
-
-This file generalises the count check to every guide and adds the two other claim types that
-need no judgement about prose:
-
-1. **A written-out count is a claim about a `len()`.** Each `COUNTS` entry binds a prose pattern
-   to the collection it counts. The entries are explicit, not inferred: of 598 number+noun
-   phrases in these guides almost every one is a magnitude (minutes, turns, tokens, lines) or a
-   dated fleet measurement ("31 of 32 routines"), and neither is a `len()`. Two of the three
-   entries were RED when this file was written — "16 rules" against 17 files in
-   `library-seed/rules/`, "19 docs" against 18 in `library-seed/permissions/`.
-2. **A backticked identifier is a claim that the symbol exists.** An ALL_CAPS_UNDERSCORED,
-   snake_cased or dotted token in backticks must still appear in the source. The underscore (or
-   the dot) is what separates a symbol claim from an emphasised word, and it is what the F672
-   class of error shows up in: `KIND_PROSE`, `BLOCKED_EVENTS`, `roles_problem`.
-3. **A cited path must resolve, and a cited `path:line` must be inside its file.** Only a path
-   whose first segment is a directory this repo HAS is a claim about this repo; a bare
-   `routine.yaml` or `state/phase.json` names a file in a ROUTINE's directory, not in this
-   tree, so it is not checked here — 413 of the ~975 path-shaped tokens in these guides are
-   that bare shape, and `state/` alone accounts for 54 of the rest.
-
-What is deliberately NOT checked — stated, never silent:
-
-* **Whether a cited line still contains what the prose says it does.** That is judgement about
-  prose. These checks are existence, and length as the citation is written.
-* `docs/designs.md` is the decided-work QUEUE, not a guide: its entries describe code that does
-  not exist yet (`engine/exitchecks.py`) and are deleted as they ship, so checking its symbols
-  and paths against today's source would red the gate for the queue doing its job. Its own
-  counts are still checked, and so are line citations into files that exist.
-* `docs/status-pages.md` documents the Steward hub, a PHP/JS codebase deployed from another
-  repository (`store.php`, `_shared/steward.js`, `web/steward/CONTRACT.md`): its symbols and
-  paths are real and simply not here.
-* `NOT_IN_THIS_REPO` names each remaining token that belongs to a foreign system, with its
-  reason — `test_the_allowlist_has_not_gone_stale` reds if the source ever grows one, so an
-  exemption cannot outlive the reason it was given.
-
-Every pass asserts it FOUND something (`..._is_not_vacuous`): a prose scanner whose regex
-silently stops matching passes while proving nothing, which is the one failure shape a file like
-this must not have.
-"""
+"""docs/ is the system's self-portrait — three of its claim types, made falsifiable corpus-wide."""
 
 import re
 from functools import lru_cache
@@ -169,17 +121,7 @@ def _resolve(raw: str) -> list[str]:
 
 
 def _normalise(token: str) -> str:
-    """The claim inside the spellings these guides use for a symbol.
-
-    Two of them are not the bare name, and both were found by perturbing a real claim and
-    watching this file stay green:
-
-    * `kindsurface.schema_for_kinds()` — the parens are prose, not part of the name, and
-      treating them as part of it hid every function reference;
-    * `engine/actions.BACKGROUNDABLE_KINDS` — the commonest spelling in these guides locates
-      the symbol by FILE, and rejecting anything with a `/` hid the whole module-qualified
-      class. The path half is the path pass's business; the symbol half is this one's.
-    """
+    """The claim inside the spellings these guides use for a symbol."""
     return token.removesuffix("()").rsplit("/", 1)[-1]
 
 

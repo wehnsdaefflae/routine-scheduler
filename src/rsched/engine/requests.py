@@ -1,28 +1,17 @@
 """Typed ACCESS REQUESTS — the run side of the grant model (entities.py).
 
-An `ask_user` carrying `request: "<class>:<name>"` asks the user for an entity grant;
-the Decisions page answers it with one of four decisions (allow/deny × now/forever) —
-five for once-grantable classes (entities.ONCE_CLASSES), which also offer `allow once`
-(D65; D76 extends it to secret:/fs-*: with the coarser util-invocation-level spend).
-The request is validated BEFORE it becomes a turn — `availability.request_denial`, inside
-the schema-retry cycle beside `authoring.recreate_denial` (`completion.action_candidate`), so
-a malformed, redundant or already-declined request is corrected and never costs one. What
-happens once the user has DECIDED is this module's — the run-side mechanics:
+An `ask_user` with `request: "<class>:<name>"` is answered on the Decisions page with
+allow/deny × now/forever, plus `allow once` for entities.ONCE_CLASSES (D65/D76). Validation
+happens before the request becomes a turn (`availability.request_denial`); this module is
+what happens once the user has DECIDED:
 
-- `apply_decision` seeds the run's one-time overlay (RunContext.granted_now/denied_now —
-  in-memory on purpose: a resumed leg starts empty and re-asks) and rebuilds the live
-  policy + transport schema, so an allow-now takes effect on the very next turn.
-- `apply_deferred_decisions` replays decisions made on the Decisions page for DEFERRED
-  asks — at run start (the deferred-answer files consumed before the prompt is composed)
-  AND at the live turn boundary (a deferred ask answered while the run is running, R118):
-  both seams end in the same overlay, so a web-side grant reaches the running run's
-  enforcers (validate_action, the util sandbox's roots, declared-only env injection)
-  instead of waiting for the next run.
+- `apply_decision` seeds the run's overlay (RunContext.granted_now/denied_now — in-memory on
+  purpose: a resumed leg re-asks) and rebuilds policy + schema for the very next turn.
+- `apply_deferred_decisions` replays decisions on DEFERRED asks, at boot and at the live turn
+  boundary, into the same overlay — so a web-side grant reaches the running run's enforcers.
 
-CONFIG is never written here: forever-decisions are persisted by the WEB layer when the
-user clicks (web.grants_apply) — the engine only bridges them into the current run's
-overlay, because its loaded routine config predates the click. No run and no engine code
-writes routine.yaml.
+CONFIG is never written here: forever-decisions are persisted by the web layer at the click
+(web.grants_apply); the engine only bridges them into the current run.
 """
 
 from __future__ import annotations
@@ -31,9 +20,8 @@ from .. import entities, utils_run
 
 DECISIONS = ("allow_now", "allow_once", "allow_forever", "deny_now", "deny_forever")
 
-# What each decision means for the run — the observation's teaching line and the
-# deferred-answer digest phrase share it (the web layer writes the same wording into the
-# answer file's `text` so every surface reads one vocabulary).
+# What each decision means for the run — one vocabulary for the observation, the deferred
+# digest and the web's answer `text`.
 DECISION_PHRASES = {
     "allow_now": "allowed for THIS RUN only — usable now; the grant does not survive "
                  "this run",
@@ -52,9 +40,8 @@ DECISION_PHRASES = {
 
 
 def rebuild_policy(loop) -> None:
-    """Fold the run's one-time decisions over the CONFIG-derived base policy and
-    re-project the transport schema — a granted kind becomes generatable on the next
-    turn, a denied one stays unrepresentable. Always base+overlay, never stacked.
+    """Fold the run's decisions over the CONFIG-derived base policy and re-project the
+    schema. Always base+overlay, never stacked.
     """
     from . import remind
     from .kindsurface import effective_kinds, schema_for_kinds
@@ -64,9 +51,7 @@ def rebuild_policy(loop) -> None:
                                                              ctx.denied_now)
     remind.refresh(loop)   # a reminders:* grant raises the level the store was read at
     if loop._finish_reserved:
-        # The reserved finish turn's finish-only grammar must survive a decision that
-        # lands at the same boundary (the drain bridge) — the policy update above still
-        # matters (resource consumers read it), but the last turn stays a finish.
+        # the reserved finish turn keeps its finish-only grammar (the policy still updates)
         return
     loop.action_schema = schema_for_kinds(
         effective_kinds(loop.allowed_tools, ctx.grants),
@@ -74,11 +59,8 @@ def rebuild_policy(loop) -> None:
 
 
 def _seed(ctx, eid: str, decision: str, *, account: str = "") -> None:
-    """One decision, one entity, into the run overlay — the shared kernel of the live
-    (apply_decision) and deferred (apply_deferred_decisions) seams. `allow_once` arms the
-    consume tracker beside the grant; the web layer refuses it for non-once-grantable
-    classes, and this seam mirrors that fail-CLOSED (skip, never a silent widening to
-    allow_now: an unconsumable once-grant would revoke nothing all run).
+    """One decision, one entity, into the run overlay (both seams' kernel). `allow_once` on a
+    non-once-grantable class is skipped — fail CLOSED, never widened to allow_now.
     """
     if decision in ("allow_now", "allow_once", "allow_forever"):
         if decision == "allow_once":
@@ -97,9 +79,8 @@ def _seed(ctx, eid: str, decision: str, *, account: str = "") -> None:
 
 
 def apply_decision(loop, ids: list[str], decision: str, *, account: str = "") -> str:
-    """Seed the run overlay with one user decision over `ids` and rebuild the live
-    policy. Returns the phrase for observations/transcripts. Forever-decisions were
-    already persisted web-side — here they only bridge into the current run.
+    """Seed the run overlay with one decision over `ids`, rebuild the policy, return the
+    phrase.
     """
     for eid in ids:
         _seed(loop.ctx, eid, decision, account=account)
@@ -111,20 +92,16 @@ def observation_text(ids: list[str], decision: str) -> str:
     return f"{', '.join(ids)}: {DECISION_PHRASES[decision]}."
 
 
-# Observation keys that mean the dispatched call did NOT execute the granted thing — a
-# user gate refused it pre-execution (declined write_util / refused secrets) or the
-# handler bounced it back for correction (unknown target, a failed file read, a missing
-# util). A once-grant survives those: it is spent by USE, not by attempt.
+# Observation keys meaning the call did NOT execute the granted thing (gate refusal or
+# bounced back); a once-grant survives them — spent by USE, not by attempt.
 _UNDISPATCHED_KEYS = ("declined", "declined_secrets", "pending_secrets",
                       "unknown_target", "self_target", "target_unreachable",
                       "bad_fire_at", "error", "missing")
 
 
 def _once_match(eid: str, action: dict, ctx) -> bool:
-    """Does this successfully-dispatched action USE the once-granted entity? One clause
-    per entities.ONCE_CLASSES member. Turn-action classes match exactly (their use IS
-    the turn); secret:/fs-*: match the action that RECEIVES the entity — the coarser
-    D76 promise entities.py documents.
+    """Does this dispatched action USE the once-granted entity? One clause per ONCE_CLASSES
+    member; secret:/fs-*: match the action that RECEIVES the entity (D76's coarser promise).
     """
     from ..grantpolicy import is_runs_path
     cls, _, name = eid.partition(":")
@@ -158,11 +135,8 @@ def _once_match(eid: str, action: dict, ctx) -> bool:
 
 
 def _fs_once_match(root_name: str, action: dict, ctx) -> bool:
-    """An fs once-grant is RECEIVED by (a) ANY util invocation — the sandbox mounts the
-    run's granted roots wholesale and the engine cannot see which paths the subprocess
-    touched (the coarseness D76's option text states) — and (b) a file action on a path
-    under the root (a read under a write root is a real use too: write implies read,
-    F294).
+    """An fs once-grant is RECEIVED by ANY util invocation (the sandbox mounts granted roots
+    wholesale) and by a file action under the root (write implies read).
     """
     kind = action.get("kind")
     if kind == "util":
@@ -185,13 +159,9 @@ def _fs_once_match(root_name: str, action: dict, ctx) -> bool:
 
 
 def consume_once_grants(loop, action: dict, obs: dict) -> set[str]:
-    """Spend `allow once (this action only)` grants (D65): the FIRST successfully-
-    dispatched matching action revokes the grant at the same boundary — dropped from the
-    overlay and the policy rebuilt, so the very next turn's schema and validators no
-    longer carry it. A schema retry or a validation rejection never reaches here (it
-    never becomes a turn), and a user gate refusing the call pre-execution
-    (_UNDISPATCHED_KEYS) leaves the grant armed. Returns the spent ids so the loop can
-    tell the model (spent_notice).
+    """Spend `allow once` grants (D65): the FIRST dispatched matching action revokes the grant
+    at this boundary and rebuilds the policy. A gate refusal (_UNDISPATCHED_KEYS) leaves it
+    armed. Returns the spent ids for `spent_notice`.
     """
     ctx = loop.ctx
     if not ctx.granted_once or any(obs.get(k) for k in _UNDISPATCHED_KEYS):
@@ -205,13 +175,9 @@ def consume_once_grants(loop, action: dict, obs: dict) -> set[str]:
 
 
 def spent_notice(spent: set[str], action: dict) -> str:
-    """The engine line appended to the consuming action's observation — the model must
-    learn the revocation at the boundary it happens, or its next matching attempt reads
-    as an unexplained denial (docs/prompt-anatomy.md pins it). D93 (F350): the notice
-    NAMES the consuming action — an fs once-grant is received by ANY util invocation
-    (the sandbox mounts granted roots wholesale), so an unrelated first util call can be
-    the spender, and without attribution that burn read as silent loss (2026-08-16: the
-    run's opening `code-search map` call spent the fs-write grant for a later scrub).
+    """The engine line appended to the consuming action's observation, so the revocation is
+    learned where it happens. It NAMES the consumer: an unrelated util call can spend an fs
+    once-grant (D93).
     """
     kind = str(action.get("kind") or "")
     what = f"util {action.get('name')!r} call" if kind == "util" else f"{kind} action"
@@ -224,14 +190,9 @@ def spent_notice(spent: set[str], action: dict) -> str:
 
 
 def apply_deferred_decisions(loop, deferred_qa: list[dict]) -> None:
-    """Access-request decisions answered on the Decisions page for DEFERRED asks
-    (inbox.collect_deferred_answers keeps `request`/`decision` on the pair). Two seams
-    consume them: run BOOT (decided while no run was live — applied before the prompt
-    is composed, so CAPABILITIES already shows the grant) and the live TURN BOUNDARY
-    (decided while the run was running — control.drain_injections bridges it, so the
-    "usable now" phrase the answer carries is true for the very next action: the next
-    util call's sandbox and the file actions read ctx.granted_now live, R118). An
-    'allow now' grants exactly the run that consumes it — this one.
+    """Access-request decisions on DEFERRED asks, consumed at run BOOT (before the prompt is
+    composed) and at the live TURN BOUNDARY (control.drain_injections), so "usable now" holds
+    for the next action. An 'allow now' grants exactly the run that consumes it.
     """
     ctx = loop.ctx
     touched = False

@@ -1,16 +1,11 @@
 """STAGE-BOUNDARY COMPACTION — whether archiving the middle at a boundary PAYS.
 
-The size gate (`window._archive_if_needed`) compacts when the prompt approaches the window, and
-on a 1M-token window that is almost never: 14 passes in 160 fleet runs (2026-09-17..10-08), while
-the median request carried 148k tokens of context and re-read all of it, every turn, at the cache
-price. A run that has finished a stage carries the whole of it into every turn it has left.
-
+The size gate (`window._archive_if_needed`) compacts only near the window, which on a large
+window is almost never — while a run that has finished a stage re-reads all of it every turn.
 So at a stage boundary the gate asks a second question: does archiving the middle NOW cost less
-than carrying it to the end of the run? The test is NVIDIA SoL-Pi's Online Context Compact
-(arXiv 2609.20519) — compact at a completed plan step when the projected input savings repay the
-cache rewrite — with two differences. The stages are the recipe's own (`stages/*.md`, which the
-engine already tracks), so no plan tool is needed; and the archival call is priced too, because
-here it is a real model call over the whole middle where Pi's native compaction is cheap.
+than carrying it to the end of the run? The test follows Online Context Compact (arXiv
+2609.20519), using the recipe's own stages as the plan steps and pricing the archival call too,
+since here it is a real model call over the whole middle.
 
 Every figure is in units of ONE UNCACHED INPUT TOKEN of the run's model, at Anthropic's list
 ratios (the provider this fleet runs on): a cache read 0.1, a cache write 1.25, an output token
@@ -41,15 +36,11 @@ CACHE_READ = 0.1
 CACHE_WRITE = 1.25
 #: Price of an output token.
 OUTPUT = 5.0
-#: How many times over a pass must repay itself within the horizon. The horizon is a guess
-#: (turns per stage vary several-fold within one recipe) and a pass has a cost no price captures —
-#: the middle leaves the prompt verbatim — so a pass that only just pays is not taken. Replayed
-#: over 525 real stage boundaries (166 staged runs, to 2026-10-08), 2 kept 98% of the first
-#: passes' net saving with 77 passes instead of 120, and halved the passes that lost money.
+#: How many times over a pass must repay itself within the horizon. The horizon is a guess and a
+#: pass has a cost no price captures (the middle leaves the prompt verbatim), so a pass that only
+#: just pays is not taken; replayed over real boundaries, 2 kept nearly all the net saving.
 MARGIN = 2.0
-#: What the archival call writes per token of middle it reads: 3.1-5.4% across the three archives
-#: that landed on this instance (llmsectest-weekday, 2026-10-04/05: 30,115 out of 554,173 in,
-#: 24,619 of 798,605, 31,904 of 902,594).
+#: What the archival call writes per token of middle it reads (measured 3-5% on real archives).
 ARCHIVAL_OUTPUT_SHARE = 0.05
 
 
@@ -57,11 +48,10 @@ def assess(loop, size: int) -> tuple[str, dict]:
     """`(stage, economics)` when this turn is a stage boundary, else `("", {})`.
 
     A BOUNDARY is the run reaching a stage it had not reached: the executor-stamped phase moving
-    (a `stages/<name>.md` read) or a stage joining the visited set (which also counts the phases
-    the run wrote to its own `state/phase.json` — the stronger signal, and the only one a run
-    that never re-reads its modules gives: `llmsectest-weekday` routes by its cursor alone,
-    F563). The first call only learns where the run stands, so a fresh run's first turn and a
-    resumed leg's first turn are not boundaries.
+    (a `stages/<name>.md` read) or a stage joining the visited set (which also counts phases the
+    run wrote to `state/phase.json` — the only signal from a run that never re-reads its
+    modules). The first call only learns where the run stands, so a fresh or resumed leg's first
+    turn is not a boundary.
     """
     ctx = loop.ctx
     cov = ctx.stage_coverage()
@@ -75,9 +65,8 @@ def assess(loop, size: int) -> tuple[str, dict]:
         return "", {}
     stage = ctx.phase if moved else fresh[0]
     if getattr(loop, "_archival", None) is not None:
-        # One archive at a time (`archival.start` drops a second): a pass taken now would elide
-        # a middle that never reaches history/. Boundaries come every few turns and an archive
-        # takes minutes, so this one is let go rather than taken without its archive.
+        # One archive at a time (`archival.start` drops a second): a pass now would elide a
+        # middle that never reaches history/, so this boundary is let go.
         return stage, {}
     turns_left = ctx.turns_remaining()
     ahead = len(cov["declared"]) - len(cov["entered"]) + 1

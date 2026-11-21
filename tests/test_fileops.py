@@ -1,17 +1,4 @@
-"""The `.memory/` seal, on the RESOLVED path.
-
-`engine/actions.py` tests it lexically, on the string the model supplied (`rel == ".memory"
-or rel.startswith(".memory/")`) — the cheap schema-retry correction that costs no turn. Every
-sibling seal in `fileops` is on the resolved path (`runs/`, `.util_outputs/`, `routine.yaml`),
-and `.memory/` had no such backstop: `state/../.memory/INDEX.md` and the absolute form both
-walk past the string test, and `resolve_rel` puts them right back inside the routine's own dir
-where `_write_gate` passed them.
-
-What that bypassed is the whole reason the index is engine-owned: a model-authored index once
-named files the engine then RENAMED, and 36 % of live history reads returned ENOENT. It also
-bypassed the 100-line note cap and the `memory` capability gate — a routine that does not hold
-the memory permission could read and rewrite its own `.memory/` through a file action.
-"""
+"""The `.memory/` seal, on the RESOLVED path."""
 
 from __future__ import annotations
 
@@ -78,13 +65,7 @@ def test_ordinary_paths_are_untouched(make_routine, tmp_path):
 
 
 def test_writing_state_phase_json_records_the_stage_as_entered(make_routine, tmp_path):
-    """A run that works a stage WITHOUT re-reading its module is not a run that skipped it.
-
-    The read stamp only fires on a `read_file` of `stages/<name>.md`, so coverage measured
-    module RE-READS and the experienced routines — the ones whose recipe the model already
-    holds — reported every stage skipped (F563: 24 of 73 fleet runs on 2026-09-26). The run's
-    own cursor is the second, stronger source: it wrote the phase down deliberately.
-    """
+    """A run that works a stage WITHOUT re-reading its module is not a run that skipped it."""
     ctx = _ctx(make_routine, tmp_path)
     d = ctx.routine.dir
     (d / "stages").mkdir(exist_ok=True)

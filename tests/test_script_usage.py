@@ -1,11 +1,4 @@
-"""A script call that FAILS is shown the script's declared `usage:` block (P3: told, not guessed).
-
-A failed util already carries its catalog usage (`executor.do_util`); a routine's own
-`scripts/<name>.py` did not, so a run that called one with missing or wrong arguments spent the
-next turn on `--help` — and a script that ignores `--help` RUNS instead (llmsectest-weekday
-20261102-050002 T222 re-rendered its ledger views asking for help). The header is the script's
-declared call form, read without executing anything.
-"""
+"""A script call that FAILS is shown the script's declared `usage:` block (P3: told, not guessed)."""
 
 from __future__ import annotations
 

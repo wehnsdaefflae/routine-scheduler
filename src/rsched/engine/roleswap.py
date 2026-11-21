@@ -1,40 +1,18 @@
 """The RUN-CHOSEN ROLE SWAP — a run drops itself to the cheap model, and climbs back (D185).
 
-The operator asked for Claude Code's `opusplan` generalized to any model pair, to cut token
-spend: *"i want this … but for generic models. we need it to save on tokens"*. Four triggers were
-put to him on 2026-10-16 and he chose the third: **the run itself decides**, because a stage-based
-or turn-count rule is wrong for any run whose hard thinking comes late.
+The run itself decides when, because a stage- or turn-count rule is wrong for any run whose hard
+thinking comes late. It is a SIDE FIELD like `note` and `remind`, not an action KIND: a
+dedicated action would spend a full turn of the expensive model asking to become cheap.
 
-So this is not a new action KIND. It is a SIDE FIELD, like `note` and `remind`: it rides whatever
-action the run was going to take anyway, at no turn cost. That is the whole point of the design —
-a dedicated action would spend one full turn of the EXPENSIVE model asking to become cheap, which
-is the cost the feature exists to avoid, and it would do so on every swap back.
+The swap is the mechanism of the console's mid-run switch (`switches.apply_model_switch`):
+assign `ctx.routine.models["main"]`. `endpoints.for_model` re-resolves the role every turn, so
+model, window and effort self-correct at the next completion; the run is told by an ENGINE NOTE.
 
-The swap itself is the mechanism `switches.apply_model_switch` already uses for the operator's
-mid-run switch from the console: assign `ctx.routine.models["main"]`. Nothing else is needed,
-because `endpoints.for_model` re-resolves the role from that mapping on every turn
-(`completion.next_action`), so the model, its context window and its effort all self-correct at
-the next completion. The run is told what happened in the one voice the engine speaks with, an
-appended ENGINE NOTE (`enginenote`) — which is also what makes the swap visible in the run's own
-transcript.
-
-**Where the cheap model comes from.** A routine already names its models per ROLE
-(`RoutineConfig.models`: main, tool_call, uncensored, supervisor). `tool_call` is by construction
-the cheap one — it serves the `llm` action's scoped subcalls. So `cheap` means "serve `main` with
-the model this routine already trusts for its tool calls", and `strong` means "serve it with the
-model the operator configured for `main`". A run therefore cannot escalate itself onto a model
-nobody chose for it: both positions name a model the OPERATOR configured, never one the run picked.
-
-That is why the role is read through `config.base.role_default_model` rather than off the
-routine's mapping alone (D230): an unset `tool_call` now resolves to the instance's
-`system_tool_call_model`, which is the operator's fleet-wide choice for exactly this cheap half of
-the work. Until that field existed the position was unservable for 31 of 32 routines — an unset
-role landed on `system_model`, the model `main` was already running, so the swap had nothing to
-offer and said so. With no default set it still says so, unchanged.
-
-**Auditability was a condition of the decision.** D188 (0.440.0) put the per-turn model and role
-on the transcript, so a swap is readable after the fact: the turns between a `cheap` and the next
-`strong` are stamped with the cheap model that answered them.
+`cheap` serves `main` from the `tool_call` role, resolved through
+`config.base.role_default_model` (the routine's own, else the instance's
+`system_tool_call_model`); `strong` restores the model configured for `main`. Both positions name
+a model the OPERATOR configured, so a run cannot escalate onto one nobody chose. The per-turn
+model stamp on the transcript makes every swap auditable after the fact.
 """
 
 from __future__ import annotations
@@ -47,10 +25,8 @@ from . import enginenote
 if TYPE_CHECKING:
     from .run_context import RunContext
 
-#: The two positions. `cheap` serves `main` from the routine's `tool_call` model; `strong`
-#: restores the model the routine configured for `main`. Deliberately not a free-text model
-#: name: a run picks a POSITION on its own routine's configured pair, never an arbitrary model
-#: (that is `list_models` + a per-call `model` override, which is a different question).
+#: The two positions — deliberately not a free-text model name: a run picks a POSITION on its
+#: routine's configured pair, never an arbitrary model.
 POSITIONS = ("cheap", "strong")
 
 #: The `role_swap` side field — the micro-doc the model reads is this description.
@@ -71,11 +47,9 @@ ROLE_SWAP_FIELD = {
 def field_problems(action: dict) -> list[str]:
     """Reject a `role_swap` value that is not a position, inside the schema-retry cycle.
 
-    The JSON Schema's own enum catches this for a provider that constrains decoding; this is
-    the same check for one that does not, so the run is corrected before the action becomes a
-    turn. Whether the position can actually be SERVED is decided at apply time, not here: a
-    routine with no `tool_call` model is a config fact, not a mistake in the run's action, and
-    refusing the whole action for it would cost a turn the run cannot fix.
+    The schema enum's check for a provider that does not constrain decoding. Whether the
+    position can be SERVED is decided at apply time: that is a config fact, and refusing the
+    action for it would cost a turn the run cannot fix.
     """
     want = action.get("role_swap")
     if want is None:
@@ -88,17 +62,9 @@ def field_problems(action: dict) -> list[str]:
 def cheap_model(ctx: RunContext) -> str | None:
     """The DISTINCT cheap model this run's turns can be served from, or None when there is none.
 
-    ONE rule for both swap layers (`engine/autoswap.py` delegates here), because "is there a
-    cheaper model to serve this with" is one question and two answers would disagree on exactly
-    the fleet D230 was built for.
-
-    The role is resolved the way the engine resolves it (`config.base.role_default_model`): the
-    routine's own `tool_call`, else the instance's `system_tool_call_model`. And then the test
-    that matters — it must DIFFER from what `main` resolves to. That is why an unset role was
-    never servable before D230: it fell through to `system_model`, the model `main` was already
-    running, so the swap had nothing to offer. It still falls through, and this still returns
-    None for it; what changed is that the operator now has a field that makes the two differ
-    fleet-wide.
+    ONE rule for both swap layers (`engine/autoswap.py` delegates here). The role resolves to
+    the routine's own `tool_call`, else the instance's `system_tool_call_model`, and must DIFFER
+    from what `main` resolves to.
     """
     models = ctx.routine.models
     server = getattr(ctx, "server", None)
@@ -110,11 +76,8 @@ def cheap_model(ctx: RunContext) -> str | None:
     return None if cheap == strong else cheap
 
 
-#: Why a position could not be served — the two distinguishable causes of a None target, so
-#: the run is told the one that actually fired. `cheap_model` answers ONE question ("is there
-#: a cheaper model") and collapses both into None, which is right for its callers and wrong
-#: for the note: a run whose pair is EQUAL used to be told its routine "configures no
-#: tool_call model", a false fact about its own configuration, followed by "do not retry".
+#: Why a position could not be served — the two causes `cheap_model` collapses into None, kept
+#: apart so the engine note names the one that fired (their fixes are opposite).
 UNSET = "unset"   # the role resolves to nothing: no routine model, no instance default
 SAME = "same"     # the role resolves to the model `main` is already being served from
 
@@ -122,15 +85,9 @@ SAME = "same"     # the role resolves to the model `main` is already being serve
 def cheap_unservable(ctx: RunContext) -> str:
     """Which cause made `cheap_model` answer None — `UNSET`, `SAME`, or "" when it found one.
 
-    Not folded into `cheap_model`: `autoswap` and `_target` want the model or nothing, and a
-    tuple return would make every caller unpack a reason it does not read. This is the same
-    resolution run again for the one caller that needs the reason — the engine note.
-
-    `SAME` is the COMMON case rather than the corner: 14 of 30 routines on this instance set
-    `models.tool_call` to the same catalog model as `models.main` (measured 2026-11-10), which
-    is what the settings patterns ship. Naming it is also the only way the note can point at
-    the fix, because the two causes have opposite ones — set a cheaper model for the role,
-    versus set a DIFFERENT one.
+    The same resolution as `cheap_model`, run again for the one caller that needs the reason
+    (the engine note), so the others need not unpack one. `SAME` is the common case: settings
+    patterns ship `tool_call` equal to `main`.
     """
     models = ctx.routine.models
     server = getattr(ctx, "server", None)
@@ -145,15 +102,8 @@ def cheap_unservable(ctx: RunContext) -> str:
 def _target(ctx: RunContext, want: str) -> str | None:
     """The catalog model NAME `main` should resolve to for `want`, or None if it already does.
 
-    `ctx.configured_main` is the run's own record of what the routine configured for `main`
-    before any swap — set once by the first swap, because `ctx.routine.models` is the thing
-    being mutated and would otherwise forget where to climb back to.
-
-    The cheap position reads the role the way the ENGINE resolves it
-    (`config.base.role_default_model`): the routine's own `tool_call`, else the instance's
-    `system_tool_call_model` (D230). Before that default existed an unset role resolved to
-    `system_model` — the same model `main` was already on — so this had nothing to offer and
-    stood down; now one instance setting serves the whole fleet.
+    `ctx.configured_main` records what the routine configured for `main` before any swap — set
+    by the first swap, because `ctx.routine.models` is what gets mutated.
     """
     if want == "cheap":
         return cheap_model(ctx)
@@ -177,11 +127,8 @@ def apply(loop, action: dict) -> None:
         ctx.configured_main = models.get("main") or ""
     target = _target(ctx, want)
     if not target:
-        # `strong` with no recorded main is the climb-back out of a swap this run made on a
-        # routine that configures no `main` either (possible since D230 made `cheap` servable
-        # fleet-wide): REMOVING the override is the honest inverse, because `main` then
-        # resolves through the instance default again — exactly what it did before the swap.
-        # Leaving it would strand the run on the cheap model for the rest of the run.
+        # `strong` with no recorded main climbs back out of a swap on a routine that configures
+        # no `main`: REMOVING the override restores the instance default, as before the swap.
         if want == "strong" and hasattr(ctx, "configured_main") and "main" in models:
             models.pop("main")
             enginenote.append(
@@ -192,10 +139,7 @@ def apply(loop, action: dict) -> None:
         tail = ("so your turns continue on the model that is answering them. "
                 "Do not retry the swap.")
         if want == "cheap" and cheap_unservable(ctx) == SAME:
-            # The cause that used to be reported as the other one. A run told "this routine
-            # configures no tool_call model" when it configures one — the same model as
-            # `main` — is being told a false fact about its own configuration, and the fix
-            # the note implies (set the role) is already done.
+            # Configured, but equal to `main` — not "configures no tool_call model".
             enginenote.append(
                 loop, f"role_swap={want} could not be served: this routine's tool_call model "
                       f"is the same model as its main, so there is nothing cheaper to serve "

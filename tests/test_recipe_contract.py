@@ -1,10 +1,4 @@
-"""A recipe's contract names only the task (P2) — at the two places a recipe is judged.
-
-1. At GENERATION: the materialization pipeline refuses a main or a stage that asks its run for
-   bookkeeping, the way it refuses a malformed one, so the retry writes a clean recipe.
-2. On the LIVE recipe: `recipelint.recipe_errors` names every such line and `rsched validate`
-   FAILS over it — the one recipe finding that is a contract defect rather than a phrasing.
-"""
+"""A recipe's contract names only the task (P2) — at the two places a recipe is judged."""
 
 from __future__ import annotations
 

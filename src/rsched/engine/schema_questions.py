@@ -1,28 +1,14 @@
 """The SEVERAL-questions-in-one-action fields as schema — `questions` and `blocks_work`.
 
-Their own module for the reason `engine/schema_remind.py` and `engine/schema_background.py`
-give: `engine/actionschema.py` is over the repo's size bar and may only shrink, so a field
-whose description has to GROW moves out rather than pushing that file up. `questions` had to
-grow when `ask_user` gained the same batch shape `decide` already had (D212), and the class
-claim `blocks_work` is new prose beside it.
+Its own module because `engine/actionschema.py` is over the size bar (D212).
 
-`questions` is now a SHARED field (decide + ask_user), so its description is clause-led —
-`kind1/kind2: …`, one clause per accepting kind, each carrying its own lead, which
-`kindsurface._project_description` needs to ship a run only the clauses of the kinds it may
-emit (tests/test_kindsurface.py pins both halves). The ITEM schema is the union of what the
-two kinds put in a question, because `additionalProperties: False` means a sub-field this
-object does not declare is stripped SILENTLY — no error, no log line — and each kind's own
-grammar check (`decideaction.field_problems`, `askfields.field_problems`) is what refuses the
-sub-fields that do not belong to it.
+`questions` is SHARED (decide + ask_user), so its description is clause-led — one
+`kind: …` clause per accepting kind, as `kindsurface._project_description` needs. The ITEM
+schema is the union of both kinds' sub-fields, because `additionalProperties: False` strips an
+undeclared sub-field SILENTLY; each kind's own grammar check refuses what does not belong to it.
 
-What the batch is FOR, measured over the 282 question records the instance had filed before it
-existed: 37% of runs (60 of 163) already asked more than one question, up to 6 in one run, and
-51% of the operator's answering sittings disposed of several questions at once. The asking side
-did not match that — five questions cost five turns of a run's context and five unrelated
-cards. One action, one dispatch, N records sharing a batch id is the same information at a
-fifth of the cost. What a batch is NOT is a new waiting mode: `mode: "blocking"` keeps its own
-meaning and a batch is always filed and carried on from (0 of those 282 asks used blocking at
-all, and 0% of answers arrived within the hour).
+A batch is N records sharing a batch id in one action — one turn instead of N. It is NOT a
+waiting mode: `mode: "blocking"` keeps its meaning and a batch is filed and carried on from.
 """
 
 from __future__ import annotations
@@ -38,10 +24,8 @@ QUESTIONS_FIELD = {
         "answer_type": {"type": "string", "enum": ["yes_no", "choice", "score"],
                         "description": "decide ONLY: how it is answered"},
         "options": {"type": "array", "items": {"type": "string"}, "maxItems": 26},
-        # ask_user's per-question fields: each means for ITS question exactly what the
-        # same-named top-level field means for a single ask, so they are not re-described
-        # here (the way decide's `options`/`answer_type` are not) — the field's own
-        # description is one object up, and this list is what keeps them from being stripped.
+        # ask_user's per-question fields mean what the same-named top-level field means;
+        # declared here only so they are not stripped.
         "default": {"type": "string"},
         "request": {"type": "string"},
         "config_patch": {"type": "object"},
@@ -58,9 +42,7 @@ QUESTIONS_FIELD = {
 def batch_brief(batch: list) -> str:
     """A `questions` batch's one-line brief (`actionschema.brief_value`).
 
-    A batch carries no top-level `question`, so the brief every turn record, compaction digest
-    and reminder match reads would be EMPTY. The first question plus the count identifies the
-    action the way one question's text does.
+    A batch has no top-level `question`, so the first question plus the count stands in.
     """
     first = batch[0] if batch and isinstance(batch[0], dict) else {}
     return f"{first.get('question') or ''} (+{len(batch) - 1} more)"

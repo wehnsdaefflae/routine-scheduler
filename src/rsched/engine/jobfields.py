@@ -1,13 +1,7 @@
 """The `job` action's GRAMMAR — the shape a job turn must have, nothing about the store.
 
-Split out of `actions.py` the way `goalops.field_problems`, `decideaction.field_problems`
-and `remindfields.field_problems` already are: the flat checker in `validate_action` is the
-action contract's single home, and a kind whose grammar needs thirty lines of its own keeps
-them beside it rather than inside it. Whether the job EXISTS, is open or is due is
-`engine/jobops.py`'s to judge against the store.
-
-`actions.py` was at its size-ratchet ceiling when `do_nothing` (D186) needed room; this is the
-responsibility boundary it already had.
+Kept beside `validate_action` like the other kinds' `field_problems`. Whether the job EXISTS,
+is open or is due is `engine/jobops.py`'s to judge against the store.
 """
 
 from __future__ import annotations
@@ -22,9 +16,8 @@ JOB_VERBS = ("list", "create", "update", "open", "checkpoint", "delete")
 
 
 def field_problems(obj: dict) -> list[str]:
-    """The shape a `job` action must have. Whether the task EXISTS, is open or is due is the
-    handler's to judge against the store (engine/jobops.py) — this is only the grammar, so a
-    malformed call is corrected inside the schema-retry cycle and never costs a turn.
+    """The shape a `job` action must have — grammar only, so a malformed call is corrected
+    inside the schema-retry cycle and never costs a turn.
     """
     verb = str(obj.get("verb") or "")
     if verb not in JOB_VERBS:

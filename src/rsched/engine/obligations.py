@@ -1,21 +1,12 @@
 """OBLIGATIONS — what a person asked of a ROUTINE that no run has finished, carried until one does.
 
-A routine run's goals (engine/goals.py) used to be that run's alone: the operator's brief, a
-request mid-run, an approval given on the Decisions page — and when the run ended with one unmet,
-the next run started from nothing. On 2026-07-30 the operator approved freelance-radar's profile
-update ("You fix all of that"); it was never applied, and eleven weeks later nothing on the
-instance knew it was owed. The approval had been read, acknowledged in a summary, and forgotten.
-
-So at the end of every depth-0 ROUTINE run the engine keeps the goals still OPEN in
-`state/obligations.json` — engine-owned, so no run can close one by editing the file
-(engine/fileops.py) — and the next run's ledger starts with them (`source: carried`, `since` the
-day a run first took them on) beside its brief. Every finish accounts for every open goal
-(engine/accounting.py), so each run answers for each obligation until one MEETS it (the claim is
-checked against its transcript like any `met`, engine/verifier.py) or the person withdraws it in
-words of their own (`goal verb=drop`). A carried goal's grounding stands — its quote was found in
-what the person wrote to the run that took it on — and any word the person writes later is "after"
-it. The daemon names every obligation open longer than `OVERDUE_DAYS` on the blocked-work surface
-(daemon/owed_watch.py), so an approval cannot sit unfinished without someone seeing it.
+At the end of every depth-0 ROUTINE run the engine keeps the goals (engine/goals.py) still OPEN
+in `state/obligations.json` — engine-owned, so no run can close one by editing the file — and the
+next run's ledger starts with them (`source: carried`, `since` the day first taken on). Every
+finish accounts for each (engine/accounting.py) until a run MEETS it (verified like any `met`)
+or the person drops it in later words (`goal verb=drop`). A carried goal's grounding stands, and
+any later word from the person counts as "after" it. The daemon names obligations open longer
+than `OVERDUE_DAYS` (daemon/owed_watch.py), so an approval cannot sit unfinished unseen.
 
 A conversation keeps its goals in its own transcript across replies and needs none of this.
 """
@@ -102,10 +93,9 @@ def _settled(path: Path) -> list[dict]:
 
 
 def settle(routine_dir: Path, ob_id: str, from_run: str, *, how: str, note: str = "") -> bool:
-    """The operator's decision on an obligation that WAITED ON HIM (daemon/owed_watch.py):
-    `met` (he says it is done) or `dropped` (no longer wanted). The row leaves `open` and is
-    kept under `settled` — with what he decided and when — so a run already carrying it does
-    not resurrect it, and its next run's digest no longer owes it. False when no such row.
+    """The operator's decision on an obligation that WAITED ON HIM: `met` or `dropped`. The
+    row moves from `open` to `settled` (so an in-flight run cannot resurrect it). False when no
+    such row.
     """
     path = Path(routine_dir) / FILE
     rows = load(routine_dir)

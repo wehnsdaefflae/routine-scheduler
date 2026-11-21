@@ -1,19 +1,4 @@
-"""The run rail's JOBS section (components/runjob.js, docs/jobs.md).
-
-OPERATOR ORDER (F646): *"routines with tasks (like the 'fau' routine) need to display the task
-they're currently working on in the right sidebar"*. The run page is where a run is actually
-watched; before this the open job was visible only on the ROUTINE page, which shows the store
-rather than this run.
-
-Four claims, all about what a PERSON sees:
-
-- a live run with a job open says WHICH job, in words, with its brief;
-- a job this run already checkpointed shows the outcome it recorded, not the open marker;
-- a run that is not the ledger's own (an older run of the same routine) reports what IT did,
-  read from the job's history — never the job another run has open now;
-- a routine with no job layer gains NO section: `tests/ui/test_finish_line.py` pins the rail's
-  caption list exactly, and an always-present, always-empty card teaches a reader to skip it.
-"""
+"""The run rail's JOBS section (components/runjob.js, docs/jobs.md)."""
 
 from __future__ import annotations
 

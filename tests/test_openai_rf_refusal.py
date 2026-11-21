@@ -1,10 +1,4 @@
-"""The `openai` adapter's one retry without `response_format`, read from a refusal's WORDING.
-
-The retry fires on a 400 whose text names the structured-output field. Through an Otari gateway
-the provider's refusal arrives reworded — "Model X does not support the requested response
-format." — the field's name with a space and no underscore, so a hint list holding only the
-identifier never fired and every turn on such a model failed instead of degrading.
-"""
+"""The `openai` adapter's one retry without `response_format`, read from a refusal's WORDING."""
 
 from __future__ import annotations
 

@@ -1,17 +1,4 @@
-"""D188 — which model answered THIS turn, recorded on the turn itself.
-
-The operator, 2026-10-16: "we need to see with each turn which model was used". The reason it
-matters is auditability of a run that SWITCHES: once a run can swap its own role mid-run, a
-transcript that does not say which model answered a given turn makes the swap unauditable and
-its saving unmeasurable — and re-deriving the model from config at render time answers "which
-model WOULD be used now", which is the lie this item exists to prevent.
-
-The RESOLVED model was already stamped per turn (`usage["model"]`, completion.next_action) and
-tests/test_failover.py pins it across a mid-turn failover. What was missing is the ROLE that
-resolved to it: "main → scripted/test-model" tells a reader both which slot the run asked for
-and which concrete model served it, and the two differ exactly when something switched —
-a fallback member, or the uncensored takeover serving a refused turn.
-"""
+"""D188 — which model answered THIS turn, recorded on the turn itself."""
 
 from __future__ import annotations
 

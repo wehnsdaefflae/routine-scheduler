@@ -1,9 +1,4 @@
-"""A model's fallbacks are PICKED from the catalog, so an impossible name cannot be entered.
-
-The old field was free text: "Opus 5" was typeable, looked accepted, and was refused only by the
-server after a round trip (three refused saves in the 2026-09-10 UI trace). These tests pin the
-two halves of the repair — the catalog is offered, and the picked order is what persists.
-"""
+"""A model's fallbacks are PICKED from the catalog, so an impossible name cannot be entered."""
 
 from playwright.sync_api import expect
 

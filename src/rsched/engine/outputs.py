@@ -1,30 +1,17 @@
 """The command-output spill store — `.util_outputs/`, the engine's copy of output too large
-for the observation that carried it. Every callable kind spills here: `util`, `script` and
-`shell` all capture far more than an observation can carry.
+for the observation that carried it (`util`, `script`, `shell`, and any other kind that spills).
 
-A util's stdout is captured up to `utils_lib.OUTPUT_CAP` (1 MB) and then cut to its head at
-`OBS_CAP_CHARS` for the observation (stderr keeps head and tail). The transcript records the
-TRUNCATED observation, so everything between those two caps was produced and destroyed:
-the only recovery was re-running the util, which does not return the same data for
-anything non-deterministic, paid, or time-bound (a page fetch, an LLM subcall, a mailbox
-read, a quote). This store keeps exactly that band.
+Output is captured up to `utils_lib.OUTPUT_CAP` and cut to `OBS_CAP_CHARS` for the observation;
+the transcript records only the truncated text, and re-running is no recovery for anything
+non-deterministic, paid or time-bound. This store keeps exactly the band between the two caps
+and NOTHING else — an output the observation carried whole is already in the transcript.
 
-It keeps NOTHING else. An output the observation carried whole is already in the
-transcript verbatim, and a second copy here would duplicate a file the system has. The
-store is therefore the recovery of a loss, not a mirror of util traffic.
-
-Reads are ordinary `read_file`, which pages by line window — a large output is cheaper to
-consult on disk than it ever was in context, where it only existed as a head+tail guess.
-Writes are engine-only (`fileops._write_gate`), like `runs/`: a run must not be able to
-rewrite its own evidence. The dir is gitignored on first use — the run-end autocommit is
-`git add -A` and util output can carry tokens — through `paths.ensure_gitignored`, the one
-helper every engine-owned store in a routine uses (the document cache, `docread.py`, too).
-
-An applied lossless compression (output_compression.py) saves its original stdout under the
-run's own `runs/` tree instead, so this five-run cache cannot prune that recovery evidence.
-
-Retention is KEEP_RUNS run directories, pruned on write: a backstop against unbounded
-growth, never a promise about how long an output survives.
+Reads are ordinary `read_file`. Writes are engine-only (`fileops._write_gate`), like `runs/`: a
+run must not rewrite its own evidence. The dir is gitignored on first use via
+`paths.ensure_gitignored` (the autocommit is `git add -A` and util output can carry tokens). An
+applied lossless compression (output_compression.py) keeps its original stdout under `runs/`
+instead, out of this cache's pruning. Retention is KEEP_RUNS run dirs, pruned on write — a
+backstop, never a promise.
 """
 
 from __future__ import annotations
@@ -58,9 +45,8 @@ def _run_key(ctx: RunContext) -> str:
 
 def unused_name(path: Path) -> Path:
     """`path`, or the first free `<stem>-<n><suffix>` beside it. `t<turn>-<name>` is not unique
-    within a run: a user's slash command executes at the turn boundary under the number of the
-    model turn before it, and overwriting that turn's file left its observation — already in
-    the transcript and the context — pointing at output it never produced.
+    within a run (a slash command runs under the previous model turn's number), and overwriting
+    would leave an earlier observation pointing at output it never produced.
     """
     candidate, n = path, 2
     while candidate.exists():
@@ -127,26 +113,23 @@ def pointer_line(pointer: dict) -> str:
          if pointer.get(k + "_capture_truncated")
          else f"the complete {pointer[k + '_chars']}-char {k} at `{pointer[k]}`")
         for k in ("stdout", "stderr") if pointer.get(k)]
-    # Not "the elided middle": stdout keeps its HEAD (observations.truncate, R45), so what it
-    # lost is the tail, while stderr loses its middle and an applied compression loses nothing.
+    # Not "the elided middle": stdout keeps its HEAD (observations.truncate), stderr loses its
+    # middle, and an applied compression loses nothing.
     return (" and ".join(saved).capitalize()
             + " — read_file it (start_line/max_lines page it) for what the preview leaves "
               "out, instead of re-running the util.")
 
 
-#: The kinds whose own body already renders the pointer (`observations._run_body`): the three
-#: callable kinds, which have carried this store since it existed.
+#: The kinds whose own body already renders the pointer (`observations._run_body`).
 _SPILLS_IN_ITS_BODY = frozenset({"util", "script", "shell"})
 
 
 def observation_tail(obs: dict) -> str:
     """The `[full output]` tail for a kind whose body does NOT render it itself (D246).
 
-    `util`, `script` and `shell` emit it inside their shared body and are excluded here, so
-    nothing doubles. Every OTHER kind that spills gets the pointer for free, at the one place a
-    rendered observation is assembled — which is the point: an oversized `llm` reply lost its
-    MIDDLE for as long as the action existed, because the store was wired per-kind and that
-    renderer was written before the store had a second caller.
+    `util`, `script` and `shell` emit it inside their shared body and are excluded, so nothing
+    doubles; every OTHER kind that spills gets the pointer at the one place a rendered
+    observation is assembled, rather than per-kind wiring a new renderer could miss.
     """
     pointer = obs.get("full_output")
     if not pointer or obs.get("kind") in _SPILLS_IN_ITS_BODY:
@@ -162,8 +145,7 @@ def digest(routine_dir: Path, limit: int = 8) -> str:
     base = routine_dir / OUTPUTS_DIR
     if not base.is_dir():
         return ""
-    # Newest by when it was WRITTEN: a reverse sort of the paths put `t9-…` above `t10-…`, so a
-    # run with more than `limit` spills showed its oldest ones and left the newest out.
+    # Newest by when it was WRITTEN: a path sort puts `t9-…` above `t10-…`.
     try:
         files = sorted(((p.stat(), p) for p in base.rglob("*") if p.is_file()),
                        key=lambda sp: (sp[0].st_mtime_ns, str(sp[1])), reverse=True)

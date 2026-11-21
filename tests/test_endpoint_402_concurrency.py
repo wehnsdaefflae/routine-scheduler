@@ -1,22 +1,4 @@
-"""A 402 that says "wait" is a transient, and a 402 that says "add credits" is not.
-
-OpenRouter answers 402 for two different conditions and the bodies say which:
-
-* *"This request would exceed your available credits given your current in-flight requests.
-  **Retry after in-flight requests settle**, or add credits."* — the account HAS the credit;
-  the provider is reserving it against requests already in the air. Waiting clears it.
-* *"This request requires more credits, or fewer max_tokens. You requested up to 16384 tokens,
-  but can only afford 9590."* — the account does not have the credit. Waiting changes nothing.
-
-`RETRYABLE_STATUSES` held neither, so both were fatal. On 2026-10-16 the first shape killed the
-live conversation `c-20261016-075101` TWICE inside 30 seconds (11:17:51, 11:18:21), each time
-with `model_chain_exhausted … after 0 rungs`: no retry, no failover, the run simply ended while
-the condition was clearing itself. The second shape had failed `sprind:20260818-093527` the same
-way, correctly.
-
-So the discriminator is the body, not the status — the same judgment `base.py` already makes for
-408, and the reason these cases live beside each other in one file.
-"""
+"""A 402 that says "wait" is a transient, and a 402 that says "add credits" is not."""
 
 from __future__ import annotations
 

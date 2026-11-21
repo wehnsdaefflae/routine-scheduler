@@ -1,14 +1,10 @@
 """The model ids an endpoint ITSELF says it serves — what the console offers instead of a free
 text box for a catalog entry's model id and the endpoint card's test model.
 
-Reuses the readers `limits` already trusts (`catalogs`): OpenRouter's and Nano-GPT's own
-listings, and the OpenAI-shaped `/models` every other gateway serves — a subscription proxy
-answers `{"data": [{"id": …}]}` on `/v1/models`, and lists NO model for a credential it cannot
-use, so an empty answer is "nothing offered", never "does not exist". The question is asked
-with the endpoint's own key, resolved here on the server; what leaves is a sorted id list or a
-fixed one-line reason — never a key, a URL with credentials or an upstream body (the same
-redaction rule as `cliproxy_quota`). Every outcome is a dict, never an exception: the page
-falls back to a plain text box and shows the reason.
+Reuses `catalogs` (OpenRouter's and Nano-GPT's listings, else the OpenAI-shaped `/models`). An
+empty answer means "nothing offered", never "does not exist". Asked with the endpoint's own key
+on the server; what leaves is a sorted id list or a fixed one-line reason — never a key, a
+credentialed URL or an upstream body. Every outcome is a dict, never an exception.
 """
 
 from __future__ import annotations

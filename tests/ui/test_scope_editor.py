@@ -1,10 +1,4 @@
-"""The scope editor on Settings → Connections (2026-11-09), through the real page.
-
-What it is for, asserted here: the requested scopes are SHOWN grouped by API with a count
-against the consent ceiling; a scope the provider's token cannot use is said; each connected
-account's GRANTED scopes are compared with the list as edited; and a save writes the very
-Secrets entry the next consent reads.
-"""
+"""The scope editor on Settings → Connections (2026-11-09), through the real page."""
 
 from playwright.sync_api import expect
 

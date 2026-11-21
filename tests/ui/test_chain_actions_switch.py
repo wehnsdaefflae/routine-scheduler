@@ -1,10 +1,4 @@
-"""The ACTION CHAINING switch on the routine page (D203).
-
-The operator asked for chaining "on for every routine but can be toggled off in the routine
-settings" — the settings FORM, not only a YAML key. So this loads the page a person actually
-sees: the control is there, it reads ON for a routine whose config never mentions it, and
-turning it off writes `chain_actions: false` where the engine reads it.
-"""
+"""The ACTION CHAINING switch on the routine page (D203)."""
 from __future__ import annotations
 
 from playwright.sync_api import expect

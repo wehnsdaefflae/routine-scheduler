@@ -1,13 +1,6 @@
 """VERB-SCOPED secrets (`secrets: NAME@verb`, R2622) — the acceptance the operator's
 decision named: a verb-dispatched util's credential surface stops being the union of all its
 verbs' needs.
-
-The demonstration R2621 asked for, in the shape it asked for it: `gu remote credentials` can
-see `DEEPL_API` while `gu remote exec` cannot. Both of the catalog shapes it named as traps for
-a naive implementation are here too — a util whose default call leads with a URL
-(`web-request`) and one whose default call leads with a regex (`code-search`) — because a verb
-the engine guesses wrongly turns a sandbox decision into a missing-credential mystery, after
-which the reasonable move is provisioning a credential that already exists.
 """
 
 from rsched import utils_lib, utils_run, utils_verbs

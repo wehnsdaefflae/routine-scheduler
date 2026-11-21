@@ -1,15 +1,4 @@
-"""A `config_patch`'s INNER keys, judged where the record is written (F737).
-
-`patch_shape` judged the patch's own keys, so `{"budgets": {…}}` passed it whatever the mapping
-held. Measured 2026-10-20: `llmsectest-weekday` filed
-`{"budgets": {"max_turns": 600, "max_minutes": 900}}` — a budget name this repo has never had —
-the apply answered `budgets: Value error, unknown budget max_minutes`, and the operator pressed
-`approve & apply` FOUR times (`.ui-traces/20261020.jsonl`, 04:39:18-04:39:39) before typing the
-toast text back to the run by hand. That is the dead apply button F537 closed, one level down.
-
-The anti-drift guard is `test_every_budget_the_loader_keeps_is_accepted_at_filing`: the filing
-check reads the loader's own vocabulary, so a new budget cannot be added and then refused here.
-"""
+"""A `config_patch`'s INNER keys, judged where the record is written (F737)."""
 
 from __future__ import annotations
 

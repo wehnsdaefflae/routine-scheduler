@@ -1,20 +1,4 @@
-"""An answer this console just sent is never repainted as open (questions-store.js).
-
-F780 / the second half of F772. Answering a question publishes a bus event, every surface's
-reads are coalesced by the shared store, and the read a repaint joins may have STARTED before
-the answer POST landed — so its list still says the question is open. The Decisions page then
-painted that list over the card it had just settled, building a FRESH ENABLED answer button
-under the cursor a median 1.8 s after the click. MEASURED on the client-stamped UI traces: 60
-doubled click pairs, none of them sub-200ms, i.e. none a slip of the hand — the operator saw an
-un-pressed button and pressed it again.
-
-Why focus could not fix it: the form DISABLES the control it was clicked with, and a disabled
-button loses focus, so by repaint time nothing in the list holds focus and views/questions.js's
-typing deferral legitimately declines to defer.
-
-0.461.0 made the duplicate POST harmless (the answer route is idempotent), so what is left is
-the interaction: the page must not offer an act that is already done.
-"""
+"""An answer this console just sent is never repainted as open (questions-store.js)."""
 
 from __future__ import annotations
 
@@ -82,12 +66,6 @@ def test_a_fresh_list_read_still_speaks_for_the_server(ui, ui_page):
 def test_an_intermediate_reply_is_not_marked_answered(ui, ui_page):
     """An ask-back leaves the question OPEN by design, so it must never be recorded as
     answered — the store would otherwise hide a question that is still waiting.
-
-    Driven through the component's own `submit(true)` rather than a click, because no console
-    surface passes `askBack` today: the control exists in components/answerform.js and nothing
-    mounts it. The seam is what matters — this pins that the intermediate path cannot start
-    marking the moment a surface does offer it. The mirror of the first test: a list read held
-    open across the reply must come back saying the question is STILL OPEN.
     """
     ui.seed_question("uir", "q-color", "Which color should the report use?", mode="blocking")
     ui_page.goto(f"{ui.url}/#/questions")

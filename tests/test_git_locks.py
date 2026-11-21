@@ -1,10 +1,4 @@
-"""Git index locks against REAL repos (libgit + gitlock, docs/architecture.md "Git writes").
-
-What these pin is the 2026-09-30 incident: the disk under /home stalled I/O, libgit's timeout
-SIGKILLed the settings-patterns migration's `git commit` in two routine repos mid-refresh, and
-the empty `index.lock` each left made every later write there fail — while `libgit.commit`
-answered False exactly as it did for a clean tree. The migration recorded 0 failed.
-"""
+"""Git index locks against REAL repos (libgit + gitlock, docs/architecture.md "Git writes")."""
 
 from __future__ import annotations
 

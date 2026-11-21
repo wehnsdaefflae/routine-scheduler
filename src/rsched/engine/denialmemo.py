@@ -1,58 +1,25 @@
 """The CAPABILITY refusals this run has already earned — so a second identical attempt is
 answered from the first refusal instead of being judged from scratch (F762).
 
-MEASURED: `vodafone-outage-claims:20261023-024513` re-emitted a write to its own `main.md` at
-turns 17, 18, 19 and 34; `moltbook-heartbeat:20261023-172052` at turns 34 and 35. Every attempt
-met the same gate (`grantpolicy.GrantPolicy.deny`, the recipe clause), whose text already names
-the right route — so the wording was never the defect. The defect is that NOTHING OF THE
-REFUSAL SURVIVES THE TURN: a refused action is corrected inside the schema-retry cycle and that
-whole micro-dialogue is dropped as debris the moment the turn recovers
-(`engine/turndebris.py`), so the next turn's prompt holds the run's own reasoning and no
-refusal at all. The specimen proves it in its own voice — at turn 18 it wrote *"I have to
-correct myself … I never attempted one"*, then attempted it again, twice.
+A refused action is corrected inside the schema-retry cycle, whose micro-dialogue is dropped as
+debris when the turn recovers (`engine/turndebris.py`) — so nothing of the refusal survives the
+turn. Two things change, both free of a turn:
 
-TWO THINGS CHANGE, both free of a turn:
+1. A first capability refusal posts ONE ENGINE NOTE: refused, permanent for this run, the
+   refusal text verbatim. An engine note is not debris, so the next turn reads it.
+2. A later identical attempt is answered as a REPEAT, quoting the gate's refusal whole, because
+   that text already names the route out.
 
-1. A first capability refusal posts ONE ENGINE NOTE (`engine/enginenote.py`, the engine's one
-   voice): this action was refused, the refusal is permanent for this run, and the refusal text
-   verbatim. An engine note is not debris, so the turn AFTER the refusal reads it — which is
-   the only surface the measured specimens lacked.
-2. A later identical attempt is answered as a REPEAT: the turn it was first refused at, the
-   attempt number, that no re-wording or later turn can make it land, and the gate's own
-   refusal quoted whole, because that text already names the route out (propose the change at
-   finish, or file the typed access request).
+ONLY what `GrantPolicy.deny` refuses: config and ownership, which a run never changes about
+itself, so "this cannot succeed later" is TRUE. Anything else (a schema rejection, a missing
+file, a held lock) may legitimately succeed next time. `engine/schemamemo.py` owns repeated
+REJECTIONS, with the opposite remedy. The absolute-path backstop (`fileops._write_gate`) needs
+no memo: its refusal is the action's observation, which nothing drops.
 
-WHY ONLY WHAT `GrantPolicy.deny` REFUSES. What that gate answers is config and ownership — a
-capability the user switches, or a structural seal (routine.yaml, runs/) nobody switches at all
-— and a run changes neither of those about itself. So its verdict is deterministic and holds for
-the whole run: the one class of refusal where "this cannot succeed later" is TRUE. A schema
-rejection, a missing field, a file that is not written yet, a lock held elsewhere: each can
-legitimately succeed on the next attempt, and telling a run otherwise would stop work that was
-about to land. So the memo fires on exactly one predicate — the live policy's own `deny()` is
-what produced this problem list — and never on the shape of a message. F736
-(`engine/schemamemo.py`) owns the other half, repeated REJECTIONS, and its remedy is the
-opposite one (rebuild the object, shed the grammar), which is why these are two modules.
-
-NOT THIS SEAM: `engine/fileops._write_gate`, the backstop that catches the same recipe write
-addressed by ABSOLUTE path. That refusal is already the action's OBSERVATION — it is what the
-run reads next, with nothing dropping it — so it needs no memo to survive the turn. Only the
-validation-seam form (`GrantPolicy.deny`, the relative-path one the measured specimens used)
-vanished with the debris.
-
-THE VERDICT IS NEVER REPLAYED. `answer` re-asks the live `GrantPolicy` on every call and does
-nothing at all when it permits the action: a one-run `allow once` folded in mid-run
-(`GrantPolicy.with_overlay`) must make the very next attempt legal. The memo only ever enriches
-a refusal the policy has just issued again — it cannot manufacture one.
-
-THE MEMO IS PER RUN AND IN MEMORY, keyed on (action kind, target, refusal text), like the
-rejection memo beside it. A resumed leg starts empty on purpose — but its replayed prompt still
-carries the engine notes verbatim (`engine/history.replay_messages`), so what the run was told
-is not lost with the dict.
-
-NOT IN SCOPE, deliberately: this files no `wrong_turn_detected` row of its own. The repeat is
-already readable back from the transcript (the refusal text the run was handed carries the
-REPEAT sentence), and a second reason filed for one turn would double-count a turn the
-schema-retry seam has already counted (`engine/wrongturn.py` keeps one row per reason+turn).
+THE VERDICT IS NEVER REPLAYED: `answer` re-asks the live policy every call, so an `allow once`
+folded in mid-run makes the next attempt legal. The memo is per run and in memory; a resumed
+leg starts empty, but its replayed prompt still carries the engine notes. It files no
+`wrong_turn_detected` row of its own — that would double-count the schema-retry seam's.
 """
 
 from __future__ import annotations
@@ -72,8 +39,7 @@ MAX_NOTES = 5
 def _memo(loop) -> dict[tuple[str, str, str], dict]:
     """This run's capability-refusal memo — (kind, target, refusal) → when and how often.
 
-    Created on first use, the idiom its neighbours already use for per-run state
-    (`engine/schemamemo._memo`, `loop._schema_off`): `engine/loop.py` sits at its size ceiling.
+    Created on first use, like its neighbours' per-run state (`engine/schemamemo._memo`).
     """
     memo: dict[tuple[str, str, str], dict] | None = getattr(loop, "_denial_memo", None)
     if memo is None:
@@ -87,9 +53,7 @@ def _capability_refusal(loop, action: dict, problems: list) -> str | None:
     action — None for anything else.
 
     Asked of the policy rather than read off the message, and matched against the problems the
-    validator actually returned: a schema-invalid action is rejected before the grant gate is
-    consulted (`engine/actions.validate_action` short-circuits), so its problems are not this
-    module's business even when the action would also have been refused.
+    validator actually returned (a schema-invalid action never reaches the grant gate).
     """
     policy = getattr(loop, "grants", None)
     if policy is None or not problems:

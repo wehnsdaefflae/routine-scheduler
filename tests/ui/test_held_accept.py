@@ -1,22 +1,4 @@
-"""D178 + F668: the settings accept refused mid-run SAYS so and stays visible.
-
-On 2026-10-11 the operator pressed "accept changes" on `freelance-radar` three times in one
-second while a run was 78 minutes from ending. Each press was refused — correctly: a
-multi-field accept during a live run would leave the routine with neither its old settings nor
-its new ones — and the refusal toast said only "try again after it ends". It named no time and
-left nothing behind, so the next day's traces show he never retried: he had concluded the
-button was broken.
-
-These tests read the RENDERED WORDS, not the attributes that point at them: a pending accept
-the operator is supposed to SEE is only built if a reader can scan the sentence.
-
-F761 then moved the refusal's CHANNEL. The sentence was right and the banner worked, but the
-same words also went out as an ERROR toast, and a 409 arriving as a failure reads as "your
-click did not work": on 2026-10-23 he pressed accept at 03:06:27, 03:06:34 and 03:06:43, and
-four of the console's eight `error` events over those two days were this one refusal. A held
-accept is a STATE, so the banner's own `role="status"` is the whole of the answer now and the
-error channel is asserted unused.
-"""
+"""D178 + F668: the settings accept refused mid-run SAYS so and stays visible."""
 
 from __future__ import annotations
 
@@ -50,13 +32,7 @@ def _change_retention(page, value="12"):
 
 
 def test_the_refused_accept_tells_the_operator_when_it_can_be_retried(ui, ui_page):
-    """The click gets an answer a reader can act on: a run is active, and WHEN it is over.
-
-    Read off the BANNER since F761. The answer used to be a toast as well, in the console's
-    error channel, and that channel is what made a refusal read as a failed click — so the
-    words are asserted where they now live, and `visible_toast` is kept pointed at this click
-    to prove nothing speaks there at all.
-    """
+    """The click gets an answer a reader can act on: a run is active, and WHEN it is over."""
     _running(ui)
     ui_page.goto(f"{ui.url}/#/routine/uir")
     _open_limits(ui_page)
@@ -83,11 +59,6 @@ def test_the_held_refusal_is_a_state_and_never_speaks_in_the_error_channel(ui, u
     2026-10-22/23: four of the console's eight `error` events were this refusal, and
     `routine|accept changes` was pressed at 03:06:27, 03:06:34 and 03:06:43 — three times in
     18 seconds.
-
-    The state was never the problem (the banner above the controls says the sentence, and
-    says it correctly): the CHANNEL was. So what answers the click is the banner's own
-    `role="status"`, landed on so a reader at the foot of the page sees it — and the error
-    channel, which is `#toast.err` plus the `error` trace it files, is not used at all.
     """
     _running(ui)
     ui_page.goto(f"{ui.url}/#/routine/uir")

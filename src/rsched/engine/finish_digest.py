@@ -2,9 +2,8 @@
 the last run left unmet. Prompt text only; `docs/prompt-anatomy.md` pins the wording and
 `tests/test_prompt_anatomy.py` fails on drift.
 
-Said ONCE, in the state digest at boot: no per-turn meter, no countdown. A signal repeated into
-every turn becomes what runs optimize against — the lesson of the 85% budget warning — so the
-run reads where its routine stands at the start and answers for it at the end.
+Said ONCE, in the state digest at boot: no per-turn meter, no countdown — a signal repeated
+into every turn becomes what runs optimize against.
 """
 
 from __future__ import annotations
@@ -91,22 +90,14 @@ def digest_section(routine_dir: Path, *, goals: list[dict] | None = None,
     if residuals := _last_unmet(routine_dir):
         out.append("THE LAST RUN LEFT UNMET (its own words — pick these up first):\n"
                    + "\n".join(f"  - {r}" for r in residuals))
-    # D200, the operator's answer: the engine finish seam asks EVERY finishing run for its own
-    # recipe revisions. Here rather than in the harness contract for two reasons — the always-on
-    # contract (harness/schema/example) is held to a shrink-only budget, so prose there is paid
-    # for by cutting prose there (tests/test_prompt_budget.py); and this block is already where
-    # the engine says what a finish owes, said ONCE at boot in the body compaction never evicts.
-    # Unconditional for a ROUTINE run, like D195's honesty instruction: a run that is not asked
-    # does not answer, and this is exactly the question a recipe cannot ask of itself. `recipe_ask`
-    # is `recipeproposal.asks_for_revisions(ctx)` — false for a run with no recipe of its own (a
-    # child, a conversation, a detached background task). The background case reached him as a
-    # card from `bg-c-20261029-080013-cd837685`: *"never suggest recipe improvements for anything
-    # else but routine runs"* (2026-10-30). One predicate governs both this ask and the card, so
-    # the two seams cannot disagree about who has a recipe.
+    # D200: every finishing ROUTINE run is asked for its own recipe revisions — here, not in
+    # the shrink-only harness contract, because this block already says what a finish owes.
+    # `recipe_ask` is `recipeproposal.asks_for_revisions(ctx)` (false for a child, conversation
+    # or detached task); the same predicate governs the card, so the seams cannot disagree.
     if recipe_ask:
         out.append(recipeproposal.digest_ask(unlocked=recipe_unlocked))
-        # P4: the process-overhead invariant reaches the run at the ONE place it can act on it —
-        # beside the recipe-revision ask, said once at boot (readmodels/overhead_reading.py)
+        # the process-overhead invariant reaches the run beside the recipe-revision ask, the
+        # one place it can act on it (readmodels/overhead_reading.py)
         if line := _overhead_line(routine_dir):
             out.append(line)
     return "\n".join(out)
@@ -119,9 +110,7 @@ def _overhead_line(routine_dir: Path) -> str:
     r = overhead_reading.reading(routine_dir.parent, routine_dir.name, routine_dir)
     if r is None or not r["over"]:
         return ""
-    # The causes MEASURED on the five routines flagged in Nov 2026, not the 11-06 bookkeeping
-    # that sweep had already cut: naming only that, runs judged their recipe fine and answered
-    # "none" (one overhead cut from six runs that saw this line).
+    # Names the measured causes: naming only bookkeeping, runs judged their recipe fine.
     return (f"PROCESS OVERHEAD: for this routine, {overhead_reading.describe(r)} rather than its "
             "task. The usual causes: reading every rule or stage up front instead of at its "
             "moment, one file or memory note per turn where one batched read serves, re-reading "

@@ -1,19 +1,4 @@
-"""F525 — an answered decision must survive the run that consumes it.
-
-The operator answered one of four sub-questions on a decision card and then could neither
-SEE his answer ("why can't i see this answer in the routine's inbox?") nor REVISE it to add
-the other three. Both symptoms have one cause: consumption destroyed the record.
-
-Before this change `collect_deferred_answers` consumed `inbox/answer-<qid>.json` into the
-run's `consumed/` dir AND unlinked `questions/pending/<qid>.json`, writing nothing in their
-place. `decisions_read._mark_answered` derives the answer text by reading that inbox file
-and `_all_questions_fresh` iterates the PENDING records — so the moment a run booted, the
-"Settled — answered, queued for pickup" card vanished, carrying the user's own words with
-it. What he saw was not a rendering bug: the system genuinely no longer knew what he said.
-
-These tests pin the property that consumption must ARCHIVE what it removes, and that an
-answer stays amendable afterwards.
-"""
+"""F525 — an answered decision must survive the run that consumes it."""
 
 from __future__ import annotations
 
@@ -117,15 +102,7 @@ def test_an_answer_still_waiting_is_revised_in_place(tmp_path):
 
 
 def test_a_second_answer_after_consumption_still_reaches_the_next_run(tmp_path):
-    """F763 — the operator answers a card AGAIN after a run already took the first answer.
-
-    The pending record is gone by then, so the loop used to skip the new file forever
-    ("the answer belongs to someone else … Leave it alone") and nothing anywhere said so.
-    Eight such files were sitting across the fleet when this was found, the oldest 41 days
-    and 15 runs old; in two of them the SECOND answer was the specific one — the first said
-    "approved & applied the proposed config change", the unread one said "Apply — add the
-    7-day heartbeat". A later answer is the operator's latest word.
-    """
+    """F763 — the operator answers a card AGAIN after a run already took the first answer."""
     rd = tmp_path / "self-audit"
     (rd / "questions" / "pending").mkdir(parents=True)
     _ask(rd, "q-1", "Which one?", ["Apply — add the 7-day heartbeat", "Leave it"])

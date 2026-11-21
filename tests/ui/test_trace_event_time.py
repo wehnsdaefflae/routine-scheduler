@@ -1,16 +1,4 @@
-"""F577: two clicks a second apart are a second apart in the trace file, not one instant.
-
-The friction signal the UI traces exist to produce is inter-event timing, and before this it was
-the one quantity the store destroyed: `static/trace.js` sent no timestamp and the server stamped
-a whole flush with one `now`. The ledger's evidence was thirteen clicks at exactly two instants
-five seconds apart — a quantisation artefact that reads as rage-clicking.
-
-This drives the REAL console: the shipped trace.js installed by app.js, a real click on a real
-control, the real POST, the real day file. The flush is forced with `pagehide` — the worst case
-named in the finding (that flush can carry a whole session's tail), and the one that puts both
-clicks in a single batch, so what is measured is precisely the interval a shared batch stamp
-used to erase.
-"""
+"""F577: two clicks a second apart are a second apart in the trace file, not one instant."""
 
 from __future__ import annotations
 

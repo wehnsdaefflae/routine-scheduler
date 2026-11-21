@@ -40,13 +40,8 @@ def enabled(ctx: RunContext) -> bool:
     """Does this run keep jobs? The setting, at the top level only: a child works on its
     parent's brief and never sees the job kind (its capabilities are off).
 
-    Read through `engine/buildskew.py` rather than straight off the held policy: this line
-    raised `AttributeError: 'GrantPolicy' object has no attribute 'jobs_on'` in three runs on
-    2026-10-12 — 0.416.0 renamed the property while they were already holding a policy object
-    from the build they booted with, and this module is loaded LAZILY at the finish gate, so
-    the new code met the old object there (F677). A setting is CONFIG: when the held object
-    cannot answer, the routine's own capabilities can, and the gate keeps its real verdict
-    instead of failing open. A run with no policy at all still keeps no jobs.
+    Read through `engine/buildskew.py`, not off the held policy: this module loads lazily at
+    the finish gate, where new code can meet a policy object from an older build (F677).
     """
     return ctx.depth == 0 and ctx.grants is not None and buildskew.setting_on(ctx, "jobs")
 
@@ -301,9 +296,8 @@ def format_job(obs: dict, kind: str) -> str | None:
 
 def finish_owed(loop) -> str | None:
     """The finish rung: the message a finish is set aside with while a due job has no
-    checkpoint, or None. Asked at depth 0 of a scheduled routine and never on the reserved
-    finish turn — the engine never ends a run the model could have ended itself, and it never
-    keeps one alive past its budget either.
+    checkpoint, or None. Asked at depth 0 of a scheduled routine, never on the reserved finish
+    turn (a run is never kept alive past its budget).
     """
     ctx = loop.ctx
     if not enabled(ctx) or loop._finish_reserved or is_conversation(ctx):

@@ -1,18 +1,10 @@
 """Can this run ask for THAT? — the availability check behind an access request.
 
-Split out of `requests.py` (F393): deciding whether a request is even coherent is separable from
-applying the decision that comes back.
-
-The distinction this draws is the useful one: a request for something that does not exist, or
-that the routine already holds, or that the user has permanently declined, should never reach
-the Decisions page at all. Each of those gets its own teaching refusal instead, so the model
-learns why rather than waiting on a question nobody can answer.
+A request for something that does not exist, that the routine already holds, or that the user
+has permanently declined never reaches the Decisions page: each gets its own teaching refusal.
 
 What a coherent request then CARRIES is decided one seam later, where the durable record is
-written: `engine/grantsecrets.widen` adds the secrets a requested util declares, so a util grant
-is usable on one decision (F562). Validation stays here and widening stays there — an id the
-user must decide about should be checked before it is offered, and only the record's ids are
-what the appliers (`web/grants_apply`, `engine/requests._seed`) ever act on.
+written (`engine/grantsecrets.widen` adds a requested util's secrets). Validation stays here.
 """
 
 from __future__ import annotations
@@ -57,10 +49,8 @@ def request_denial(loop, action: dict) -> list[str]:
     for raw in request_ids(action):
         parsed = entities.parse_entity(raw)
         if parsed is None:
-            # A real action kind that is simply not gateable (create_routine, manage_lane,
-            # finish, ...) would otherwise get the generic "not a grant-entity id" copy —
-            # which lists "action" as a valid class and so reads as self-contradictory
-            # (routine-improver:20260814-015412 retried against it). Name the actual rule.
+            # A real but ungateable action kind would otherwise get the generic copy, which
+            # lists "action" as a valid class and reads as self-contradictory. Name the rule.
             acls, _, aname = raw.partition(":")
             aname = aname.strip()
             if acls == "action" and aname:
@@ -105,9 +95,8 @@ def _availability(loop, cls: str, name: str, eid: str) -> list[str]:  # noqa: C9
     cfg = ctx.routine
     if cls == "action":
         # Asked of the capability TOKEN, not of the kind: `allows_kind("write_util")` is true
-        # when either half of util authoring is held, so a routine holding only `revise_util`
-        # was told `action:write_util` is "already enabled" — by the request its own creation
-        # denial had just routed it to. A dead end it could only burn retries against.
+        # when either half of util authoring is held, which would dead-end a request for the
+        # other half.
         if g is None or g.admin or name in g.actions:
             return [(f"{eid} is already enabled for this routine — use the {name} action "
                      "directly")]

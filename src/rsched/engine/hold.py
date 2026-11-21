@@ -1,37 +1,20 @@
 """The pre-execution HOLD seam — one interruption per action, whatever asked for it.
 
-Two layers can now stop an action before it runs: a CONSEQUENCE REMINDER (`engine/remind.py`,
-a pattern this routine learned from its own surprise) and a RULE ASSIST (`engine/assist.py`, a
-moment the library declared on a curated rule). They are the two authorship faces of one
-relevance-trigger layer, and this is the one place either of them reaches the turn loop.
+Two layers can stop an action before it runs: a CONSEQUENCE REMINDER (`engine/remind.py`) and a
+RULE ASSIST (`engine/assist.py`). This is the one place either reaches the turn loop, because:
 
-Extracted when the second caller appeared, not before — but the extraction is not tidiness.
-Two things go wrong if each layer owns its own interception:
+**The ledger key carries the SOURCE.** Re-emitting a held action IS the confirmation to
+proceed; keyed on the bare string, one layer would spend the other's one allowed hold. A
+REMINDER holds once per reminder id (a reworded action re-held by a caution already in context
+teaches nothing); the RULE layer once per action string.
 
-**The ledger key.** A hold is remembered so that re-emitting the same action IS the
-confirmation to proceed. Keyed on the bare action string, the two sources would cannibalise
-each other: a reminder holding `util:fs-ops mv a b` would silently spend the rule layer's one
-allowed hold on the same string, and the rule's caution would never be seen. The key carries
-the SOURCE, and each source picks what it is once per: a REMINDER holds once per reminder id
-(its caution is in the run's context after the first hold, so a reworded action re-held by it
-taught nothing — "Changing the command changed its string, so both fired again", ~39 re-emits
-in four self-audit runs), the RULE layer once per action string (its assists already fire once
-each, `assist._fire`, so the string key is its re-emit confirmation and nothing more).
+**One interruption per action.** However many sources match, the model is stopped once — the
+anti-livelock reasoning applies to the PAIR. Precedence is specific-before-general: a reminder
+(what THIS routine learned) before a rule (a standing principle).
 
-**One interruption per action.** However many sources match, the model is stopped once. The
-anti-livelock reasoning — a model and a gate that both refuse to yield burn the budget between
-them — applies to the PAIR, not to each layer separately, so precedence resolves it rather
-than queueing a second hold behind the first.
-
-Precedence is specific-before-general: a reminder is evidence THIS routine gathered about THIS
-action, a rule is a standing principle that applies to everyone. When both fire, the run hears
-the one it learned itself.
-
-"Already held" means within the GUARD SCOPE — the whole run for a routine, the current reply
-for a conversation (engine/guardscope.py). A resumed leg rebuilds the ledger from the holds
-its transcript recorded, so the confirmation a run gave before a restart still stands after
-it; the hold's observation IS the record — its kind names the source, its `reminders` the ids
-a reminder hold spent and `action` the string a rule hold spent.
+"Already held" means within the GUARD SCOPE (engine/guardscope.py). A resumed leg rebuilds the
+ledger from the hold observations its transcript recorded: the kind names the source,
+`reminders` the ids a reminder hold spent, `action` the string a rule hold spent.
 """
 
 from __future__ import annotations
@@ -39,10 +22,8 @@ from __future__ import annotations
 from .actionschema import canon
 
 #: Every observation kind that means "the action did not run", with the SOURCE whose ledger
-#: entry it records (each layer's own `SOURCE`). The kinds used to be a literal tested in three
-#: modules, one of them NEGATIVELY (the resume rebuild of `executed_actions`), which is the kind
-#: of check a second hold kind silently walks past — so `is_hold` and the ledger's rebuild read
-#: this one table, and a third hold kind is a row here.
+#: entry it records. `is_hold` and the ledger's rebuild read this one table, so a third hold
+#: kind is a row here.
 HOLD_SOURCES = {"reminder_hold": "reminder", "assist_hold": "rule"}
 HOLD_KINDS = frozenset(HOLD_SOURCES)
 
@@ -105,9 +86,8 @@ def before_dispatch(loop, action: dict) -> dict | None:
     layers can never disagree about what the action was.
 
     A write carrying a script (`then_script`, engine/thenscript.py) is asked about TWICE: as
-    itself, then as the script it runs, rendered as that script would be alone — a reminder
-    on `script:deploy …` must hold the fused call as surely as the bare one. A held script
-    holds the whole action (nothing runs), and the observation names what it rode on.
+    itself, then as the script alone. A held script holds the whole action, and the
+    observation names what it rode on.
     """
     from . import assist, remind, thenscript
 

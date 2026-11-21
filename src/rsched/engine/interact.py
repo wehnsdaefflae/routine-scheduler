@@ -1,28 +1,15 @@
-"""The ASK protocol — every kind of required user feedback.
-
-Library authoring moved to `authoring.py`, the secret-exposure gate to `secretgate.py` and
-the two handlers that merely RODE this file — `schedule_run` and `report` — to
-`admin_handlers.py` (F393): four responsibilities had accumulated in one file; the
-`config_patch` filing check followed to `config_bridge.py`. What is left is one — turning a
-run's need for a human into a decision record and back into an answer.
+"""The ASK protocol — turning a run's need for a human into a decision record and back.
 
 EVERY kind of required user feedback funnels into the same decision record
 (inbox.file_question): plain asks and util approvals, deferred and blocking. A blocking
-decision waits up to the routine's ask_timeout_min (configurable on the routine page)
-and is answered on the web console — the Decisions page, with browser push carrying it to
-a phone. On timeout the run CONTINUES on the model's stated `default`; the question stays
-open as deferred so a late answer still reaches the next run. Waiting time is credited
-back to the wall-clock budget.
+decision waits up to the routine's ask_timeout_min; on timeout the run CONTINUES on the
+model's stated `default` and the question stays open as deferred so a late answer still
+reaches the next run. Waiting time is credited back to the wall-clock budget.
 
-The console's ASK BACK (an `intermediate` answer) is a reply to ANY blocking decision that
-decides nothing — the operator needs some back-and-forth first. It ends the wait at once and
-comes back as a DIALOG result, which every consumer (the authoring approvals, the curated
-reminder gate, the secret-exposure gate, `ask_user` itself) puts on the observation of the
-action that asked (`askback.still_pending`), worded once (`obs_admin.dialog_reply`): the operator's
-words, and the instruction to answer them and re-submit that action. The record stays open;
-the re-submission SUPERSEDES it, because it is the next decision filed for the same SUBJECT
-(`handle_ask`). Nothing is written, granted or run on the strength of a reply that decided
-nothing.
+An ASK BACK (an `intermediate` answer) decides nothing: it ends the wait at once and comes back
+as a DIALOG result that the asking action's observation carries (`askback.still_pending`,
+worded by `obs_admin.dialog_reply`). The record stays open until the re-submission for the
+same SUBJECT supersedes it; nothing is written, granted or run on its strength.
 """
 
 from __future__ import annotations
@@ -45,14 +32,11 @@ from . import (
 )
 from .control import RunAborted
 
-# Natural affirmatives count: approval answers arrive as free text, and "Do it. The mail
-# is …" must not read as a decline (F161 — two real approvals were recorded DECLINED
-# because "do" was missing here).
+# Natural affirmatives count: approval answers arrive as free text ("Do it. The mail is …").
 _APPROVE_WORDS = ("approve", "approved", "yes", "y", "ok", "okay", "go", "accept", "confirm",
                   "do", "sure", "yep", "yeah", "proceed", "ja")
-# Explicit declines only. An approval question is settled by a clear yes OR a clear no —
-# anything else is NOT an answer (D38): the wait loop holds it as a delayed user message
-# and keeps the question open instead of letting a presence ping decline a util.
+# Explicit declines only: an approval is settled by a clear yes OR a clear no; anything else
+# is held as a delayed user message and the question stays open (D38).
 _DECLINE_WORDS = ("decline", "declined", "no", "n", "deny", "denied", "reject", "rejected",
                   "stop", "cancel", "don't", "dont", "nein", "nope", "never", "skip")
 
@@ -65,9 +49,7 @@ def is_approval(text: str) -> bool:
     return _head_word(text) in _APPROVE_WORDS
 
 
-#: Question types settled ONLY by a clear approve/decline (D38). Every authoring approval
-#: belongs here — `authoring.py` files util- and rule-approvals, `remind.py` the global
-#: reminder one.
+#: Question types settled ONLY by a clear approve/decline (D38) — every authoring approval.
 _APPROVAL_QTYPES = frozenset({"util-approval", "rule-approval", "reminder-approval"})
 
 
@@ -80,18 +62,12 @@ def _settles_approval(text: str) -> bool:
 
 
 def _held_not_settled(qtype: str, answer: dict) -> bool:
-    """D38 across record types: does this reply fail to SETTLE the question? An APPROVAL
-    settles only on a clear approve/decline, an access request only on one of the typed
-    decisions; defer markers and ask-backs pass through to their own paths — an ask-back is
-    never held, whatever the record type, because the operator is asking the run something
-    and is owed the answer now, not after the decision they could not yet make. A held
-    reply becomes a delayed user message and the wait continues.
+    """D38 across record types: does this reply fail to SETTLE the question?
 
-    Every approval qtype is listed, not just the first one: the check reads the type, so a
-    type it has never heard of falls through to "settled" and an ambiguous reply lands as a
-    decision. `rule-approval` and `reminder-approval` write to the LIBRARY — a copy every
-    holder reads at its next run — which is the last place a "hmm, maybe" should count as
-    yes.
+    An APPROVAL settles only on a clear approve/decline, an access request only on a typed
+    decision. Defer markers and ask-backs are never held (an ask-back is owed its answer now).
+    A held reply becomes a delayed user message and the wait continues. An unlisted approval
+    qtype would fall through to "settled", so every one is in `_APPROVAL_QTYPES`.
     """
     if not answer.get("text") or answer.get("defer") or answer.get("intermediate"):
         return False
@@ -105,12 +81,9 @@ def _held_not_settled(qtype: str, answer: dict) -> bool:
 def _free_qid(ctx) -> str:
     """A decision-record id no OPEN record already uses.
 
-    The id is `q-<run-ts>-<turn>`, which is unique per turn — and a turn could only ever file
-    one question until a side field that rides ANY kind gained its own approval (a global
-    `remind` op on an `ask_user` action files two). `file_question` is an unconditional write,
-    so the second record silently replaced the first and the user answered a question the run
-    was no longer waiting on. A settled record frees its id again, which is why this checks
-    only what is still pending.
+    The id is `q-<run-ts>-<turn>`, but one turn can file two records (e.g. a global `remind`
+    op on an `ask_user`) and `file_question` overwrites unconditionally, so a suffix is added.
+    A settled record frees its id again, so only pending ones are checked.
     """
     base = question_id(ctx.run_ts, ctx.turn)
     # the ROOT routine's pending dir, not `ctx.routine.dir`: a child shares its parent's
@@ -127,18 +100,10 @@ def file_report_decision(loop, *, question: str, options: list[str],
                          report_id: str, target: str = "") -> str:
     """File the decision record a REPORT carrying options is (F621) — returns its qid.
 
-    A report routes WORK to a routine, read on that routine's next scheduled run. A report
-    whose substance is a question for the OPERATOR therefore reached no surface of his at
-    all: his Decisions page shows file-backed records, and a run blocked on him read
-    `open_questions: 0` while it waited. Naming `options` on the report says the question is
-    his, so the same filing that delivers the work ALSO leaves the one record every operator
-    surface already renders — the page, the badge, the routine card, the push.
-
-    It goes through this module and no other because the record must be identical to an
-    `ask_user`'s: same `_free_qid` (so two filings in one turn cannot collide), same
-    transcript event, same ONE writer. The only differences are its `type` and the
-    `report`/`report_target` keys that let the answer be relayed to whoever owes the work.
-    Always DEFERRED: the run filed a report and carried on — it is not parked on this.
+    Naming `options` on a report says its question is the OPERATOR's, so the filing also leaves
+    the decision record every operator surface renders. Same `_free_qid`, transcript event and
+    writer as an `ask_user`; only `type` and the `report`/`report_target` relay keys differ.
+    Always DEFERRED: the run is not parked on it.
     """
     ctx = loop.ctx
     qdir = ctx.root_routine_dir
@@ -158,13 +123,9 @@ def _await_reply(loop, qdir: Path, qid: str, qtype: str, *, deadline: float,
     """Wait on a BLOCKING record until a reply ends the wait — None when the deadline passes
     first. Raises RunAborted the moment the run is stopped.
 
-    D38: an approval is settled ONLY by a clear approve/decline, and an access REQUEST only by
-    one of the typed decisions (the web's buttons). Any other plain reply ("Bin hier", an
-    unrelated instruction) is user INPUT that arrived while the question blocks — it is held
-    as a normal delayed message (drained at the next turn boundary, i.e. after this decision)
-    and the wait goes on; the question stays open. Everything else ends the wait: a settling
-    answer, the Decisions page's defer marker, and an ask-back — the one reply that ends it
-    without settling anything, answered by the caller as a dialog.
+    D38: a reply that does not settle the record (`_held_not_settled`) is user INPUT, held as
+    a delayed message while the wait goes on. A settling answer, a defer marker or an ask-back
+    ends the wait.
     """
     ctx = loop.ctx
     while time.monotonic() < deadline:
@@ -193,21 +154,14 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
     `askbatch.handle`, which files each of its questions through here, and empty for the
     single ask every other caller makes.
 
-    `subject` is what the decision is ABOUT, beside its type: the util a util-approval would
-    write or remove, the rule a rule-approval would change, the curated reminder a
-    reminder-approval names. An access request's subject is its entity ids, whoever files it —
-    the model's own `request` or the secret gate's — and a plain question has none. The pair
-    keys the one thing an ask leaves behind: a record a DIALOG reply kept open
-    (`loop.dialog_qids`). The next decision filed for the same `(type, subject)` is the
-    re-submission that reply asked for and supersedes it; nothing else can. A single slot was
-    resolved by WHATEVER plain question came next, so an approval the operator had asked back
-    on was deleted by an unrelated ask.
+    `subject` is what the decision is ABOUT (the util, rule or reminder an approval names; an
+    access request's entity ids; none for a plain question). `(type, subject)` keys a record a
+    DIALOG reply kept open (`loop.dialog_qids`): only the next decision for the same pair
+    supersedes it.
     """
     ctx = loop.ctx
-    # EVERY write of this decision record — the first filing and each re-filing that leaves it
-    # open — goes to the ROUTINE's own dir, where a person reads it; a child's `routine.dir` is
-    # its runs/<ts>/sub/<n>/ workspace, which no surface scans. One name for that dir keeps the
-    # re-files from drifting back to the per-run dir the first filing had to be moved off.
+    # every write of this record goes to the ROUTINE's dir, where a person reads it — a
+    # child's `routine.dir` is a workspace no surface scans
     qdir = ctx.root_routine_dir
     qid = _free_qid(ctx)
     mode = action.get("mode") or "deferred"
@@ -218,17 +172,13 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
     # config bridge: a proposed routine.yaml change the run can't make itself — rides the
     # decision record for the Decisions page's one-click apply (see engine/revise.py).
     cpatch = action.get("config_patch") if isinstance(action.get("config_patch"), dict) else None
-    # The target AND the body's keys are checked HERE, at the seam that writes the durable
-    # record, so a patch the apply would refuse can never reach the Decisions page wearing an
-    # apply button (D123/F458 and the three surfaces' vocabularies — `config_bridge` tells
-    # that story where the checks are).
+    # target and keys are checked at the seam that writes the record, so a patch the apply
+    # would refuse never reaches the Decisions page with an apply button (config_bridge)
     ctarget, cterr = config_bridge.resolve(ctx, cpatch)
     if cterr:
         return {"kind": "ask_user", "error": cterr}
-    # A typed access request (entities.py) rides the same record; the Decisions page renders the
-    # allow/deny × now/forever buttons (allow-once for turn-action classes, D65) and the answer's
-    # `decision` settles it (free text is held, D38). Ids are validated in the schema-retry cycle
-    # (availability) and then WIDENED: a util grant carries its util's declared secrets (F562).
+    # A typed access request rides the same record and is settled by the answer's `decision`.
+    # Ids are validated (availability), then WIDENED: a util grant carries its declared secrets.
     req_ids, question = grantsecrets.widen(ctx, availability.request_ids(action),
                                            str(action["question"]))
     if req_ids:
@@ -236,22 +186,18 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
     question, default = askprose.normalize_plain(qtype, question, default)
     blocks = bool(action.get("blocks_work"))   # D212: the run's own CLASS claim (askclass)
     if ctx.depth > 0:
-        # The record lands in the ROUTINE's pending dir, where a person reads it — so it has
-        # to say who is asking. A child has no page of its own and its label is the only
-        # thing that makes the question answerable in context.
+        # a child has no page of its own, so the record names who is asking
         question = f"[child task #{ctx.sub_n} {ctx.sub_label!r}] {question}"
     extra = {"type": qtype, **({"default": default} if default else {})}
-    # `subject` rides the record of the asking, so a resumed leg can re-key a record an
-    # ask-back left open (`askback.rebuild_dialogs`) — the transcript records what was asked
+    # `subject` rides the event so a resumed leg can re-key an open dialog (askback.rebuild_dialogs)
     ctx.transcript.event("question", {"qid": qid, "mode": mode, "question": question,
                                       "options": options, **extra,
                                       **({"subject": subject} if subject else {}),
                                       **({"request": req_ids} if req_ids else {})})
 
     def leave_open(*, churn: bool = True) -> None:
-        """(Re)file the record as DEFERRED — the shape every ending that leaves it open shares.
-        `churn` counts it as a decision thrown over the wall (`asks_deferred` telemetry); a
-        dialog reply is not one — the conversation about it is still going.
+        """(Re)file the record as DEFERRED — every ending that leaves it open.
+        `churn` counts it in `asks_deferred`; a dialog reply does not.
         """
         inbox.file_question(qdir, qid, question, options, ctx.run_ts, qtype=qtype,
                             default=default, config_patch=cpatch, config_target=ctarget,
@@ -260,9 +206,8 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
             ctx.asks_deferred += 1
 
     if mode == "deferred":
-        # D191 step 3: a `config_patch` the routine's OWN `config_confirm` dial permits is
-        # APPLIED rather than filed as a card — the engine still writes no config, it queues
-        # the request the web layer's one validated writer performs (engine/autoask.py).
+        # D191: a patch the routine's own `config_confirm` dial permits is queued for the web's
+        # validated writer instead of filed as a card (engine/autoask.py)
         taken, why = autoask.taken(ctx, cpatch, qid=qid, question=question, mode=mode,
                                    options=options, request_ids=req_ids, config_target=ctarget)
         if taken:
@@ -313,14 +258,8 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
                                            if answer.get("decision") else {})})
         ctx.user_replies += 1             # a blocking answer IS the user's next message
         if answer.get("intermediate"):
-            # An ASK-BACK, not the answer — on any record type: the operator needs some
-            # back-and-forth before they can decide. Nothing is settled, so nothing is
-            # written, granted or run. The record STAYS OPEN (deferred — the run is no longer
-            # parked on it): the re-submission supersedes it under its subject, and a finish
-            # without one leaves it live for the next run instead of silently dropping it.
-            # A consumer puts this result on its own kind's observation
-            # (`askback.still_pending`); what the model is told — their words and what to do
-            # with them — is obs_admin's wording.
+            # An ASK-BACK: nothing is settled. The record stays open (deferred) until the
+            # re-submission under its subject supersedes it, or for the next run.
             leave_open(churn=False)
             loop.dialog_qids[(qtype, subject)] = qid
             return {"kind": "ask_user", "qid": qid, "mode": mode, "dialog": True,
@@ -328,10 +267,8 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
                     **({"request": req_ids} if req_ids else {})}
         inbox.resolve_question(qdir, qid)
         if req_ids:
-            # One of the typed decisions (guaranteed by the settle rule, `_await_reply`):
-            # seed the run overlay, rebuild the live policy + transport schema, and
-            # teach the outcome. Forever-decisions were persisted by the web layer at
-            # click time — the engine bridges them into this run and writes no config.
+            # a typed decision: seed the run overlay and rebuild policy + schema; forever-
+            # decisions were persisted by the web at click time (the engine writes no config)
             decision = str(answer["decision"])
             requests.apply_decision(loop, req_ids, decision,
                                     account=str(answer.get("account") or ""))

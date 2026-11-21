@@ -1,17 +1,4 @@
-"""The INSTANCE config surface of `config_patch` — `{"server": {...}}` and its apply route.
-
-The operator's decision, 2026-10-19: *"build the server surface + D191's apply route: a
-decision's config_patch may name {"server": {...}} with its own declared field list, applied
-autonomously only for fields on that list, everything else still a click"*. This file proves the
-first half — the surface and the route that applies it. Until it existed, a run holding his
-explicit approval for an instance-wide change had no mechanism at all to land it: every
-`config_patch` was judged against the two routine-shaped vocabularies, so a server key was
-refused at filing, and two approved changes sat 10 and 3 days in config-optimizer's ledger
-(R2702).
-
-Both of those changes appear below as the concrete cases, because a surface that cannot land the
-two patches it was built for is not built.
-"""
+"""The INSTANCE config surface of `config_patch` — `{"server": {...}}` and its apply route."""
 
 from __future__ import annotations
 

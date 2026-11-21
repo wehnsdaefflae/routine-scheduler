@@ -1,17 +1,13 @@
 """How a run ENDS — the engine-authored verdicts, and the close-out every ending shares.
 
-Split out of `loop.py` (F393): the turn state machine decides THAT a run ends; this says what
-the ending records. One close-out whoever ends the run — the model's own finish through the
-finish gate, the spent reserved turn, an abort, a transport the chain could not survive, a
-fail-fast verdict — so result.md, the autocommit, the health event and the final status cannot
-disagree about how a run went.
+The turn state machine decides THAT a run ends; this says what the ending records. One
+close-out whoever ends the run (authored finish, spent reserved turn, abort, transport failure,
+fail-fast verdict), so result.md, the autocommit, the health event and the final status cannot
+disagree.
 
-The verdict sentences live here too, because each one is read AFTER the fact by someone deciding
-what to change: they name the model that failed AND the one the operator chose (F547/D146), the
-first rung of a failover walk as well as the last (F566), and policy apart from model quality
-(R404/F351) — advice that names the wrong cause sends the fix to the wrong place. An ABORT's
-verdict (`aborted`) is the same rule applied to WHO rather than what: it names the actor the
-door recorded before signalling (`rsched/abortmark.py`, F751) instead of offering a disjunction.
+The verdict sentences name the right cause, because someone acts on them: the model that failed
+AND the one the operator chose, the first failover rung as well as the last, policy apart from
+model quality, and for an abort the actor the door recorded (`rsched/abortmark.py`).
 """
 
 from __future__ import annotations
@@ -38,25 +34,17 @@ from .autocommit import autocommit
 from .finish_guard import normalize_escaped_newlines
 from .run_context import RunContext
 
-#: D87-A: consecutive TURNS that each needed schema-rejection retries before landing an
-#: action — a model that reliably cannot hold the action schema. Fail early and clearly
-#: instead of limping through the budget at full-prompt retry prices (F297/R255:
-#: c-20260806-150112 burned 12 retries / 477K input tokens before dying late).
+#: Consecutive turns that each needed schema-rejection retries (D87-A): fail early rather than
+#: limp through the budget at full-prompt retry prices.
 SCHEMA_STORM_TURNS = 4
 
 
 def _serving_model_phrase(ctx: RunContext) -> str:
     """How a failure verdict should NAME the model it is talking about.
 
-    `ctx.main_model` follows every failover switch, so on a run that stepped down the chain
-    these verdicts were indicting a model the operator never chose — while the routine's
-    config page, the dashboard row and the operator's own memory all said the primary.
-    weightloss:20260923-220004 was configured on Opus high, was served two rungs down after a
-    503 and a 402, and reported that "the model cannot reliably hold the action schema"
-    naming the third rung (F547/D146).
-
-    So when the serving model is NOT the configured one, the sentence says both and how far
-    down the chain it got. When nothing failed over, it stays the short form it always was.
+    `ctx.main_model` follows every failover switch, so after a failover the sentence names both
+    the serving and the configured model and how far down the chain it got; otherwise the
+    short form.
     """
     if ctx.failover_rungs and ctx.configured_model and ctx.main_model != ctx.configured_model:
         rungs = "one rung" if ctx.failover_rungs == 1 else f"{ctx.failover_rungs} rungs"
@@ -68,10 +56,8 @@ def _serving_model_phrase(ctx: RunContext) -> str:
 def _model_advice(ctx: RunContext) -> str:
     """The "pick a stronger model" clause — dropped when it would be false advice.
 
-    Telling the operator to choose a stronger model is actionable only when the model that
-    failed is the model they chose. After a failover it is the opposite of useful: the
-    configured model IS the strong one and it was unreachable, so the fix is the transport or
-    the chain, never the routine's config (F547/D146).
+    After a failover the configured model was unreachable rather than weak, so the fix is the
+    transport or the chain, never the routine's config.
     """
     if ctx.failover_rungs and ctx.configured_model and ctx.main_model != ctx.configured_model:
         return (f". The configured model was not the one that failed, so a stronger model is "
@@ -104,9 +90,8 @@ def storm_verdict(ctx: RunContext) -> str:
 def endpoint_verdict(ctx: RunContext, exc: EndpointError) -> str:
     """A run its transport ended — and, after a failover walk, what began it.
 
-    F566: when the run walked down a chain to get here, the error in hand is the LAST rung's —
-    and the first rung's is the one a reader can act on. Name both, with the rung count, so the
-    line says what started the collapse and what ended it.
+    After a chain walk the error in hand is the LAST rung's; the first rung's is the actionable
+    one, so both are named with the rung count.
     """
     hint = (" Check the endpoint's key file under ~/.credentials/ (see config.yaml)."
             if exc.auth else "")
@@ -120,13 +105,9 @@ def endpoint_verdict(ctx: RunContext, exc: EndpointError) -> str:
 def aborted(loop) -> str:
     """Close a run out as `aborted`, NAMING the actor that stopped it (F751).
 
-    The engine catches a signal, and a signal carries no sender — so this used to read "Run
-    aborted by the user/daemon.", a disjunction that attributes the stop to nobody: a person's
-    cancel, a supervisor stop and a parent run's kill were indistinguishable afterwards. The
-    actor is resolved from what the door recorded BEFORE signalling (`rsched/abortmark.py`,
-    F480's breadcrumb pattern one layer down), and it rides the finish event as a field as well
-    as the prose — "count the aborts by actor" has to be answerable by a filter, not by reading
-    result.md. An abort nothing recorded says exactly that and stays `unknown`.
+    A signal carries no sender, so the actor is resolved from what the door recorded BEFORE
+    signalling (`rsched/abortmark.py`) and rides the finish event as a field as well as the
+    prose. An abort nothing recorded stays `unknown`.
     """
     mark = abortmark.resolve(loop.ctx.root_run_dir, loop.abort_event)
     return finish_run(loop, "aborted", mark.sentence, abort=mark)
@@ -135,13 +116,10 @@ def aborted(loop) -> str:
 def abort_fields(abort: abortmark.Abort) -> dict[str, object]:
     """What an abort files as FIELDS, built once for both surfaces that carry them.
 
-    `actor` (who) and `cause` (the health stream's word for them) are F751's: "count the aborts
-    by actor" has to be answerable by a filter, not by reading result.md. `unseen_s` is F597's —
-    how long the abort went unseen between the door's stamp and the engine resolving it, which
-    is what made an abort unseen for 30-60 seconds unreproducible. It is DROPPED when nothing
-    measured it (a signal handler leaves no file, a parent's kill never leaves the process), and
-    `log_health_event` drops a None anyway: a row without the key says nobody measured, where a
-    0 would say the engine was instant.
+    `actor` (who) and `cause` (the health stream's word for them) make aborts filterable.
+    `unseen_s` is how long the abort went unseen between the door's stamp and the engine
+    resolving it; it is DROPPED when nothing measured it, since a 0 would claim the engine was
+    instant.
     """
     fields: dict[str, object] = {"actor": abort.actor, "cause": abort.cause}
     if abort.unseen_s is not None:
@@ -162,17 +140,12 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
     ctx = loop.ctx
     leg = reviseleg.active(loop)
     run_status = reviseleg.run_status(loop, status)
-    # R82: repair a summary whose newlines were double-escaped (literal ``\n`` and no real
-    # newline) so result.md / the digest render real line breaks instead of verbatim "\n".
+    # repair a summary whose newlines were double-escaped (literal ``\n``, no real newline)
     summary = normalize_escaped_newlines(summary)
     archival.settle(loop)   # an archive already in flight gets a moment to land
-    # …and the same for a BACKGROUNDED ACTION the run never read (D118 phase 1): a short window
-    # to land, then its outcome recorded either way. Said in the SUMMARY too, not only the
-    # transcript — a reader of the result is the one person who can tell whether it mattered,
-    # and the run itself cannot flag evidence it was never shown (F715, authorized by D195).
-    # Two cases, two sentences, both rendered by `engine/background_summary.settle_note`: a call
-    # still RUNNING has lost its result, while one that LANDED after the last turn HAS a result
-    # sitting unread in the transcript. "" when the run read everything.
+    # …and a BACKGROUNDED ACTION the run never read: said in the SUMMARY, because the run cannot
+    # flag evidence it was never shown. Still running (result lost) and landed-unread are two
+    # different sentences (`background_summary.settle_note`); "" when everything was read.
     if unread_note := background.settle(loop):
         summary += "\n" + unread_note
     killed = loop.subruns.kill_all(reason=f"parent run finished ({status})")
@@ -180,47 +153,33 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
         summary += f"\n[{killed} still-running sub-workflow(s) were terminated at run end.]"
     if ctx.depth == 0 and inbox.has_pending_messages(ctx.routine.dir,
                                                      vias=inbox.LIVE_MESSAGE_VIAS):
-        # The paths the R108 deferral cannot serve (the spent reserved-finish turn,
-        # aborts, engine failures — plus a message racing this very write): the
-        # message could not become a turn THIS run, so say so on BOTH sides — this
-        # note rides result.md (a conversation's rendered reply) and the next run's
-        # digest. The message itself stays queued; the next leg's boot drains it.
+        # Endings the finish deferral cannot serve (spent reserved turn, abort, engine failure,
+        # a racing message): say so in result.md; the message stays queued for the next leg.
         summary += ("\n[A user message arrived as this run ended — it could not be "
                     "delivered this run; it stays queued and opens the next "
                     "run/reply.]")
     if ctx.depth == 0 and not leg:   # a revise leg owes no job and proposes no revision
-        # The post-run REVIEW LEG (engine/reviewleg.py), FIRST: a run whose own record shows it
-        # had something to learn from looks back once on its warm cache, before the finish event
-        # and the autocommit, so its notes are committed with the run and a recipe revision it
-        # names joins this run's own lines on the one card below.
+        # The REVIEW LEG first, before the finish event and the autocommit, so its notes are
+        # committed with the run and its recipe revisions join the one card below.
         summary += reviewleg.maybe_run(loop, status, summary, authored=authored,
                                        aborted=abort is not None)
-        # what the run owed its JOBS and never checkpointed is carried to the next run, and
-        # the summary says so (engine/jobops.py)
+        # job work never checkpointed is carried to the next run (engine/jobops.py)
         summary += jobops.close_out(ctx, status)
-        # D200: the recipe revisions this run named in its summary become ONE proposal on the
-        # operator's Decisions page. HERE, in the close-out every ending shares, rather than in
-        # the finish gate beside the retirement card — a run that spent its reserved finish turn
-        # is the ending most likely to have learned something about its own recipe, and that
-        # turn never reaches the gate. A run that may write its own recipe files nothing (it
-        # makes the edit instead); `maybe_propose` owns that branch.
+        # D200: the summary's recipe revisions become ONE Decisions proposal. Here rather than
+        # in the finish gate, because a spent reserved turn never reaches the gate.
         if card := recipeproposal.maybe_propose(ctx, summary):
             summary += ("\n[Recipe revision(s) proposed to the operator — he applies them on "
                         f"the Decisions page ({card}).]")
     finish_payload = {"status": run_status, "summary": summary, "authored": authored}
     if leg:
         finish_payload["revise_leg"] = {"status": status}
-    # D212 (b): the CLOSING asks ride the finish. A `closing` question is one the run finished
-    # its work without (engine/askclass.py — the operator's own axis), so its reader is the
-    # person reading what the run DID, with the answer one click away, rather than a card on a
-    # page he visits separately where it competes with the decisions that ARE holding work up.
-    # Selection only (engine/closingasks.py): the records are the ones the run already filed,
-    # answered through the one answer route every surface uses, and a run with none adds no key.
+    # D212: the run's open CLOSING asks ride the finish, so they reach the person reading what
+    # it did (selection only, engine/closingasks.py; none adds no key).
     if asks := closingasks.for_run(ctx):
         finish_payload["closing_asks"] = asks
     if abort is not None:
         finish_payload.update(abort_fields(abort))
-    if reply_to:   # F438/D117: the reply targets an earlier message (conversations)
+    if reply_to:   # the reply targets an earlier message (conversations)
         finish_payload["reply_to"] = reply_to
     if final is not None:   # a conversation reply's own declaration (engine/goals.py)
         finish_payload["final"] = final
@@ -235,23 +194,16 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
         atomic_write(ctx.run_dir / "result.md",
                      reviseleg.result_text(ctx.run_dir, summary, status) if leg
                      else summary + "\n")
-        # A CONVERSATION is not versioned, so ⟲ rewind had no way to put its FILES back: the
-        # transcript went to the chosen turn and `artifacts/` kept whatever the discarded
-        # replies wrote. Snapshot them per reply (engine/artsnap.py) so the rewind can restore
-        # them too. Conversations only — a routine's dir is the git repo the autocommit below
-        # writes, which already has every deliverable's history. Best-effort by construction: a
-        # lost undo point must never fail a reply.
+        # A conversation is not versioned, so snapshot its artifacts per reply for ⟲ rewind
+        # (engine/artsnap.py; a routine has git). Best-effort: never fails a reply.
         if runkind.is_conversation(ctx):
             artsnap.take(ctx.routine.dir, ctx.run_ts, ctx.turn)
-        # P1: the process record is the ENGINE's — one LEDGER.md entry from what this leg
-        # already produced, before the autocommit so it is committed with the run it records.
+        # P1: the engine writes the LEDGER.md entry, before the autocommit commits it
         ledgerentry.record(loop, status, summary)
         if not leg and recipeproposal.asks_for_revisions(ctx):
             notereads.record(ctx)   # which notes this routine run read, before the autocommit
-        # D152 step 8: the `run-end` hook point. HERE — the point's own words are "the run is
-        # over and its result is written" — and before the autocommit, so a line written for
-        # the next run is committed with the run that learned it. Its carrier is the only one
-        # in the registry that reaches a prompt nobody has composed yet (`state/notes.md`).
+        # the `run-end` hook point: result written, before the autocommit, so a line left for
+        # the next run (`state/notes.md`) is committed with this one
         assist.at_run_end(loop, {"status": status, "killed": killed, "run_id": ctx.run_id})
         autocommit(ctx.routine.dir,   # routines never run git
                    f"{ctx.run_id}: recipe revision ({status})" if leg
@@ -268,19 +220,12 @@ def _log_ending(loop, status: str, summary: str,
                 abort: abortmark.Abort | None = None) -> None:
     """The health event an ending files, if any.
 
-    A `partial` is budget_exhausted ONLY when a budget violation forced it (the reserved
-    finish turn was spent, or the engine ended it). A partial the model chose on its own — the
-    job needs another run, an ask timed out, a source was down — is run_partial: every routine
-    in the fleet was reading as "out of budget" while 2 of 3 such finishes were authored with
-    budget to spare.
+    `budget_exhausted` is decided by the spent reserved turn, NOT the status: a partial the
+    model chose itself is `run_partial`, and a budget-forced run that still finished `ok` files
+    `budget_exhausted` too.
 
-    The reserved turn is what decides, NOT the status: a run that spends it and still finishes
-    `ok` was ended by a budget just as much, and used to leave no event at all — 11 such runs
-    since 09-01, so the fleet's budget-forced endings read as a smaller number than they are.
-
-    An `ok` ending also files the CORRECTION for any not-ok ending this same run left behind
-    on an earlier leg (`rsched/runcorrection.py`, F637/F703) — the stream is append-only, so a
-    resumed-to-ok run said "failed" forever on every surface that reads it. The originals stay.
+    An `ok` ending also files the CORRECTION for any not-ok ending an earlier leg of this run
+    left (`rsched/runcorrection.py`); the originals stay.
     """
     ctx = loop.ctx
     if loop._finish_reserved:
@@ -292,31 +237,25 @@ def _log_ending(loop, status: str, summary: str,
     else:
         _correct_earlier_endings(loop, summary)
         return
-    # `resource` and `limit` ride as FIELDS, not prose: which budget ended the run is exactly
-    # the question a sweep must be able to filter on, and `detail` carried only the summary.
+    # `resource`/`limit` ride as FIELDS so which budget ended the run is filterable
     spent = loop._budget_spent or {}
     log_health_event(ctx.server.routines_home, event_type,
                      routine=ctx.routine.slug, run_id=ctx.run_id,
                      detail=summary[:500],
                      status=status if event_type == "budget_exhausted" else None,
                      resource=spent.get("resource"), limit=spent.get("limit"),
-                     # F751: an ABORT's actor, in the reap's own `cause` vocabulary — the
-                     # engine's own ending was the one close-out that filed none, so a
-                     # stream filtered by cause saw every daemon-era abort and no engine one.
-                     # F597 adds `unseen_s`: the same row answers how long it took to land.
+                     # an abort's actor/cause (the reap's vocabulary) and `unseen_s`
                      **(abort_fields(abort) if abort else {}))
     if status == "ok":
-        # The reserved turn was spent and the run STILL finished ok: the budget_exhausted row
-        # above is true and stays, and an earlier leg's not-ok ending is still corrected.
+        # budget-forced yet ok: the row above stands, and earlier legs are still corrected
         _correct_earlier_endings(loop, summary)
 
 
 def _correct_earlier_endings(loop, summary: str) -> None:
     """An `ok` ending supersedes any not-ok ending this same run left on the health stream.
 
-    A resume reuses the run_id (`daemon/runner.resume`), so the run's own record self-corrects
-    — status.json, result.md and the usage stream's newest-leg fold all read `ok`. The health
-    stream is append-only and could not, which is what left two surfaces disagreeing forever.
+    A resume reuses the run_id, so the run's other records self-correct; the append-only health
+    stream needs this explicit row.
     """
     from ..runcorrection import record
 

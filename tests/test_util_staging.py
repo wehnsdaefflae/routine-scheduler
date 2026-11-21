@@ -1,14 +1,4 @@
-"""A util candidate is selftested OUT of the live path and installed only on green (F584/D161).
-
-The property these pin is NOT the end state — the shape before this (install, selftest,
-restore on failure) got the end state right. It is the WINDOW: while a candidate's selftest
-runs, `utils/<name>` must still be what every routine's `gu <name>` was already getting. So
-the probe utils here OBSERVE THE LIVE LIBRARY FROM INSIDE THEIR OWN SELFTEST and print what
-they found; a test that only read the library afterwards would pass on the defect.
-
-Uses uv, like test_utils.py: a staged candidate is run through the real `run_util`, which is
-the point — staging must not cost a util its siblings, its declarations or its jail.
-"""
+"""A util candidate is selftested OUT of the live path and installed only on green (F584/D161)."""
 
 import shutil
 from types import SimpleNamespace

@@ -4,17 +4,6 @@ consequence-reminder layer (`reminders`), who approves a reminder written to the
 (`remind_confirm`, which only matters at `reminders: global` and is revealed there), who
 approves a config change the routine proposes for ITSELF (`config_confirm`, D191 — every
 routine may file a `config_patch`, so no permission switches this one on) and the job layer.
-
-The panel carried all three in its state and saved them on every save, but showed a control
-for none of them — so a value could only be changed by hand in routine.yaml, and a panel save
-wrote back whatever it had been handed without the reader ever seeing it. The operator's
-decision: three dials in "Permissions & capabilities", in the same style as the util and rule
-approval dials.
-
-One panel serves three hosts — the routine page (a draft, saved by the page's one accept), a
-conversation's header (its own save) and the composer (read at create) — so the dials are
-pinned on each. The disk is the proof throughout, and an untouched panel must save exactly
-what it was given.
 """
 
 from __future__ import annotations
@@ -214,10 +203,6 @@ def test_the_two_approval_rows_say_which_approval_each_one_is(ui, ui_page):
     """At `global` the card shows two approval dials at once — the shared-reminder one and the
     config one — and a reader scans the kind column, not the help text inside a select that the
     card truncates. So the two rows must not both read `approval`.
-
-    This is the assertion the rest of this file was missing: every other test here reaches a
-    dial through `data-setting`, which is distinct by construction, so two rows labelled
-    identically passed the whole suite. It took looking at the rendered card to see it.
     """
     ui_page.goto(f"{ui.url}/#/routine/uir")
     _open_abilities(ui_page)

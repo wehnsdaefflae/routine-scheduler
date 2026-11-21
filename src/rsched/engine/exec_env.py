@@ -1,13 +1,9 @@
 """What a util subprocess is ALLOWED TO SEE — the environment assembled for one call.
 
-Split out of `executor.py` (F393): dispatching an action is one job, deciding which credentials
-cross into a subprocess is another, and the second is the security boundary.
-
-Everything here is declared-only by construction. A connection token reaches a util iff the
-routine binds the provider AND the util declares the var; a machine key iff the routine binds
-the machine; a routine-scoped secret shadows a central one of the same name (D103). An
-unbound connection becomes an access REQUEST rather than a silent empty string, because a util
-that runs with no token fails in a way nobody can read.
+The security boundary for credentials, declared-only by construction: a connection token
+reaches a util iff the routine binds the provider AND the util declares the var; a machine key
+iff the routine binds the machine; a routine-scoped secret shadows a central one (D103). An
+unbound connection becomes an access REQUEST, never a silent empty string.
 """
 
 from __future__ import annotations
@@ -23,9 +19,8 @@ log = logging.getLogger("rsched.engine.exec_env")
 
 def _bound_connections(ctx: RunContext) -> dict[str, str]:
     """The routine's EFFECTIVE OAuth bindings, {provider: account}: the config bindings plus
-    this run's one-time connection grants (the decision recorded the account in
-    ctx.grant_args). The one reading of "does this run hold a connection", so the token a util
-    receives and the request a failed util is routed to cannot disagree about it.
+    this run's one-time connection grants (account in ctx.grant_args). The one reading of "does
+    this run hold a connection", so token injection and request routing cannot disagree.
     """
     bound = dict(ctx.routine.connections or {})
     for eid in sorted(ctx.granted_now):
@@ -52,11 +47,9 @@ def _connection_env(ctx: RunContext) -> dict[str, str]:
 def _machine_env(ctx: RunContext) -> dict[str, str]:
     """The routine's EFFECTIVE remote machines (config bindings + one-time machine grants)
     resolved to RSCHED_MACHINES (connection metadata) + RSCHED_MACHINE_KEYS (private-key
-    PEMs from the Secrets store), passed to run_util as extra_secrets. Only the reserved
-    `remote` util declares these, so only it receives them; an unresolvable binding
-    (missing catalog entry / unset key) is simply absent from the maps. A one-time grant
-    covers EXEC only — the sshfs share is mounted by the daemon at binding time, so
-    mounts come with forever-bindings.
+    PEMs), passed to run_util as extra_secrets; only the reserved `remote` util declares them.
+    An unresolvable binding is absent. A one-time grant covers EXEC only — mounts come with
+    forever-bindings, made by the daemon.
     """
     bound = list(ctx.routine.machines or [])
     bound += [eid.partition(":")[2] for eid in sorted(ctx.granted_now)
@@ -82,21 +75,12 @@ def _routine_secrets(ctx: RunContext) -> dict[str, str]:
 def _llm_env(ctx: RunContext) -> dict[str, str]:
     """The routine's EFFECTIVE inference endpoints resolved to RSCHED_LLM (endpoint metadata +
     the role map) + RSCHED_LLM_KEYS (api keys for the role endpoints only), passed to run_util
-    as extra_secrets. Only a util that DECLARES them receives them — which is what makes
-    shipping a key through this channel safe at all. See endpoints/routine_env.py for the whole
-    design, including why keys cover the role endpoints and not every configured one.
+    as extra_secrets. Only a util that DECLARES them receives them, which is what makes shipping
+    a key here safe (endpoints/routine_env.py holds the design).
 
-    Read with `getattr`, and that is not timidity. `_extra_secrets` runs before EVERY util
-    call, including `mediaops`' vision fallback and the engine's own reserved-token path, and
-    those callers hand in context stand-ins that carry what their own subject needs and nothing
-    more. A hard attribute read here does not surface a config fault — a real `RoutineConfig`
-    and `ServerConfig` always carry these keys — it turns an OPTIONAL env var into an
-    AttributeError that kills the util call that was going to work. Measured: the first version
-    read `ctx.routine.models` directly and redded 8 tests in 6 files on this exact path
-    (`test_api`, `test_utils` ×2, `test_view_image` ×2, `test_abort_ends_command`,
-    `test_cancel_b2_intent_channel`, `test_secret_decline_withholds`) — none of them about
-    endpoints. The same reasoning the boot migrations use for `server.conversations_home`: a
-    helper on a path this hot fails OPEN, by contributing nothing.
+    Read with `getattr`: `_extra_secrets` runs before EVERY util call, and some callers
+    (`mediaops`' vision fallback, the reserved-token path) pass context stand-ins without these
+    attributes. An optional env var must fail OPEN by contributing nothing, never raise.
     """
     from ..endpoints.routine_env import llm_env_for_routine
 
@@ -108,20 +92,8 @@ def _llm_env(ctx: RunContext) -> dict[str, str]:
 def _decision_env(ctx: RunContext) -> dict[str, str]:
     """The routine's effective DECISION catalog resolved to RSCHED_DECISIONS (catalog metadata +
     the role map + each endpoint's PROTOCOL) and RSCHED_DECISIONS_KEYS (keys for the role
-    endpoints only), passed to run_util as extra_secrets. Only a util that DECLARES them
-    receives them, which is what makes shipping a key through this channel safe at all.
-
-    D288, goal b6: the inference half of this has existed since `_llm_env` shipped, and the
-    decision half did not — so a util could not learn which decision model its own routine
-    reaches, and `decide` could only be an ACTION. One util with both capabilities needs both
-    injections.
-
-    Read with `getattr`/`hasattr` for exactly the reason `_llm_env` documents: `_extra_secrets`
-    runs before EVERY util call, including `mediaops`' vision fallback and the engine's own
-    reserved-token path, and those callers hand in context stand-ins carrying only what their own
-    subject needs. A hard read here would turn an OPTIONAL env var into an AttributeError that
-    kills a util call that was going to work — the first version of `_llm_env` redded 8 tests in
-    6 files on this exact path, none of them about endpoints.
+    endpoints only), passed to run_util as extra_secrets; only a declaring util receives them.
+    The decision counterpart of `_llm_env`, read with `getattr`/`hasattr` for the same reason.
     """
     from ..endpoints.routine_env import decision_env_for_routine
 
@@ -133,46 +105,23 @@ def _decision_env(ctx: RunContext) -> dict[str, str]:
 def _extra_secrets(ctx: RunContext) -> dict[str, str]:
     """Engine-resolved, per-run secrets a util may receive (still under the declared-only gate):
     the routine's OWN scoped secrets, OAuth connection access tokens, bound remote-machine
-    details/keys, the routine's own inference endpoints, and (D288) its DECISION catalog. The
-    var names are disjoint, so a plain merge is safe.
+    details/keys, the routine's own inference endpoints and its DECISION catalog. The var names
+    are disjoint, so a plain merge is safe. extra_secrets WIN the `_child_env` merge.
 
-    ROUTINE-SCOPED SECRETS (D103): `secrets.d/<slug>.env` rides this channel because
-    extra_secrets WIN the _child_env merge — so a routine's own `SFTP_USER` shadows a central
-    value of the same name for its runs, and reaches no other routine. There is no grant to
-    check: a scoped secret is the routine's own, implicitly exposed to it (secrets.py).
+    ROUTINE-SCOPED SECRETS (D103): a routine's own `secrets.d/<slug>.env` value shadows a
+    central one of the same name, for its runs only; no grant is checked.
 
-    RSCHED_ROUTINE: WHO is calling, which is the one thing a util cannot be told by its own
-    caller. A routine cannot forge its environment, so a util handed this can scope itself to
-    the caller instead of to an argument — the `ftp` util resolves `{routine}` in a source's
-    base directory with it, which is what lets one shared credential serve many routines with
-    nothing configured per routine. Injected for every run and, like every other name here,
-    delivered only to a util that DECLARES it.
+    RSCHED_ROUTINE: WHO is calling — unforgeable by the caller, so a util can scope itself to
+    the routine (the `ftp` util resolves `{routine}` with it).
 
-    RSCHED_LLM / RSCHED_LLM_KEYS (F868): WHERE this routine's inference goes, which is the
-    other thing a util cannot be told by its own caller. Every LLM-calling util hardcoded a
-    provider, because nothing carried the routine's effective endpoint — so a routine
-    configured for a LOCAL model still sent its prompt to a cloud one, and for a run reading
-    private files that is a privacy breach rather than a cost. Exactly the RSCHED_ROUTINE
-    argument, about the destination instead of the caller: engine knowledge, unforgeable by
-    the caller, useless to a util that does not ask for it. The keys ride the same channel
-    because the declared-only gate is what makes that safe, and they cover the routine's ROLE
-    endpoints only — a key for any other endpoint stays behind its own `secret:<NAME>` grant
-    row, which is the operator's decision and not a run's. endpoints/routine_env.py holds the
-    whole design.
+    RSCHED_LLM / RSCHED_LLM_KEYS: WHERE this routine's inference goes, so a util honours a
+    routine configured for a local model. Keys cover ROLE endpoints only; any other key stays
+    behind its own `secret:<NAME>` grant.
 
-    RSCHED_API_TOKEN (R94, operator decision 2026-08-05: ENFORCE): the reserved name a
-    util declares to talk to the daemon API resolves to the server's ROUTINE token — the
-    read-only tier — and OVERRIDES any secrets-store value for it (extra_secrets win the
-    _child_env merge by design), so the primary console token can never reach a util
-    subprocess through the store. The override is UNCONDITIONAL, and that is the whole of
-    the promise: it used to be written `if routine_token:`, so a blank or deleted
-    `routine_token:` made the override vanish and `scoped_env` then injected whatever the
-    central store held under that name — which on this instance was byte-for-byte the
-    PRIMARY console token. A guard that fails open on the empty value is not a seal. An
-    empty routine token now reaches the util as an empty string and the call fails visibly
-    against a 401, which is the behaviour an operator can act on. Config stays honest: the
-    engine reads `routine_token` here, it never writes it (bootstrap.ensure_config
-    generates it).
+    RSCHED_API_TOKEN: always the server's read-only ROUTINE token, UNCONDITIONALLY overriding
+    any store value so the primary console token can never reach a util. An empty routine token
+    is injected as "" (the call fails visibly with a 401) — never skipped, which would let the
+    store's value through.
     """
     out = {**_routine_secrets(ctx), **_connection_env(ctx), **_machine_env(ctx),
            **_llm_env(ctx), **_decision_env(ctx)}
@@ -181,18 +130,11 @@ def _extra_secrets(ctx: RunContext) -> dict[str, str]:
     return out
 
 def _unbound_connection_request(ctx: RunContext, name: str) -> str:
-    """F321 (from R333): the one-click repair route for a util that failed because a
-    connection it needs is not bound to this routine.
+    """The one-click repair route for a util that failed for want of an unbound connection.
 
-    `google-api` failing with "$GOOGLE_ACCESS_TOKEN is not set" used to be explained in
-    PROSE in the finish summary, while a missing fs-write root in the same conversation
-    correctly produced a typed access request the user could approve inline. The asymmetry
-    was the whole complaint: a connection IS a grant entity (`connection:<provider>`,
-    entities.py), so a run should be routed to request it, not to narrate it. A connection
-    granted for THIS run counts as bound — it was injected, so the failure lies elsewhere and
-    a request for it would ask the user again for what they just allowed.
-
-    Returns the route sentence, or "" when nothing is missing.
+    A connection is a grant entity (`connection:<provider>`), so the run is routed to request
+    it rather than narrate it. A connection granted for THIS run counts as bound. Returns the
+    route sentence, or "" when nothing is missing.
     """
     from ..oauth.providers import access_token_var, provider_ids
 
@@ -201,9 +143,8 @@ def _unbound_connection_request(ctx: RunContext, name: str) -> str:
     bound = _bound_connections(ctx)
     wanted = [pid for pid in provider_ids() if access_token_var(pid) in upper]
     missing = [pid for pid in wanted if not bound.get(pid)]
-    # A util may serve several connections (google-api: Google and Google Health). When one of
-    # them IS bound, the call had a token and failed for another reason — routing it to request
-    # the other would send every Drive 403 to ask for a Health connection.
+    # A util may serve several connections; when one IS bound, the call had a token and failed
+    # for another reason, so no request is routed.
     if not missing or len(missing) < len(wanted):
         return ""
     eid = f"connection:{missing[0]}"

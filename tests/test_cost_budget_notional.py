@@ -1,18 +1,4 @@
-"""F758: what a COST BUDGET meters — notional dollars, not only a provider's reported figure.
-
-`budgets.max_cost` was metered off `usage["cost"]`, which exactly ONE adapter ever writes
-(`endpoints/openai_compat.py`, OpenRouter's credit accounting). No `anthropic` endpoint reports
-a cost at all, so a ceiling set on a routine whose model resolves there bounded NOTHING — and
-when this was found 17 of 30 enabled routines inherited such an endpoint through `system_model`
-(self-audit F758). The ceiling is now metered off `usage["notional"]`: the dollar figure
-`endpoints/prices.py` stamps on EVERY completion whatever transport carried it, and which IS the
-provider's own reported figure wherever one is reported (`prices.price_usage` takes a reported
-`cost` at its word before it prices anything).
-
-So a cost cap is a cap on NOTIONAL dollars. On a metered route that is real spend; on a
-subscription route it is what those tokens would have cost bought at list price — which is the
-only number that exists there, and a ceiling that bounds something beats one that bounds nothing.
-"""
+"""F758: what a COST BUDGET meters — notional dollars, not only a provider's reported figure."""
 
 from __future__ import annotations
 

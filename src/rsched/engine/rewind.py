@@ -1,10 +1,9 @@
 """Where a run's TRANSCRIPT may be CUT, and the one truncation that does it.
 
 Three callers cut a transcript and none may write a second truncation: the D69 rewind (⟲,
-keep THROUGH a turn), conversation branching (copy up to the same turn boundary, F325) and
-the operator's refusal flag (⚑, keep everything BEFORE the message that opened a reply,
-operator decision 2026-10-01). The boundaries are facts read off the transcript, so they live
-beside the truncation that acts on them; replaying what a cut leaves is `history.py`'s job.
+keep THROUGH a turn), conversation branching (copy up to the same boundary) and the operator's
+refusal flag (⚑, keep everything BEFORE the message that opened a reply). Replaying what a cut
+leaves is `history.py`'s job.
 """
 
 from __future__ import annotations
@@ -17,16 +16,10 @@ def cut_index_for_turn(events: list[dict], turn: int) -> int | None:
     """The event index that closes `turn` — its LAST assistant_action, plus the observation
     that answered it when there is one. None when the turn is not in the transcript.
 
-    The one definition of a clean TURN BOUNDARY in a transcript, shared by the D69 rewind
-    (which truncates there) and conversation branching (which copies up to there, F325). Both
-    need a prefix that replays into paired messages; cutting mid-turn leaves an assistant action
-    with no result, which `replay_messages` would hand the model as a dangling turn.
-
-    A CHAINED turn (D203, engine/chain.py) carries one `assistant_action` per action it ran,
-    all stamped with the same `turn` — so "through turn N" is through the LAST of them. Taking
-    the first would cut the chain in half: every later element kept its observation in the
-    transcript, and a rewind that dropped them would hand the next leg a world the run had
-    already changed, with no record that it had.
+    The one definition of a clean TURN BOUNDARY: a prefix that replays into paired messages,
+    never an assistant action with no result. A CHAINED turn (D203) carries one
+    `assistant_action` per action, all stamped with the same `turn`, so "through turn N" is
+    through the LAST of them.
     """
     last: int | None = None
     for i, ev in enumerate(events):
@@ -63,17 +56,9 @@ def _reauthored_note(ev: dict) -> bool:
 def _fork_turns(head: dict) -> list[int]:
     """Every turn at which this conversation's history was FORKED, oldest first — E3.7(b).
 
-    A branch of a branch inherits two cuts, and before `lineage` the header recorded only the
-    immediate one (`branched_from`). That is enough to bound the branch's own latest reply,
-    because `_leg_start` takes the LATEST bound — but the refusal flag and ⟲ rewind address ANY
-    reply in the transcript, and an INHERITED one lying before the immediate fork found no
-    bound at all: the fork cut is after it, and the grandparent's fork had cut its predecessor
-    mid-reply, so no `finish` precedes it either. Such a reply read as the conversation's FIRST,
-    and flagging it would have discarded the entire inherited history and re-sent
-    `instruction.md` in place of the message that really opened it.
-
-    `branched_from` is still read, so every conversation forked before `lineage` existed keeps
-    working with its single cut.
+    A branch of a branch inherits every cut (`lineage`): the refusal flag and ⟲ address ANY
+    reply, and an inherited one before the immediate fork would otherwise find no bound and
+    read as the conversation's FIRST. `branched_from` (the immediate fork) is read too.
     """
     turns = [int(row["turn"]) for row in (head.get("lineage") or [])
              if isinstance(row, dict) and isinstance(row.get("turn"), int)]
@@ -136,13 +121,8 @@ def reply_opening(events: list[dict], turn: int, ts: str) -> dict | None:
 _RESUMED = ("this run was interrupted (budget/error) and is now RESUMED. The conversation "
             "above is the run so far — continue from the last observation; do NOT restart "
             "from step 1. Re-orient briefly, then proceed.")
-#: …and the case where that sentence is addressed to nothing. `rewind_transcript`'s
-#: `before_reply` cut keeps everything BEFORE the message that opened a reply, and for a
-#: conversation's FIRST reply "that is the very start, the header alone" — so a resumed leg
-#: can have no turn above it at all. The ⚑ refusal flag cuts exactly there (it discards the
-#: reply and re-sends its message to another model), which makes this the normal outcome of a
-#: flag on a first reply, not an edge case: the run is told to continue from a last
-#: observation that does not exist and to re-orient in a conversation it cannot see (D246).
+#: …and a leg with no turn of its own above it: the ⚑ flag on a conversation's FIRST reply cuts
+#: back to the header alone (D246).
 _RESUMED_EMPTY = ("this run is RESUMED, but NOTHING of it is above: the leg that ran before "
                   "this one was discarded, so there is no conversation to continue from and "
                   "no last observation to re-orient in. Treat this as the KICKOFF it now is — "
@@ -159,14 +139,8 @@ def resume_framing(replayed: list[dict]) -> str:
     one. `boot` sets this afresh on every leg (`replay=False`).
 
     One sentence for a run whose own turns are above it, another for a run whose predecessor
-    was cut away entirely. The alternative — one sentence for both — is what shipped, and it
-    told a run with an empty window to "continue from the last observation", i.e. to continue
-    from nothing and not restart, which leaves it no action that is not forbidden.
-
-    The predicate is the ASSISTANT turn, not the message count: a cut leaves the header and
-    the engine may already have appended notes of its own, so "the window is short" and "the
-    run has nothing of its own above it" are different questions and only the second one
-    changes what the leg should do.
+    was cut away entirely. The predicate is an ASSISTANT turn, not the message count: the
+    engine may already have appended notes of its own.
     """
     return _RESUMED if any(m.get("role") == "assistant" for m in replayed) else _RESUMED_EMPTY
 
@@ -224,12 +198,8 @@ def rewind_transcript(run_dir: Path, keep_through_turn: int | None = None, *,
                 and isinstance(e.get("turn"), int)), default=0)
     out = {"kept_events": len(kept), "dropped_events": len(dropped),
            "kept_through_turn": last, "archive": archive}
-    # …and the FILES, for a conversation (engine/artsnap.py). A conversation is not versioned,
-    # so until now a rewind put the transcript back and left `artifacts/` holding whatever the
-    # discarded replies had written — the conversation saying one thing and its deliverables
-    # another. Restores the newest snapshot taken at or before the turn we kept, after copying
-    # the current state aside. `artifacts` is reported only when a snapshot covered that turn:
-    # None means there was nothing to put back, which is not a failure and must not read as one.
+    # …and the FILES, for an unversioned conversation (engine/artsnap.py): the newest snapshot
+    # at or before the kept turn. `artifacts` is reported only when a snapshot covered it.
     if (snap := artsnap.restore(run_dir.parent.parent, last)) is not None:
         out["artifacts"] = snap
     return out

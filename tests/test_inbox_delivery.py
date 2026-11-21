@@ -1,18 +1,4 @@
-"""`via` is the delivery-policy switch, and one predicate answers "is something waiting".
-
-Two contracts, one file, because they are two halves of the same thing: what a channel MEANS
-(when the message is consumed, whether a person wrote it, whether the reap may resume a
-finished run for it) and who gets to ask about it.
-
-The first was chosen freehand at every writer, which is how a branch hand-back came to be
-filed on the USER channel — read by the parent as the operator speaking, offered in the
-composer as the operator's own editable text, and swept by the reap as a reason to resume a
-conversation the hand-back's own contract says it never wakes.
-
-The second was five hand-rolled loops with three different filters, where the differences
-that mattered — a fail-OPEN scanner beside four fail-CLOSED ones — were undocumented and
-therefore unrepeatable.
-"""
+"""`via` is the delivery-policy switch, and one predicate answers "is something waiting"."""
 from __future__ import annotations
 
 import re

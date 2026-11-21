@@ -1,12 +1,9 @@
 """What went WRONG in one run, as SIGNATURES a change can be judged by (the moment test).
 
-The change measurement (readmodels/change_effects.py) compares the runs before a change with the
-runs after it on rates — failed runs, claims challenged, tokens. A routine's input differs from
-run to run, so a rate needs many runs to move past its noise, and on this instance a recipe
-changes about every second run: 96% of all changes ended `too few runs`. Harness² (arXiv
-2610.14224) judges an edit differently — "an edit earns its place when a SPECIFIC MOMENT in a
-trajectory shows the mechanism": a failure that REPEATED across the base runs is a real property
-of the harness, and the question is whether THAT failure came back, not whether an average moved.
+Rates (readmodels/change_effects.py) need many runs to move past their noise, and recipes
+change too often for that. Following Harness² (arXiv 2610.14224), a failure that REPEATED across
+the base runs is a real property of the harness, and the question is whether THAT failure came
+back, not whether an average moved.
 
 A signature is that failure, named the same way in every run of every routine, read from the
 events the engine already writes — nothing here is a new judgement about a turn:
@@ -17,8 +14,7 @@ events the engine already writes — nothing here is a new judgement about a tur
 - `read_miss` — a `read_file` of a path that is not there;
 - `refused:<kind>` — any other error that action came back with (a gate, a missing grant, an
   edit that would break a JSON file);
-- `memory_cap` — a `memory_write` refused by the old 100-line note cap (retained transcripts
-  only: the size is advice now and never refuses, engine/memops.py);
+- `memory_cap` — a `memory_write` refused by the old note cap (retained transcripts only);
 - `deferral:<rung>` — the finish was set aside by that rung of the finish gate;
 - `budget:<resource>` — that budget was spent and the run took its reserved finish turn;
 - `unmet:d<n>` — the run's final accounting left that Done-when line unmet.
@@ -44,12 +40,8 @@ from . import finish_rungs
 from .transcript import _open_bytes
 
 #: The finish gate's rungs by the key each one records on its deferral (engine/finishgate.py
-#: `_defer`), READ from the gate's own declaration rather than copied (D152 step 6). This list
-#: was a second vocabulary beside the ladder and had already drifted: it carried eight keys
-#: where the ladder has nine, in a different order, because the fabrication rung
-#: (`no_actions`) defers with no key at all — which is what `no_action` below stands in for.
-#: Reading `finish_rungs.RUNG_KEYS` means a tenth rung is counted here the day it is declared,
-#: instead of silently falling into the fallback bucket.
+#: `_defer`), READ from the gate's own declaration so the two cannot drift (D152). The
+#: fabrication rung defers with no key at all — `no_action` below stands in for it.
 RUNGS = finish_rungs.RUNG_KEYS
 #: Kinds whose non-zero exit or error is not a failure of the run's harness (module docstring).
 NOT_COUNTED = frozenset({"shell", "finish", "reminder_hold", "assist_hold"})

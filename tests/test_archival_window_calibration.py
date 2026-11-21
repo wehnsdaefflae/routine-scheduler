@@ -1,27 +1,4 @@
-"""An archival candidate is fit-tested against the window THIS RUN measured, not the catalog's.
-
-The operator, 2026-11-02: *"— background archive did not land — (history archival degraded:
-otari: HTTP 400: prompt is too long: 1028908 tokens > 1000000 maximum)"*.
-
-`estimate_input_tokens` is 3.5 UTF-8 bytes per token — a packing guess — so a run whose content
-packs denser than that reads LIGHT, and `window.note_prompt_size` measures that gap on every
-completion and keeps it as `loop._token_ratio`. `compact_if_needed` restates the foreground
-model's window in those measured units (`_calibrated_window`) before any gate sees it.
-
-`_pick_archival_model` then built its own candidates — the dedicated compaction model and the
-tool-call model — FRESH from the registry, which serves the CATALOG figure. So the one ref that
-had been corrected was the main model's, and the cheaper tiers (which are preferred, because
-machine work belongs there) were fit-tested against a window the run had already measured as
-smaller. A run reading ~1.5x light therefore posted an archival over the provider's hard limit.
-
-Unlike a foreground turn, the archival thread has no shrink-and-retry net of its own
-(`overflow._recover_oversize_prompt` serves the turn, not the thread), so that 400 is terminal:
-the middle's navigable history is lost and the run is told only that the archive degraded.
-
-Both directions are asserted, because the correction must bite exactly where the measurement
-says so: the same middle and the same models ARCHIVE while nothing has been measured, and are
-declined once the run has measured itself 1.6x light.
-"""
+"""An archival candidate is fit-tested against the window THIS RUN measured, not the catalog's."""
 
 from types import SimpleNamespace
 

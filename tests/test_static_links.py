@@ -1,8 +1,4 @@
-"""Every link to an item's card is built by `reflinks.refHref` — the one encoded address.
-
-Five call sites spelled `#/messages?focus=${id}` by hand, unencoded, while the `s.by` link
-beside one of them encoded its value; a hand-built address is how the two forms drifted apart.
-"""
+"""Every link to an item's card is built by `reflinks.refHref` — the one encoded address."""
 
 import re
 from pathlib import Path

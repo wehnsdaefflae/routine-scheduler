@@ -1,29 +1,14 @@
 """SEVERAL questions in ONE `ask_user` action — the fan-out (D212).
 
-Its own module for the reason `engine/autoask.py` is one: `engine/interact.py` is the ask
-protocol — turning a run's need for a human into ONE decision record and back into an answer —
-and it sits exactly on the repo's size bar. Asking several at once is a concern beside that,
-not inside it, and it is built ON that seam rather than beside it: every record is filed by
-`interact.handle_ask`, so a batch's cards are byte-identical to the ones a run has always
-filed, plus the `batch` id that says they were asked together.
+Built ON the ask protocol (`engine/interact.py`), not beside it: every record is filed by
+`interact.handle_ask`, so a batch's cards are identical to single asks plus the `batch` id that
+says they were asked together. One action instead of one turn and one unrelated card per
+question.
 
-WHY, measured over the 282 question records the instance had filed before this existed:
-
-* 37% of runs (60 of 163) already asked more than one question, up to 6 in a single run —
-  while the ONLY way to ask was one action per question. Five questions cost a run five turns
-  of its own context and the operator five unrelated cards.
-* He already answers in batches: 51% of his answering sittings disposed of several questions,
-  a third of them across several routines, at a median of 11 minutes. The asking side was the
-  half that did not match.
-* 174k tokens of question prose sit in that store (median 430 tokens per ask), so the saving
-  is real context, not tidiness.
-
-What a batch is NOT is a waiting mode. `mode: "blocking"` keeps its own meaning — the run's
-process sits out the ask timeout — and is refused on a batch (`askfields`), because parking a
-run on the first of five answers is not a thing a run could want: 0 of those 282 asks used it,
-and 0% of answers arrived within an hour (median 2.97 h). A batch files its records and the
-run carries on. Which of the questions STOPPED the run's work is the records' CLASS
-(`askclass`), a recorded fact on each card, not a suspended process.
+A batch is NOT a waiting mode: `mode: "blocking"` is refused on a batch (`askfields`), since
+parking a run on the first of several answers is not something a run could want. A batch files
+its records and the run carries on; which questions STOPPED the work is each record's CLASS
+(`askclass`).
 """
 
 from __future__ import annotations
@@ -59,16 +44,11 @@ def handle(loop, action: dict, poll_s: float) -> dict:
                       "question": one["question"],
                       "class": askclass.of(request=obs.get("request"),
                                            blocks_work=one.get("blocks_work"))})
-    # F893: `count` is what REACHED his page. A question REFUSED before it filed anything (an
-    # invalid `config_patch` key, say) is on no surface of his and nobody was asked — counting
-    # it here told a run "2 questions filed" when one was never asked, and the run carried on
-    # believing the operator could see it (self-audit:20261112-233155, turn 298: the refused
-    # one went unnoticed for 70 turns). The refusals are named apart so the observation cannot
-    # be read as success, and `blocking` likewise counts only records that exist.
+    # `count` (and `blocking`) is what REACHED his page: a question REFUSED before it filed
+    # anything was never asked, so refusals are named apart and cannot read as success.
     refused = [{"question": f["question"], "error": f["error"]} for f in filed if f.get("error")]
-    # The note travels WITH the observation rather than being assembled by the renderer: the
-    # renderer sits exactly on the house size bar, and what a refusal means — nothing was
-    # asked, so it is this turn's to re-file — is this module's own fact.
+    # The note travels WITH the observation: what a refusal means (nothing was asked, re-file
+    # this turn) is this module's own fact, not the renderer's.
     note = "".join(f" {len(refused)} REFUSED, so {'it is' if len(refused) == 1 else 'they are'} "
                    "on NO surface of his and nobody was asked — re-file this turn: "
                    + "; ".join(r["error"] for r in refused) if refused else "")

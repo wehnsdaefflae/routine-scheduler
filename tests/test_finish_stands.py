@@ -1,12 +1,4 @@
-"""F658: a finish gate that RAISES must not cost the run the summary it authored.
-
-The specimen is scheduler-builder:20261009-120002 (2026-10-09): a stale lazy import made
-`finishgate.check_finish` raise AttributeError, the engine exited rc=1, and a run that had
-already shipped two gated releases lost its summary, its status and its result.md — reading
-`orphaned_run` on every surface since. Both halves of the fix are tested here: that the finish
-path imports EAGERLY (so that instance cannot recur) and that a raising guard ends the run on
-its own summary anyway (so the CLASS cannot).
-"""
+"""F658: a finish gate that RAISES must not cost the run the summary it authored."""
 
 import ast
 from pathlib import Path
@@ -67,9 +59,6 @@ def test_the_guard_keeps_its_one_lazy_import_and_says_why():
     """finishstands -> finishgate STAYS lazy (at module scope it cycles through assist). It is
     safe where the gate's own were not — a pass-through naming no symbol of the gate's — and
     the module must keep saying so, or a later reader will "fix" it the wrong way.
-
-    It now lives in `pin()`, which the run's construction calls so the import happens at run
-    START rather than at the finish turn (F677) — still exactly one, still in this module.
     """
     assert _lazy_imports("finishstands.py") == ["pin -> finishgate"]
     assert "cycle" in (SRC / "finishstands.py").read_text(encoding="utf-8")

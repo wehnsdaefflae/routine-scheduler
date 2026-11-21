@@ -1,19 +1,4 @@
-"""R3204: the nightly snapshot goes to the LOCAL disk first, the off-box share second.
-
-The operator decided this on 2026-11-05 because no complete snapshot had finished since
-11-01: the off-box target is sshfs at one round trip per file, and ~167k files cannot finish
-inside the unit's `TimeoutStartSec=4h`. A local ext4 disk does the same `--link-dest`
-snapshot in minutes. It does not REPLACE the off-box copy — a disk in this box does not
-survive losing the box — so the off-box tier runs afterwards, from the newest local snapshot.
-
-What is pinned here is the ORDERING PROPERTY the decision rests on, which is the one a shell
-can break silently: the local snapshot is complete and stamped BEFORE the off-box step runs,
-and an off-box failure leaves that local snapshot and its stamp exactly as they were. Plus
-the refusal of step 3 — a target that is not on a mounted disk of its own — because the
-operator asked for it precisely while /mnt/usb500 may not be mounted yet.
-
-Driven through the real script against a throwaway HOME, like its sibling suites.
-"""
+"""R3204: the nightly snapshot goes to the LOCAL disk first, the off-box share second."""
 from __future__ import annotations
 
 import os
@@ -52,11 +37,6 @@ def test_the_local_tier_is_the_default_and_the_offbox_one_is_second():
 def test_the_unit_passes_the_local_tier_and_hands_the_offbox_one_through_the_environment():
     """The unit's wiring is the whole order, and getting it backwards would make the NAS the
     nightly tier again — silently, since both paths are valid roots.
-
-    Also: no `$VAR` inside a `bash -c` command. systemd expands `${VAR}` in ExecStart itself, so
-    a wrapper's `$RSCHED_MIRROR` would reach bash already empty — the trap
-    `test_the_push_commands_dollars_reach_bash_not_systemd` was written for after the ntfy push
-    never once arrived.
     """
     unit = (DEPLOY / "rsched-backup.service").read_text(encoding="utf-8")
     assert "Environment=RSCHED_BACKUP_LOCAL=/mnt/usb500/rsched-backup" in unit
@@ -222,14 +202,7 @@ def test_packing_can_be_switched_off_and_a_failure_never_fails_the_night(home, t
 
 
 def test_no_heredoc_in_deploy_substitutes_a_command_when_it_is_printed():
-    """A hazard that fired for real on 2026-11-05, not a hypothetical.
-
-    `usage()` prints with an UNQUOTED heredoc, so it can interpolate ${DEFAULT_ROOT} — which
-    means a backtick or $(...) in that PROSE runs as a command. A help text mentioning
-    `rsched postdeploy` in backticks made `backup.sh --help` actually execute postdeploy and
-    append a row to the live postdeploy ledger. Printing help must have no side effects, so
-    the prose in these blocks carries no command substitution at all.
-    """
+    """A hazard that fired for real on 2026-11-05, not a hypothetical."""
     offenders = []
     for script in sorted(DEPLOY.glob("*.sh")):
         lines = script.read_text(encoding="utf-8").splitlines()

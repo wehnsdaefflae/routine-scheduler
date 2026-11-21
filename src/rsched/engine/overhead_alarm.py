@@ -8,14 +8,11 @@ process, and the event says so on the blocked-work surface
 the bar. Only runs of the routine's CURRENT recipe count, so a recipe revision silences it until
 three runs under the new recipe say otherwise (`overhead_reading`'s docstring says why).
 
-AT MOST ONCE PER DAY per routine, and the latch is the STREAM itself: an earlier row for the same
-routine inside `LATCH_HOURS` keeps the next quiet. A run end has no long-lived object to latch
-on (the `health_cooldown` idiom, which may not be reused here: nothing the blocked-work fold
-reads a magnitude off may sit in its table), and a latch kept in memory would re-file the whole
-fleet after every restart. A routine that fires five times a day is one condition, not five
-reports of it — and because that latch makes a row count mean "days this daemon was up", the
-event is classified STANDING on the fold (`readmodels/blocked_kinds`, R3418): the console shows
-how long the routine's overhead has been over the bar, and counts nothing.
+AT MOST ONCE PER DAY per routine, and the latch is the STREAM itself (an earlier row inside
+`LATCH_HOURS` keeps the next quiet): a run end has no long-lived object to latch on, and an
+in-memory latch would re-file the fleet after every restart. Because a row count then means
+"days up", the event is STANDING on the fold (`readmodels/blocked_kinds`): the console shows how
+long the overhead has been over the bar, and counts nothing.
 
 Best-effort like every run-end telemetry write: it never raises into a finished run.
 """

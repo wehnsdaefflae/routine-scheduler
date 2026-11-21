@@ -1,16 +1,4 @@
-"""Operator-reported UI findings, reproduced against the REAL console.
-
-Each test drives the same JS the daemon serves and asserts the reported symptom is absent, so it
-is both the localization the finding was blocked on and the regression guard once fixed:
-
-- F432 the watch ribbon must paint a bar for a run in the last 24h (it read "always empty").
-- F434 the routines view must re-fetch its cards on nav-back.
-
-F439 (the mobile bottom nav) MOVED to tests/ui/test_mobile_nav.py. Its guard here counted nav
-items against `window.innerWidth` and so could never fail: on a phone that value is the layout
-viewport, which is precisely what the overflowing document expands. The replacement clips against
-the width the test emulated and asserts the document itself never scrolls sideways.
-"""
+"""Operator-reported UI findings, reproduced against the REAL console."""
 
 from __future__ import annotations
 

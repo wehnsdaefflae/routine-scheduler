@@ -1,10 +1,4 @@
-"""The bearer door in front of the browser sidecar's two unauthenticated protocols.
-
-`deploy/browser-auth-proxy.py` is not part of the package — it runs inside the chrome image,
-which has no rsched install — so it is loaded here by path. That is the point of testing it at
-all: it is the only thing standing between a `net: outbound` util and a browser holding live
-site sessions, and a deploy script nobody imports is a deploy script nobody checks.
-"""
+"""The bearer door in front of the browser sidecar's two unauthenticated protocols."""
 from __future__ import annotations
 
 import asyncio

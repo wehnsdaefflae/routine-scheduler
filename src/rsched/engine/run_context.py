@@ -30,18 +30,16 @@ if TYPE_CHECKING:
 # Sentinel default for "argument not passed" where None is a meaningful value.
 _UNSET: Any = object()
 
-#: The prefix `engine/background.py` names its threads with (`background-<handle>`). Read here
-#: rather than imported, deliberately: `add_usage` is on the hot path of every model call and
-#: must not pull a module that imports the executor, and a NAME is all the two sides need to
-#: agree on. A test pins the two together so renaming one cannot silently unpark every booking.
+#: The prefix `engine/background.py` names its threads with (`background-<handle>`). Not
+#: imported: `add_usage` is on every model call's hot path and must not pull the executor.
+#: A test pins the two together.
 BACKGROUND_THREAD_PREFIX = "background-"
 
 def background_parking_key() -> str | None:
     """The key a BACKGROUND thread's spend parks under, or None on any other thread.
 
-    D167: a backgrounded call's tokens book on collection, not mid-flight. The caller of
-    `add_usage` is the handler, which knows nothing about being backgrounded — so the one thing
-    that can tell is the thread it is running on, named by `background.start`.
+    Background spend books on collection (D167); the handler cannot know it is backgrounded,
+    so the thread name (set by `background.start`) is what tells.
     """
     name = threading.current_thread().name
     return name if name.startswith(BACKGROUND_THREAD_PREFIX) else None
@@ -55,10 +53,8 @@ def _never_aborted() -> bool:
 
 def work_dir(ctx: RunContext) -> Path:
     """Where a run's RELATIVE paths resolve right now: the OPEN task's workspace
-    (engine/jobops.py), or the routine's own dir. Every seal is anchored on the routine's dir,
-    not on this — a workspace is inside it, so moving the working directory moves nothing a
-    seal guards. A free function over any context-shaped object: the file kinds are driven by
-    lighter stand-ins too, and one with no task open simply has none.
+    (engine/jobops.py), or the routine's own dir. Seals stay anchored on the routine's dir.
+    A free function so lighter context stand-ins work too.
     """
     return getattr(ctx, "job_dir", None) or ctx.routine.dir
 
@@ -88,10 +84,8 @@ class RunContext:
     transcript: Transcript
     budgets: Budgets
     depth: int = 0
-    # WHICH child this is (engine/child.py's n and label), for the surfaces a child reaches
-    # that belong to the whole routine — today the decision record a deferred ask files into
-    # the routine's own questions/pending, where a person has to be able to tell who asked.
-    # Zero/empty at depth 0.
+    # WHICH child this is (engine/child.py's n and label), so routine-wide surfaces (a deferred
+    # ask's decision record) can say who asked. Zero/empty at depth 0.
     sub_n: int = 0
     sub_label: str = ""
     sub_counter: list[int] = field(default_factory=lambda: [0])  # shared across the whole tree
@@ -101,112 +95,70 @@ class RunContext:
     # The run's grant policy, set by EngineLoop from the routine's capabilities mapping
     # (+ the library's requires: index for denial wording). None (constructed directly) = open.
     grants: GrantPolicy | None = None
-    # Whether this run is being stopped — its loop's own check, installed by
-    # loopsetup.configure: the flag the daemon's abort SIGTERM raises, or the event a parent's
-    # kill sets. The jailed runner asks it while a util, script or shell command runs, so the
-    # command ends with the run instead of outliving it (utils_run.run_jailed).
+    # Whether this run is being stopped (installed by loopsetup.configure). The jailed runner
+    # polls it so a util/script/shell command ends with the run (utils_run.run_jailed).
     aborted: Callable[[], bool] = _never_aborted
 
     turn: int = 0
     phase: str = ""
-    # Every stage module this run has ENTERED, in entry order, deduped (F521/R1681). `phase`
-    # is the CURRENT node; this is the path taken — the only thing that can tell a run which
-    # worked through its recipe from one that read one module and finished. Stamped beside
-    # `phase` at the same seam (engine/fileops.py), so it costs the recipe nothing; a resumed
-    # leg starts from what the prior leg reported entered (history.prior_counters).
+    # Every stage module this run has ENTERED, in entry order, deduped — the path taken, where
+    # `phase` is the current node. Stamped at the same seam as `phase` (engine/fileops.py); a
+    # resumed leg starts from the prior leg's (history.prior_counters).
     phases_entered: list[str] = field(default_factory=list)
-    # The phases the run RECORDED for itself — its own cursor, read from the routine's
-    # state/phase.json at each write of it. The second evidence source `stage_coverage`
-    # needs (F563): `phases_entered` only sees a stage the run RE-READ the module for, so a
-    # routine whose recipe the model already holds looked like one that skipped everything —
-    # 24 of 73 fleet runs on 2026-09-26, `llmsectest-weekday` reporting 0 of 7 across three
-    # runs of 404-423 turns. A phase the run wrote down is the stronger claim of the two,
-    # and it was already on disk.
+    # The phases the run RECORDED for itself in state/phase.json — `stage_coverage`'s second,
+    # stronger evidence source: `phases_entered` misses a stage whose module the run did not
+    # re-read.
     phases_recorded: list[str] = field(default_factory=list)
-    # The recipe version (last recipe-touching commit — recipes.current_recipe_commit)
-    # that produced this run, stamped at run start; None for unversioned dirs
-    # (conversations, clarify workspaces). Lands in status.json and the run's
-    # workflow-usage record so outcomes stay attributable after retention.
+    # The recipe version (recipes.current_recipe_commit) that produced this run; None for
+    # unversioned dirs. In status.json and the usage record so outcomes stay attributable.
     recipe_commit: str | None = None
-    # Live deliberation level (see config.DELIBERATION_LEVELS): initialized from the
-    # routine config by EngineLoop, mutated by a control.json mid-run switch.
+    # Live deliberation level (config.DELIBERATION_LEVELS); a control.json switch mutates it.
     deliberation: str = ""
-    # Practice modules already delivered into THIS run's context — modules the user added
-    # mid-run (control.json `add_rules`). Guards against re-appending the same prose when
-    # a later signal repeats a slug; a `read_rule` read needs no such guard (it is the
-    # model's own turn, and re-reading is its choice).
+    # Rule modules the user added mid-run (control.json `add_rules`) already delivered — so a
+    # repeated signal does not re-append them. `read_rule` needs no such guard.
     consulted_rules: set[str] = field(default_factory=set)
-    # Resolved paths this run has read, viewed, or written — write_file's grounding set:
-    # overwriting an existing file OUTSIDE the routine's own dir requires the run to have
-    # seen it (rebuilt from the transcript on resume, so grounding survives legs).
+    # Resolved paths this run has read, viewed, or written — write_file's grounding set
+    # (rebuilt from the transcript on resume).
     seen_paths: set[str] = field(default_factory=set)
-    # The run's ONE-TIME grant overlay (the "now" half of the four-state model,
-    # entities.py): entity ids the user allowed / declined for THIS run — seeded by a
-    # blocking request's answer or a deferred decision consumed at boot, folded over the
-    # config-derived GrantPolicy by requests.rebuild_policy. In-memory only, on purpose:
-    # a resumed leg starts empty and the model re-asks. grant_args carries a decision's
-    # extra datum (a connection grant's account label).
+    # The run's ONE-TIME grant overlay (the "now" half of the grant model, entities.py),
+    # folded over the config GrantPolicy by requests.rebuild_policy. In-memory only: a resumed
+    # leg starts empty and the model re-asks. grant_args carries a decision's extra datum.
     granted_now: set[str] = field(default_factory=set)
     denied_now: set[str] = field(default_factory=set)
     grant_args: dict = field(default_factory=dict)
-    # The subset of granted_now armed as `allow once (this action only)` (D65): each id is
-    # revoked — removed from BOTH sets and the policy rebuilt — the moment the next
-    # successfully-dispatched matching action lands (requests.consume_once_grants). Only
-    # entities.TURN_ACTION_CLASSES ever appear here. In-memory like its parent overlay.
+    # The subset of granted_now armed as allow-once (D65): revoked from BOTH sets once the next
+    # matching action lands (requests.consume_once_grants). Only TURN_ACTION_CLASSES.
     granted_once: set[str] = field(default_factory=set)
-    # R514: which bound machine SHARES this run actually has under mnt/<name>/, proven live
-    # at provisioning (machine_mounts.mount_routine_shares), and why each missing one is missing.
-    # The CAPABILITIES block reads these so the run is told the truth about its mounts — a
-    # share advertised from config alone let a run read an empty dir as an empty source.
+    # Machine shares actually mounted under mnt/<name>/ (proven at provisioning) and why each
+    # missing one is missing — CAPABILITIES reports these, never config alone.
     mounted_shares: set[str] = field(default_factory=set)
     unavailable_shares: dict[str, str] = field(default_factory=dict)
     usage: dict = field(default_factory=lambda: {"in": 0, "out": 0})
-    # D118 phase 4 / D167: "book tokens ON COLLECTION". A BACKGROUNDED action runs in a thread
-    # (engine/background.py) and its handler books through `add_usage` like any other —
-    # `do_llm` alone reaches it at five sites (two of its own, three in refusal.py) and
-    # `do_decide` at one. Booking from the thread is wrong twice over: the fold is a
-    # read-modify-write over a shared dict, so two threads folding at once lose a reading; and
-    # the spend arrives at an arbitrary moment INSIDE a turn, so the budget check that would
-    # have stopped the run sees a number that depends on thread timing rather than on what the
-    # run has read. So a background thread's spend is PARKED here and booked by
-    # `background.collect` at the turn boundary, where everything else about that call lands.
-    # Keyed by thread so two background calls cannot overwrite each other's parked reading.
+    # Background spend PARKED per thread, booked by `background.collect` at the turn boundary
+    # (D167): folding from a thread races the loop's fold and makes the budget check depend on
+    # thread timing.
     _deferred_usage: dict = field(default_factory=dict)
-    # Guards `usage` itself: the loop's own booking still happens on the main thread while a
-    # background thread may be parking, and both reach this object.
+    # Guards `usage`: the main thread books while a background thread may be parking.
     _usage_lock: threading.Lock = field(default_factory=threading.Lock, repr=False,
                                         compare=False)
-    # Spend recorded by EARLIER legs of this run (set on resume from the transcript).
-    # Budgets deliberately ignore it — a resume gets a fresh window — but reporting must
-    # not: status.json and the finish event carry usage_total() = base + this window.
+    # Spend by EARLIER legs (set on resume). Budgets ignore it — a resume gets a fresh window —
+    # but reporting carries usage_total() = base + this window.
     usage_base: dict = field(default_factory=dict)
-    # Active wall clock accrued by EARLIER legs of this run (seeded in __post_init__ from
-    # the prior leg's persisted status.json — the runner's queued-status rewrite carries
-    # elapsed_s forward on resume, like the counters, F140). Budgets deliberately ignore
-    # it — a resume gets a fresh wall-clock window, exactly as they ignore usage_base —
-    # but reporting must not (F182): write_status reports elapsed_total_s() = base + window.
+    # Active wall clock by EARLIER legs (seeded in __post_init__). Budgets ignore it like
+    # usage_base; reporting carries elapsed_total_s() = base + window.
     elapsed_base_s: float = 0.0
     state: str = "starting"
-    # The finish outcome (ok|partial|failed|aborted), stamped once at run end. status.json's
-    # `state` folds a partial finish into "finished" — this field keeps a budget-exhausted
-    # run distinguishable (the dashboard's run-history strip). None while the run is live.
+    # The finish outcome (ok|partial|failed|aborted), stamped once at run end: status.json's
+    # `state` folds partial into "finished". None while live.
     outcome: str | None = None
     question: dict | None = None
     main_model: str = ""              # "<endpoint>/<model>" resolved each turn (in status.json)
-    # The model the ROUTINE WAS GIVEN — the head of its own chain, set once and never
-    # re-pointed. `main_model` above follows every failover switch, which is right for
-    # status.json and wrong for any sentence that advises the operator: weightloss:20260923-220004
-    # was configured on Opus high, was served two rungs down after a 503 and a 402, and failed
-    # telling the operator to "pick a stronger model" while naming the fallback (F547/D146).
-    # A verdict that indicts a model must be able to say WHICH.
+    # The model the ROUTINE WAS GIVEN — its chain head, never re-pointed. `main_model` follows
+    # failover; any verdict that indicts a model must name this one (D146).
     configured_model: str = ""
     failover_rungs: int = 0           # how many hard switches down the chain this run took
-    # The FIRST rung's failure — "<endpoint>/<model>: <error>", recorded at the first switch and
-    # never overwritten. A run whose whole chain dies reports only the LAST rung's error, which is
-    # the least informative one: on 2026-09-26, seven runs across five routines all failed with
-    # `Endpoint failure: nano gpt: timed out.` while what actually started every one of them was
-    # `claude-proxy: HTTP 503 auth_unavailable` on the configured model — an auth fault the
-    # operator could act on, hidden behind a timeout at a provider they never chose (F566).
+    # The FIRST rung's failure ("<endpoint>/<model>: <error>"), never overwritten: when the whole
+    # chain dies, the last rung's error is the least informative.
     first_failover_cause: str = ""
     budget_base_turn: int = 0         # turns before this count against a prior window (resume)
     # Budget warning LINES already given (budget_warning): said once per line, never a countdown
@@ -217,39 +169,26 @@ class RunContext:
     refusal_level: int = 0    # the uncensored back-off (engine/refusal.py, 2026-10-16)
     takeover_left: int = 0
     schema_forcefails: int = 0        # turns that exhausted every schema attempt (telemetry)
-    # Per-util execution telemetry: util name → {outcome: n}. Outcomes — ok / error
-    # (non-zero exit) / usage_error (exit 2, argparse's bad-arguments convention) /
-    # missing (no such util) / denied (permission rejection) / rejected (malformed
-    # action). Counted at the executor and validation seams (count_util), folded into
-    # the run's workflow-usage record — the Stats tab's per-util reliability source.
+    # Per-util telemetry: util name → {outcome: n} (ok / error / usage_error / missing / denied /
+    # rejected), ticked by count_util, folded into the usage record (Stats per-util reliability).
     util_stats: dict = field(default_factory=dict)
-    # Output-compression telemetry: what the lossless compressor did to this run's command
-    # stdout — a count per outcome (applied / unchanged / fallback / skipped), plus
-    # `tokens_saved` (the estimate only an APPLIED preview earns — a rejected one changed
-    # nothing the model read) and `ms` (compressor wall
-    # clock, paid whatever the outcome). Ticked at the one compression seam
-    # (note_compression), folded into the run's workflow-usage record — the Stats tab's
-    # per-routine savings roll-up.
+    # Output-compression telemetry: a count per outcome, `tokens_saved` (APPLIED previews only)
+    # and `ms` (paid whatever the outcome). Ticked by note_compression.
     compression_stats: dict = field(default_factory=dict)
-    # Deferred-question churn: decisions this run threw over the wall to the user — a
-    # deferred ask, a blocking ask that timed out / was parked / died with an abort.
+    # Decisions this run deferred to the user (a deferred ask; a blocking ask timed out/parked).
     asks_deferred: int = 0
-    # Reports this run RECEIVED and has not answered — ids drained from its inbox, minus the ones
-    # a `report … answers: <id>` closed. D131: closing the thread is part of shipping the fix.
-    # Carried across a resume like the counters, since a run held at its finish still owes them.
-    # The `unclosed-delivered-report` assist is the only reader.
+    # Reports this run RECEIVED and has not answered (D131). Carried across a resume; read only
+    # by the `unclosed-delivered-report` assist.
     reports_open: list[str] = field(default_factory=list)
-    # The turn a permission refusal cost at the validation seam (completion.action_candidate):
-    # a refused action is no turn, so the `capability-denied` assist needs it to see a 2nd choice.
+    # The turn a permission refusal cost (a refused action is no turn) — for the
+    # `capability-denied` assist.
     last_denial_turn: int = 0
     # The accounting the run's finish carried, set by the finish gate once it stands.
     accounting: list[str] = field(default_factory=list)
-    # The operator's one-line JOB BRIEF for a hand-started run (engine/brief.py), else "". It
-    # seeds goal b1; a briefed run answers for its goals instead of its recipe's Done when.
+    # The operator's one-line JOB BRIEF for a hand-started run (engine/brief.py), else "".
+    # Seeds goal b1.
     brief: str = ""
-    # The run's GOALS — what a person asked of it (engine/goals.py): seeded from the brief,
-    # replayed from the transcript on a resume, kept by the `goal` action and stamped by a
-    # standing finish. Published in status.json for the console.
+    # The run's GOALS (engine/goals.py), replayed on resume; published in status.json.
     goals: list[dict] = field(default_factory=list)
     # A conversation reply's own declaration (finish `final`): None until a finish declares it.
     final: bool | None = None
@@ -258,21 +197,16 @@ class RunContext:
     overhead: dict | None = None
     notes_read: set[str] = field(default_factory=set)   # memory notes read (notereads.py)
     review: dict | None = None   # what the post-run review leg did (engine/reviewleg.py)
-    # The run's QUALITY counters (engine/runrecord.py) — run-cumulative like asks_deferred, so a
-    # resumed leg reseeds them (history.prior_counters): claims the verifier challenged and the
-    # ones that stood disputed (the finish's and a goal check's), actions a caution held, and the
-    # person's messages that reached the run while it worked.
+    # The run's QUALITY counters (engine/runrecord.py), run-cumulative (reseeded on resume).
     claims_challenged: int = 0
     claims_disputed: int = 0
     holds: int = 0
     interventions: int = 0
-    # The OPEN task (engine/jobops.py) and its workspace: while one is open, the run's relative
-    # paths, scripts, shell, utils and memory resolve there (`work_dir`). Empty / None otherwise.
+    # The OPEN task (engine/jobops.py) and its workspace (`work_dir`). Empty / None otherwise.
     job_id: str = ""
     job_dir: Path | None = None
-    # User UTTERANCES this leg: a settled blocking answer, a held reply, a dialog turn, an
-    # injected message, a slash command. Not telemetry, deliberately NOT carried across legs —
-    # `create_routine` reads it to tell "the user has spoken since I drafted" (R1310).
+    # User UTTERANCES this leg; NOT carried across legs — `create_routine` reads it to tell
+    # whether the user has spoken since the draft.
     user_replies: int = 0
     _started_mono: float = field(default_factory=time.monotonic)
     #: memo for `stage_coverage`, keyed on the stages entered so far (see there)
@@ -281,11 +215,8 @@ class RunContext:
     _suspended_s: float = 0.0
 
     def __post_init__(self) -> None:
-        # F182: a resumed leg builds a FRESH RunContext, so _started_mono restarts and a
-        # resumed run's status.json used to report elapsed_s near 0. The run dir is reused
-        # across legs and its status.json still holds the prior leg's cumulative elapsed_s
-        # (the runner's queued-status rewrite preserves it); seed it as the base. A fresh
-        # run's queued status carries no elapsed_s key → base stays 0.0.
+        # A resumed leg is a fresh RunContext: seed the base from the prior leg's cumulative
+        # elapsed_s still in status.json (a fresh run's queued status has none → 0.0).
         if self.depth == 0 and not self.elapsed_base_s:
             prior = read_json(self.run_dir / "status.json")
             if isinstance(prior, dict):
@@ -304,14 +235,9 @@ class RunContext:
                 if e.startswith(prefix)]
 
     def read_roots(self) -> list[Path]:
-        """The run's EFFECTIVE readable roots: config fs_read_roots plus one-time
-        fs-read grants plus every WRITABLE root — a write grant implies read
-        (R244/F294: the util sandbox always gave write roots full rw access, so an
-        engine read gate refusing them was friction posing as a boundary — a run could
-        write a file it was not allowed to read back). A shared store is an ordinary
-        write root (rsched/sharedstores.py), so it arrives here like any other. Every
-        consumer (file actions, the util sandbox, the vision fallback) resolves against
-        this, so a granted root behaves exactly like a configured one — for this run.
+        """The run's EFFECTIVE readable roots: config fs_read_roots plus one-time fs-read
+        grants plus every WRITABLE root (a write grant implies read). Every consumer resolves
+        against this, so a granted root behaves exactly like a configured one.
         """
         return [*self.routine.fs_read_roots, *self._granted_paths("fs-read"),
                 *self.write_roots()]
@@ -330,11 +256,9 @@ class RunContext:
 
     @property
     def root_routine_dir(self) -> Path:
-        """The ROUTINE's own dir — `questions/`, `inbox/` and every surface a person reads
-        live there and only there. A CHILD's `routine.dir` is its `runs/<ts>/sub/<n>/`
-        workspace, so a child filing a deferred question against `routine.dir` wrote a
-        decision record under runs/ that no surface scans: four such records exist on the
-        live instance and none was ever shown to anyone.
+        """The ROUTINE's own dir, where `questions/`, `inbox/` and every surface a person reads
+        live. A CHILD's `routine.dir` is its `runs/<ts>/sub/<n>/` workspace, which no surface
+        scans.
         """
         return self.root_run_dir.parent.parent
 
@@ -345,9 +269,7 @@ class RunContext:
         return time.monotonic() - self._started_mono - self._suspended_s
 
     def elapsed_total_s(self) -> float:
-        """Cumulative active wall clock across ALL legs of this run — what reporting
-        (write_status) shows, the elapsed counterpart of usage_total() (F182).
-        """
+        """Cumulative active wall clock across ALL legs — what reporting shows."""
         return self.elapsed_base_s + self.elapsed_s()
 
     def credit_suspended(self, seconds: float) -> None:
@@ -356,12 +278,9 @@ class RunContext:
     def add_usage(self, usage: dict) -> None:
         """Book one usage reading against this run — the single writer of `usage`.
 
-        D167 decided background spend books ON COLLECTION, and this is the one place that can
-        enforce it: a backgrounded `llm` reaches `add_usage` at five sites and a `decide` at
-        one, so a per-handler fix would be six edits that the next handler to book forgets.
-        Called from a background thread, the reading is PARKED under that thread's name and
-        `background.collect` books it at the turn boundary. Everything else folds straight in,
-        under the lock, because the main thread may be folding while a thread is parking.
+        The one place that enforces D167 for every handler: on a background thread the reading
+        is PARKED under the thread's name for `background.collect`; otherwise it folds straight
+        in, under the lock.
         """
         if (parked := background_parking_key()) is not None:
             with self._booking_lock():
@@ -378,13 +297,8 @@ class RunContext:
         with self._booking_lock():
             return self._parking().pop(key, {})
 
-    # The two accessors below DEFAULT their attribute into existence rather than reading it.
-    # A RunContext is not always built through its dataclass initialiser: callers construct one
-    # with `RunContext.__new__` and set only the fields they need (a direct dispatch, a unit
-    # test of accounting). Reading `self._usage_lock` directly made `add_usage` — which every
-    # model call reaches — raise `AttributeError` on every such context; measured as a red fast
-    # stage on `tests/test_loop.py::test_usage_accounting_cache_keys_and_resume_base`. The
-    # dataclass defaults stay, for a context built the ordinary way; these make booking total.
+    # These accessors DEFAULT their attribute into existence: some callers build a RunContext
+    # via `RunContext.__new__` with only the fields they need, and booking must still work.
 
     def _booking_lock(self) -> threading.Lock:
         lock = getattr(self, "_usage_lock", None)
@@ -462,12 +376,8 @@ class RunContext:
         DELIBERATELY (record, then an authored finish) instead of meeting the spent budget
         mid-work. None once every crossed line has been said.
 
-        A budget warning is an EVENT, not a state. Repeating it on every turn past the line
-        turned the backstop into a countdown — a run read "converge DELIBERATELY now"
-        fifteen times over and wrapped up at the ceiling whether or not its work was
-        done — while the harness contract tells the same run that budgets are
-        never a pace. So each line (85%, then 95%, per resource) is announced exactly once;
-        a second resource crossing later still gets its own notice.
+        A budget warning is an EVENT, not a state — repeating it makes the backstop a
+        countdown. Each line (85%, then 95%, per resource) is announced exactly once.
         """
         for line, text in self.budgets.ledger().warnings(self.meter()):
             if line not in self._budget_warned:
@@ -507,13 +417,10 @@ class RunContext:
 
     def stage_coverage(self) -> dict:
         """`{declared, entered, skipped}` for this run — the recipe's stages against the
-        ones it actually entered (F521/R1681). Empty lists for a single-file recipe.
+        ones it actually entered. Empty lists for a single-file recipe.
 
-        Memoized on the stages ACTUALLY ENTERED, because that is the only input that moves
-        within a run: `stage_phases` re-reads main.md, globs `stages/` and opens every module
-        for its first heading, and `write_status` asks at least twice a turn — a 7-stage
-        recipe paid ~16 file reads per turn for a list that changes when the run enters a new
-        module, which on a 60-turn run is 7 derivations instead of 120.
+        Memoized on the entered/recorded stages — the only inputs that move within a run —
+        since the derivation reads every module and `write_status` asks twice a turn.
         """
         key = (tuple(self.phases_entered), tuple(self.phases_recorded))
         if self._stage_coverage_key != key:
@@ -539,14 +446,10 @@ class RunContext:
             "started": self.run_ts,
             "updated": now_iso(),
             "turn": self.turn,
-            # active wall-clock so far across ALL legs (paused/waiting time credited
-            # back; prior legs' elapsed folded in via elapsed_base_s, F182) — the final
-            # write at run end freezes it as the run's duration
+            # active wall clock across ALL legs; the final write freezes the run's duration
             "elapsed_s": int(self.elapsed_total_s()),
             "phase": self.phase,
-            # The PATH through the recipe, not just where it stopped (F521/R1681): which
-            # declared stages this run entered and which it never did. A single-file
-            # recipe declares none and all three lists are empty.
+            # the PATH through the recipe: declared stages entered and never entered
             "stages": self.stage_coverage(),
             "question": self.question,
             "usage": self.usage_total(),
@@ -556,8 +459,7 @@ class RunContext:
             "schema_forcefails": self.schema_forcefails,
             "referrals": self.referrals,
             "refusal_level": self.refusal_level, "takeover_left": self.takeover_left,
-            # the recipe version that produced this run (null: unversioned dir) — the
-            # health view's bucket key; survives retention via the workflow-usage record
+            # the recipe version that produced this run (null: unversioned dir)
             "recipe_commit": self.recipe_commit,
             "utils": self.util_stats, "prompt_segments": getattr(self, "prompt_segments", {}),
             "asks_deferred": self.asks_deferred,
@@ -566,8 +468,7 @@ class RunContext:
             "holds": self.holds,
             "interventions": self.interventions,
             "reports_open": self.reports_open,
-            # the finish's own accounting (engine/accounting.py) — what the runs table, the
-            # dashboard and the next run's digest read about how this run went
+            # the finish's own accounting (engine/accounting.py)
             "accounting": self.accounting,
             **({"brief": self.brief} if self.brief else {}),
             **({"goals": self.goals} if self.goals else {}),
@@ -576,12 +477,9 @@ class RunContext:
             **({"overhead": self.overhead} if self.overhead else {}),
             # the job being worked on right now (engine/jobops.py): the live tail's "where is it"
             **({"job": self.job_id} if self.job_id else {}),
-            # peak resident memory of the engine process (kB) — the rc=-9 post-mortem's
-            # key datum (F348); the daemon reads the last write's value at close-out
+            # peak resident memory of the engine process (kB), read at close-out for an OOM
             "vm_hwm_kb": _vm_hwm_kb(),
-            # turns_left is THIS WINDOW's remainder, `turn` above is cumulative: after a resume
-            # they differ by budget_base_turn, which the block carries (turnwindow, F564/D155).
-            # ONE reading: the same call renders the per-turn BUDGET LEFT tail (D227), so the
-            # prompt can never tell a run something this file denies.
+            # THIS WINDOW's remainders (`turn` above is cumulative). The same reading renders
+            # the per-turn BUDGET LEFT tail (D227), so prompt and file cannot disagree.
             "budgets": turnwindow.budget_block(self),
         })

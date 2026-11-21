@@ -1,19 +1,4 @@
-"""The `action` PAYLOAD — a hook that PERFORMS one of the engine's own actions at a point.
-
-The operator, 2026-10-26, asked what a hook may do and answered it: *"Any action. This includes
-utils and therefore scripts."* These pin the two halves of that:
-
-- the REGISTRY half — which points carry `action`, and the rule that decides it. A point that
-  can change what runs does NOT carry it, which is his second ruling the same day: *"No veto
-  ever — a hook performs and reports; only a hold (prose to the model) can stop an action."*;
-- the PERFORMER half — that `hooks/perform.perform` runs an authored action through the MODEL's
-  own path (schema → `validate_action` against the firing routine's capabilities →
-  `actionroute.dispatch_action`), never `executor.dispatch`, and that no failure of a hook can
-  fail the run it fires in.
-
-The seam under test is the one `control.run_user_command` has used in production since slash
-commands shipped; `perform` is that core with a hook's authorship instead of the user's.
-"""
+"""The `action` PAYLOAD — a hook that PERFORMS one of the engine's own actions at a point."""
 
 from __future__ import annotations
 
@@ -29,14 +14,7 @@ def test_action_is_in_the_payload_vocabulary():
 
 
 def test_no_holding_point_carries_an_action_payload():
-    """The rule that decides `ACTION_POINTS`, pinned both ways.
-
-    `pre-action` and `pre-finalize` are the two points that change what runs. The operator ruled
-    (2026-10-26): *"No veto ever — a hook performs and reports; only a hold (prose to the model)
-    can stop an action."* So a performed action never changes control flow: those two points
-    carry `hold`/`remind` and never `action`, and every OTHER point carries it. This assertion
-    is that ruling — a future change making it pass would be reversing his decision.
-    """
+    """The rule that decides `ACTION_POINTS`, pinned both ways."""
     for name in points.HOLDING_POINTS:
         assert not points.allows(name, "action"), (
             f"{name!r} can change what runs AND carries an action payload — that is the "
@@ -49,11 +27,6 @@ def test_wiring_a_site_never_changes_what_a_point_may_carry():
     """A point declares what it WOULD carry whether or not anything fires there yet — otherwise
     each campaign step would have to edit the payload column as well as wire the site, and the
     table would stop being readable as 'what is possible here'.
-
-    All FOUR points that shipped dead with the registry declared `action` while nothing fired at
-    them, and steps 6-9 wired every one: `child-exit` on a child's hand-back, `spawn` on its
-    start, `run-end` once the result is written, `restart` as the daemon exits. Not one needed
-    its payload column touched, which is the property this test is really about.
     """
     for name in ("child-exit", "spawn", "run-end", "restart"):
         assert points.allows(name, "action")

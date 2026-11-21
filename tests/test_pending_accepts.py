@@ -1,11 +1,4 @@
-"""D178 + F668: a settings accept refused mid-run is HELD, legible, and lands at run end.
-
-The refusal itself stays — a multi-field accept during a live run would leave the routine with
-neither its old settings nor its new ones. What was missing is the rest of the answer: the 409
-said "try again after it ends" without saying WHEN, and nothing was left behind, so on
-2026-10-11 the operator pressed the accept on `freelance-radar` three times in one second
-78 minutes before that run's end and concluded the button was broken.
-"""
+"""D178 + F668: a settings accept refused mid-run is HELD, legible, and lands at run end."""
 
 from __future__ import annotations
 

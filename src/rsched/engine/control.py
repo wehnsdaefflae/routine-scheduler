@@ -3,13 +3,10 @@
 renderer each that a resume's replay shares. The control.json SWITCHES — model, deliberation,
 rule bindings, a live config change — are `switches.py`.
 
-Everything here runs BETWEEN turns and mutates only the loop's message list / context —
-never the model call itself. control.json stays web-owned: the engine only reads it (here, its
-`pause`) and reacts at the next turn boundary. Two things are read MID-turn as well, both by a
-util, script or shell command in flight: the abort flag, which it asks through
-`RunContext.aborted` and ends the whole run with (`utils_run.run_jailed`; the command's own
-session keeps every abort signal away from it), and control.json's `cancel_action`, which
-`cancelled_for_turn` turns into the per-call cancel — one call stopped, the run carrying on.
+Everything here runs BETWEEN turns and mutates only the loop's message list / context.
+control.json stays web-owned: the engine only reads it. Two things are also read MID-turn by a
+command in flight: the abort flag (`RunContext.aborted`, ending the run) and control.json's
+`cancel_action` (`cancelled_for_turn`, stopping one call).
 """
 
 from __future__ import annotations
@@ -90,11 +87,7 @@ def pause_gate(loop, poll_s: float) -> None:
     ctx.write_status("running")
 
 
-#: The PER-CALL cancel (F586/D160-C) lives with what it IS — `engine/cancelcall.py`. Everything
-#: in this module runs BETWEEN turns and mutates only the loop's message list; a cancel is read
-#: MID-turn, by a util, script or shell command in flight. Re-exported under the name
-#: `executor`, `background` and the tests already use, so no caller moved (F529: the extraction
-#: is what made room here for the turn-boundary freight clock below).
+#: The PER-CALL cancel lives in `engine/cancelcall.py`; re-exported under the name its callers use.
 cancelled_for_turn = cancelcall.cancelled_for_turn
 
 
@@ -111,19 +104,11 @@ def inject_user_message(loop, m: dict) -> None:
         return
     ctx = loop.ctx
     if isinstance(m.get("refusal_flag"), dict):
-        # the operator flagged the reply this message produced as a refusal and re-sent it
-        # (web/api_refusal_flag): the record goes down first, where the flag happened
+        # the operator flagged the reply as a refusal and re-sent it: the record goes down first
         refusal.record_operator_flag(ctx, m["refusal_flag"])
-    # The event carries the attachment rels so the transcript UI can render the files
-    # (thumbnails / links) instead of the bare filename list inside the text block —
-    # ALL of them, not just the media the model can view (a csv is still linkable).
-    #
-    # It also carries the DELIVERY CHANNEL (`via`, plus the `source` the writer stamped).
-    # Without it every injection read as the operator speaking, whatever filed it: an
-    # escalation ladder's directive — machine-authored, binding on the run, filed on the
-    # `oversight` channel by engine/ladder.py — rendered as a plain "📨 user:" message, so a
-    # transcript reader could not tell who had redirected the run. The payload says which
-    # channel spoke; the renderer decides how to label it.
+    # The event carries ALL attachment rels (the UI renders them) and the DELIVERY CHANNEL
+    # (`via`, `source`), so a transcript reader can tell who spoke — the operator, or e.g. the
+    # escalation ladder's `oversight` channel.
     ctx.transcript.event("user_injection", {
         "text": m["text"],
         **({"via": str(m["via"])} if m.get("via") else {}),
@@ -131,9 +116,7 @@ def inject_user_message(loop, m: dict) -> None:
         **({"report": True} if m.get("report") else {}),
         **({"attachments": m["attachments"]} if m.get("attachments") else {})})
     if inbox.user_authored(str(m.get("via") or "")):
-        # `user_replies` is "has the user spoken" — the create_routine confirm gate and the
-        # `user-spoke` assist predicate both read it. A report, a background result and a
-        # branch hand-back are machines delivering; the CHANNEL is what says so (inbox.VIAS).
+        # `user_replies` is "has the user spoken"; machine deliveries are told apart by CHANNEL.
         ctx.user_replies += 1
     msg: dict = {"role": "user",
                  "content": injected_message(m["text"], report=bool(m.get("report")),
@@ -141,14 +124,12 @@ def inject_user_message(loop, m: dict) -> None:
     if m.get("attachments") and (media := mediaops.media_from_paths(ctx, m["attachments"])):
         msg["media"] = media
     loop.messages.append(msg)
-    # An injection is ONE CONFIGURATION OF A HOOK (D152): trigger `send`, addressee
-    # `run:<run_id>`, delivery `turn_boundary`, consumed once. Mirrored AFTER the message is
-    # really in the conversation, so the row records a delivery and not an intent.
+    # An injection is one configuration of a hook (D152), mirrored AFTER the message is in the
+    # conversation, so the row records a delivery and not an intent.
     hookmirror.injection_delivered(loop, m)
 
 
-#: The injected-message rendering lives with the channel table it reads (`channels.py`), and
-#: is re-exported here because `history.replay_messages` and every test know it by this name.
+#: Lives in `channels.py`; re-exported under the name `history.replay_messages` and tests use.
 injected_message = channels.injected_message
 
 
@@ -175,15 +156,11 @@ def run_user_command(loop, m: dict) -> None:
     """Execute ONE user-authored action (a chat slash command) at the turn boundary —
     the model action's exact path (parse → schema validate → validate_action against the
     same workflow tools ∩ capabilities → actionroute.dispatch_action) minus the model, so it
-    costs no turn. The observation lands in the transcript (the chat renders it) AND in the
-    message list (the assistant sees exactly what the user did); a parse/validation/
-    dispatch failure becomes a teaching observation instead of killing the run.
+    costs no turn. The observation lands in the transcript AND the message list; a failure
+    becomes a teaching observation instead of killing the run.
 
-    The routing table is the model's, not `executor.dispatch` directly: a `/util` went
-    straight to the executor and so skipped the D39 secret-exposure gate that stands in front
-    of the model's util call, and the executor injects every REQUIRED secret a util declares —
-    a secret the user had declined for this routine reached a util the chat ran. Typing the
-    command is not a decision about exposure; the gate asks it, or applies the one on record.
+    It routes through the model's table, not `executor.dispatch`, so the D39 secret-exposure
+    gate holds: typing a command is not a decision about exposure.
     """
     ctx = loop.ctx
     text = str(m.get("text") or "")
@@ -232,32 +209,17 @@ def drain_injections(loop) -> None:
     if ctx.depth > 0:
         runtree.drain_child(loop)
         return
-    # F195: an answer to a DEFERRED question this run filed must reach the run while it
-    # is still alive — before this, it sat in the inbox for the NEXT run's digest while
-    # the live run finished claiming "awaits your answer" (observed 2026-07-24 with
-    # q-20260724-121507-11). Same delivery as any mid-run user message; the pending
-    # record is consumed with it.
-    # F359 + user order 2026-08-20 (F368): EVERY root run's turn boundary drains only the
-    # LIVE set — the user talking to this run (live run view / composer) plus a detached
-    # task's result delivery. Queued freight (audit feedback, reports, routine-page
-    # messages, trigger texts, other runs' answers) is addressed to the routine's NEXT
-    # fresh run and is consumed only by that run's boot — mid-run injection is the live
-    # run view's channel, by design. Answers to THIS run's own deferred questions still
-    # arrive mid-run (F195, below).
+    # An answer to a DEFERRED question THIS run filed reaches it while it is alive. Otherwise
+    # the turn boundary drains only the LIVE set (the user talking to this run, a detached
+    # task's result); queued freight is for the routine's NEXT run's boot, by design.
     pairs = inbox.collect_deferred_answers(ctx.routine.dir, loop.consumed_dir,
                                            own_run_ts=ctx.run_ts if loop.resume else None)
     if pairs:
-        # R118: when the answer is a typed ACCESS-REQUEST decision, the GRANT must
-        # arrive with the prose — seed the run overlay and rebuild the live policy
-        # BEFORE injecting the text, so the answer's "usable now" is true from the very
-        # next action (the util sandbox and the file actions read ctx.granted_now
-        # live). Without this bridge only the words reached the run and e.g. a mid-run
-        # fs-write grant stayed EACCES until the next run.
+        # An ACCESS-REQUEST decision's GRANT is applied BEFORE the text is injected, so its
+        # "usable now" is true from the very next action.
         from .requests import apply_deferred_decisions
         apply_deferred_decisions(loop, pairs)
-    # R2778 + R2197 + D220: whether a patch is LIVE, whether the answer is a REFUSAL, and
-    # whether it SETTLES the decision — one order, shared with the boot digest
-    # (rsched/answerlines.py), so no verdict reaches a run at boot and not here.
+    # The verdicts riding an answer, in one order shared with the boot digest.
     from .. import answerlines
 
     for qa in pairs:
@@ -274,10 +236,7 @@ def drain_injections(loop) -> None:
                              and inbox.user_authored(str(m.get("via") or "")))
     ctx.reports_open += reports.stamp_delivered(
         ctx.server.routines_home, drained, run_id=ctx.run_id)
-    # F529, the other half of the exclusion above: what this run may NOT consume is NAMED
-    # here, now that the drain has taken everything it may. The boot digest said this once,
-    # at boot — and the operator answered three decisions into a run whose digest was five
-    # hours old, then asked whether his answers had been lost. Named, never delivered.
+    # What this run may NOT consume is NAMED here (never delivered), so it is not read as lost.
     freightnote.at_boundary(loop)
 
 
@@ -287,17 +246,9 @@ def child_finished_message(*, mode: str, n: int, label: str, workflow: str, stat
     announce_finished_subruns AND by history.replay_messages when it reconstitutes an
     announcement from a `subrun_end` event, so a resumed prompt reads like the live one.
 
-    ONE headline for every mode (F338): a child run finished, and the mode says how it was
-    scheduled. The modes used to announce themselves under different nouns, which is how the
-    prompt copy drifted apart in the first place. Only the follow-on instruction differs,
-    because only that genuinely differs: a sequential child's result feeds the next one.
-
-    `collected` names the child's deliverables that the engine copied up. Without it a parent
-    had to know the child's dir, search it and copy files out by hand — a procedure every
-    routine reinvented, and one the spawn contract used to describe WRONGLY (R409/R410: it
-    claimed children share the parent's working directory; they never did). The shape is
-    `child.handback_text`, shared with the branch and background hand-backs, so one hand-back
-    reads one way whichever mode produced it.
+    ONE headline for every mode; only the follow-on differs (a sequential child's result feeds
+    the next one). `collected` names the deliverables the engine copied up, rendered by
+    `child.handback_text`, which every hand-back shares.
     """
     head, _ = truncate(summary, cap=4000)
     return child.handback_text(
@@ -330,16 +281,8 @@ def announce_started_subruns(loop) -> None:
     """The `spawn` hook point (hooks/points.py) — `child-exit`'s twin at the other end of a
     child's life, fired once per child at the first boundary after it started.
 
-    No message of its own: the run already has the spawn OBSERVATION in its prompt, which is
-    what the point is about, and a second engine-authored copy of a row the model just read
-    would be noise. So this is the fire site only — the rule layer appends a note when one of
-    its predicates says something about the child that was just started, and nothing happens at
-    all when no rule has that moment.
-
-    The `brief` is the child's own instruction (`loop.instruction`, the prompt the parent
-    wrote): the one thing about a child that the parent can still act on, since a running child
-    cannot be re-briefed. It is read off the child's loop rather than copied into the Subrun,
-    because the child IS the record of what it was asked.
+    No message of its own (the spawn observation is already in the prompt): the fire site
+    only. The `brief` is read off the child's loop, which IS the record of what it was asked.
     """
     for sub in loop.subruns.subruns.values():
         if sub.announced_start:

@@ -2,9 +2,6 @@
 conversations: what a PERSON asked of a run, transcribed by the run as their scribe and checked
 against their own words, answered at the finish — and in a conversation, met by a reply that
 declares itself final.
-
-The verifier is stubbed wherever a `met` is claimed: a live judge would consume a scripted reply
-for a verdict these tests say nothing about (the claim check has its own tests in test_loop).
 """
 
 from __future__ import annotations

@@ -1,16 +1,4 @@
-"""Tab-open (tier 1) notifications for open decisions — Settings → Notifications, opt-in.
-
-Chrome on Android exposes `Notification` and lets a site be granted permission, but its
-constructor throws ("Illegal constructor — use ServiceWorkerRegistration.showNotification()").
-The notifier marked a decision seen, then threw at the constructor before the seen list was
-stored: on that platform nothing was ever shown, and every snapshot threw again at the same
-decision. It now raises the same notification through the console's service worker, whose
-click handler opens the URL the notification carries.
-
-No real OS notification can be observed from a test, so the API is stubbed before the console
-loads: the page constructor records what it was asked to show (or throws, like Android's), and
-the worker registration records what reaches it.
-"""
+"""Tab-open (tier 1) notifications for open decisions — Settings → Notifications, opt-in."""
 
 from __future__ import annotations
 

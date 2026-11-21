@@ -1,33 +1,5 @@
 """D223: a thread whose composed prompt floor exceeds its model's window is HARD-COMPACTED at
 boot — the middle dropped to whatever fits — and starts, with the loss stated.
-
-The second half of F539. The first half shipped in 0.474.0: a run served by a smaller model is
-told its window, durably (`engine/substitution.py`). The precondition stayed open — the floor is
-computable before the first model call, and nothing compared it to anything, so a run that was
-unrunnable from turn 0 still started and died mid-run (`llmsectest-weekday:20260922-060001`,
-turn 106, $1.03 spent, on *"prompt is too long and cannot be shrunk further: 57,250 estimated
-tokens … provider maximum 32,768"*).
-
-The operator's FIRST answer (2026-10-30) was to record it and change nothing. That earned the
-evidence for his second: `prompt_floor_over_window` fired NINE times for ONE conversation,
-`c-20261014-134208` — 1,063,175 → 1,073,520 → 1,085,503 estimated tokens on 2026-11-08 and
-1,089,162 → 1,138,237 on 2026-11-10, against a 1,000,000-token window, every attempt bigger
-than the last, after a week of `prompt_oversize_shrunk` passes that had stopped being able to
-help. 1,333 turns on disk, a thread that could no longer be added to, and he was still trying.
-
-SO HE DECIDED IT AGAIN (D223, 2026-11-10), verbatim: *"start it, but have the engine's FIRST act
-be a hard compaction that drops the middle to whatever fits, so the thread continues with a
-stated loss"* — chosen AGAINST the refusal he was also offered. These tests pin the three things
-that answer makes load-bearing:
-
-- the prompt is actually SHRUNK before turn one, by dropping the MIDDLE (head and tail are what
-  keep a thread answerable), reusing `compaction.maybe_compact` and `clamp_to_cap`;
-- the loss is STATED where it is read — in the live prompt the next turn's model sees AND as a
-  transcript `user_injection` the conversation and run pages render (`chat.js`,
-  `transcript.js`). A middle discarded in silence makes a thread answer from a context it no
-  longer has, sounding exactly as certain as one that can see everything;
-- a floor that CANNOT be got under the window (head, tail and system prompt are incompressible)
-  neither loops nor raises out of boot: it is recorded with `fits: false` and said once.
 """
 
 from __future__ import annotations
@@ -73,11 +45,7 @@ def _loop(tmp_path, *, window: int, messages: list[dict], turns: int = 0):
 
 
 def _thread(n: int, chars: int) -> list[dict]:
-    """A replayed conversation: a system message, then `n` turn messages of `chars` each.
-
-    `boot` replays the whole transcript on a resume (`history.replay_messages`), which is the
-    shape the nine-times specimen arrives in: a long thread with a middle to drop.
-    """
+    """A replayed conversation: a system message, then `n` turn messages of `chars` each."""
     return [{"role": "system", "content": "S" * chars},
             *({"role": "assistant" if i % 2 else "user", "content": f"m{i} " * (chars // 4)}
               for i in range(n))]
@@ -109,12 +77,7 @@ def test_the_middle_is_dropped_so_the_thread_fits(tmp_path):
 
 
 def test_the_loss_is_stated_in_the_prompt_and_on_the_conversation_surface(tmp_path):
-    """His answer's load-bearing half: *so the thread continues with a stated loss*.
-
-    The objection to compacting was that a thread whose middle is silently discarded answers
-    from a context it no longer has. So the statement must reach BOTH readers: the next turn's
-    model (the live prompt) and the person in the conversation (the rendered injection).
-    """
+    """His answer's load-bearing half: *so the thread continues with a stated loss*."""
     (tmp_path / ".control").mkdir(parents=True)
     loop = _loop(tmp_path, window=32_768, messages=_thread(60, 3_000), turns=60)
 

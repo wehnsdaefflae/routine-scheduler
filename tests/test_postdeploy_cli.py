@@ -1,16 +1,4 @@
-"""`rsched postdeploy`'s thin I/O layer: the command, the record, the exit code (R2428).
-
-The checks themselves are proven in `tests/test_postdeploy.py` over pure inputs. What is left is
-everything that touches the world, and it is tested here with the ONE live read stubbed at the
-seam `cli_postdeploy._status` keeps it behind — so the suite never reaches an instance and
-`tests/production_guard.py` has nothing to object to.
-
-What a run in a SANDBOX cannot do is exercise the real `/api/status` call: the routine that built
-this could not read the live config (`Errno 13`) and `/api/settings/*` is 403 for a routine token.
-So `_status` is stubbed in every test below and the HTTP transport itself is exercised nowhere —
-stated plainly rather than implied, because the alternative is reporting a "0 problems found" that
-nothing observed.
-"""
+"""`rsched postdeploy`'s thin I/O layer: the command, the record, the exit code (R2428)."""
 
 import json
 from argparse import Namespace

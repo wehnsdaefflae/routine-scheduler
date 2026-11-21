@@ -1,17 +1,5 @@
 """What a run-tree hook's SENDER is told — the observation wording of `report` with a run-tree
 `target` (R2924).
-
-Its own module rather than more of `test_hooks_runtree.py`, which pins the ADDRESSING and the
-DELIVERY: what the sender reads back is a third responsibility, and the file was at the size bar.
-
-The hole these pin is specific. `runtree.send` returns its own observation shape —
-`runtree`/`delivered`/`hook`/`addressee`, never the `filed` + `R<n>` of a ledger row — and the
-report renderer had no branch for it, so every run-tree send, DELIVERED ones included, fell
-through to the last line of the report branch: *"could NOT write the reports log (I/O error) —
-the report was not filed"*. Measured on 2026-10-26: a child of `scheduler-builder` was told its
-`target: parent` send had failed, re-sent it, and BOTH copies arrived in the parent's prompt. A
-false failure costs more than a refusal, because the sender redoes work that already landed —
-and it discredits the one channel a child has for saying its brief is wrong.
 """
 
 from __future__ import annotations
@@ -90,9 +78,6 @@ def test_a_genuine_write_failure_still_says_nothing_was_delivered(make_routine, 
                                                                   monkeypatch):
     """And the honest failure must survive the fix: when the inbox write really does raise,
     the sender is told the hook was NOT delivered and nothing is queued.
-
-    Without this case the fix could have been "never report a failure", which is the same
-    defect with its sign flipped — a failed delivery reading as a success.
     """
     d = make_routine("rtfail")
     parent = run_context(d, TS)

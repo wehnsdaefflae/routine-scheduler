@@ -1,14 +1,4 @@
-"""The health stream's VOCABULARY is machine-checked against what the code emits.
-
-Every reader of `.control/health-events.jsonl` — the audit recipe's evidence stage, the
-`health-events` library util's `--event` filter — is keyed on names a person read out of
-`health_vocab.EVENTS`. An event added at a call site and not there is therefore
-invisible by construction, not by accident: `prompt_oversize_shrunk` and `trigger_capped` were
-both written to the stream for weeks while every documented filter looked past them.
-
-The equality runs in the direction that catches it: EMITTED → DOCUMENTED, over the real call
-sites, the way tests/test_surface.py pins the remedy vocabulary.
-"""
+"""The health stream's VOCABULARY is machine-checked against what the code emits."""
 
 from __future__ import annotations
 
@@ -36,12 +26,7 @@ def _literal_strings(node: ast.AST) -> set[str]:
 
 
 def _emitted() -> set[str]:
-    """Every event name reachable at a `log_health_event` call site in src/rsched.
-
-    Three shapes occur and all three are resolved: a literal; a name the same file assigns a
-    literal, or that a caller passes as `event=` (the reap's close-out); and an f-string whose
-    constant prefix names a family (`lane_chain_{status}`), matched as a prefix.
-    """
+    """Every event name reachable at a `log_health_event` call site in src/rsched."""
     names: set[str] = set()
     prefixes: set[str] = set()
     for path in sorted(SRC.rglob("*.py")):

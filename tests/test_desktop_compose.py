@@ -1,18 +1,4 @@
-"""The agent-desktop sidecar as compose declares it, read as files (no Docker here).
-
-Three promises an edit can break with nothing failing until a host notices:
-
-1. The sidecar sees the shareable homes EXACTLY as the engine does — same source, same target,
-   same mode — and never wider. A run names a folder as the engine sees it and proves its
-   access there; the broker then serves the same path. A bind wider than the engine's, or a
-   read-only bind beneath it left out (the LLMSecTest grant folder under /srv), would let a
-   desktop write what no run may.
-2. Its doors: opt-in by profile, the broker and the screens behind two different tokens that
-   compose does not hard-require (a `:?` would stop every compose command on a host that never
-   enabled it), and the screen published on the host's loopback only.
-3. Every file the image COPYs is re-included by .dockerignore, which is an allowlist: a source
-   it misses fails the build with "not found" on a file that is plainly present.
-"""
+"""The agent-desktop sidecar as compose declares it, read as files (no Docker here)."""
 from __future__ import annotations
 
 import re

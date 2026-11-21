@@ -19,21 +19,16 @@ from ..paths import atomic_write_json, read_json
 #: other `.control` markers, never config.
 SEEN_FILE = ".control/oversize-state-files.json"
 
-#: A file at or above this size is left OUT of the routine's own repo. The routine repo is
-#: mirrored into the library repo and PUSHED (library-sync), and GitHub refuses a push
-#: carrying any blob over 100 MB — one 223 MB NAS inventory a run wrote to state/ blocked
-#: every library push for days and the mirror's history had to be rewritten to drop it.
-#: Well under that limit on purpose: a mirror carries files for people to read, and nothing
-#: a person reads is 20 MB. The file itself stays on disk, untouched; only the commit skips it.
+#: A file at or above this size is left OUT of the routine's own repo, which is mirrored and
+#: PUSHED (library-sync) — GitHub refuses any blob over 100 MB. Well under that on purpose. The
+#: file itself stays on disk; only the commit skips it.
 OVERSIZE_BYTES = 20 * 1024 * 1024
 
 
 def oversize_files(routine_dir: Path, limit: int | None = None) -> list[tuple[str, int]]:
     """(repo-relative path, size) for every file the stage WOULD take — tracked plus
-    untracked-not-ignored, exactly git's own `add -A` view — at or over `limit`. Asking git
-    rather than walking the tree keeps ignored trees out of it: `mnt/` may be a live sshfs
-    share, `.venv/` is thousands of files, and neither would ever be committed anyway.
-    Best-effort: no repo or a git error lists nothing.
+    untracked-not-ignored, git's own `add -A` view — at or over `limit`. Asking git keeps
+    ignored trees (a live sshfs mount, a `.venv/`) out. Best-effort: an error lists nothing.
     """
     found: list[tuple[str, int]] = []
     if limit is None:
@@ -59,10 +54,8 @@ def oversize_files(routine_dir: Path, limit: int | None = None) -> list[tuple[st
 def _size_bucket(size: int) -> int:
     """The file's size in MB, rounded DOWN to a power of two — the identity of the event.
 
-    An oversize state file is oversize on every run, so reporting each one every time is how
-    the one signal that would have caught a 2 GB download became noise: 18 of the last 400
-    health events were three files saying the same thing again. A bucket makes the event mean
-    "this file crossed a new size" — it fires once, then only when the file has DOUBLED.
+    An oversize file is oversize on every run; the bucket makes the event fire once, then only
+    when the file has DOUBLED.
     """
     mb = max(1, size // (1024 * 1024))
     return 1 << (mb.bit_length() - 1)
@@ -89,14 +82,9 @@ def _newly_oversize(routines_home: Path, routine: str,
 
 def autocommit(routine_dir: Path, message: str, *, routines_home: Path | None = None,
                run_id: str = "") -> None:
-    """Commit the routine's working dir at run end, through the shared `libgit.commit`
-    (F285/F318 — this module once re-implemented it verbatim): its
-    per-repo lock means a cross-routine writer committing this same dir concurrently
-    — the routine-improver's `git sync` of a target that is mid-run — takes turns with
-    this autocommit instead of colliding on `index.lock` (the `git` util's `sync` flocks the
-    same file), its identity flags keep the neutral author even in a routine repo that
-    never persisted git config, and a commit that does not land is filed against `run_id`
-    in `routines_home`'s health stream.
+    """Commit the routine's working dir at run end, through the shared `libgit.commit` (its
+    per-repo lock takes turns with a concurrent cross-routine writer; a commit that does not
+    land is filed against `run_id` in `routines_home`'s health stream).
 
     Files over OVERSIZE_BYTES are excluded from the stage and each one is reported as an
     `oversize_state_file` health event (when `routines_home` is known) the first time it

@@ -1,14 +1,4 @@
-"""F858: the real console, a really slow request, and a row carrying how long it took.
-
-The fast suite pins the store and the source. This drives what the operator actually loads: the
-shipped `trace.js` installed by `app.js`, a real `fetch` through `api.js`'s one authed-fetch
-loop, a response genuinely held past the floor, the real POST and the real day file.
-
-It has to be a browser test. The quantity is produced by `performance.now()` around a fetch the
-browser performed and by the browser's own Navigation Timing entry — neither exists under
-pytest, so a fast test can only assert that the source says it does. The thing that would break
-in production is the instrument not being MOUNTED, and only a loaded page can show that.
-"""
+"""F858: the real console, a really slow request, and a row carrying how long it took."""
 
 from __future__ import annotations
 
@@ -60,21 +50,7 @@ def test_a_slow_request_becomes_a_row_naming_the_endpoint_and_the_wait(ui, ui_pa
 
 
 def test_a_slow_request_measured_in_a_hidden_tab_says_so(ui, ui_page):
-    """The `slow` kind's half of F863, which the load kind got in 0.525.5 and this one did not.
-
-    MEASURED in production: 24 client rows claiming 106,205-183,081 ms were all REPORTED inside
-    one 3-second window (2026-11-10 12:35:58-12:36:01 UTC, every one status 200) — a tab
-    flushing its queue on wake, `performance.now()` having counted the laptop's sleep. No SERVER
-    row in that store exceeds 16,790 ms.
-
-    `performance.now()` keeps running while a tab is hidden (it is a monotonic clock, not a work
-    meter), so the duration cannot be corrected — only DISCLOSED. The row is kept and marked:
-    a slow request nobody was watching is still evidence about the server, and dropping it would
-    bias the store toward whatever the operator happens to be looking at.
-
-    Same technique and same limit as the load case below: this pins OUR branch, not the
-    browser's own clock behaviour.
-    """
+    """The `slow` kind's half of F863, which the load kind got in 0.525.5 and this one did not."""
     ui_page.add_init_script(
         "Object.defineProperty(document, 'visibilityState', "
         "{configurable: true, get: () => 'hidden'});")
@@ -100,13 +76,7 @@ def test_a_slow_request_measured_in_a_hidden_tab_says_so(ui, ui_page):
 
 
 def test_a_navigation_becomes_a_render_row_naming_the_view(ui, ui_page):
-    """F861: the cost this console mostly is — a hash navigation, measured until #view settles.
-
-    Only the first page load fires `load`, so every click through the nav is invisible to the
-    other two duration kinds unless a request happens to cross the 1,000 ms floor. This drives a
-    REAL navigation in the real console and asserts the row exists, names the view it rendered,
-    and carries a plausible number.
-    """
+    """F861: the cost this console mostly is — a hash navigation, measured until #view settles."""
     ui_page.goto(ui.url)
     ui_page.wait_for_selector(".topbar")
     ui_page.click("#nav a[href='#/routines']")
@@ -147,10 +117,6 @@ def test_a_backgrounded_tab_reports_no_load_milestone_rather_than_an_hour(ui, ui
     another window. The first production reading of this instrument held a 4,271,306 ms
     (71-minute) "page load" for exactly that reason, and nothing downstream can tell such a
     number from a real one.
-
-    So the milestone is withheld, not faked. `response` and `dom` stay, because both are
-    normally past before a tab can be switched away from, and the reader parses `load <n>ms` —
-    which simply does not match.
     """
     # `document.visibilityState` is the property the instrument reads, so that is what is
     # overridden — installed before any of the page's own script runs. The CDP route

@@ -2,19 +2,13 @@
 whether the apply that will carry it out would take it.
 
 A run cannot write routine.yaml: it proposes the change on an `ask_user` and the Decisions page
-applies it with one click (engine/revise.py routes a config-shaped request there). Both checks
-run where the durable record is WRITTEN (`interact.handle_ask`), never at apply time, because a
-record must never reach the operator wearing an apply button that cannot work.
+applies it with one click. The checks run where the durable record is WRITTEN
+(`interact.handle_ask`), never at apply time, so a record never reaches the operator wearing an
+apply button that cannot work.
 
-Split out of `interact.py`, whose one responsibility is the ask itself — filing a decision record
-and turning the reply back into an answer. Whether one optional field of that record is
-well-formed is a different question, and it is this module's.
-
-This file holds the KEY half — which surface the patch is for (`patch_target`), which fields
-that surface has (`patch_shape`, `server_shape`), which inner keys each mapping field takes
-(`patch_nested`). The VALUE half — a real field whose VALUE the apply would refuse — is
-`config_values.py`, split off when the second and third such check pushed this file over the
-350-line house bar. `resolve` composes both halves and is still the one entry point.
+This file holds the KEY half — the target surface (`patch_target`), its fields (`patch_shape`,
+`server_shape`) and mapping fields' inner keys (`patch_nested`). The VALUE half is
+`config_values.py`. `resolve` composes both and is the one entry point.
 """
 
 from __future__ import annotations
@@ -23,10 +17,7 @@ from pathlib import Path
 
 from . import runkind
 
-# The VALUE half of the same filing check — the fields whose value the apply would refuse, and
-# which this file grew past the house size bar trying to hold (`config_values.py` says why).
-# Re-exported here because `resolve` composes them and every existing caller imports them from
-# this module: the split is a file boundary, not an interface change.
+# The VALUE half, re-exported: callers import it from this module.
 from .config_values import (
     TRIAL_SHAPE,
     capability_value,
@@ -58,19 +49,11 @@ def live_fields(ctx, cpatch: dict | None, target: str = "") -> dict:
     """What a LIVE blocking question must carry so the surface the operator is READING can
     offer the patch's one apply control — or `{}` when the ask carries no patch.
 
-    F807/R3060: the durable record holds the patch (`inbox.file_question`), but everything
-    rendered while the run WAITS is built from the smaller copy `interact.handle_ask` publishes
-    into status.json: the conversation's pinned panel and the run page's panel
-    (`static/components/answerform.js` `questionPanel`, fed by the state stream), and the
-    Decisions page's own row for a live blocking question — `web/decisions_read` builds that
-    from `active.question` and skips the durable pending file by qid. A patch missing here
-    therefore reached NO surface at all while the run blocked: the operator read a blocking
-    question where the run was waiting for him and had no way to apply what it proposed.
-
-    The fields are the ones `static/components/configproposal.js` routes on: the PATCH body,
-    the resolved target (absent = the asker itself, D123/F458) and the home that decides which
-    endpoint applies it. Absent for an ordinary ask, so no reader learns to expect them and no
-    card grows a control over a proposal that is not there.
+    Everything rendered while the run WAITS (the pinned panels and the Decisions page's live
+    row) is built from the status.json copy, not the durable record, so a patch missing here
+    reaches no surface. The fields are what `static/components/configproposal.js` routes on:
+    the PATCH body, the resolved target (absent = the asker) and the home. Absent for an
+    ordinary ask.
     """
     if not cpatch:
         return {}
@@ -83,29 +66,17 @@ def patch_shape(patch: dict | None, target: str = "", *, conversation: bool = Fa
     """Refuse a `config_patch` whose KEYS the apply route would reject, at the moment it is
     filed rather than when the operator clicks.
 
-    The target is checked first (`patch_target`); the BODY was not, so a run could invent a
-    shape and the record reached the Decisions page wearing an apply button that 422s.
-    Measured 2026-09-23: a proposed filesystem grant arrived as
-    `{"filesystem": {"read": [...]}}`, the apply answered `filesystem: Extra inputs are not
-    permitted`, and the operator had a decision he could read and not take — the one state a
-    decision surface must never be in.
-
-    The keys are judged in the vocabulary of the surface the apply will PATCH: `RoutinePatch`
-    for a routine, `ConversationPatch` for a conversation's proposal about itself
-    (`conversation`, from `runkind.lands_in_conversation`). Judged against their union — the
-    classification table — a routine proposal naming `title` passed here, as did a
-    conversation's naming `schedule`; each was a 422 on the click. `configflow` spells both
-    sets out and `tests/test_configflow.py` pins them to the models, so this can never drift
-    behind the endpoint it stands in for. Routing keys are not fields; an empty patch is left
-    to the caller.
+    The keys are judged in the vocabulary of the surface the apply will PATCH — `RoutinePatch`
+    or, for a conversation's proposal about itself, `ConversationPatch` — never their union.
+    `configflow` spells both sets out and `tests/test_configflow.py` pins them to the models.
+    An empty patch is left to the caller.
     """
     if not patch:
         return ""
     from ..configflow import CONVERSATION_PATCH_FIELDS, ROUTINE_PATCH_FIELDS, SERVER_KEY
     if SERVER_KEY in patch:
         return server_shape(patch, target)
-    # `patch_target` has already run and POPPED the routing key, so the surface is read from
-    # the target it resolved, never from the body — which no longer says
+    # `patch_target` already POPPED the routing key: the surface comes from the target
     if conversation and not target:
         # the asker's own conversation; a resolved routine target is judged as a routine
         known, surface = set(CONVERSATION_PATCH_FIELDS), "conversation config"
@@ -125,22 +96,10 @@ def patch_nested(patch: dict | None) -> str:
     """Refuse a mapping field whose INNER keys the apply would reject — the same dead button
     one level down.
 
-    `patch_shape` judges the patch's own keys, so `{"budgets": {...}}` passed it whatever the
-    mapping held. Measured 2026-10-20: `llmsectest-weekday` filed
-    `{"budgets": {"max_turns": 600, "max_minutes": 900}}`, the apply answered
-    `budgets: Value error, unknown budget max_minutes`, and the operator pressed
-    `approve & apply` FOUR times before typing the toast text back to the run by hand
-    (`.ui-traces/20261020.jsonl`, 04:39:18-04:39:39). `max_minutes` is not a key the repo has
-    ever had — the run invented it, and nothing between the invention and his click said so.
-
-    Judged against the closed vocabularies in `config/base.py`: the budget names the loader
-    keeps (`DEFAULT_BUDGETS`, the same list `web/config_fields._check_budgets` reads), the model
-    roles (`ROUTINE_MODEL_ROLES`), the chat roles `efforts` takes (`MODEL_KINDS`) and its levels
-    (`EFFORT_LEVELS`). Both patch surfaces spell these three fields the same way, so there is
-    one answer for a routine and a conversation alike. A VALUE needing server state — a catalog
-    model name, a window fit — stays with the click, as `trial_value` says for the trial: the
-    engine may not import the web layer, and a filing check stricter than the apply would refuse
-    a proposal that works.
+    Judged against the closed vocabularies in `config/base.py` (`DEFAULT_BUDGETS`,
+    `ROUTINE_MODEL_ROLES`, `MODEL_KINDS`, `EFFORT_LEVELS`), the same for both patch surfaces. A
+    VALUE needing server state stays with the click: a filing check stricter than the apply
+    would refuse a proposal that works.
     """
     if not patch:
         return ""
@@ -173,27 +132,12 @@ def patch_nested(patch: dict | None) -> str:
 
 
 def server_shape(patch: dict, target: str = "") -> str:
-    """Refuse a `{"server": {...}}` patch the apply route would reject — the INSTANCE surface
-    (operator, 2026-10-19), judged here like the other two so a server proposal never reaches
-    the Decisions page wearing a button that cannot work.
+    """Refuse a `{"server": {...}}` patch (the INSTANCE surface) the apply route would reject.
 
-    Three refusals, each a state the apply could not land:
-
-    - a body mixing `server` with routine keys. One patch, one surface, one PATCH route: a
-      mixed body would need two applies, and the half that landed would settle the record as
-      handled while the other half silently did not.
-    - a `server` value that is not a mapping, or is empty. `{"server": {}}` reads as a change
-      and applies nothing.
-    - a key outside `SERVER_PATCH_FIELDS`. That set is an ALLOW-LIST of fields with a
-      validated runtime writer behind them, so the auth tokens, the bind address, the homes
-      and the endpoint/model/machine/decision CATALOGS are refused by not being in it — the
-      catalogs because an entry carries credentials and has its own CRUD routes, not because
-      editing them is unthinkable.
-
-    The allow-list is enforced AGAIN in the apply route, which is the half that matters:
-    R2702's caution is from the routine that once held a capability it had merely inherited,
-    and a check living only in the caller's restraint is not a boundary. This check exists so
-    the refusal arrives on the turn that files the ask, with the vocabulary named.
+    Refused: a body mixing `server` with routine keys (one patch, one route — a mixed body
+    would half-land); a `server` value that is not a non-empty mapping; a key outside the
+    `SERVER_PATCH_FIELDS` ALLOW-LIST. The apply route enforces the allow-list AGAIN — that is
+    the boundary; this only makes the refusal arrive on the filing turn.
     """
     from ..configflow import SERVER_KEY, SERVER_PATCH_FIELDS
 
@@ -229,26 +173,11 @@ def patch_target(ctx, cpatch: dict | None, *, conversation: bool = False) -> tup
 
     Returns `(target, error)`. `target` is `""` when the patch is for the asker itself.
 
-    D123/F458. A run proposes a config change it cannot make itself; the Decisions page applies
-    it. Before 0.326.0 that apply was hardwired to the ASKING routine, so config-optimizer —
-    whose whole job is per-routine config — could not land a single change on a target: its
-    suedlink-wlf budget proposal rewrote config-optimizer's own budgets and reported success
-    (R1343, R1407). The slug rides INSIDE the patch as `routine`, which keeps `config_patch`
-    one object in the action schema, and is popped here so the remaining keys stay a clean
-    PATCH body the endpoint's `extra="forbid"` accepts.
-
-    Resolution happens at this seam, not at apply time, because an unresolvable target must
-    never reach the user wearing a working button. A name matching no installed routine is
-    refused on the turn that asked. Falling back to the asker is the defect itself and is never
-    done.
-
-    The target resolves against the ROUTINES home whoever asks, because that is where routines
-    live. Resolved under the asker's own home — a conversation's is the conversations home —
-    every routine a conversation named was refused; a slug that matched another conversation
-    reached the Decisions page, which posted the patch to `/api/routines/<the asking
-    conversation>`: a 404. A `routine` naming the asker means the asker itself only when the
-    asker IS a routine (`conversation`: the record lands in a conversation,
-    `runkind.lands_in_conversation`).
+    D123: the slug rides INSIDE the patch as `routine` (keeping `config_patch` one schema
+    object) and is popped here so the rest is a clean PATCH body. An unknown slug is refused on
+    the asking turn; falling back to the asker is never done. The target resolves against the
+    ROUTINES home whoever asks; a `routine` naming the asker means the asker itself only when
+    the asker IS a routine.
     """
     if not cpatch:
         return "", ""

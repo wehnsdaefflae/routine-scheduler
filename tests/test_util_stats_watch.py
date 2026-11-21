@@ -1,17 +1,5 @@
 """The util-stats snapshot is computed ONCE in the daemon, not by every engine at run end
 (D-read-models (a)).
-
-Before this, `engine/runtime.py` called `write_util_stats_snapshot(server)` at the end of
-EVERY root run: each engine process re-walked the library's git log, re-parsed the whole
-workflow-usage stream and re-scanned every un-counted transcript, to write a file no engine
-ever reads (only the Stats tab and the `util-stats` util read it). One daemon owns that now,
-debounced on run events, so the per-run cost is gone and a burst of finishes is one pass.
-
-What is pinned here: the engine path is GONE (not merely bypassed), the burst collapses to one
-compute, a non-run event wakes nothing, the compute happens off the event loop (it is seconds
-of git + file I/O), a raise cannot kill the long-lived listener, and the watch is actually
-mounted in the daemon's lifespan — a listener nothing starts is prose (`test_marker_watch`'s
-lesson).
 """
 
 from __future__ import annotations

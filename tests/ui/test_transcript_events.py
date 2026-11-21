@@ -1,19 +1,4 @@
-"""Event shapes the transcript renderer had no branch for, against the REAL console.
-
-Every one of these reached the page as something misleading rather than as an error, which is
-why none of them was caught by the js_errors collector or by anyone reading code:
-
-- a HELD action fell through to `JSON.stringify` and read as a wall of raw payload, so the one
-  observation whose whole job is to be re-read by a person was the least readable on the page;
-- all SIX finish-gate rungs rendered as the fabrication guard, the only one that existed when
-  the branch was written — so a run deferred for its accounting was labelled a hallucinated
-  completion, which is the opposite diagnosis;
-- the background archive (0.308.0) carries no before/after chars, because the digest already
-  did the shrinking — it reached the branch that prints a span and said "undefined → undefined
-  chars"; abandoned, it said "nothing elided this pass", which is the line for a no-op pass;
-- `stages_skipped` (F521) had no renderer at all and drew nothing (tests/test_static_transcript.py
-  now pins every EVENT_TYPES member to one).
-"""
+"""Event shapes the transcript renderer had no branch for, against the REAL console."""
 
 from __future__ import annotations
 
@@ -184,20 +169,7 @@ def test_the_transcript_renders_every_event_shape_in_words(ui, ui_page):
 
 
 def test_a_batch_ask_row_counts_its_records_instead_of_reading_as_one(ui, ui_page):
-    """F776 — the batched `ask_user` row, in the real browser.
-
-    A batch is N RECORDS (D212, engine/askbatch.py): one action files one decision card per
-    question, all sharing a batch id. The row therefore has to COUNT them, and must never fall
-    through to the singular "filed as deferred" — which would tell the operator ONE card is
-    waiting on his Decisions page while three are, the one thing this row exists to say.
-
-    The branch was unexercised by the browser suite until this test: the only coverage was
-    engine-side, over the admin line the MODEL reads (tests/test_ask_batch.py), and nothing
-    loaded what a PERSON sees. Asserted against the page both ways round — the counted row
-    present, and the singular wording absent from it — because a fallthrough is silent: it
-    produces a plausible sentence, not an error, so neither the js_errors collector nor a class
-    assertion would notice.
-    """
+    """F776 — the batched `ask_user` row, in the real browser."""
     ts = _seed(ui)
     ui_page.goto(f"{ui.url}/#/run/uir:{ts}")
     expect(ui_page.locator(".turn").first).to_be_visible()

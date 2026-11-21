@@ -1,17 +1,4 @@
-"""The GATE HISTORY beside the run history, on the routine page (R2764).
-
-The operator's words: "like the list of previous runs under 'What a finished run delivers' we
-also need a history of the previous gates. which ones fired, which ones didn't. report that".
-
-`runs/<ts>/gate.json` has held every verdict since F457 and no console read one, so the page
-showed the gate's CONFIG (what it would ask) and never its answers. The runs table is already
-the fire history — a skipped fire leaves a run dir (`daemon/runner.py` claims it at :230,
-before `run_gate.admit` at :330) — so the verdict belongs on those rows, where the fire it
-judged is: one line per fire, which ones fired, which ones didn't, and the check that decided.
-
-A routine with no gate must read exactly as it did: no column, no tally, no empty cells on
-every row of every ungated routine in the fleet.
-"""
+"""The GATE HISTORY beside the run history, on the routine page (R2764)."""
 
 from playwright.sync_api import expect
 

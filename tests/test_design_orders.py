@@ -1,7 +1,4 @@
-"""A docs/designs.md ORDER no item row records is surfaced (readmodels/design_orders.py).
-
-Measured 2026-11-05: 36 entries, 2 with a live row — decided work outside every count.
-"""
+"""A docs/designs.md ORDER no item row records is surfaced (readmodels/design_orders.py)."""
 
 from __future__ import annotations
 

@@ -1,20 +1,4 @@
-"""A refusal that performs a side effect the caller needs must SAY it performed it (R2879).
-
-`read_file` on a binary or oversized file refuses — and adds the path to `ctx.seen_paths` on
-the refusal itself (`engine/grounding.py` says why), which is exactly what the destruction gate
-wants: the move or delete that follows is ALLOWED. That has been true since 0.339.0 and
-`tests/test_read_file.py::test_binary_file_is_refused_before_any_decode` pins the mechanism.
-
-What was missing is the sentence. The refusal said only what read_file cannot do, so a run that
-did the right sequence — read, refused, move — believed it had gained nothing, spent a turn
-being confused, and reported the gate itself as a defect (a conversation's report, folded to
-this routine as R2879). A refusal that grounds silently is indistinguishable from one that did
-nothing — the same class as a `log.warning` no run reads (F754).
-
-These are assertions about WORDS, which is the point: the message is what every routine reads
-at the moment it is confused, and the behaviour behind it needed no change at all. They are
-also assertions that the four messages agree, because they now come from one module.
-"""
+"""A refusal that performs a side effect the caller needs must SAY it performed it (R2879)."""
 
 from __future__ import annotations
 

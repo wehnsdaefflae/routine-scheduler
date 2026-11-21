@@ -1,25 +1,16 @@
 """Sign a subscription account back in through CLIProxyAPI, from the console — or remove one.
 
-The proxy owns the OAuth flow (docs/model-gateway.md): it mints the consent URL,
-receives the authorization code and writes the auth file. What the console adds is the
-HANDOFF for a browser that is not on the server. The consent page redirects to
-`http://localhost:54545/callback` (Claude; 1455 for Codex; `51121/oauth-callback` for
-Antigravity) — `localhost` on the OPERATOR'S device, where nothing listens, so the page fails
-to load. The address bar still carries the code and the state; the operator pastes that
-address (or the code the page shows) back into the console, and the proxy's management callback
-completes the exchange.
+The proxy owns the OAuth flow (docs/model-gateway.md). The console adds the HANDOFF for a
+browser not on the server: the consent page redirects to a `localhost` callback (CALLBACK_PORT)
+on the OPERATOR'S device, where nothing listens; the operator pastes that address (or the code)
+back, and the proxy's management callback completes the exchange.
 
-Everything the management key sees stays on the server, like `cliproxy_quota`: the dicts
-returned here carry a consent URL, a state, a status word and the proxy's own one-line
-account messages — never a token, a key or an upstream body. Every public function returns
-a soft `{"ok": False, "error": …}` instead of raising, so the card can show the reason.
-Which endpoint a call is made for is `cliproxy_mgmt`'s business: it resolves the binding
-(one key per proxy) and names the providers that endpoint's models belong to.
+The dicts returned carry a consent URL, a state, a status word and the proxy's one-line account
+messages — never a token, a key or an upstream body. Every public function returns a soft
+`{"ok": False, "error": …}` instead of raising. Binding resolution is `cliproxy_mgmt`'s.
 
-Removing (`remove`) deletes ONE auth file by its name: a lapsed subscription's old login beside
-the new one (2026-11-16: two Codex rows for the same address, the free one and the Plus one, and
-no way to tell them apart or drop the stale one but the proxy's own panel). Only an account the
-asking card lists can be removed, and the proxy's delete-everything form is never sent.
+`remove` deletes ONE auth file by name (e.g. a lapsed subscription's old login), only one the
+asking card lists; the proxy's delete-everything form is never sent.
 """
 
 from __future__ import annotations
@@ -76,8 +67,7 @@ def accounts(cfg: EndpointConfig, providers=frozenset(), *, timeout: int = 15) -
     label, the proxy's status word and its one-line reason when an account is unavailable —
     filtered to `providers`, the auth-file provider names the asking endpoint's models belong
     to (cliproxy_mgmt.endpoint_providers), with `providers` in the reply naming the sign-in
-    controls that card offers. An EMPTY set means unknown, and unknown shows everything: the
-    Codex card showing nothing was the defect, not the Claude card showing too much.
+    controls that card offers. An EMPTY set means unknown, and unknown shows everything.
     """
     wanted = {p for p in providers if p in LOGIN_PROVIDER}
     try:
@@ -126,10 +116,8 @@ def start(cfg: EndpointConfig, provider: str, *, timeout: int = 15) -> dict:
 def parse_response(pasted: str, state: str) -> tuple[str, str]:
     """What the operator pasted → (code, state). Three shapes are accepted: the whole
     callback address (`http://localhost:54545/callback?code=…&state=…`, or Antigravity's
-    `…:51121/oauth-callback?…` — the page that failed to load on their device), `code#state` as
-    a consent page shows it, or the bare code. A state inside the paste must be THIS sign-in's —
-    a code from an older attempt would be refused by the proxy anyway, and the refusal should
-    name the reason.
+    `…:51121/oauth-callback?…`), `code#state` as a consent page shows it, or the bare code. A
+    state inside the paste must be THIS sign-in's, so the refusal names the reason.
     """
     text = pasted.strip()
     if not text:

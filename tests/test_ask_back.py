@@ -1,23 +1,4 @@
-"""The console's "ask back" on ANY blocking decision reaches the run at once.
-
-The run view's question panel offers "ask back" on every blocking decision — a plain question,
-a util, rule or reminder approval, an access request, the secret-exposure request — and its
-toast promises "sent — the model will reply and re-ask". Only the plain question kept that
-promise. Every other consumer turned the dialog reply into its own "approval pending"
-observation, which named the record and dropped the operator's words, so the run could not
-answer the question it had just been asked. And the reply left the ONE `loop.dialog_qid` slot
-pointing at the APPROVAL's record, so the next unrelated `ask_user` resolved it.
-
-The owner's decision (2026-10-01): an ask-back ends the wait and reaches the run as the
-observation of the action that asked — the words verbatim, and what to do: answer them, then
-re-submit the same action. The re-submission SUPERSEDES the open record, because it is the
-next decision filed for the same SUBJECT; nothing else can resolve it.
-
-The console's answers are written BEFORE the run starts. A decision's id is
-`q-<run-ts>-<turn>`, so the file for the ask on turn N waits in the inbox (the boot drain leaves
-an answer with no pending record alone) and the blocking wait takes it on its first poll — no
-driver thread racing the ask window.
-"""
+"""The console's "ask back" on ANY blocking decision reaches the run at once."""
 
 from __future__ import annotations
 

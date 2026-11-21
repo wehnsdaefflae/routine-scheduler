@@ -1,19 +1,4 @@
-"""`max_turns` bounds a resume WINDOW, not a run — and status.json now says so (D155).
-
-THE MEASUREMENT this file exists to pin (audit F564, four runs, no `finish` action between
-them — nothing had gone wrong):
-
-    routine              max_turns  status.json turn  budgets.turns_left
-    freelance-radar            200               348                 179
-    weightloss                 200               276                 175
-    llmsectest-weekday         400               423                 338
-
-A reader of `turn 348` beside `179 turns left of 200` can only conclude the ceiling failed.
-It did not: `turns_left` is WINDOW-scoped (a resume re-bases the budget at the resume point,
-engine/boot.py) while `turn` is cumulative, and nothing in status.json carried the base turn
-that reconciles them. Half A of D155 makes the pair legible; half B gives the run-spanning
-cap (`max_total_turns`) a real default so an unattended resume chain is bounded at all.
-"""
+"""`max_turns` bounds a resume WINDOW, not a run — and status.json now says so (D155)."""
 
 from __future__ import annotations
 

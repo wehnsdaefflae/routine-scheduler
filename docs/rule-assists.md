@@ -358,9 +358,8 @@ label had nowhere to go:
   reminder layer's refusal. Before this it answered an assist key with "no reminder … is live
   for this run".
 - **`state/assists.json` in a reminder's stat fields** (`rsched/assist_stats.py`), grown from
-  an int per key by a one-shot boot migration that keeps the int as `fires`
-  (`migrate_assist_stats.py`) — the fires already counted are the denominator the labels are
-  read against, so they are not thrown away.
+  an int per key by a one-shot boot migration that kept the int as `fires` — the fires already
+  counted are the denominator the labels are read against.
 - **the health read model and its table** carry the four columns beside `fires`
   (`readmodels/run_health.cautions`, `static/views/routine-health.js`), the same columns a
   reminder's row shows and reusing its classes.

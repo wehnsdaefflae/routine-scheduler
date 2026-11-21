@@ -53,15 +53,7 @@ def _routine(tmp_path, yaml_text: str = "enabled: true\n"):
 
 
 def test_a_web_edit_commits_the_edited_file_and_nothing_else(tmp_path):
-    """`edit <path> via web` must hold the edited file ALONE.
-
-    The appliers staged the whole routine directory, so a web edit swept up whatever else
-    happened to be dirty in that tree and shipped it under its own message. Seen live:
-    library-sync commit 5baf069 "edit stages/export.md via web" carried that routine's pending
-    run-retention changes (deleted and gzipped `runs/*`, a status.json) — the history says a
-    stage module was edited and the diff says something else entirely. A routine's tree is
-    dirty routinely: its own runs write to it while the web edit is queued.
-    """
+    """`edit <path> via web` must hold the edited file ALONE."""
     from rsched import libgit
 
     rdir = _routine(tmp_path)

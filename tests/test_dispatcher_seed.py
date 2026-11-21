@@ -1,30 +1,19 @@
-"""The `gu` dispatcher as tracked repo code (`util-seed/gu`) and the one-shot that carries it
-to a live library
-(MIGRATION(expires=2027-01-31)): `gu` is what every `util` action ultimately invokes, and what
-reads a util's `net:`/`secrets:` header — the declarations that decide which network access and
-which credentials fold into its sandbox. Until it became a repo file nothing versioned, tested
-or gated that. `utils_lib.ensure_library` installs a MINIMAL dispatcher and never overwrites an
-existing one, so on an instance carrying that stub only a migration can replace it.
+"""The `gu` dispatcher as tracked repo code (`util-seed/gu`): `gu` is what every `util` action
+ultimately invokes, and what reads a util's `net:`/`secrets:` header — the declarations that
+decide which network access and which credentials fold into its sandbox.
 """
 from __future__ import annotations
 
 import ast
-import json
 import os
 import subprocess
 import sys
-from types import SimpleNamespace
 
 import pytest
 
-from rsched import libgit
-from rsched import migrate_dispatcher_seed as mig
 from rsched.paths import repo_root
-from rsched.utils_lib import DISPATCHER
 
-GU = repo_root() / mig.SEED
-SEED_BYTES = GU.read_bytes()
-STUB_BYTES = DISPATCHER.encode()
+GU = repo_root() / "util-seed" / "gu"
 
 
 # ------------------------------------------------------------------ the tracked file itself
@@ -39,15 +28,6 @@ def test_the_tracked_dispatcher_parses_and_answers_as_an_executable():
                        capture_output=True, text=True, check=False, timeout=60)
     assert r.returncode == 0, r.stderr
     assert "gu — dispatcher for the global utils library" in r.stdout
-
-
-def test_the_tracked_dispatcher_is_the_rich_one_the_stub_is_not():
-    """What the migration rests on: the seed carries the verbs `utils_lib.DISPATCHER` lacks."""
-    source = GU.read_text(encoding="utf-8")
-    assert source != DISPATCHER
-    for verb in ("list", "help", "lint", "deps", "remove", "index"):
-        assert f'cmd == "{verb}"' in source
-    assert 'cmd == "lint"' not in DISPATCHER
 
 
 # ------------------------------------------------- what it decides about secrets and network
@@ -121,62 +101,3 @@ def test_the_two_network_values_are_accepted(tmp_path, net):
 
 # ------------------------------------------------------------------ the one-shot migration
 
-def _instance(tmp_path, monkeypatch, live: bytes | None):
-    repo = tmp_path / "repo"
-    (repo / mig.SEED).parent.mkdir(parents=True)
-    (repo / mig.SEED).write_bytes(SEED_BYTES)
-    monkeypatch.setattr("rsched.bootstrap.repo_root", lambda: repo)
-    server = SimpleNamespace(routines_home=tmp_path / "routines",
-                             libraries_home=tmp_path / "lib")
-    server.routines_home.mkdir()
-    server.libraries_home.mkdir()
-    if live is not None:
-        (server.libraries_home / "gu").write_bytes(live)
-        (server.libraries_home / "gu").chmod(0o755)
-    return server
-
-
-@pytest.mark.parametrize(("live", "left"), [
-    (b"#!/usr/bin/env python3\n# the operator's own dispatcher\n", "by hand"),
-    (SEED_BYTES, "already current"),
-    (None, "not read"),                         # a dispatcher deleted live stays deleted
-], ids=["an-operators-own", "already-the-seed", "deleted-live"])   # the seed's 17 kB is not an id
-def test_anything_but_the_stub_is_left_untouched_and_named(tmp_path, monkeypatch, live, left):
-    server = _instance(tmp_path, monkeypatch, live)
-    record = mig.run_migration(server)
-    path = server.libraries_home / "gu"
-    assert (path.read_bytes() if path.exists() else None) == live
-    assert left in record["left"] and "replaced" not in record
-    assert not (server.libraries_home / mig.BACKUP).exists()
-
-
-def test_the_stub_is_replaced_backed_up_committed_and_carried_once(tmp_path, monkeypatch):
-    server = _instance(tmp_path, monkeypatch, STUB_BYTES)
-    lib = server.libraries_home
-    libgit.init_repo(lib, first_commit="init")
-
-    record = mig.run_migration(server)
-
-    live = lib / "gu"
-    assert live.read_bytes() == SEED_BYTES
-    assert live.stat().st_mode & 0o111 == 0o111          # a dispatcher that loses +x is dead
-    assert (lib / mig.BACKUP).read_bytes() == STUB_BYTES  # nothing that was there is lost
-    assert record["replaced"] == "gu"
-    assert record["backup"].endswith(mig.BACKUP)
-    assert libgit.git(lib, "log", "-1", "--format=%s").stdout.startswith("gu: the tracked")
-    assert libgit.git(lib, "status", "--porcelain").stdout.strip() == ""   # boot ends clean
-    stored = json.loads((server.routines_home / mig.RECORD).read_text(encoding="utf-8"))
-    assert stored["replaced"] == "gu" and stored["backup"] == record["backup"]
-
-    live.write_bytes(STUB_BYTES)                 # a later boot finds the record and does nothing
-    assert mig.run_migration(server) == {}
-    assert live.read_bytes() == STUB_BYTES
-
-
-def test_a_stand_in_server_without_the_homes_cannot_kill_the_boot():
-    """R3132's shape: `cmd_daemon` is handed a four-attribute stand-in by the fresh-container
-    boot test, so every attribute read here is a `getattr` — a hard read would fail the whole
-    daemon boot for a question this migration was not asked."""
-    assert mig.run_migration(SimpleNamespace()) == {}
-    assert mig.run_migration(SimpleNamespace(routines_home="")) == {}
-    assert mig.run_migration(SimpleNamespace(libraries_home="")) == {}

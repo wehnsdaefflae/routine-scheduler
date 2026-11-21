@@ -33,29 +33,16 @@ def dispatch_action(loop, action: dict, ctx) -> dict:
     """Route ONE validated action to the handler that owns its kind, and turn a handler that
     RAISES into an error observation the run can read and route around.
 
-    Split out of `EngineLoop.run` (F393). `run` is the turn state machine — budgets,
-    boundaries, retries, the finish gates; this is the routing table it consults, and
-    the two change for entirely different reasons. Anything without a named handler
-    falls through to `executor.dispatch`, which is where the effect kinds live.
-
-    A bug in one handler used to propagate out of the loop and end the whole run, with the
-    model never told which action broke — the same failure a user's slash command already
-    absorbs (`control.run_user_command`). The traceback goes to the log and the transcript's
-    `error` stream; the model gets the exception's one line. `RunAborted` is control flow,
-    not a failure, and passes through, as does every BaseException (an interpreter exit).
+    Anything without a named handler falls through to `executor.dispatch` (the effect kinds).
+    A handler that raises costs the run one error observation, not the run: the traceback goes
+    to the log and the transcript's `error` stream. `RunAborted` (control flow) and every
+    BaseException pass through.
     """
     try:
-        # D118 phase 3's barrier, and it runs for EVERY action, deferred or not: this is the
-        # single point loop._observe routes through, so it is the only place where "nothing
-        # may read state a deferred write has not performed yet" can be made true rather than
-        # asked for. Two deferred writes to one target have no safe order, so the second is
-        # refused (naming the handle and the call that works); anything else that TOUCHES a
-        # pending write's target is simply HELD until that write lands. A run that never calls
-        # `wait` is therefore still correctly ordered — which is what let the mutations into
-        # `actions.BACKGROUNDABLE_KINDS` at all.
-        # Targets are compared as the RUN would resolve them — one file reached by a relative
-        # and an absolute path is one target, or the barrier would miss exactly the stale read
-        # it exists to prevent (`background_order.base_for`, i.e. run_context.work_dir).
+        # The background-ordering barrier (D118), for EVERY action: a second deferred write to a
+        # pending target is refused; anything else touching it is HELD until that write lands —
+        # so a run that never calls `wait` is still correctly ordered. Targets are compared as
+        # the RUN would resolve them (`background_order.base_for`).
         base = background_order.base_for(ctx)
         conflict = background_order.refuse_conflict(loop, action, base=base)
         if conflict is not None:
@@ -63,42 +50,19 @@ def dispatch_action(loop, action: dict, ctx) -> dict:
         if waited := background_order.await_dependencies(loop, action, base=base):
             log.info("action %s waited on background %s", action.get("kind"), waited)
         if action.get("background"):
-            # D118 phase 1: a read or a fetch the run asked not to wait for. It starts in a
-            # thread and the turn comes back AT ONCE; the real observation is appended at a
-            # later turn boundary (engine/background.py). Which kinds may do this is
-            # `actions.BACKGROUNDABLE_KINDS`, enforced by `validate_action` inside the
-            # schema-retry cycle — so an action reaching here with the flag has already been
-            # judged safe to defer, and this branch does not re-litigate it.
-            #
-            # F633: it does, however, go through the SAME per-kind routing the foreground
-            # goes through. Two of the backgroundable kinds are owned by `_route` and not by
-            # `executor.DISPATCH` — `script` has no DISPATCH entry at all (a backgrounded one
-            # raised `KeyError: 'script'` every time) and `util`'s D39 call-time secret gate
-            # lives in `_route`, so backgrounding one relocated a security decision out of
-            # the run's reach. `_gate_for_background` runs that gate HERE, on the starting
-            # turn: it can ask the user a blocking question and a background thread has no
-            # turn to block on. A refusal or a pending request becomes THIS turn's
-            # observation and nothing is backgrounded.
-            #
-            # D166 answered (c), UNBOUNDED: nothing here counts how many calls are already in
-            # flight. 0.392.0 read a cap of 3 at this very point, ahead of the secret gate;
-            # the row had recorded the option the operator did not choose (F650), and the
-            # whole mechanism is gone rather than widened — `background.py` says why, so it is
-            # not reintroduced as an obvious improvement.
-            # R2249: the same `vision` refusal the foreground branch applies, for the same
-            # reason F633 gives above — a kind refused in one path and not the other is a
-            # refusal a flag walks around. It is read FIRST: it needs no credential decision,
-            # and the call it replaces would have asked for one.
+            # A backgrounded call (engine/background.py); `validate_action` already judged the
+            # kind deferrable. Every call-time gate the foreground applies runs HERE, on the
+            # starting turn (F633) — a gate in one path and not the other is one a flag walks
+            # around. A refusal or pending request becomes this turn's observation. No
+            # concurrency cap, by decision (D166; see `background.py`).
             if (steered := visionsteer.refuse_if_viewable(action, ctx)) is not None:
                 return steered
             gated = _gate_for_background(loop, action)
             if gated is not None:
                 return gated
             started = background.start(loop, action, ctx)
-            # What this deferred call will WRITE, keyed by the handle `start` just minted, so
-            # every later action can be ordered against it. Recorded here rather than inside
-            # `background.start`: that file is at its size-ratchet ceiling (474), and the
-            # claim belongs with the barrier that reads it.
+            # What this deferred call will WRITE, keyed by its handle, beside the barrier that
+            # reads it.
             background_order.claim(loop, action, started, base=base)
             return started
         return _route(loop, action, ctx)
@@ -115,9 +79,8 @@ def dispatch_action(loop, action: dict, ctx) -> dict:
                          "the task depends on it."}
 
 
-#: The call-time secret gate each kind needs BEFORE it may be backgrounded (F633). Exactly the
-#: two kinds `_route` owns for that reason — keep this table and `_route`'s two gated branches
-#: in step: a kind gated in one and not the other is a gate a flag can walk around.
+#: The call-time secret gate each kind needs BEFORE it may be backgrounded (F633). Keep this in
+#: step with `_route`'s two gated branches.
 _BACKGROUND_GATES = {
     "util": secretgate.gate_util_secrets,
     "script": secretgate.gate_script_secrets,
@@ -127,29 +90,17 @@ _BACKGROUND_GATES = {
 def _gate_for_background(loop, action: dict) -> dict | None:
     """The gate a backgroundable kind must pass on the STARTING turn, or None.
 
-    D39 decided secret exposure at CALL time, deliberately: the question is about this call's
-    declarations, and it is answered by the user while the run waits. That makes it impossible
-    to run inside the background thread — `gate_*_secrets` files a BLOCKING ask and a thread
-    has no turn to block on — so it runs here instead, synchronously, before anything starts.
-    The flag then defers only the work, never the decision.
+    D39's call-time secret gate may file a BLOCKING ask, which a thread cannot wait on — so it
+    runs here, synchronously. The flag defers only the work, never the decision.
     """
     gate = _BACKGROUND_GATES.get(action["kind"])
     return gate(loop, action, poll_s=POLL_S) if gate else None
 
 
 def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911, C901 — a flat kind->handler table; one branch
-                                    # per action kind is the clearest possible form, and
-                                    # collapsing it would only hide which handler owns which
-                                    # kind. C901 joined PLR0911 here when `do_nothing` (D186)
-                                    # made the table one branch longer than the repo-wide
-                                    # mccabe ratchet: the same exemption, for the same reason,
-                                    # that `actions.validate_action` carries as the action
-                                    # contract's single flat per-kind checker.
+                                    # per kind is the clearest form of which handler owns what.
     if action["kind"] == "ask_user":
-        # D212: several questions in ONE action — N records sharing a batch id, filed through
-        # the same single-question seam. A lone `question` takes the path it always took.
-        # Chosen between as an EXPRESSION: this table is already at the repo's branch ratchet,
-        # and which of two handlers owns one kind is not another row of it.
+        # D212: several `questions` in one action go to the batch handler.
         ask = askbatch.handle if action.get("questions") else interact.handle_ask
         return ask(loop, action, poll_s=POLL_S)
     if action["kind"] == "write_util":
@@ -159,10 +110,8 @@ def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911, C901 — a flat k
     if action["kind"] == "write_rule":
         return authoring.handle_write_rule(loop, action, poll_s=POLL_S)
     if action["kind"] == "util":
-        # R2249: `vision` on a file THIS run can simply look at is refused here, BEFORE the
-        # secret gate — the gate would open a credential-exposure question for a call that
-        # needs no credential, and a decline is scoped to the whole run, so one needless
-        # prompt closes off every legitimate `vision` call that run.
+        # R2249: `vision` on a file this run can view itself is refused BEFORE the secret gate,
+        # which would otherwise ask a needless (run-scoped) credential question.
         if (steered := visionsteer.refuse_if_viewable(action, ctx)) is not None:
             return steered
         # D39: per-routine secret exposure is decided at CALL time — the gate
@@ -177,17 +126,13 @@ def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911, C901 — a flat k
         # a write or edit carrying the script that checks it: the change, then that script
         # behind the SAME secret gate as the branch above (engine/thenscript.py)
         return thenscript.run(loop, action, script, ctx)
-    # `shell` has no branch here on purpose: it declares no secrets, so there is nothing for
-    # a call-time exposure gate to ask about, and it falls through to executor.dispatch with
-    # the other effect kinds. Its capability gate already ran inside the schema-retry cycle.
+    # `shell` has no branch on purpose: it declares no secrets, so no call-time gate applies.
     if action["kind"] == "schedule_run":
         return admin_handlers.handle_schedule_run(loop, action)
     if action["kind"] == "report":
         return admin_handlers.handle_report(loop, action)
     if action["kind"] == "child":
-        # D241: ONE kind, its scheduling in `mode` — the two handlers stay two handlers
-        # because parallel and sequential really do schedule differently; what changed is
-        # that the CALLER no longer has to know them as two different things.
+        # D241: ONE kind, its scheduling in `mode`; parallel and sequential keep two handlers.
         if childfields.mode_of(action) == "sequential":
             return loop.subruns.subtask(action)
         return loop.subruns.spawn(action)
@@ -202,15 +147,13 @@ def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911, C901 — a flat k
     if action["kind"] == "goal":
         return goalops.handle_goal(loop, action)
     if action["kind"] == "do_nothing":
-        # D186: the run states that nothing was due. It dispatches like any kind — and
-        # grounds no finish (engine/donothing.py says why).
+        # D186: nothing was due. Dispatches like any kind; grounds no finish (donothing.py).
         return donothing.handle(action)
     if action["kind"] == "children":
         return loop.subruns.status_table()
     if action["kind"] == "kill":
-        # Two namespaces (D176 option (a)): `handle` addresses a background call, `n` a
-        # sub-workflow. `validate_action` has already refused neither-and-both, so a `handle`
-        # present here is the run's choice of namespace and not an ambiguity to resolve.
+        # Two namespaces (D176): `handle` is a background call, `n` a sub-workflow;
+        # `validate_action` already refused neither-and-both.
         if str(action.get("handle") or "").strip():
             return background.cancel(loop, str(action["handle"]).strip())
         return loop.subruns.kill(action["n"])

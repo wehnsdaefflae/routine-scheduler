@@ -59,10 +59,9 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
     atomic_write(routine_dir / "main.md", dump_markdown(main_meta, result["main"]))
 
 
-# A run has to have carried enough cache traffic for the ratio to mean anything — a short
-# run whose prefix was written once and read twice is not a regression — and the floor is
-# set where the two states are unambiguous: a working append-only loop reads 8-70 tokens per
-# token written (measured across this instance), a broken one reads under 1.
+# A run must carry enough cache traffic for the ratio to mean anything; the floor sits where
+# the states are unambiguous (a working loop reads many tokens per token written, a broken
+# one under 1).
 CACHE_SHARE_FLOOR = 0.5
 CACHE_SHARE_MIN_TOKENS = 200_000
 
@@ -95,20 +94,11 @@ def _log_cost_trend(ctx: RunContext, slug: str) -> None:
     ones before them — same thresholds as the routine page's flag, keyed on TIME — and only
     after the fleet has said WHOSE regression it is.
 
-    The version-keyed flag beside it can only move when THIS routine's recipe moves, and the
-    most expensive regressions move no recipe at all: a library RULE revision reaches every
-    holder at once (error-recovery 30 routines on 2026-09-16, web-research 136 on 09-18).
-    self-audit's weekly medians went 49,409 tokens / 87% ok to 338,024 / 43% and back to
-    95,782 with no recipe change under any of it, and nothing on the instance said a word —
-    the read model had the reading, the routine page had to be OPENED to see it. This is the
-    push half: it lands in the stream the nightly audit already reads.
-
-    The reading alone names nobody, and this emitter used to assert attribution anyway: a
-    host-wide condition on 2026-09-27/28 degraded everything that ran and filed three findings
-    naming three routines for one problem with the box (F568, F574). So the same window is read
-    across the fleet first (`readmodels/trend_attribution`) and the verdict decides both the
-    row's `routine` and its wording — a host condition carries no routine and says what it is
-    about; an isolated regression is still named, which is the half a fix here must not lose.
+    Time-keyed because the costliest regressions (a library RULE revision) move no recipe, so
+    the version-keyed flag cannot see them; this pushes the reading into the stream the
+    nightly audit reads. The same window is first read across the fleet
+    (`readmodels/trend_attribution`, F568/F574): a host-wide condition carries no routine, an
+    isolated regression is still named.
 
     Called after this run's own usage record is written, so the flag includes it.
     """
@@ -190,18 +180,15 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     from . import brief as brief_mod
 
     ctx.brief = brief_mod.read(run_dir)          # written by the runner for a hand-started run
-    # Stamp the recipe version that produces this run (recipes.current_recipe_commit —
-    # snapshots any uncommitted recipe edits first, e.g. the routine-improver's). None
-    # for unversioned dirs (conversations). Lands in status.json + the usage record.
+    # Stamp the recipe version that produces this run (snapshots uncommitted recipe edits
+    # first; None for unversioned dirs). Lands in status.json + the usage record.
     from ..recipes import current_recipe_commit
 
     ctx.recipe_commit = current_recipe_commit(routine_dir, routines_home=server.routines_home)
     if not resume_from:
         _ensure_decomposed(routine_dir, cfg, server)   # workflow + instruction → main.md, if needed
     body, prov, allowed_tools = load_workflow(routine_dir, cfg)
-    # instruction.md is only a transient compile seed (real routines don't persist it; the
-    # throwaway clarify dir does). A top-level run never puts it in the prompt — main.md + stages/
-    # are self-contained — so a missing seed is normal.
+    # instruction.md is only a transient compile seed; a missing one is normal.
     instruction = ((routine_dir / "instruction.md").read_text(encoding="utf-8")
                    if (routine_dir / "instruction.md").exists() else "")
     if not resume_from:            # a resumed run keeps the original header (append-only)
@@ -209,13 +196,11 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
                           orchestrator={"endpoint": orch_ref.endpoint, "model": orch_ref.model},
                           brief=ctx.brief)
     # Mount every bound machine's `share` (sshfs) at <routine>/mnt/<name>/ for the run's
-    # lifetime, so local filesystem utils act on remote files (compute goes via `remote exec`;
-    # this is the filesystem half). Best-effort; unmounted in the finally on EVERY exit path.
+    # lifetime. Best-effort; unmounted in the finally on EVERY exit path.
     from .. import machine_mounts as machines_mod
 
     mounts, unavailable = machines_mod.mount_routine_shares(cfg, server)
-    # The run is told what it actually HAS (R514): a share that did not come up is named as
-    # unavailable in the prompt rather than left to read as an empty directory.
+    # A share that did not come up is named as unavailable, not left as an empty dir (R514).
     ctx.mounted_shares = {m.name for m in mounts}
     ctx.unavailable_shares = unavailable
     try:
@@ -240,10 +225,8 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
         if not leg:
             # what a person asked of it and this run did not finish waits for the next run
             obligations.save(ctx)
-            # what the routine EXISTS to produce, measured after its last turn (engine/outcome.py),
-            # and how much of the run went to it rather than to its own process
-            # (engine/overhead.py) — recorded beside what the run cost, status.json and the usage
-            # row alike
+            # the routine's outcome measures and the run's process overhead, recorded beside
+            # what the run cost
             ctx.outcome_measures = outcome.measure(ctx)
             ctx.overhead = overhead.of_run(ctx.run_dir, ctx.routine.dir)
             if ctx.outcome_measures is not None or ctx.overhead is not None:
@@ -253,9 +236,7 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
                            workflow=prov.get("slug") or "", depth=0, status=status,
                            turns=ctx.turn, usage=ctx.usage, referrals=ctx.referrals,
                            recipe_commit=ctx.recipe_commit,
-                           # …and the library's HEAD, read ONCE here at the run's end: a
-                           # rule revision lands on every holder without moving any
-                           # routine's recipe commit, so nothing else dates it.
+                           # a rule revision moves no recipe commit, so date it here
                            library_commit=library.head_commit(server.libraries_home),
                            utils=ctx.util_stats,
                            asks_deferred=ctx.asks_deferred,
@@ -271,13 +252,8 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
         # run with a recipe of its own, the one thing the remedy revises (not a conversation)
         if recipeproposal.asks_for_revisions(ctx):
             overhead_alarm.file_if_high(server.routines_home, cfg.slug, ctx.run_id, routine_dir)
-        # The cost-trend flag reads the stream this run's record just landed in, and is a
-        # per-RUN judgement (this run against this routine's own history), so it belongs here.
-        # The util-stats SNAPSHOT does not: it is one fleet-wide read model that no engine
-        # reads, and every run used to recompute it — a library git walk, the whole usage
-        # stream and every un-counted transcript — to write a file only the Stats tab's
-        # routine-side twin consumes. The daemon owns it now, once per burst of run events
-        # (`daemon/util_stats_watch.py`). Best-effort: telemetry must never break a finished run.
+        # The cost-trend flag is a per-RUN judgement, so it belongs here; the fleet-wide
+        # util-stats snapshot is the daemon's (`daemon/util_stats_watch.py`).
         try:
             _log_cost_trend(ctx, cfg.slug)
         except Exception:  # stats telemetry must never break a run — but leave a breadcrumb

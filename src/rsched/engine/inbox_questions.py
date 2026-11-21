@@ -1,30 +1,17 @@
 """The QUESTION half of a routine's inbox: asks a run filed, and the answers that come back.
 
-Split from `engine/inbox` (2026-09-24, D143) when that module reached 530 lines against the
-repo's ~350 budget. The seam is the one the file always had: two filename shapes in the same
-directory, sharing a consume-by-rename discipline and nothing else.
+Two filename shapes share the inbox directory and a consume-by-rename discipline (D143):
 
   msg-<stem>.json    freight for a run          -> engine/inbox
   answer-<qid>.json  a question's answer        -> HERE, matched by qid
 
-The answer shape's one WRITER is `rsched/answerfile` (D143): this module owns the question
-LIFECYCLE — filing the ask, taking the answer, archiving the pair — and that one owns where an
-answer file lives and what makes it readable at all, so the three web routes that file one
-(answer, decline, defer) and `revise_answer` below all go through it instead of spelling the
-filename. `tests/test_policy_inbox_writer.py` allow-lists exactly the two writers, one per
-shape. It is a separate seam from `file_message` because an answer carries no `via` and must
-never buy a run, and it sits at the top level rather than here because three web modules call
-it and this file is near the repo's ~350-line budget.
+This module owns the question LIFECYCLE — filing the ask, taking the answer, archiving the
+pair, open/resolved. The answer file's one WRITER is `rsched/answerfile` (a separate seam
+because an answer carries no `via` and must never buy a run);
+`tests/test_policy_inbox_writer.py` allow-lists exactly the two writers.
 
-What lives here is everything that knows what a QUESTION record is: filing one
-(`file_question`), taking its answer (`take_answer`, `collect_deferred_answers`), archiving
-the pair for the Decisions page (`_archive_answer`, `answered_questions`, `revise_answer`),
-and the open/resolved lifecycle (`open_questions`, `resolve_question`).
-
-`inbox` re-exports every public name below, so `inbox.file_question(...)` still resolves and
-no caller moved: the split is an internal seam, not a new interface. Both halves consume by
-RENAME (`inbox._consume`) — never a partial read — and land the consumed file under
-<run_dir>/consumed/ for the audit trail.
+`inbox` re-exports every public name below. Both halves consume by RENAME (`inbox._consume`)
+— never a partial read — landing the consumed file under <run_dir>/consumed/.
 """
 
 from __future__ import annotations
@@ -59,16 +46,11 @@ def collect_deferred_answers(routine_dir: Path, consumed_dir: Path,
                              *, own_run_ts: str | None = None) -> list[dict]:
     """Match stray answer files against questions/pending/, consume both, and return
     [{question, answer}] — called at run start (boot digest) AND at every live turn
-    boundary (control.drain_injections, the F195 delivery). An access-request pair also
-    carries `request` (the record's entity ids) + `decision` (+ `account`), so both
-    consumers can seed the run overlay (requests.apply_deferred_decisions) — an
-    "allow now" decided between runs grants exactly the run that consumes it, and a
-    decision landing mid-run reaches the running run's policy at once (R118).
-
-    A pair for a question that carried a `config_patch` also carries
-    `config_patch_applied` (+ `config_patch_target`), so the asking run learns whether the
-    change it proposed is LIVE — R2778, where a run read an affirmative answer, recorded the
-    raise as applied, and planned 600 turns against a ceiling that was still 400.
+    boundary (control.drain_injections). An access-request pair also carries `request` +
+    `decision` (+ `account`) so both consumers can seed the run overlay
+    (requests.apply_deferred_decisions). A pair whose question carried a `config_patch`
+    also carries `config_patch_applied` (+ `config_patch_target`), so the asking run learns
+    whether its proposed change is LIVE.
     """
     inbox = routine_dir / "inbox"
     pending = routine_dir / "questions" / "pending"
@@ -87,35 +69,26 @@ def collect_deferred_answers(routine_dir: Path, consumed_dir: Path,
             continue
         qid = str(obj.get("qid") or path.stem.removeprefix("answer-"))
         if own_run_ts is not None and not qid.startswith(f"q-{own_run_ts}-"):
-            # F359: a RESUMED leg (the caller sets own_run_ts) takes only answers to ITS
-            # OWN questions; an answer to another run's question waits for the next fresh
-            # run, whose boot digest presents it with full context.
+            # A RESUMED leg takes only answers to ITS OWN questions; another run's answer
+            # waits for the next fresh run's boot digest.
             continue
         qfile = pending / f"{qid}.json"
         raw = read_json(qfile)
         was_pending = isinstance(raw, dict)
-        # F763: no pending record does NOT mean no question — an answer filed after a run
-        # consumed the first one has had its record unlinked already, and skipping it here is
-        # what left eight answers unread across the fleet. `_reanswered` recovers the ask from
-        # the durable archive; None means nothing was ever asked under this qid.
+        # No pending record does NOT mean no question (a re-answer after consumption):
+        # `_reanswered` recovers the ask from the archive; None means nothing was asked.
         q = raw if isinstance(raw, dict) else _reanswered(routine_dir, qid)
         if q is None:
             # The answer belongs to someone else (e.g. a blocking ask later in this very run,
             # whose record lives in the run's status.json). Leave it alone.
             continue
         pair = {"qid": qid, "question": q.get("question", "?"), "answer": str(obj["text"])}
-        # R2778: and whether the `config_patch` the question carried was APPLIED. The run
-        # that asked for a 600-turn budget read only the operator's "Ok", recorded the raise
-        # as applied, and planned against a ceiling that was still 400.
+        # Whether the question's `config_patch` was APPLIED (R2778).
         patchreceipt.carry(pair, obj)
-        # R2197: …and whether the operator DECLINED it (rsched/decline.py). The access-request
-        # branch below carries `decision` only for a record with `request` ids, so a refusal of
-        # an ordinary proposal reached the run as prose and nothing else — which is the whole
-        # thing the decline verb exists to stop.
+        # Whether the operator DECLINED it — the `request` branch below covers access
+        # requests only (R2197).
         decline.carry(pair, obj)
-        # D220: …and the PROOF the decision was filed with, with the chosen option moved on.
-        # Without it the run reads an answer and nothing tells it the decision is settled only
-        # once the proof turns up (rsched/proofs.py).
+        # The decision's PROOF, chosen option moved on: settled only once it turns up (D220).
         proofs.carry(pair, {**q, "proof": proofs.answered(q.get("proof") or {},
                                                           str(obj["text"]).strip())})
         if q.get("request") and obj.get("decision"):
@@ -140,19 +113,9 @@ def _reanswered(routine_dir: Path, qid: str) -> dict | None:
     """The ASK behind an answer whose pending record is already gone (F763), from the
     durable archive — or None when nothing was ever asked under this qid.
 
-    A pending record is unlinked the moment a run consumes its answer. An answer filed
-    AFTER that (the operator answering the same card again, or the Decisions page's own
-    catalog serving a record a boot consumed seconds earlier) had nothing left to match, so
-    the loop skipped it and no run ever read it: eight such files were sitting across the
-    fleet when this was found, the oldest 41 days and 15 runs old, including two where the
-    second answer was the SPECIFIC one (`config-optimizer` q-20261009-020522-41, archived
-    answer "approved & applied the proposed config change" at 04:41:29, inbox answer
-    "Apply — add the 7-day heartbeat" at 04:41:37). A later answer is the operator's latest
-    word, which is precisely what must reach the run.
-
-    The archive is the same source `revise_answer` re-queues from, and the pair is marked
-    `revised` by the caller's own `obj.get("revised")` only when the writer said so — this
-    path does not invent that claim.
+    A pending record is unlinked when a run consumes its answer; an answer filed AFTER that
+    is the operator's latest word and must still reach a run. The pair is marked `revised`
+    only when the writer said so — this path does not invent that claim.
     """
     archived = read_json(_answered_dir(routine_dir) / f"{qid}.json")
     if not isinstance(archived, dict) or not archived.get("question"):
@@ -169,13 +132,9 @@ def _answered_dir(routine_dir: Path) -> Path:
 def _archive_answer(routine_dir: Path, question: dict, answer: dict) -> Path:
     """Write what consumption is about to destroy (F525).
 
-    Consuming an answer used to remove BOTH the inbox file and the pending record and write
-    nothing in their place — so the Decisions page, which derives "answered" by reading
-    exactly those two, lost the card and the user's own words with it the moment a run
-    booted. The archive is that missing half: one record per question, holding the ASK and
-    the ANSWER together, so the decision stays readable (and amendable) after the run that
-    acted on it. Rewritten in place on a revision — one question, one row, never a pile of
-    versions.
+    One record per question, the ASK and the ANSWER together, so the decision stays readable
+    (and amendable) after the run that acted on it. Rewritten in place on a revision — one
+    question, one row.
     """
     from ..paths import atomic_write_json
 
@@ -191,14 +150,9 @@ def _archive_answer(routine_dir: Path, question: dict, answer: dict) -> Path:
               "consumed": now_iso()}
     if answer.get("decision"):
         record["decision"] = str(answer["decision"])
-    # R2197: a DECLINE's reason rides with its value, for the same reason the patch verdict
-    # does below — the archive is what the settled card is rebuilt from once a run has
-    # consumed the answer, so a refusal whose reason stopped here would lose the operator's
-    # own words at exactly the boot that acted on it.
+    # The decline and the patch verdict ride along: the settled card is rebuilt from the
+    # archive once a run has consumed the answer.
     decline.carry(record, answer)
-    # R2778: and the patch verdict, or it survives only until the run that reads the answer —
-    # after which the settled card would offer `approve & apply` again for a change already
-    # live, and no reader of the archive could tell the two states apart.
     patchreceipt.carry(record, answer)
     if isinstance(prior, dict) and prior.get("consumed"):
         # an amended answer keeps the ORIGINAL settlement time: the decision was made then,
@@ -211,9 +165,8 @@ def _archive_answer(routine_dir: Path, question: dict, answer: dict) -> Path:
 
 def answered_questions(routine_dir: Path) -> list[dict]:
     """Questions this routine's runs have ANSWERED and consumed — the durable settled
-    record (F525), newest first. Each row is the pending record it was filed from plus the
-    answer, its source and when a run took it, so every surface can show what was decided
-    instead of losing it to the boot that acted on it.
+    record (F525), newest first: the pending record plus the answer, its source and when a
+    run took it.
     """
     adir = _answered_dir(routine_dir)
     if not adir.is_dir():
@@ -225,8 +178,7 @@ def answered_questions(routine_dir: Path) -> list[dict]:
 
 
 def revise_answer(routine_dir: Path, qid: str, text: str) -> Path:
-    """Amend an answer the user already gave (F525) — the operator's "i want to revise it
-    to add the other answers".
+    """Amend an answer the user already gave (F525).
 
     Still queued: the waiting answer file is rewritten, and the next run sees only the new
     text. Already consumed: the archived record supplies the question, the pair is re-queued
@@ -263,21 +215,16 @@ def file_question(routine_dir: Path, qid: str, question: str, options: list[str]
                   report: str = "", report_target: str = "", batch: str = "",
                   blocks_work: object = False, proof: dict | None = None) -> Path:
     """The ONE decision record every kind of required user feedback funnels into —
-    plain asks, util approvals and access requests, deferred and blocking alike. Blocking
-    records carry `expires` (when the run continues without an answer) and are rewritten
-    as deferred on timeout/abort; `config_patch` (a proposed routine.yaml change a revise
-    run can't make itself) rides along for the Decisions page's one-click apply; `request`
-    (grant-entity ids, entities.py) makes the record an ACCESS REQUEST — the Decisions
-    page renders the four allow/deny × now/forever buttons and the answer carries a
-    `decision`. `report`/`report_target` make it a REPORT-BORN decision (F621): the `R<n>` the
-    asking run filed and the routine that owns the work, so the answer can be relayed to that
-    owner and every surface can say which report is waiting. `batch` (D212) is the id every
-    record filed by ONE `ask_user` action shares, so a surface can tell they were asked
-    together; `blocks_work` is the asking run's class override. Every record carries its
-    CLASS — `blocking` or `closing`, derived by `askclass.of` from its subject and that
-    override — which is ORTHOGONAL to `mode`: the class says whether the asking run could do
-    its work without the answer, `mode` whether its process sat and waited for one. Every
-    surface (Decisions page, run view, Discord mirror) renders from this shape.
+    plain asks, util approvals and access requests, deferred and blocking alike; every
+    surface renders from this shape.
+
+    `expires` (blocking: when the run continues without an answer; rewritten as deferred on
+    timeout/abort); `config_patch` (+ `config_target`) for the one-click apply; `request`
+    (grant-entity ids) makes an ACCESS REQUEST whose answer carries a `decision`;
+    `report`/`report_target` mark a REPORT-BORN decision (F621) so the answer can be relayed
+    to the owner; `batch` (D212) groups the records of ONE `ask_user` action. Every record
+    carries its CLASS (`askclass.of`, `blocks_work` overriding) — ORTHOGONAL to `mode`: the
+    class says whether the run could work without the answer, `mode` whether it waited.
     """
     from ..paths import atomic_write_json
 
@@ -286,9 +233,7 @@ def file_question(routine_dir: Path, qid: str, question: str, options: list[str]
                     "asked": asked_ts, "mode": mode, "type": qtype,
                     "class": askclass.of(request=request, blocks_work=blocks_work)}
     if batch:
-        # D212: the questions ONE ask_user action asked together. A surface groups them by it;
-        # a lone ask carries no batch, because it was asked together with nothing.
-        record["batch"] = batch
+        record["batch"] = batch  # a lone ask carries none
     if default:
         record["default"] = default
     if expires:
@@ -296,23 +241,17 @@ def file_question(routine_dir: Path, qid: str, question: str, options: list[str]
     if config_patch:
         record["config_patch"] = config_patch
     if config_target:
-        # D123/F458: the patch is for ANOTHER routine. Resolved and validated in
-        # engine/config_bridge.py at ask time, so the Decisions page can PATCH this slug
-        # directly; absent means the patch is for the asking routine.
+        # The patch is for ANOTHER routine, resolved and validated by engine/config_bridge
+        # at ask time; absent means the asking routine.
         record["config_target"] = config_target
     if proof:
-        # D220: what would have to be TRUE for each option's answer to have been carried out,
-        # authored at filing (`rsched/proofs.py`). Answering moves the chosen option to
-        # `in_progress` and the rest to `declined`; only a positive proof — or the operator's
-        # are-you-sure-gated override — settles the decision. Absent on every ask filed
-        # before this existed, which keeps behaving exactly as it did.
+        # D220: per option, what would have to be TRUE for its answer to have been carried
+        # out (`rsched/proofs.py`).
         record["proof"] = proofs.filed(proof)
     if request:
         record["request"] = list(request)
     if report:
-        # F621: the decision was born as a REPORT. The id is what the answer is relayed
-        # under, and the target is who owes the work once he has decided — an answer with
-        # neither would reach the page and then have nowhere to go.
+        # The report id the answer is relayed under, and who owes the work once decided.
         record["report"] = report
         if report_target:
             record["report_target"] = report_target

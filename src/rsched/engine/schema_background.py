@@ -1,28 +1,18 @@
 """The `background` SIDE FIELD as schema — the one field that defers a call (D118).
 
-Its own module for the reason `engine/schema_remind.py` gives: `engine/actionschema.py` is over
-the repo's size bar and may only shrink, so a field whose description has to GROW moves out
-rather than pushing that file up.
-
-And it had to grow. D118 phase 3 widened `actions.BACKGROUNDABLE_KINDS` to the three mutations
-that declare one target, while this description still read "NOT available on a WRITING KIND
-(write_file, edit_file, write_util, memory_write)" — so the engine accepted a deferred write
-that every model was told to refuse itself, which is a feature no run can reach. The field's
-description is the only place a run learns what may be deferred and what the ordering promise
-is, so it is also the place the widening had to land.
+Out of `engine/actionschema.py` (over the size bar, shrink-only). The description is the only
+place a run learns what may be deferred and the ordering promise, so it must track
+`actions.BACKGROUNDABLE_KINDS`.
 
 The prose is CLAUSE-LED (`kind1/kind2: …`), because `kindsurface._project_description` ships
-only the clauses of the kinds a run may actually emit, and
+only the clauses of the kinds a run may emit, and
 `tests/test_kindsurface.py::test_a_shared_field_describes_every_kind_that_accepts_it` holds
 every accepting kind to having one.
 
-The UNIVERSAL clause comes FIRST, and that ordering is load-bearing twice over. An unled clause
-is kept for every kind (the projection never drops prose it did not positively understand), so
-leading with it is what guarantees that a run holding only the read kinds still learns there is
-no cap on calls in flight — the field's description is the only place a run learns that at all.
-And `test_a_shared_fields_clauses_each_carry_their_own_lead` forbids an unled clause AFTER a
-led one, because a continuation that re-names no kind is shown as if it were every kind's own
-prose: the same way `verb`'s six `task:` clauses were once shown to `manage_lane` runs.
+The UNIVERSAL (unled) clause comes FIRST: an unled clause is kept for every kind, which is how a
+run holding only read kinds still learns there is no cap on calls in flight; and
+`test_a_shared_fields_clauses_each_carry_their_own_lead` forbids an unled clause AFTER a led one,
+which would read as every kind's own prose.
 """
 
 from __future__ import annotations

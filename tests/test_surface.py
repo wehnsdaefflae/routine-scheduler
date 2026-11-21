@@ -1,18 +1,4 @@
-"""The setup surface — the forward reading of the dependency graph.
-
-Every case here is one the console could not see before: a held permission whose capability is
-off, a util whose private store no grant covers, a secret declined forever, a rule that presumes
-a write root. The point of the read model is that these stop being discoverable only by a run
-failing at 3am, so the tests are written as "what would the operator have been told".
-
-Two things answer that: the surface modules build the nodes — `surface.py` joins, and
-`surface_needs` / `surface_schedule` / `surface_caps` emit the rows, all speaking
-`surface_nodes`' vocabulary — while `remedies.py` says one node's `fix` in words for the two
-callers with no panel to click. The bindings at the foot of this file cross that seam on
-purpose — a kind emitted with no words renders a gap with no remedy on the CLI — and they
-read every emitter, because a kind that moved into a new file must not fall out of the
-vocabulary on the way.
-"""
+"""The setup surface — the forward reading of the dependency graph."""
 from __future__ import annotations
 
 import ast
@@ -258,10 +244,7 @@ def test_recipe_authoring_is_a_note_not_a_problem(tmp_path):
     """A routine that may rewrite its own instructions is never WRONG — it is an improver's
     whole job — but it is the one capability whose effect is the routine itself, so it is
     always said out loud.
-
-    It is also no longer implied by a write root over the routine's own dir: that coupling
-    meant granting write access to a working directory silently granted the right to reword
-    the task. The note names the switch because there now is one."""
+    """
     server = _server(tmp_path)
     own = tmp_path / "r"
     plain = routine_surface(server, _cfg(tmp_path, fs_write_roots=[str(own)]))
@@ -437,15 +420,7 @@ def test_one_row_per_entity(tmp_path):
 def test_the_deliberate_reading_of_an_entity_wins_whichever_check_ran_first():
     """The precedence the "not unmet ⇒ no fix" rule actually rests on, pinned where it is
     decided instead of where it happens to hold.
-
-    `action:write_recipe` is emitted twice for one routine: "on", a deliberate switch carrying
-    no fix, then "uncovered", which carries one — both NOTE. Until the merge stated a
-    tie-break, which survived was decided by which append came first in `routine_surface`, with
-    nothing marking either line as the one that must not move: moving it would have had the
-    panel offer to undo a routine set up exactly as intended, with every test still passing.
-
-    Severity is still asked first — a row that BLOCKS is never suppressed by a milder reading
-    of the same entity, whatever either offers."""
+    """
     deliberate = {"id": "action:write_recipe", "severity": NOTE, "state": "on", "fix": {}}
     uncovered = {"id": "action:write_recipe", "severity": NOTE, "state": "uncovered",
                  "fix": {"kind": "cover_or_drop", "entity": "action:write_recipe"}}
@@ -705,14 +680,7 @@ def test_every_remedy_can_be_said_in_words():
     turns the same one into a sentence. A kind with no words renders a gap with no remedy on
     the CLI — the whole failure, one kind later — and a phrase nothing emits is a remedy for a
     gap that cannot happen.
-
-    Written across the two modules deliberately. The vocabulary is the seam between them, so
-    the binding that keeps them one answer has to be read from both sides at once.
-
-    A `kind:variant` entry is a second WORDING of one kind, never a second kind — `:any` for a
-    need no sentence can name, `:doc` for a drop a held doc would put straight back — so the two
-    sides are compared on the kind each variant belongs to. Which payload selects which wording
-    is behaviour, pinned by the tests that render both."""
+    """
     kinds = {value.value for call in _node_calls() for arg in _fix_args(call)
              for d in ast.walk(arg) if isinstance(d, ast.Dict)
              for key, value in zip(d.keys, d.values, strict=True)
@@ -721,17 +689,7 @@ def test_every_remedy_can_be_said_in_words():
 
 
 def test_every_placeholder_a_remedy_names_is_a_param_a_fix_can_carry():
-    """The OTHER half of the vocabulary, bound the same way the kinds are.
-
-    `_remedy` formats every template against ONE set of params; the two are read against each
-    other in both directions: a placeholder outside the set renders an empty gap where a
-    subject belongs, a param no template names is furniture. Unbound, this is a wording edit
-    with the reach of a crash — `format_map` over a plain mapping raises KeyError on an unknown
-    placeholder that neither `engine/boot.py` nor `cli.py` catches, so the boot note which
-    REPORTS a gap becomes the thing that ends the run.
-
-    `Formatter().parse` rather than a regex over `{…}`, because it also rejects the malformed
-    template a scan reads straight past."""
+    """The OTHER half of the vocabulary, bound the same way the kinds are."""
     named = {field for template in REMEDIES.values()
              for _, field, _, _ in Formatter().parse(template) if field is not None}
     assert named == set(remedies_mod._PARAMS)

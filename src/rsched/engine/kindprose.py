@@ -2,52 +2,31 @@
 carries. NOT what its fields mean: that is the schema's, and the schema travels with every
 request.
 
-Split from `engine/kindsurface.py`, which decides WHICH kinds a run sees and projects the JSON
-schema onto them; this file is WHAT the run is told about each. The same kind set filters both,
-and they change for different reasons: a bullet's wording is prompt surface, pinned
-byte-for-byte by docs/prompt-anatomy.md §5.1 (tests/test_prompt_anatomy_example.py), while the
-projection is a derivation from `actions.KIND_FIELDS`. Split when `do_nothing` (D186) needed
-room in a file already at its size-ratchet ceiling.
+`engine/kindsurface.py` decides WHICH kinds a run sees; this file is WHAT the run is told about
+each. A bullet's wording is prompt surface, pinned byte-for-byte by docs/prompt-anatomy.md §5.1
+(tests/test_prompt_anatomy_example.py).
 
-## Why these bullets carry no field mechanics (the operator's decision, 2026-11-13)
+## Why these bullets carry no field mechanics
 
-Until 0.536.0 each bullet recited its kind's fields — their defaults, their caps, their
-refusals. That was the THIRD copy of one contract in a single request:
+Field descriptions already reach the model on every turn through the schema (enforced on the
+wire, or dumped by `schemaindex.full` / `schemaindex.send_the_contract`), and
+`schemaindex.index` names each kind's fields from `actions.KIND_FIELDS`. A field recital here
+would be a third, unenforced copy — so the words the model reads about a FIELD are exactly the
+schema's.
 
-* `endpoint.complete(schema=…)` puts `ACTION_SCHEMA`'s own `description` prose in front of the
-  model structurally (a tool's `input_schema`, a strict `response_format`, Ollama's `format`),
-  and where an endpoint enforces nothing `schemaindex.full` dumps the whole projection into the
-  prompt instead — so the field descriptions are present on EVERY turn, by one route or the
-  other, and `schemaindex.send_the_contract` appends them when a mid-run shed removes both;
-* `schemaindex.index` states which fields each kind takes, from `actions.KIND_FIELDS` — the map
-  `validate_action` builds its allowed-field set from;
-* and then these bullets said it a third time, in prose nothing enforced.
-
-Measured over 21 live run captures on 2026-11-12 (`runs/<ts>/prompt-sections.json`, R3341's
-boot capture) the block averaged **21,421 characters on every turn of every run**. The
-operator's ruling: *"Cut the bullets to conduct only — drop every field recital the enforced
-wire already carries."* With one bound, which is why the cut is deletion only and no sentence
-was rephrased: description wording swings tool selection by more than 10×, so the words the
-model reads about a FIELD stay exactly the words the schema says.
-
-What a bullet owes, then: the kind's IDENTITY — `ACTION_SCHEMA["kind"]` is a bare enum, so
-nothing on the wire says what `report` or `do_nothing` IS — and CONDUCT, which no schema can
-hold: when to reach for the kind, when not to, what it costs, what the engine does around it.
-A field a run gets wrong is taught at the moment it is wrong, by `schema_guard.retry_message`
-with `schemamemo.field_help`, which quotes the schema's own words for that field.
+What a bullet owes: the kind's IDENTITY (`ACTION_SCHEMA["kind"]` is a bare enum) and CONDUCT,
+which no schema can hold — when to reach for the kind, when not to, what it costs, what the
+engine does around it. A field a run gets wrong is taught when it is wrong, by
+`schema_guard.retry_message` with `schemamemo.field_help`.
 """
 
 from __future__ import annotations
 
 from .actions import ASK_OPTIONS_MAX
 
-# The harness contract's per-kind bullets, keyed by the kinds each one covers (a few
-# bullets describe a family — read_file/write_file/edit_file share one). Same filter as the
-# schema: a run is told how to use the channels it HAS, and nothing about the ones it
-# doesn't. The memory bullet was already grant-conditional in the composer; making every
-# bullet conditional generalizes that precedent instead of adding a second mechanism.
-# Every kind has a bullet but `script`: its gloss sits in CAPABILITIES (capabilities.py),
-# beside the routine's own scripts it can call, which is the one thing worth saying about it.
+# The per-kind bullets, keyed by the kinds each covers (a family may share one). Same filter as
+# the schema: a run is told only about the channels it HAS. Every kind has a bullet but
+# `script`, glossed in CAPABILITIES beside the routine's own scripts.
 #
 # Three placeholders are substituted (not f-string interpolated — the prose contains braces
 # in code fragments): {util_confirm}, {ask_timeout_min} and {ask_options_max}.
@@ -280,7 +259,5 @@ def kind_bullets(kinds: list[str] | set[str], *, util_confirm: str = "",
     out = [prose for covers, prose in KIND_PROSE if allowed & set(covers)]
     return ("\n".join(out).replace("{util_confirm}", util_confirm)
             .replace("{ask_timeout_min}", str(ask_timeout_min))
-            # the pick-list cap is the validator's constant, substituted rather than written
-            # into the prose: two spellings of one number drift, and the prose is what the
-            # model obeys while the constant is what refuses it (F621)
+            # the validator's own constant, so the prose and the refusal cannot drift apart
             .replace("{ask_options_max}", str(ASK_OPTIONS_MAX)))

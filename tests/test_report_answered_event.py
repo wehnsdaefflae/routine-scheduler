@@ -1,15 +1,4 @@
-"""An operator answer to a report-born question reaches the REPORTS LEDGER — routed or not.
-
-The gap this pins (2026-11-21): `web/api_questions._relay_report_answer` told the report's
-TARGET what was decided (F621) and told the ledger nothing, returning early when there was no
-target at all. So an UNROUTED report — one waiting in triage for a routine to pick it up — kept
-reading as undecided work. R3630 was answered "Both" on 2026-11-20 11:58 and
-`gu rsched reports --triage --status open` still listed it unanswered the next day, whereupon
-the triaging run forwarded it offering three options the operator had already chosen between.
-
-The event must NOT be terminal: a decided report is not a disposed-of one. Unrouted work still
-needs an owner and routed work still needs building, so the row stays on the open front.
-"""
+"""An operator answer to a report-born question reaches the REPORTS LEDGER — routed or not."""
 
 from __future__ import annotations
 

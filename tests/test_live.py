@@ -1,9 +1,4 @@
-"""Live endpoint smoke tests — real network calls, so gated behind RSCHED_LIVE_TESTS=1.
-
-Covers the commonly-configured endpoints, all DIRECT model access: OpenRouter (GLM-5.2,
-the default orchestrator), local Ollama (gemma), and the Anthropic Messages API (claude).
-Each asks for a schema-constrained answer and validates it end-to-end.
-"""
+"""Live endpoint smoke tests — real network calls, so gated behind RSCHED_LIVE_TESTS=1."""
 
 import os
 

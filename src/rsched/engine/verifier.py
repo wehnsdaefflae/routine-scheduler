@@ -1,65 +1,27 @@
 """Claim verification — a second look at what a finish says it MET.
 
-The accounting makes a run answer for every line it owes (`accounting.py`). It cannot check
-whether a `met` is TRUE: a run can write `d3 met: PDF verified` having never opened the PDF;
-the record, the next run and the page would all agree it is done. The failure is silent and
-confident, which is the bad kind.
+The accounting makes a run answer for every line it owes (`accounting.py`) but cannot check
+whether a `met` is TRUE. So at the finish a second CALL on the `tool_call` role — a fresh
+context, not the run's own — is asked, per line claimed `met` (a Done-when line, or a
+finish-line outcome the run proves), whether the run's record supports it. A refuted claim
+sets the finish aside for one turn; the model either does the work or restates its case. It is
+a second MODEL only when that role resolves to a different one; `rsched validate` names a
+routine whose verifier shares its main model (`rsched/verifier_model.py`).
 
-So at the finish a second CALL — on the `tool_call` role, a fresh context that is not the run's
-own — is asked, per line
-the accounting claims `met` (a Done-when line, or a finish-line outcome the run proves), whether
-the run's own transcript supports the claim. A refuted claim sets the finish aside for one turn
-and the model either does the work or restates its case. It is a second MODEL only when that
-role resolves to a different one: an unset `tool_call` runs the system model, as an unset `main`
-does, and `rsched validate` names a routine whose verifier shares its main model as a
-`NOTE verifier` line (rsched/verifier_model.py) — the choice is the operator's.
+The judge reads the run's ACTION RECORD (`loop.turn_records`, one line per turn, which survives
+compaction) next to the tail of its conversation — the tail alone misses early actions on a
+long run. A Done-when line's producing STAGE never entered is only a HINT on the claim, never a
+verdict (F620): stage entry is detected from module re-reads, not work done.
 
-## What the judge is shown, and why a stage read is only a HINT (F620)
+Guards against being worse than the problem:
 
-The claim is checked against **what the run DID**: the judge reads the run's ACTION RECORD
-(`loop.turn_records` — one line per turn, kind + brief + `say`, the record that survives
-compaction) next to the tail of its conversation. The tail alone was not enough evidence to
-judge a claim by: it is the last `TAIL_CHARS` characters of the message list, so on a long run
-the actions that produced an early outcome are no longer in it, and the judge was asked to rule
-on evidence it could not see.
+- FAIL-OPEN at every level: refute only when confident the record contradicts the claim; an
+  unavailable endpoint, an unparseable answer or an unmentioned claim accepts.
+- No livelock: a line is challenged AT MOST ONCE per guard scope (`loop._challenged`,
+  engine/guardscope.py). A re-asserted verdict STANDS and is recorded as `disputed`; a resumed
+  leg rebuilds the set from the deferrals' `claims_unsupported` (`finishgate.rebuild`).
 
-A Done-when line may name the STAGE that produces it, and a run that never entered that stage
-is a real signal — but a weak one, and it used to be a verdict all by itself: the objection was
-raised with no model asked, and the blamed line was then EXCLUDED from the judge that would have
-looked at the evidence. Two measurements say that is the wrong way round:
-
-- entering a stage is detected from the run's own file activity (`engine/fileops.py` →
-  `readmodels/statemap.stage_coverage`): a `read_file` on `stages/<name>.md`, or a
-  `state/phase.json` the run wrote. Every recipe on this instance tells a run to read stage
-  modules ON DEMAND, and a routine that keeps no phase cursor has only the module re-read left —
-  so a run that legitimately did not re-read a module it already knew was told it never entered
-  the stage. Measured on tv-show-tracker-seedbox-manager (R2228, run 20261003-160012): d4 and d5
-  were produced in full — a drain verified at exact size, a `rutorrent-rpc erase`, a pointer
-  advance — and all three stage-keyed lines were objected to with the same sentence.
-- it is wrong in the other direction too: reading the module and producing nothing was credited.
-
-So the stage signal is now carried to the judge as a NOTE ON THE CLAIM, and the judge rules on
-the actions. The run keeps the last word exactly as before. An objection a run can overturn by
-citing what it did is a check; one it can only concede to teaches every future run to concede.
-
-## The two ways this could be worse than the problem
-
-**False blocks.** A judge that blocks on doubt is a machine for stranding runs over evidence
-that lives outside the tail it was shown. So the verifier is FAIL-OPEN at every level: it must
-be confidently able to say the transcript contradicts or fails to show the claim before it
-refutes, an unavailable endpoint or an unparseable answer accepts, and anything it does not
-mention accepts. The default answer is always "the run's word stands".
-
-**A livelock.** A stubborn model and a stubborn judge would trade refutations until the budget
-dies. So a line is challenged AT MOST ONCE per run (`loop._challenged`). If the model re-asserts
-the same verdict after being shown the objection, its verdict STANDS and the disagreement is
-RECORDED — in the `stopping_update` event and on a finish-line outcome as `disputed`. The engine
-gets one intervention, the model keeps the last word, and the operator gets the audit trail.
-"Per run" is the guard scope (engine/guardscope.py) — per reply, in a conversation — and it
-holds across a resume: each challenge is recorded on its deferral (`claims_unsupported`), and a
-resumed leg rebuilds the set from those records (`finishgate.rebuild`).
-
-Cost is naturally scoped: one subcall per finish attempt that claims something met.
+Cost: one subcall per finish attempt that claims something met.
 """
 
 from __future__ import annotations
@@ -70,14 +32,10 @@ from ..schema_guard import SchemaViolation, extract_json
 
 log = logging.getLogger("rsched.verifier")
 
-#: How much of the run's own conversation the judge reads. The tail is where the evidence for a
-#: just-claimed condition lives; the head is orientation and costs tokens to re-read.
+#: How much of the run's own conversation the judge reads (the tail; the head is orientation).
 TAIL_CHARS = 12_000
-#: How much of the ACTION RECORD it reads (F620). One line per turn, so this is the cheaper and
-#: the more complete of the two evidence sources: ~200 characters buys a whole turn here, where
-#: the same spend on the conversation buys a fraction of one observation. Its MIDDLE is elided
-#: before either end, because the evidence for a claimed outcome is as likely to sit at turn 12
-#: as at turn 120 — which is exactly what the tail alone could not show.
+#: How much of the ACTION RECORD it reads — the cheaper, more complete evidence source. Its
+#: MIDDLE is elided first: an outcome's evidence is as likely early as late.
 ACTIONS_CHARS = 24_000
 CONDITION_CAP = 400
 
@@ -114,14 +72,9 @@ def _tail(loop) -> str:
 def _actions(loop) -> str:
     """Every action this run took, one line per turn — `turn <n>: <kind> <brief> — say: "…"`.
 
-    Read from `loop.turn_records`, which the loop appends as each action lands and a resume
-    rebuilds (`compaction.turn_record`), so it SURVIVES compaction: this is the only evidence
-    surface that still shows what a long run did at its beginning. The rendering is the
-    compaction digest's own line builder, so the judge reads the turns in the same form the run
-    itself reads its elided middle in.
-
-    Over the cap, the MIDDLE goes and both ends stay, with a line saying how many turns were
-    dropped — an outcome's evidence is as often early as late.
+    Read from `loop.turn_records` (rebuilt on resume, survives compaction), rendered by the
+    compaction digest's own line builder. Over the cap the MIDDLE goes, with a line counting
+    the dropped turns.
     """
     from .compaction import _digest_line
 
@@ -177,16 +130,11 @@ def _prompt(claims: list[dict], summary: str, tail: str, actions: str = "") -> s
 
 def hinted(claims: list[dict], entered: set[str]) -> list[dict]:
     """The same claims, each carrying a `hint` where one applies — a note the judge reads under
-    that claim (F620). Non-mutating; a claim with nothing to note comes back unchanged.
+    that claim. Non-mutating.
 
-    The one hint today: the line's producing stage was never entered. That was a verdict of its
-    own until F620, and the line it blamed was then excluded from the judge that would have read
-    the evidence. Stage entry is detected from the run's own file activity (a `read_file` on
-    `stages/<name>.md`, or a `state/phase.json` the run wrote), which measures module re-reads
-    rather than work done — so it can be true of a run that produced the outcome in full. The
-    wording is therefore aimed at a reader who will go and look at the actions.
-
-    A hint informs the judgement; it never makes one.
+    The one hint: the line's producing stage was never entered (no read of `stages/<name>.md`,
+    no `state/phase.json` naming it). That measures module re-reads, not work done, so a hint
+    informs the judgement and never makes one.
     """
     return [{**c, "hint": (f"the run never entered the stage `{c['stage']}` that this recipe "
                            "says produces this outcome (no read of its module, no phase cursor "
@@ -199,11 +147,8 @@ def hinted(claims: list[dict], entered: set[str]) -> list[dict]:
 def _verdicts(completion) -> list | None:
     """The judge's verdict list, or None when its reply carries none.
 
-    Read from the endpoint's native parse when it made one, else out of the reply TEXT — the
-    shape every OpenAI-compatible adapter returns schema output in (`parsed` stays None there,
-    and every other schema'd caller falls back to the text the same way). Reading `parsed`
-    alone made the check a silent no-op whenever the `tool_call` role was served by one of
-    them: every claim was accepted unread.
+    Read from the endpoint's native parse, else out of the reply TEXT — OpenAI-compatible
+    adapters leave `parsed` None, and reading `parsed` alone would accept every claim unread.
     """
     parsed = completion.parsed
     if parsed is None:
@@ -221,8 +166,7 @@ def refuted(loop, claims: list[dict], summary: str) -> list[dict]:
     check could not run at all. Never raises: a verifier that can break a run is worse than no
     verifier.
 
-    A claim may carry a `hint` — a weak signal that is not a verdict of its own (`hinted`); the
-    judge reads it under that claim. It informs the judgement; it never makes one.
+    A claim may carry a `hint` (`hinted`), read by the judge under that claim.
     """
     if not claims:
         return []
@@ -236,9 +180,7 @@ def refuted(loop, claims: list[dict], summary: str) -> list[dict]:
             temperature=ref.temperature, max_tokens=ref.max_tokens,
             purpose="finish · verify claims", kind="llm_action")
     except Exception as exc:
-        # fail-open, loudly: whatever went wrong — no model for the role, a provider error, an
-        # adapter bug — the run's word stands, at its finish of all moments, and the operator
-        # can see why it was not checked
+        # fail-open, loudly: whatever went wrong, the run's word stands and the log says why
         log.warning("finish: could not verify the met claims (%s) — accepting them", exc)
         return []
     ctx.add_usage(completion.usage)
@@ -258,11 +200,8 @@ def refuted(loop, claims: list[dict], summary: str) -> list[dict]:
             out.append({"id": claim["id"], "text": claim["text"],
                         "evidence": str(v.get("evidence") or "").strip()
                         or "the transcript does not show this being done"})
-    # D287 step 1: the same claims screened by a DECISION model, one question each in one call,
-    # recorded beside the prose judge's verdicts and changing none of them
-    # (engine/decision_shadow.py). This is the site his answer prices — 184 calls a month at
-    # 24.5 s and $11.15, every one of them while a run is trying to end — so it is the one whose
-    # agreement has to be known before a cascade screens anything for real.
+    # D287: the same claims screened by a DECISION model in shadow, recorded beside the prose
+    # judge's verdicts and changing none of them (engine/decision_shadow.py)
     _shadow_claims(ctx, claims, summary, _tail(loop), {str(c["id"]) for c in out})
     return out
 
@@ -271,9 +210,7 @@ def _shadow_claims(ctx, claims: list[dict], summary: str, tail: str,
                    refuted_ids: set[str]) -> None:
     """Hand the comparison to the shadow, and never let it reach the run.
 
-    `refuted` is fail-open by charter ("a verifier that can break a run is worse than no
-    verifier") and a MEASUREMENT inside it must hold the same line — one level stricter, in
-    fact, since it buys the run nothing at all.
+    A measurement inside a fail-open verifier buys the run nothing, so it never raises.
     """
     try:
         from . import decision_shadow
@@ -293,11 +230,8 @@ def _shadow_claims(ctx, claims: list[dict], summary: str, tail: str,
 def challenge_message(items: list[dict]) -> str:
     """What the run is told when a claim is refuted — the objection and how to overturn it.
 
-    It says what would overturn the objection, in the terms the judge decides on: the ACTIONS
-    that produced the outcome and the identifiers they carried. A run that had the evidence and
-    read this as unanswerable filed a false `unmet` about its own finished work (F620/R2228) —
-    and a false `unmet` is worse than a missing one, because the accounting is where the
-    operator reads whether a run did what it claimed.
+    It names what overturns the objection in the judge's own terms — the ACTIONS and their
+    identifiers — so a run with the evidence cites it instead of conceding a false `unmet`.
     """
     lines = "\n".join(f"- [{i['id']}] {i['text']}\n  objection: {i['evidence']}" for i in items)
     return ("OBSERVATION (finish deferred): a check of your own record does not support "

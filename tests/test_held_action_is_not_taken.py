@@ -1,23 +1,4 @@
-"""A HELD or REFUSED action is not one the run TOOK — D243 (review item E4.3).
-
-`finishgate` handed the claim guard `{r["kind"] for r in loop.turn_records}` as the set of
-actions this run took. But `turn_records` is appended at the ASSISTANT_ACTION stage
-(`engine/loop.py:269`), before dispatch — so it holds every action the model EMITTED, including
-
-* one a consequence reminder or a rule assist HELD (`engine/hold.py`: it did not run), and
-* one the reserved finish turn refused.
-
-So a summary saying "reported the outage" passed the guard on a `report` that was held and never
-re-emitted: the one guard whose whole job is to catch narrated-but-unperformed work was itself
-reading an unperformed action as performed. The engine already has the right predicate and uses
-it for the OTHER half of the same question — `donothing.grounds_a_finish`, which `loop` and the
-resume rebuild both ask to count `executed_actions` (a hold grounds no finish). "Taken" now means
-what EXECUTED, by that same predicate, so the two cannot drift.
-
-Also here, from the same review item: `loop.assist_undo_points` and `loop.reminder_owed` are set
-by their layers' `configure` but were not declared on `EngineLoop`, so the class contract did not
-carry them.
-"""
+"""A HELD or REFUSED action is not one the run TOOK — D243 (review item E4.3)."""
 
 from __future__ import annotations
 
@@ -52,9 +33,6 @@ def test_a_summary_claiming_a_held_report_is_rejected(make_routine, scripted):
     """THE DEFECT. The run emits a `report` that a reminder holds — so nothing is filed — and
     then finishes `ok` claiming it. The claim guard must reject that finish; before the fix the
     held action was in `turn_records`, so `report` read as taken and the claim sailed through.
-
-    The second finish, with the claim dropped, must then be accepted — the guard's job is to
-    make the run either take the action or stop saying it did.
     """
     caution = "a report to that routine is read by nobody until Monday"
     _d, ep, status, events = _run(
@@ -95,10 +73,6 @@ def test_an_executed_report_still_backs_its_claim(make_routine, scripted):
 def test_a_resumed_leg_rebuilds_the_kinds_behind_its_count(make_routine, scripted):
     """The counter and the kind set are rebuilt from the SAME predicate on resume, so an
     earlier leg's report still backs a later leg's summary.
-
-    This is the half that would have broken quietly: rebuilding `executed_actions` without
-    `executed_kinds` leaves the guard an empty set, and every legitimate claim in the resumed
-    leg's summary is rejected — a run that did the work being told it did not.
     """
     d = make_routine(slug="resumer")
     set_capabilities(d, reminders="local")

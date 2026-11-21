@@ -1,10 +1,5 @@
 """The general-rule picker's one dear control: withdrawing an unbound rule's TEXT from a live
 run's context (components/rulepicker.js).
-
-Unbinding reaches a live run either way — the run is told the rule no longer binds. Erasing the
-text as well rewrites the messages carrying it, which costs the provider's prompt cache from
-that point on, so it is offered only beside a staged unbind, only where a save can reach a live
-run, and never left armed from a choice the reader made for an earlier save.
 """
 
 from __future__ import annotations

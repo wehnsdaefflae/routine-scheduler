@@ -2,19 +2,13 @@
 it (`rsched/gatecompose.py`, docs/run-gates.md "Run-written gates"). Prompt text only;
 `docs/prompt-anatomy.md` pins the wording and `tests/test_prompt_anatomy.py` fails on drift.
 
-Said ONCE, at boot, beside the FINISH block and for the same reason the D200 recipe ask is
-there: the harness contract is held to a shrink-only budget, and this is a question about the
-routine's own future that only a depth-0 routine run can answer. Absent wherever it could not
-take effect — a run that asks no recipe revisions (a child, a conversation, a detached task;
-`recipeproposal.asks_for_revisions`), a routine whose gate or whose `run_written` switch is
-off, and a routine whose gate
-carries no `max_quiet` floor, under which a run-written gate is never used.
+Said ONCE, at boot, beside the FINISH block (never in the budget-capped harness contract).
+Absent wherever it could not take effect: a run that asks no recipe revisions
+(`recipeproposal.asks_for_revisions`), a gate or `run_written` switch that is off, or a gate
+with no `max_quiet` floor.
 
-The block shows the run what it needs to write a gate that can actually skip: what is in force
-for the next fire and whether its last one was set aside, how the gate has done (skips, fires
-admitted before any check, checks that have never answered "no work" — `gate_yield.py`), the
-routine's own checks to copy secret and path names from, and the check vocabulary, rendered
-from `gatekit.KINDS` so it cannot drift from what the gate accepts.
+It shows what is in force for the next fire, how the gate has done (`gate_yield.py`), the
+routine's own checks, and the check vocabulary rendered from `gatekit.KINDS`.
 """
 
 from __future__ import annotations
@@ -66,8 +60,7 @@ def _standing(cfg) -> list[str]:
 
 def block(ctx) -> str:
     """The block as the digest's tail (a blank line, then `section`), or "" for a run that
-    asks no recipe revisions — the same predicate as the D200 ask, so the two cannot disagree
-    about who is a routine run with a future of its own.
+    asks no recipe revisions — the same predicate as the D200 ask.
     """
     from .recipeproposal import asks_for_revisions
 

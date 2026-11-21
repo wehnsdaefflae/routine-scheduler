@@ -1,20 +1,4 @@
-"""The shell/util jail withholds what the engine's write gate refuses (D179, F571).
-
-Every write protection the engine has lived in the FILE-action gate alone
-(`engine/fileops._write_gate`): the `.memory/` seal, the engine-ownership of `runs/`,
-`.util_outputs/` and `.doc_cache/`, the `routine.yaml` config refusal and the recipe boundary.
-A `bash -c` redirect calls none of them, so all five were bypassable by any routine holding
-`shell` — which is how one run applied an operator-authorized config change to twelve
-`routine.yaml` files (F571, authorized; an unauthorized one would have been equally unblocked),
-and how a routine without the recipe-authoring permission could rewrite its own `main.md`.
-It was also INVISIBLE: a refused `edit_file` leaves an error in the transcript, a shell write
-leaves nothing.
-
-The operator decided (D179, 2026-10-12): enumerate own_dir's writable children from the same
-predicate the write gate uses, accepting that a write to an unlisted path inside the routine dir
-now fails with a bare kernel error. Landlock has no deny rule — a nested rule only ADDS rights —
-so the seal is necessarily a split mount: the dir read-only, its unsealed children read-write.
-"""
+"""The shell/util jail withholds what the engine's write gate refuses (D179, F571)."""
 
 from __future__ import annotations
 
@@ -40,15 +24,7 @@ def _dir_with_children(tmp_path: Path) -> Path:
 
 def _spec(own: Path, *,
           recipe_unlocked: bool = False) -> tuple[set[str], set[str], set[str]]:
-    """The own-dir mount's READ, WRITE and LIST-ONLY rules.
-
-    The third set arrived with D207: the run-history depth needs the routine dir mounted
-    list-only, with what may be READ enumerated beneath it, because Landlock cannot carve an
-    unreadable hole out of a readable tree. The write seal below is unaffected — `ls` grants
-    no write and no file read — but the own dir is no longer in `ro`, which is a real change
-    this file states rather than hides. The depth's own mount is asserted in
-    test_run_depth.py.
-    """
+    """The own-dir mount's READ, WRITE and LIST-ONLY rules."""
     ro: list[str] = []
     rw: list[str] = []
     ls: list[str] = []
@@ -58,13 +34,7 @@ def _spec(own: Path, *,
 
 
 def _writable(rw: set[str], path: Path) -> bool:
-    """Is `path` writable UNDER the spec — i.e. is any rw rule it or an ancestor of it?
-
-    Landlock rights are inherited down the hierarchy, so literal set membership is the wrong
-    question and asserting it is how a seal test passes on unsealed code: mounting the routine
-    dir `rw` makes `.memory/` writable without ever naming it. (Caught here by stubbing the
-    pre-fix mount back in — the first version of this test was green against it.)
-    """
+    """Is `path` writable UNDER the spec — i.e. is any rw rule it or an ancestor of it?"""
     return any(path == Path(r) or path.is_relative_to(Path(r)) for r in rw)
 
 
@@ -129,19 +99,6 @@ def test_the_kernel_actually_refuses_the_write_a_shell_redirect_used_to_make(
     """The one test here that is evidence rather than arithmetic: the seal is a KERNEL
     property, so it is proven by running a real `bash -c` redirect at the paths F571 measured.
     A spec dict with the right strings in it proves only that the strings are right.
-
-    The sandbox is ON for this one (`test_shell_action.shell_ctx` runs with `sandbox: off`,
-    where there is no jail to assert about). Skipped where Landlock cannot engage — with no
-    jail the protection genuinely does not exist, which is the documented permissive mode.
-
-    AND the toolchain's tmp rules are withheld for the duration, which is not a convenience:
-    `_toolchain()` mounts `/tmp` and `/var/tmp` read-WRITE for every jailed command (uv, pip,
-    compilers and bash itself need a scratch dir), and pytest's `tmp_path` lives under `/tmp`.
-    So without this, a routine dir under `tmp_path` is writable by the TOOLCHAIN rule whatever
-    the own-dir mount says, and the first version of this test passed its redirect at exit 0
-    with the seal fully in place. A filesystem refusal cannot be proven at a path some other
-    rule already grants. (On the live instance routine dirs are under the routines home, not
-    under /tmp, so the seal is not weakened there — this is a test-location artefact.)
     """
     import tempfile
 

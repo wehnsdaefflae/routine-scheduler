@@ -1,19 +1,4 @@
-"""F604: a library gap the operator ANSWERED stays answered, and the record names what opened it.
-
-Two halves of one complaint (operator message 2026-10-01, library-export handover item 7; R2125).
-A drift card is a NOTICE — nothing to materialize — so his only answer to one is `dismiss`, and
-all that did was unlink the record. The answer therefore existed nowhere: `library_watch._report`
-skipped a gap that still had an OPEN record, an answered one is not open, and the next library
-commit — about anything at all — queued the identical question naming ITSELF as the cause. He was
-asked twice and told the wrong commit did it.
-
-So a decision is keyed on the GAP (`library_drift.fingerprint`: the routine, the entity, its
-state, its stated reason) rather than on how recently the library moved, and the provenance line
-is narrowed to what the history actually shows (`library_drift.trigger`).
-
-The watcher's own invariants live in `test_library_watch.py`, whose fixture and git helpers these
-reuse — one world, two concerns.
-"""
+"""F604: a library gap the operator ANSWERED stays answered, and the record names what opened it."""
 
 from __future__ import annotations
 

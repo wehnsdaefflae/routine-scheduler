@@ -1,20 +1,4 @@
-"""`recipelint._missing_scripts` — which `scripts/<name>.py` mentions are CALLS (F533).
-
-The check's charter (recipelint's module docstring) is "what a machine can be SURE of", and
-the F533 false positives were all cases where it was not sure: a recipe TALKING ABOUT a path
-rather than calling it. Two shapes are machine-certain and are what these tests pin:
-
-* a path with a parent directory in front of it is not `<this routine>/scripts/<name>.py`,
-  which is the only path the `script` action resolves — so it cannot be a call this routine
-  makes, however the sentence reads;
-* the admission predicate's name is the daemon's in every routine
-  (`daemon/gate_prepare.ADMIT`), so a recipe naming it is describing the platform's contract —
-  typically a step that installs the predicate INTO ANOTHER routine.
-
-What is deliberately NOT pinned here: a bare `scripts/x.py` inside a sentence whose MEANING is
-"the target's own", which stays a finding. A regex cannot read that sentence, and the module
-docstring says it has no business guessing — the honest outcome there is a note a person reads.
-"""
+"""`recipelint._missing_scripts` — which `scripts/<name>.py` mentions are CALLS (F533)."""
 
 from __future__ import annotations
 
@@ -26,11 +10,7 @@ from rsched.workflows.recipelint import _missing_scripts
 
 @pytest.fixture
 def recipe(tmp_path):
-    """A routine dir with a `scripts/` dir holding exactly `real.py`.
-
-    `_missing_scripts` is only asked of a routine that HAS a `scripts/` dir, so the fixture
-    must create one or every case would pass for the wrong reason.
-    """
+    """A routine dir with a `scripts/` dir holding exactly `real.py`."""
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "real.py").write_text("print('hi')\n", encoding="utf-8")
 
@@ -101,14 +81,7 @@ def test_the_daemon_owned_predicate_is_never_demanded(recipe):
 
 
 def test_the_excluded_name_is_taken_from_the_daemon_not_restated(recipe):
-    """The exclusion must track `gate_prepare.ADMIT` rather than a literal copy of it.
-
-    The name has already moved once: the predicate is `admit` and NOT `gate` precisely because
-    three routines already ran a `scripts/gate.py` as an in-run check runner
-    (`gate_prepare.py`'s own comment). A test restating the string would keep passing if the
-    daemon renamed it again while the check silently went back to demanding the new name —
-    so this asserts the live constant is the one being honoured.
-    """
+    """The exclusion must track `gate_prepare.ADMIT` rather than a literal copy of it."""
     assert recipe(f"Install scripts/{gate_prepare.ADMIT}.py in the target.") == []
     # and the name the daemon deliberately did NOT choose is still an ordinary script
     assert recipe("Run scripts/gate.py as our own checks door.") != []

@@ -1,10 +1,4 @@
-"""The CHILD RUN contract (F338): one concept, three scheduling modes, one hand-back path.
-
-These pin the vocabulary itself. F338 exists because three names for one thing let the prompt
-copy drift until it stated something false about children, so the point of these tests is that
-the mode vocabulary and the hand-back path have exactly ONE definition and every surface reads
-it from there.
-"""
+"""The CHILD RUN contract (F338): one concept, three scheduling modes, one hand-back path."""
 
 import contextlib
 import threading
@@ -83,12 +77,6 @@ def test_a_child_hands_back_what_it_wrote_not_what_the_slot_accumulated(tmp_path
     """The landing directory is namespaced by the child's NUMBER, not by its run, so every
     run's child #1 lands in the same `artifacts/from-sub-1/` — and listing the DESTINATION
     hands the parent every file that slot ever accumulated.
-
-    Measured on 2026-11-07 (`self-audit:20261107-233235`): a child that wrote **2** files was
-    announced as having handed back **66**, the other 64 dating from 2026-09-11 to 2026-10-27
-    including whole nested `from-sub-2`…`from-sub-6` trees of earlier runs. The real
-    deliverable was the 36th name in the list. The copy is right to be additive — a child may
-    hand back more than once as it goes — but the ANSWER must be about this child.
     """
     src, parent = tmp_path / "kid" / "artifacts", tmp_path / "parent"
     src.mkdir(parents=True)
@@ -131,11 +119,6 @@ def test_one_finished_headline_for_every_mode():
 def test_the_cap_refusal_says_the_budget_is_shared_by_the_whole_tree(make_routine, tmp_path):
     """D147-A: `max_child_runs` is one cumulative total for the run TREE, and the refusal has to
     say so.
-
-    A child that has started nothing, refused at its own first spawn, reads "child run budget
-    (8) exhausted" and has no way to tell that its siblings spent the 8 — so it cannot
-    distinguish a shared ceiling from a bug in its own call. The specimen (R1870/F549): three
-    children numbered 5, 7 and 8, all refused at their first spawn, all finishing PARTIAL.
     """
     ctx = _ctx(make_routine, "cap-refusal")
     ctx.budgets.max_child_runs = 8
@@ -244,9 +227,6 @@ def test_a_finished_childs_elapsed_is_how_long_it_ran(tmp_path):
     """The `subruns` table's elapsed column stops when the child does — it used to keep
     counting the time since the child STARTED, so a child that ran 3 s read as running for as
     long as the parent kept going.
-
-    The parent ctx carries a real `run_dir` because `status_table` reads the child
-    directories there too (F732 salvage) — an empty tmp_path contributes no orphan row.
     """
     mgr = subruns.SubrunManager(SimpleNamespace(ctx=SimpleNamespace(run_dir=tmp_path)))
     done = threading.Event()

@@ -1,27 +1,5 @@
 """The rejection a run earns AGAIN — the correction that teaches, and the retry that is not
 the identical ask (F736).
-
-MEASURED on this instance's health stream (76 `wrong_turn_detected` rows, 2026-10-19..24):
-`repeat_invalid` — the engine's only repeat detector — has fired ZERO times, while TEN runs
-earned a BYTE-IDENTICAL rejection message on two or more SEPARATE turns, 25 turns in all.
-`llmsectest-weekday:20261023-040002` was told `(root): 'say' is a required property` at turns
-236, 287, 315, 331, 349, 483, 592, 613, 647, 662 and 683. The detector missed every one of
-them because `completion.next_action`'s `repeated` flag compares against `prev_raw`, a local
-that dies with the turn: a repeat is only ever seen INSIDE one turn, and the real phenomenon
-is across turns, after the correction was dropped as debris on the recovering reply.
-
-Two consequences, and this file holds one assertion for each:
-
-* The correction never names what the FIELD IS. `(root): 'say' is a required property` is the
-  validator's sentence about a property name; the schema carries a description of what `say`
-  means and the model never sees it. Nine of 37 runs earn their FIRST rejection at turn 1,
-  where there is no earlier turn to learn from, so the first correction has to teach.
-* The retry is the IDENTICAL ask. Same prompt shape, same provider grammar, one more attempt.
-
-What this must NOT do is end the run: at a second identical rejection,
-`llmsectest-weekday:20261023-040002` would have died at turn 287 of 683 — it recovered from
-every one of those eleven rejections. `test_the_refused_repeat_does_not_end_the_run` is that
-line, and it is a REGRESSION guard (it passes on the unchanged tree) rather than a red.
 """
 
 from __future__ import annotations
@@ -200,11 +178,6 @@ def test_an_unparseable_reply_is_told_what_the_required_fields_are(make_routine,
     1, where no earlier turn exists to learn from. `grant-hunter:20261020-011336` and
     `scheduler-builder:20261021-130003` both died into `turn 1: reply did not contain a
     parseable JSON object`; three separate runs earned it at turn 1 on 2026-10-23 alone.
-
-    There is no field to quote, so the correction teaches the CONTRACT instead: an action is
-    one JSON object, and these are the fields every action needs whatever its kind. Derived
-    from `ACTION_SCHEMA["required"]` rather than written out here, so a contract change cannot
-    leave this assertion asserting the old one.
     """
     ep, status, events = _run(make_routine, scripted, [
         "I'll start by reading the recipe. Let me look at main.md first.",   # prose, no JSON
@@ -233,10 +206,6 @@ def test_a_repeat_across_turns_files_repeat_invalid_not_a_second_rejection(
     ever see a repeat INSIDE one turn (`completion.next_action`'s `prev_raw`, a local that dies
     with the turn). Measured on this instance's health stream: ZERO `repeat_invalid` rows,
     while ten runs earned a byte-identical rejection on separate turns.
-
-    So the second turn's row must carry the repeat reason, not a second `schema_rejected` — the
-    claim `health_events.py` and `docs/run-analytics.md` now both make. One row per
-    (reason, turn), as everywhere else in this vocabulary.
     """
     home, _ep, status, events = _run_home(make_routine, scripted, [
         NO_SAY, READ,                            # turn 1: the rejection is earned
@@ -261,10 +230,6 @@ def test_a_repeat_with_nothing_to_quote_does_not_cite_a_field_list_it_lacks(
     `kind: "websearch"` at turns 64 AND 65 (verified in this instance's health stream). Its
     rejection names `kind`, and `kind` is an enum that carries NO description in the contract —
     so `field_help` has nothing to say and the correction holds no field list.
-
-    The repeat sentence must then point at what IS above (the problem lines) rather than at a
-    list that is not there. A correction citing absent evidence teaches the model to discount
-    the rest of the sentence, which is the whole mechanism this item buys.
     """
     ep, status, events = _run(make_routine, scripted, [
         BAD_KIND, READ,                          # turn 1: an unknown kind

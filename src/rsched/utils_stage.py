@@ -16,7 +16,7 @@ under a throwaway slug inside the LIVE library (`staging--<name>-<pid>-<token>`)
 thing, and everything it is entitled to is keyed on (library home, util name):
 
 * sibling calls — a util may exec `gu <sibling>` for anything on its `calls:` line, and `gu`
-  resolves siblings from the dispatcher's OWN directory (`utils_lib.DISPATCHER`), which
+  resolves siblings from the dispatcher's OWN directory (`util-seed/gu`), which
   `utils_run.run_util` puts on PATH as `GLOBAL_UTILS_HOME`;
 * its declared needs — secrets, `net:`, `fs:` and verb scope come from
   `utils_run.util_needs(home, name)` / `utils_verbs`, which READ THE SOURCE under that name.

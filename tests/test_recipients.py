@@ -1,11 +1,4 @@
-"""Where a message goes when its addressee reads nothing (rsched/recipients.py).
-
-A routine switched off by the operator, or retired by its finish line, starts no run — so a
-report or a shared-store note addressed to it would never be read, and both channels refuse at
-sending. The refusal used to stop at "it is off"; the sender had to guess where the work went.
-The usual answer is that it MOVED — most plainly when several routines became the jobs of one —
-so every refusal now names the routines that would read it, best first.
-"""
+"""Where a message goes when its addressee reads nothing (rsched/recipients.py)."""
 
 from __future__ import annotations
 

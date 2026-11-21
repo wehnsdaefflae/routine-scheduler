@@ -1,20 +1,4 @@
-"""The hook stream as the SOURCE rather than the mirror — D152 campaign step 4.
-
-Steps 2 and 3 left `reports.jsonl` and the reminders store as their own writers, with
-`.control/hooks.jsonl` a best-effort mirror beside them. That is the duplication this step
-retires, and these are the tests that say what "retired" means — because the file itself stays
-(it has readers outside this engine: the operator's backlog counts, self-audit's folds):
-
-1. the hook is written FIRST and the ledger row is a pure projection of it, computed in one
-   place (`hooks/reportproj.py`);
-2. the stream carries what the mirror dropped — the whole disposal (`answers`, `closes`,
-   `settles`, `supersedes`) and the lifecycle events — so the ledger can be REBUILT from it,
-   which is the testable form of "one source";
-3. a hook write that fails REFUSES the filing instead of leaving the two stores disagreeing:
-   the mirror was best-effort precisely because it was not the source, and the moment it
-   becomes the source that trade reverses;
-4. the reminder half records a DISPOSITION change, which step 2's mirror never saw at all.
-"""
+"""The hook stream as the SOURCE rather than the mirror — D152 campaign step 4."""
 
 from __future__ import annotations
 
@@ -199,10 +183,6 @@ def test_the_reminder_store_is_derivable_from_the_stream(make_routine, scripted)
     would hold are computed from the hook stream and compared against the store it actually
     read — `drift` empty is the claim, and a non-empty answer would NAME the hook that was
     written without going through the write path.
-
-    The tallies are deliberately NOT derived: `fires` and the four labels are per-routine
-    evidence with their own writer (`reminders.record`), and mirroring a counter would give one
-    number two writers — the defect this campaign removes rather than spreads.
     """
     d = make_routine(slug="remr")
     set_capabilities(d, reminders="local")

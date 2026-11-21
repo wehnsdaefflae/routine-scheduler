@@ -1,10 +1,4 @@
-"""The daily owed-work sweep files `answer_undelivered` for an answer NO run will read.
-
-The Decisions page lists such an answer as UNDELIVERED the moment it is in that state; this is
-the reminder on the blocked-work surface for one nobody went back to look at — two sat seven
-weeks (2026-09-21) before either existed. Only `never` is filed, and only past a day: an answer
-a run reads tonight, or one given an hour ago, is nobody's problem yet.
-"""
+"""The daily owed-work sweep files `answer_undelivered` for an answer NO run will read."""
 
 import json
 import os

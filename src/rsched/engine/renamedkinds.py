@@ -1,24 +1,11 @@
 """An action kind that was RENAMED tells the run its new name, instead of being refused blankly.
 
-A kind leaving the schema is rare and the refusal it produces is accurate but useless: the
-JSON-Schema message is `kind: 'task' is not one of [...]` followed by every current kind, with
-the replacement sitting somewhere in the middle of the list. A run whose RECIPE still spells the
-old name reads that, cannot see which of them it wanted, and emits the same action again — and
-three rejections of one correctable mistake is what killed a run in F637.
+The JSON-Schema refusal lists every kind without pointing at the replacement, so a run whose
+recipe spells the old name repeats the action until it dies. An entry stays as long as any
+recipe on disk might still carry the old spelling.
 
-So the mapping is explicit and the correction says the one thing that fixes it. The entry stays
-as long as any recipe on disk might still carry the old spelling; recipes are the operator's,
-rewritten at his pace, not in the release that renames the kind.
-
-Deliberately NOT an alias. D174 chose "rename both senses, zero residual ambiguity" (`task` meant
-the run's decomposition tree in one place and a routine's own standing work in another), and an
-accepted alias would keep the ambiguous word alive in the surface it was removed from. The run is
-told the new name once and uses it. D241 (`spawn`/`subtask`/`subruns` → `child`/`children`)
-is the same decision and needs the same entries — 0.566.0 removed the kinds without them, so a
-recipe the boot migration had not reached got exactly the blank refusal this module prevents.
-Where the old NAME carried meaning the new kind takes as a FIELD (`subtask` was a sequential
-child; `child` defaults to parallel), the correction names that field too, or "every other
-field is unchanged" would silently turn a sequential child into a parallel one.
+Deliberately NOT an alias (D174, D241): an accepted alias keeps the ambiguous word alive.
+Where the old NAME implied a field (`subtask` was a sequential child), the correction names it.
 """
 
 from __future__ import annotations
@@ -49,8 +36,7 @@ RENAMED: dict[str, tuple[str, str, dict[str, str]]] = {
 def hint(obj: dict) -> str:
     """The correction for an action naming a retired kind — "" when the kind is not one.
 
-    Returns "" for everything else, because a diagnosis that fires on ordinary mistakes teaches
-    the model to ignore it (`actions.field_shift_diagnosis` says the same of its own signature).
+    A diagnosis that fires on ordinary mistakes teaches the model to ignore it.
     """
     kind = str(obj.get("kind") or "")
     entry = RENAMED.get(kind)

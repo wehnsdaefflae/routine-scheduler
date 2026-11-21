@@ -1,12 +1,4 @@
-"""No console module touches web storage bare — util.js's `storage`/`session` are the one way.
-
-Merely READING the `localStorage`/`sessionStorage` global throws in a browser that blocks site
-data, and a bare call anywhere on a route's mount path takes that route down: the run rail did
-it once (tests/ui/test_conversation_rail.py), then the admin toggle and the fork's prefill
-hand-off did it to the default route. util.js wraps both areas with a degrade-to-memory
-fallback; index.html's pre-paint theme read is the one inline exception and carries its own
-try/catch.
-"""
+"""No console module touches web storage bare — util.js's `storage`/`session` are the one way."""
 
 import re
 from pathlib import Path

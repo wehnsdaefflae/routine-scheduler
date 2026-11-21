@@ -1,19 +1,4 @@
-"""A reminder link lands on the reminder, not on the top of the development view (F832).
-
-Operator, 2026-11-02: *"clicking the reminder link to the routine's health page should take us
-straight to the reminder's anchor instead of the top of the healtzh page so we don't have to
-find the respective reminder ourselves"*. The fleet census counted 169 reminder rows across the
-instance, and Recipe health is the LAST section of `#/changes/<slug>` — below the outcome, the
-cost panel, the weeks, the changes table and the model fit — so landing at the top meant
-scrolling past all of that and then finding one row by eye.
-
-The shape is the house's landing journey: the link carries `?rem=<id>`
-(components/conceptlinks.js `reminderLink`), each caution row carries `data-rem`
-(views/routine-health.js), and the view's first paint lands on that row with
-settings-field.js `landOn` — folds opened, centred, flashed, held while the sections above fill
-in. The health read is stubbed with forty reminders so the target sits far below the fold,
-which is the condition the complaint is about; a row near the top would pass without landing.
-"""
+"""A reminder link lands on the reminder, not on the top of the development view (F832)."""
 import json
 import re
 

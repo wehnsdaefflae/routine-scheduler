@@ -1,9 +1,4 @@
-"""The CLOSING asks a finishing run leaves behind — D212 increment (b).
-
-Increment (a) made every decision record carry its CLASS and nothing read it. These pin the
-first reader: which of a run's own records reach the person reading its finish, and — just as
-much — which never do.
-"""
+"""The CLOSING asks a finishing run leaves behind — D212 increment (b)."""
 
 from __future__ import annotations
 

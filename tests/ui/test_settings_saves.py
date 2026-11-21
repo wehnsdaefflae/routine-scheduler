@@ -1,12 +1,4 @@
-"""Settings saves: one request per press, and a save that lands with problems says so.
-
-Fifteen Settings buttons wrote the `try { await api(…); toast(ok) } catch …` shape out by hand
-without disabling themselves, so a double click sent the save twice (a second POST of the same
-endpoint, a second DELETE that answers 404). They now run through util.js `act()`. And the
-config-block saves (endpoints, models, machines) answer `{ok, problems}` — the write landed and
-`problems` is what the loader now says about the whole config — which the endpoint and model
-saves ignored, reading as plain success (settings-common.js `savedToast`).
-"""
+"""Settings saves: one request per press, and a save that lands with problems says so."""
 
 from __future__ import annotations
 

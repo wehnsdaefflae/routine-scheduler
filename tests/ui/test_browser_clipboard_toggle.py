@@ -1,29 +1,4 @@
-"""The browser screen's CLIPBOARD SYNC toggle (D221).
-
-The operator asked for the screen to share his host's clipboard — "can you make the novnc
-browser share the clipboard with my host machine?" — and chose option A, the full two-way
-clipboard, over the recommended one-way paste. Then, seeing that the channel was already open:
-"add a checkox if we want the clipboard to sync or not. under the novnc iframe".
-
-The switch sits on the iframe's permission grant (`allow="clipboard-read; clipboard-write"`)
-AND on the clipboard bridge that uses it. D221 assumed the grant was enough — that the embedded
-noVNC page would reach the host clipboard once permitted — and F831 found it never does: noVNC's
-clipboard is a manual side panel and it never calls `navigator.clipboard`. So the grant only
-removed a block, and the operator reported that host-to-guest sync did not work.
-`components/clipboard-bridge.js` now makes the calls, through the frame's own clipboard, and
-tests/ui/test_browser_clipboard_bridge.py proves the sync both ways. x11vnc runs with no
-`-nosel`/`-noclipboard` (deploy/chrome-entrypoint.sh), so the RFB side relays the X CLIPBOARD
-selection both ways, and the full-screen page already drops `view_only`
-(tests/ui/test_browser_screen.py).
-
-WHY A RELOAD IS PART OF THE CONTRACT: Permissions Policy is evaluated when a document loads, so
-changing `allow` on a live frame does nothing until it loads again. A toggle that silently did
-not take effect is worse than no toggle, so flipping it re-mounts the frame and the control says
-so.
-
-The DOCK's read-only mirror is NOT involved and must stay as it is: it carries `view_only=1`
-and `pointer-events: none`, so there is nothing there to sync.
-"""
+"""The browser screen's CLIPBOARD SYNC toggle (D221)."""
 from __future__ import annotations
 
 from playwright.sync_api import expect

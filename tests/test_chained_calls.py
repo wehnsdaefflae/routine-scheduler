@@ -1,30 +1,4 @@
-"""A reply that chains as several CALLS reaches the engine whole (F754).
-
-Action chaining (0.446.0, engine/chain.py) runs every action one reply wrote. Two channels
-carry them: text blocks, which `replyactions.written_actions` reads, and the action tool's
-calls. Until F754 `_parse` kept `calls[0]`, logged a warning nobody reads and dropped the rest:
-`Completion.parsed` was one object, so they never reached `reply_actions` at all and chaining
-could not run them. The run was never told — the extra actions vanished with no
-`unexecuted_note`, so its narration claimed effects for actions nobody ran, which is exactly
-the R2443-R2445 failure chaining exists to end, surviving on one channel.
-
-**And until 0.550.0 the adapter ASKED the provider for at most one call** — the body carried
-`disable_parallel_tool_use: True`, written 2026-10-01 "so a reply cannot carry two actions",
-three weeks before the operator ordered chaining and F754 made a multi-call reply reach the
-engine whole. Current Claude models emit several `tool_use` blocks in one turn for independent
-subtasks by default, so that one field suppressed, at the wire, the native expression of the
-behaviour the harness asks for: a model forming the intent could only chain by writing actions
-as JSON text, which is the channel it has been taught not to use (`native_turns` renders its
-own history as calls). Measured fleet-wide 2026-11-15, counting BOTH signals — turns with
-several `assistant_action` rows AND the observations a stopped chain leaves behind: 15 chains
-in 11,598 actions over 81 transcripts, 0.13%.
-
-So `Completion` carries the calls it received — `parsed` the first, `parsed_rest` the ones
-after it, in wire order — and `reply_actions` folds them in after the reply's text actions.
-Nothing else reads `parsed_rest`: the chain is already the engine's one path for "more than
-one action in a reply", and it stops at a failure, refuses a later `finish` and re-judges every
-element exactly as it does for actions written as text.
-"""
+"""A reply that chains as several CALLS reaches the engine whole (F754)."""
 
 import json
 
@@ -173,15 +147,7 @@ def test_the_completion_names_both_channels(field_name):
 
 
 def test_the_default_tool_choice_does_not_suppress_a_multi_call_reply(monkeypatch):
-    """The wire must not forbid what the engine runs (0.550.0).
-
-    `disable_parallel_tool_use: True` rode every schema'd call from 2026-10-01, when one call
-    was the whole of what the engine could run. Chaining (0.446.0) and F754 removed that
-    premise, and a field asking the provider to emit at most one `tool_use` block makes the
-    operator's own order unreachable on the native channel. Plain `auto` is the ask; the
-    DEGRADE ladder above it is untouched (forced → auto → dropped), because a gateway that
-    rejects `tool_choice` outright still has to be able to answer.
-    """
+    """The wire must not forbid what the engine runs (0.550.0)."""
     bodies: list = []
 
     def fake_post(url, json=None, headers=None, timeout=None):

@@ -1,20 +1,10 @@
 """The PARSE GATE — a structured file may not stop parsing because of an edit (F460).
 
-`edit_file` and `write_file` apply what the model hands them byte-faithfully, and nothing
-checked the RESULT against the file's own format. On 2026-09-07 a degraded fallback model
-(miz-grant-steward:20260907-054543, turn 75, reached by failover after the primary hit its
-weekly limit) emitted a schema-VALID `edit_file` whose 11,848-character replacement was
-half plausible JSON and half an echoed observation repeated with a stray CJK marker. The
-edit applied, a 59 KB `state/shared-state.json` stopped parsing at line 771, and the routine
-worked from a broken store until a human diagnosed it (R1342 → R1344). The same run broke
-the same file a second time a few turns later.
-
-The class is "a degraded model's output is trusted because it is well-FORMED" — the D87
-storm guard counts only schema-INVALID replies, and a corrupted `replacement` is not one.
-This closes the deterministic half: if the file parsed BEFORE and does not parse AFTER, the
-write is refused and the file is untouched, so the run reads a diagnosable error on the turn
-it made the mistake instead of the next reader finding rubble. The residue — an edit that
-parses and is WRONG — is not checkable here and stays with F460 / the F363 distillate design.
+`edit_file` and `write_file` apply what the model hands them byte-faithfully; a degraded
+model's schema-VALID reply can still carry a corrupted `replacement`. If the file parsed BEFORE
+and does not parse AFTER, the write is refused and the file is untouched, so the run reads a
+diagnosable error on the turn it made the mistake. An edit that parses and is WRONG is not
+checkable here.
 
 Deliberately narrow:
 
@@ -58,11 +48,8 @@ def checks(path: Path) -> bool:
 def record_per_line(path: Path) -> bool:
     """Is every LINE of this file one record? Then an appended record needs its separator.
 
-    R2446/R2452, measured: three rows appended as strings with no trailing newline ran
-    together — two of three releases landed on one line, `json.loads` died mid-file, and the
-    routine that reads that hand-off could not tell "nothing shipped" from "the row was
-    eaten". The engine serializes a STRUCTURED append and terminates it; a STRING body was
-    applied byte-faithfully, which for this one family of formats means silent corruption.
+    A STRING append with no trailing newline would extend the previous record instead of
+    adding one — silent corruption for this family of formats (R2446).
     """
     return path.suffix.lower() in _RECORD_PER_LINE
 
@@ -102,22 +89,14 @@ def check_after(path: Path, before: str, after: str) -> str | None:
 def unparsed(path: Path, text: str) -> dict[str, str]:
     """`{"unparsed": why}` when a body that should parse does not — else `{}` (F588).
 
-    write_file reports the length of the payload it received, and Python's `write()` is
-    all-or-nothing: bytes-written EQUALS that length whenever the write succeeded. So the
-    numbers in the observation cannot distinguish a complete body from one the model's
-    generation stopped inside — "report the bytes written" is, for a local file, the same
-    number twice. The BODY can tell them apart, for a format whose whole point is to parse.
+    Bytes-written cannot distinguish a complete body from a truncated generation; the BODY
+    can, for a format whose whole point is to parse.
 
-    Deliberately a NOTE, not a refusal. `check_after` above refuses what it can prove was
-    good before; everything it exempts on purpose — a NEW file, a file already broken, an
-    appended record — is exactly where a truncated generation lands, and a run that reads
-    "this file does not parse" on the turn it wrote it can act on it in that turn.
+    Deliberately a NOTE, not a refusal: it covers what `check_after` exempts on purpose (a NEW
+    file, one already broken, an appended record) — exactly where a truncated generation lands.
 
-    A whole-document format is judged ON DISK after the write, so an append to one and a
-    repair that did not repair are both caught, and the verdict is a measurement of what
-    landed rather than of what was handed in. A record-per-line file is judged on the body
-    just written: each line stands alone, so re-reading a whole ledger per append buys
-    nothing.
+    A whole-document format is judged ON DISK after the write (a measurement of what landed);
+    a record-per-line file is judged on the body just written, since each line stands alone.
     """
     suffix = path.suffix.lower()
     if suffix in _RECORD_PER_LINE:

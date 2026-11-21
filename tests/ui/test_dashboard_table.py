@@ -1,12 +1,4 @@
-"""The Routines table's own two controls: the sortable headers (F208) and the state filter.
-
-Both were uncovered, and the sort direction is the fragile half: re-clicking the ACTIVE column
-must REVERSE it rather than be a no-op, which is a rule about the page's stored sort state, not
-about the renderer. That state and the renderer now live in different modules (dashboard.js
-owns `sortKey`/`sortDir` and persists them; dashboard-rows.js only draws the arrow and reports
-the click), so the wiring between them is exactly what can break silently — the header would
-still render, and still be clickable, and simply stop reversing.
-"""
+"""The Routines table's own two controls: the sortable headers (F208) and the state filter."""
 
 from __future__ import annotations
 

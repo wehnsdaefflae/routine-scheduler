@@ -1,16 +1,11 @@
 """The curated stores a run reads and writes by NAME, not by path — `.memory/` and the rule library.
 
-Split out of `fileops.py` (F393). These look like file actions and are deliberately not: the
-generic file kinds are REJECTED inside `.memory/`, so `memory_read`/`memory_write` are the only
-way in. That is what lets the engine own `INDEX.md` (built from each write's `about`) instead
-of a run quietly reorganising its own memory.
+These look like file actions and are deliberately not: the generic file kinds are REJECTED
+inside `.memory/`, so `memory_read`/`memory_write` are the only way in. That is what lets the
+engine own `INDEX.md` (built from each write's `about`).
 
-A note's SIZE is advice, not a gate (P3: a guard whose fix is mechanical applies it). The 100-line
-bound used to REFUSE a write — schema-side for a whole note, here for an edit's result — and runs
-then spent turns trimming to fit: three refusals for one pointer line ("shortening by one line to
-fit"), six blind retries on one 98-line note (R2753), established evidence deleted to make room
-for a correction (R2773). Nothing about the note is wrong at 101 lines, so the write lands and its
-observation carries one line saying how far over the advised size it is.
+A note's SIZE is advice, not a gate (P3): a refusal only had runs spend turns trimming, or
+deleting evidence, to fit. The write lands and its observation says how far over it is.
 
 `read_rule` is here for the same reason — a rule is addressed by slug from the ONE library copy,
 never forked into the routine — and is ungated: a routine must be able to read what binds it.
@@ -39,13 +34,11 @@ def _memory_index_upsert(mem_dir, name: str, about: str | None,
     """INDEX.md is engine-owned: one `- <name>.md: <about>` line per note, updated in the
     same operation as the note itself so the catalog can never drift. about=None removes.
 
-    ONE line is the invariant every later upsert relies on — the replace finds a note's entry
-    by its prefix — so `about` is folded onto a single line: a line break in it left the
-    continuation behind as an orphan line no revision or delete could ever reach.
+    ONE line is the invariant every later upsert relies on (the replace finds an entry by its
+    prefix), so `about` is folded onto a single line — a continuation would be an orphan.
 
     `meta` is the note's expiry and provenance (D268, engine/notemeta.py), rendered onto the
-    SAME line for the same reason: a second store for a note's freshness could drift from the
-    catalog, and this one cannot. A note carrying none renders exactly as it always did.
+    SAME line so a note's freshness has no second store to drift.
     """
     index = mem_dir / "INDEX.md"
     lines = index.read_text(encoding="utf-8").splitlines() if index.exists() else []
@@ -69,11 +62,9 @@ def do_memory_read(action: dict, ctx: RunContext) -> dict:
     past runs (engine/runsearch.py). A note read from the routine's own notebook is counted
     (engine/notereads.py).
 
-    F910: the digest clips its `.memory/` block with "read .memory/INDEX.md for the full N
-    lines", and that file was reachable by NOTHING — `read_file` refuses every `.memory/` path
-    and this action refused the name for not being a kebab-case slug. So the index is served
-    here, under the names the pointer actually prints (`notemeta.is_index_name`). Writing it
-    stays refused: the engine owns the file and builds it from each note's `about` line.
+    The index is served here (under the names the digest's pointer prints,
+    `notemeta.is_index_name`) because `read_file` refuses every `.memory/` path. Writing it
+    stays refused: the engine owns the file.
     """
     if action.get("args"):   # a SEARCH of the routine's past runs instead of a note
         return runsearch.search(ctx.routine.dir, ctx.run_ts, " ".join(map(str, action["args"])))
@@ -118,10 +109,9 @@ def do_read_rule(action: dict, ctx: RunContext) -> dict:
         return {"kind": "read_rule", "name": "list",
                 "rules": [{"slug": d["slug"], "summary": d["summary"],
                            "held": d["slug"] in held} for d in library_docs.list_docs(home)]}
-    # A rule is addressed by its SLUG, never by a path. `read_doc` joins the name onto the
-    # library dir, so `../../<routine>/.memory/<note>` — or an absolute path, which a join
-    # simply adopts — read any .md file on the host past the run's fs jail, through a kind
-    # every routine holds. validate_action refuses such a name first; this is the backstop.
+    # A rule is addressed by its SLUG, never by a path: `read_doc` joins the name onto the
+    # library dir, so a `../` or absolute name would read any .md past the run's fs jail.
+    # validate_action refuses such a name first; this is the backstop.
     raw = library_docs.read_doc(home, name) if is_slug(name) else None
     if raw is None:
         return {"kind": "read_rule", "name": name, "missing": True,
@@ -144,9 +134,8 @@ def do_memory_write(action: dict, ctx: RunContext) -> dict:
     created = not path.exists()
     replacements = 0
     if action.get("anchor") is not None:
-        # EDIT MODE (R2432/R2456), the third caller of authoring's one anchor rule. Adding two
-        # facts to a 95-line note required re-emitting all 95 — expensive, and exactly how
-        # content gets lost. The note is patched engine-side, so nothing is ever recomposed.
+        # EDIT MODE, through authoring's one anchor rule: the note is patched engine-side, so
+        # a small addition never re-emits (and risks losing) the whole note.
         if created:
             return {"kind": "memory_write", "name": name, "error":
                     f"no note {name!r} exists to edit — pass 'content' (the whole note) and "

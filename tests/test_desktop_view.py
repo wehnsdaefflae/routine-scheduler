@@ -1,17 +1,4 @@
-"""The agent desktops' screens, relayed through the console like the browser's (F527/F530).
-
-ONE relay implementation serves both screens (`screen_proxy.SCREENS`), so what the browser
-files pin — traversal, no redirect following, the pass cookie's flags — holds here by
-construction. What this file pins is what the desktop screen adds, and what must not leak
-between the two:
-
-- one websockify serves EVERY desktop and the socket's `?token=` picks the screen, so that one
-  query IS forwarded upstream — and only once it has the broker's shape (32 hex), because it
-  is the one part of the upstream URL the browser chooses;
-- the upstream's bearer is the OPERATOR's token, a secret no routine is granted;
-- the desktop pass is its own: path-scoped to `/desktop-view`, kept in its own store, so a
-  browser pass opens no desktop and a desktop pass no browser.
-"""
+"""The agent desktops' screens, relayed through the console like the browser's (F527/F530)."""
 
 from __future__ import annotations
 

@@ -1,15 +1,4 @@
-"""F768: the two surfaces that ask "can anything ever drain this row?" use ONE predicate.
-
-The Messages page shows both answers at once, over the same ledger: the `unroutable` count
-(`readmodels/item_counts.unroutable`, off `registry.scan`'s keys) and the "addressed, never
-delivered" banner (`readmodels/orphans.find_undelivered`, which used to probe
-`<home>/<target>/routine.yaml` by hand). `registry.scan` keys its catalog by the slug inside
-each `routine.yaml` and skips `.archive/`; a raw path probe keys by DIRECTORY NAME. So the two
-diverged wherever a routine's directory name and its slug disagree — which `registry.py:226`
-records as a reported problem rather than refusing — and one surface could call a row drainable
-while the other called it stranded. Two surfaces disagreeing about whether work is drainable is
-the shape of the defect F738 was built to end, so it is pinned here rather than left to drift.
-"""
+"""F768: the two surfaces that ask "can anything ever drain this row?" use ONE predicate."""
 from __future__ import annotations
 
 from rsched.readmodels import item_counts

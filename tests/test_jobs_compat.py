@@ -1,17 +1,4 @@
-"""What a routine already on disk keeps working with after D174 renamed the layer to JOBS.
-
-The rename is the whole point of D174 (`task` named two unrelated things), but the routines
-holding this layer were written before it and the operator's files are not this code's to
-rewrite. `fau` on 2026-10-12 is the specimen: `capabilities: {tasks: 'on'}`, a 134 KB
-`state/tasks.json` with five records, ~40 run-gate checks keyed `task: <id>`, and five
-workspaces under `tasks/`. Every one of those spellings is READ as the canonical name and never
-written back, so nothing has to be migrated for that routine's next run to work.
-
-The one thing that does NOT get an alias is the ACTION KIND: D174 chose zero residual ambiguity,
-so `kind: "task"` is gone and a run still emitting it is TOLD its new name
-(engine/renamedkinds.py) instead of being refused blankly — which is the F637 failure, three
-rejections of one correctable mistake.
-"""
+"""What a routine already on disk keeps working with after D174 renamed the layer to JOBS."""
 
 from __future__ import annotations
 

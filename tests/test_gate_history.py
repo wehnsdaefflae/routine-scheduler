@@ -1,19 +1,4 @@
-"""The run gate's HISTORY: every run row carries the verdict that decided that fire.
-
-R2764 (operator, in his own words): "like the list of previous runs under 'What a finished run
-delivers' we also need a history of the previous gates. which ones fired, which ones didn't.
-report that".
-
-`runs/<ts>/gate.json` has carried that per-fire record since F457 (`daemon/run_gate.py`'s
-`finally`, :284) and no read surface served a byte of it: `GET /api/routines/{slug}` carried
-`run_gate` (the CONFIG — what the gate WOULD ask) and the run rows (what ran), so "which fires
-were skipped, and by which check" was answerable only by reading JSON on the box.
-
-The SKIPPED fire is the half the operator most wants, and it is readable: `daemon/runner.py`
-claims the run dir (`_claim_run_dir`, :230) BEFORE `run_gate.admit` (:330), so a skip leaves
-`runs/<ts>/` holding a `status.json` (`outcome: skipped`, written by `run_gate.terminal`) and a
-`gate.json` exactly like an admitted fire's. No new store, and no fire goes unrecorded.
-"""
+"""The run gate's HISTORY: every run row carries the verdict that decided that fire."""
 
 import pytest
 
@@ -69,11 +54,7 @@ def _rows(client):
 
 
 def test_a_skipped_fires_verdict_rides_its_own_run_row(gated):
-    """"Which ones didn't" — the skip, with the check that decided it, on the run row.
-
-    This is the row no other surface can explain: a skipped fire has no turns, no cost and no
-    work, so every other column reads as an empty run and nothing said a GATE made that call.
-    """
+    """"Which ones didn't" — the skip, with the check that decided it, on the run row."""
     gate = _rows(gated)[SKIP_TS]["gate"]
     assert gate["decision"] == "skip"
     assert gate["fire_reason"] == "schedule"

@@ -37,14 +37,10 @@ from .transcript import read_events
 def _mark_orphans_dead(ctx, orphans: list[dict]) -> None:
     """Record every child that did not survive the interruption, with WHAT IT SPENT.
 
-    The payload shape is `subruns._collect`'s, so every consumer of `subrun_end` (the tree
-    read-model, the replay announcements) reads one shape whether the child was collected or
-    died. Its spend and its turn count are recovered from the child's OWN transcript
-    (`subsalvage`), because a child that was never collected was never folded into the
-    parent's counter: writing `usage: {}` for one that really spent tokens attributes them
-    nowhere a routine-level reader can see. Measured at 193,930 output tokens for ONE orphan
-    of `scheduler-builder:20261030-140004` (R3112, raised by `token-lab`). What the disk
-    records, never an estimate — `{}` still means "nothing recorded there".
+    The payload shape is `subruns._collect`'s, so every `subrun_end` consumer reads one shape.
+    Spend and turns come from the child's OWN transcript (`subsalvage`): an uncollected child
+    was never folded into the parent's counter (R3112). What the disk records, never an
+    estimate — `{}` means "nothing recorded there".
     """
     for o in orphans:
         child_dir = ctx.run_dir / "sub" / str(o["n"])
@@ -61,11 +57,8 @@ def _mark_orphans_dead(ctx, orphans: list[dict]) -> None:
 def boot(loop) -> None:
     ctx = loop.ctx
     if loop.resume and ctx.depth == 0:
-        # The run dir is reused across resume legs, so status.json still holds the prior
-        # leg's final cumulative telemetry. Reseed it onto the fresh ctx BEFORE the
-        # write_status("starting") below overwrites the file — otherwise a finish→reopen
-        # resets the util histogram and the integer counters to this leg's own tally
-        # (F131/F132), the way usage_base already keeps token spend cumulative.
+        # status.json still holds the prior leg's cumulative counters: reseed them BEFORE
+        # write_status("starting") overwrites it, so they stay cumulative like usage_base.
         prior = read_json(ctx.run_dir / "status.json")
         if isinstance(prior, dict):
             for attr, val in history.prior_counters(prior).items():
@@ -74,25 +67,18 @@ def boot(loop) -> None:
     resuming = loop.resume and ctx.depth == 0
     # what this run has done so far — read before the digest, which names the goals it left
     events = (read_events(ctx.run_dir / "transcript.jsonl", 0)[0] if resuming else [])
-    # D278: a leg killed between an action and its observation leaves the model an action with
-    # no result — answered on the record HERE, before anything reads `events`, so the note
-    # rides this replay too (engine/unknownoutcome.py; a no-op on a fresh boot's empty list).
+    # D278: an action killed before its observation is answered on the record HERE, before
+    # anything reads `events` (engine/unknownoutcome.py; a no-op on a fresh boot).
     unknownoutcome.record(ctx, events)
     if ctx.depth == 0:
-        # F359 (user order 2026-08-17): a RESUMED leg consumes only what is addressed to
-        # IT — the user's conversation/run-page messages, a detached background task's
-        # result (started by this very conversation; without it the daemon's delivery
-        # wake would spin on a message the leg never drains, F367) and answers to its
-        # OWN questions. Audit feedback, reports, routine-page queued messages and answers
-        # to other runs' questions stay in the inbox for the next FRESH run, whose boot
-        # digest presents them with full context (a follow-up leg draining them wholesale
-        # is how the D92/D93 decision answers were eaten by an already-ended run).
+        # A RESUMED leg consumes only what is addressed to IT — the user's messages, a
+        # detached task's result, answers to its OWN questions (F359). Everything else waits
+        # for the next FRESH run, whose boot digest presents it with full context.
         deferred_qa = inbox.collect_deferred_answers(
             ctx.routine.dir, loop.consumed_dir,
             own_run_ts=ctx.run_ts if resuming else None)
-        # Access-request decisions made between runs seed THIS run's grant overlay —
-        # before the prompt is composed, so CAPABILITIES already reflects them. (The
-        # same bridge runs at every live turn boundary via control.drain_injections.)
+        # Access decisions made between runs seed THIS run's grant overlay before the prompt
+        # is composed (the live twin is control.drain_injections).
         from .requests import apply_deferred_decisions
         apply_deferred_decisions(loop, deferred_qa)
         open_qs = inbox.open_questions(ctx.routine.dir)
@@ -101,25 +87,19 @@ def boot(loop) -> None:
             vias=inbox.LIVE_MESSAGE_VIAS if resuming else None)
         ctx.reports_open += reports.stamp_delivered(
             ctx.server.routines_home, msgs, run_id=ctx.run_id)
-        # F529: whatever is STILL queued after that drain is what this leg's digest is about
-        # to name, so the boundary clock counts it as already said. A fresh run drained every
-        # channel and seeds nothing; a resumed leg seeds exactly what it may not take.
+        # what is STILL queued is what the digest will name: the boundary clock counts it said
         freightnote.seed(loop)
-        # F335: the notes sharers of a store left for this routine — read and DELETED here,
-        # once per leg, beside the inbox drain above: a note is delivered exactly once
+        # shared-store notes for this routine — read and DELETED: delivered exactly once
         store_notes = sharedstores.drain(ctx.server.routines_home, ctx.routine.slug,
                                          list(ctx.routine.fs_write_roots))
-        # the TASK ledger (engine/jobops.py): a fresh run decides what it owes, a resumed leg
-        # reads it back with its open task — before the digest, which names them
+        # the job ledger (engine/jobops.py), read before the digest that names it
         jobs_section = jobops.boot(ctx)
-        # the GOALS (engine/goals.py): on a fresh routine run what earlier runs left open
-        # (engine/obligations.py) plus the brief; the transcript's last word on a resumed one —
-        # a conversation's outlive every reply
+        # GOALS: carried obligations + the brief on a fresh routine run; the transcript's
+        # last word on a resumed one (a conversation's outlive every reply)
         ctx.goals = goals.replay(events, ctx.brief, carried=(
             [] if runkind.is_conversation(ctx) else obligations.carried(ctx.routine.dir)))
-        # an answer given on the Decisions page between runs is the person SPEAKING to this run:
-        # recorded as an `answer` event, so a goal may quote it — an approval ("you fix all of
-        # that") is exactly the request a run must be able to take on and carry
+        # an answer given between runs is the person SPEAKING to this run: an `answer` event,
+        # so a goal may quote it
         for qa in deferred_qa:
             ctx.transcript.event("answer", {"qid": qa.get("qid", ""), "text": qa["answer"],
                                             "source": "deferred", "question": qa["question"]})
@@ -131,31 +111,24 @@ def boot(loop) -> None:
                               store_notes=store_notes, goals=ctx.goals,
                               conversation=runkind.is_conversation(ctx),
                               jobs_section=jobs_section,
-                              # D200: which of the two recipe-revision asks this run reads —
-                              # a run that may write its own recipe is told to make the edit,
-                              # one that may not is told its lines become a proposal
+                              # D200: which recipe-revision ask (make the edit / propose it)
                               recipe_unlocked=bool(
                                   getattr(ctx.grants, "recipe_unlocked", False)),
-                              # ...and WHETHER it is asked at all: only a run with a recipe of
-                              # its own is (recipeproposal.asks_for_revisions — the same
-                              # predicate the card seam reads, so neither can ask what the
-                              # other would refuse to file)
+                              # ...and whether at all — the predicate the card seam reads too
                               recipe_ask=recipeproposal.asks_for_revisions(ctx)) \
             + gate_digest.block(ctx)   # the checks for the NEXT fire (rsched/gatecompose.py)
     else:
         msgs = []
         digest = "(subrun — no routine state digest; everything you need is in the instruction)"
-    # slash commands queued while no run was live EXECUTE at boot (below) — only prose
-    # messages become the prompt's MESSAGES sections, and a report another routine addressed
-    # here gets its own section rather than being read as something the user said
-    prose = [] if resuming else [m for m in msgs if not m.get("command")]
+    # queued slash commands EXECUTE at boot (below); only prose becomes MESSAGES sections,
+    # and an addressed report gets its own section rather than reading as the user speaking
+    prose =[] if resuming else [m for m in msgs if not m.get("command")]
     sections = system_sections(ctx, loop.workflow_body, loop.instruction, digest,
                                [m["text"] for m in prose if not m.get("report")],
                                allowed_kinds=loop.allowed_tools,
                                report_msgs=[m["text"] for m in prose if m.get("report")])
-    # what each section of the always-on prompt weighs — chars for the run record
-    # (runrecord.quality), the WINDOW's own unit for the per-turn breakdown (D270) — and, since
-    # R3341, its TEXT once per leg beside the transcript so the bar is readable
+    # what each always-on section weighs (chars, and window units — D270), plus its text once
+    # per leg beside the transcript
     ctx.prompt_chars, ctx.prompt_segments = promptsegments.note_sections(ctx, sections)
     system = join_sections(sections)
     if resuming:
@@ -163,50 +136,29 @@ def boot(loop) -> None:
         loop.messages = [{"role": "system", "content": system}, *replayed]
         loop.turn_records = records
         ctx.turn = last_turn
-        # rehydrate the live phase: the last phased action's stamp is the stage module
-        # the run was in when it left off (the executor stamps stage-module reads)
+        # the live phase: the last phased action's stamp
         ctx.phase = next((str(e["phase"]) for e in reversed(events) if e.get("phase")), "")
-        # rehydrate write_file's grounding set — a file an earlier leg read stays
-        # overwritable (history.py owns it: boot.py is at its ceiling)
+        # write_file's grounding set — a file an earlier leg read stays overwritable
         history.rehydrate_seen_paths(ctx, events)
         ctx.budget_base_turn = last_turn        # a fresh budget window from the resume point
-        # reporting stays cumulative even though the budget window is fresh — without
-        # this base, status.json shows only the last leg of a resumed run
+        # reporting stays cumulative even though the budget window is fresh
         ctx.usage_base = history.prior_usage(events)
-        # replayed observations ground the fabrication guard — a continued conversation
-        # may legitimately answer and re-finish as its very first action
-        # A HELD action executed nothing, and a `do_nothing` established nothing (D186), so
-        # neither may ground a finish here either — the live loop excludes both from the same
-        # counter, and a resumed leg that re-added one would hand the fabrication guard
-        # exactly the evidence it exists to refuse. Asked as the one PREDICATE both legs ask
-        # (engine/donothing.grounds_a_finish): this is the negative test a second
-        # non-grounding kind would otherwise have walked straight past.
-        # …and the KINDS behind that count (D243), from the same predicate in one pass: the
-        # claim guard asks what the run TOOK, so a leg that rebuilt the number without the
-        # kinds would reject every claim the earlier leg's actions legitimately back.
+        # replayed observations ground the fabrication guard, minus held actions and
+        # `do_nothing` (D186) — the same predicate the live loop asks
+        # (donothing.grounds_a_finish) — plus the KINDS behind that count for the claim guard
         from .donothing import grounding_from
 
         loop.executed_actions, loop.executed_kinds = grounding_from(events)
-        # …and the once-only guards: a hold the run already confirmed, a rule assist that
-        # already fired, a line the verifier already challenged stay spent for the rest of
-        # the run — of the reply, in a conversation, whose next reply starts them fresh
+        # …and the once-only guards, spent for the rest of the guard scope
         guardscope.rebuild(loop, events)
-        # …and the records an ask-back left open, so a re-submission in this leg supersedes
-        # them — read from the whole transcript: an open decision outlives the reply it began in
+        # …and open ask-back records, so a re-submission in this leg supersedes them
         askback.rebuild_dialogs(loop, events)
-        # Children that were RUNNING at the interruption are dead (threads don't survive a
-        # restart). Mark each aborted in the transcript (so the tree is honest and a re-resume
-        # doesn't re-detect it) and tell the model below — otherwise it would `wait` forever
-        # for a child that can never finish.
+        # Children RUNNING at the interruption are dead: mark each aborted (an honest tree, no
+        # re-detection) and tell the model, or it would `wait` forever for them.
         orphans = history.orphaned_children(events)
         _mark_orphans_dead(ctx, orphans)
         if orphans:
-            # F778: the note used to say "results lost … Re-issue any you still need" while
-            # every dead child's work sat on disk under sub/<n>/ — so a parent was told to
-            # throw away what it still had (2026-10-25: two children, ~1,400 s of build work
-            # each, reconstructed by hand). `subsalvage.resume_note` names each child's
-            # directory, its hand-back, its surviving brief and the two options that really
-            # exist — read it, or RE-BRIEF a fresh child with that work folded in.
+            # names each child's work still on disk under sub/<n>/ (F778)
             enginenote.append(loop, subsalvage.resume_note(ctx.run_dir, orphans),
                               replay=False)
         fin = next((e for e in reversed(events) if e.get("type") == "finish"), None)
@@ -217,11 +169,9 @@ def boot(loop) -> None:
         if reviseleg.active(loop):   # an approved recipe-revision card: an edit, not a run
             enginenote.append(loop, reviseleg.boot(loop, fin_payload), replay=False)
         elif fin_payload.get("authored"):
-            # the model itself concluded this run (web converse on a finished run):
-            # a follow-up conversation, not crash recovery
+            # the model itself concluded this run: a follow-up, not crash recovery
             status = fin_payload.get("status", "?")
-            # replay=False on both: `boot` re-authors the note on EVERY leg, so replaying it
-            # would stack one copy per leg — a 40-reply conversation carried 40 of them.
+            # replay=False: `boot` re-authors the note every leg; replaying would stack copies
             enginenote.append(loop,
                 f"this run already ENDED (status {status}) — the conversation "
                 "continues in place; the user's message follows. This is a follow-up, "
@@ -232,20 +182,16 @@ def boot(loop) -> None:
                 "next reply in this same conversation — never hand it to a 'next run'.",
                 replay=False)
         else:
-            # which framing depends on whether anything of the run IS above (rewind.py: the
-            # ⚑ refusal flag's cut can leave a first reply's transcript at its header alone)
+            # framing depends on whether anything of the run is above (rewind.py)
             enginenote.append(loop, rewind.resume_framing(replayed), replay=False)
         if loop.util_reminder:   # one-shot, on the resume note (the kickoff's counterpart)
             loop.messages[-1] = {"role": "user",
                                  "content": loop.messages[-1]["content"] + loop.util_reminder}
         _ingest(loop, msgs, resuming=True)   # commands execute; prose injects after the note
     else:
-        # Fresh-boot prose rides the composed prompt's MESSAGES section — but it must ALSO
-        # be a transcript event (`boot` payload marker): the renderer shows what the user
-        # said, and a later resume replays it (the rebuilt system prompt excludes it).
-        # The CHANNEL rides along, as on the live path (control.inject_user_message): a report
-        # another routine addressed here is not the person speaking, and the goal layer's
-        # grounding check (engine/goals.py) must be able to tell the two apart.
+        # Fresh-boot prose rides the MESSAGES section AND is a transcript event (`boot`
+        # marker) so the renderer shows it and a resume replays it. The channel rides along:
+        # goal grounding must tell an addressed report from the person speaking.
         for m in msgs:
             if not m.get("command"):
                 ctx.transcript.event("user_injection", {
@@ -264,11 +210,8 @@ def boot(loop) -> None:
                 vias=inbox.LIVE_MESSAGE_VIAS if resuming else None):
             _ingest(loop, extra, resuming=True)
         _setup_gap_note(loop)     # fresh boot AND resume: the library may have moved between
-        # D223: the prompt is composed, so its floor is now knowable — if it already exceeds the
-        # resolved model's window this run can complete no turn. The engine's FIRST act is then a
-        # HARD COMPACTION: drop the middle to whatever fits and STATE the loss in the run's own
-        # prompt (engine/promptfloor.py). Never a refusal, never raising — the thread continues
-        # with less context rather than not at all, and is told so.
+        # D223: a prompt already over the model's window gets a HARD COMPACTION that states
+        # the loss (engine/promptfloor.py) — never a refusal, never raising.
         promptfloor.check(loop)
     ctx.write_status("running")
 
@@ -277,15 +220,9 @@ def boot(loop) -> None:
 def _setup_gap_note(loop) -> None:
     """The fourth evaluation moment: tell the run what its setup is MISSING, before turn one.
 
-    The other three (the routine page, `rsched validate`, the authoring approval) all address a
-    person. This one addresses the run, and it exists because the alternative is the failure
-    mode the whole surface was built to remove: a run discovers at turn nine that the util it
-    needs cannot reach its credential store, having already spent nine turns planning around a
-    capability it does not really have.
-
-    Advisory only — it never refuses to start. A broken library or an unreadable store yields
-    no note rather than a dead run: a diagnostic that can stop a run is worse than the gap it
-    reports.
+    The other three address a person; this one addresses the run, so it does not spend turns
+    discovering a gap. Advisory only: a broken library or unreadable store yields no note
+    rather than a dead run.
     """
     from ..readmodels.remedies import surface_lines
     from ..readmodels.surface import BOOT_SEVERITIES, routine_surface
@@ -295,8 +232,7 @@ def _setup_gap_note(loop) -> None:
         return
     try:
         surface = routine_surface(ctx.server, ctx.routine)
-        # a gap the routine's OWN declaration owns (the outcome row) fails no call the run makes
-        # and no run can close it, so it is the operator's and the improver's, never this note's
+        # the routine's OWN declaration rows (outcome) fail no call and no run can close them
         surface["nodes"] = [n for n in surface["nodes"] if not n["source"].get("recipe")]
         lines = surface_lines(surface, BOOT_SEVERITIES)
     except (OSError, ValueError, AttributeError):
@@ -309,8 +245,7 @@ def _setup_gap_note(loop) -> None:
             + "\nFAIL means the call will be rejected or fail outright; WARN means it will "
               "stop to ask you. Report anything that blocks the task in your finish summary "
               "so the user can grant it.")
-    # replay=False: _setup_gap_note runs on every leg (the library may have moved), so the
-    # live note is always the current one and a replayed copy would only be a stale duplicate.
+    # replay=False: re-authored every leg, so a replayed copy would be a stale duplicate
     enginenote.append(loop, note, replay=False)
 
 

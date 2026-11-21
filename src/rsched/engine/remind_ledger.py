@@ -1,20 +1,14 @@
 """The reminder layer's two per-scope ledgers, read back from a transcript on a resumed leg.
 
-`engine/remind.py` keeps them live: `reminder_owed` (how many holds of each reminder still wait
-for their ONE label — a label answers one hold, once) and `reminder_replayed` (the finish
-payloads already applied — a finish the gate hands back is re-emitted with the same side
-fields, and is applied once). Both follow the hold ledger they pair with across a resume
-(engine/guardscope.py): rebuilt beside it, a label for a hold from before a restart lands,
-where an emptied ledger refused it for want of a hold "in this run" — while the hold itself,
-already confirmed, is not repeated to make up for it.
+`engine/remind.py` keeps them live: `reminder_owed` (holds of each reminder still awaiting their
+ONE label) and `reminder_replayed` (finish payloads already applied — a re-emitted finish is
+applied once). Rebuilt beside the hold ledger (engine/guardscope.py), so a label for a hold from
+before a restart still lands.
 
-Nothing extra is recorded for either: a hold is its observation and a label rides its action.
-So the rebuild replays the order the live turn applied them in, which is the whole of this
-module's care: a non-finish action's label lands after its own observation (a hold of that very
-action counts first — `EngineLoop._observe` asks the hold seam, then `remind.apply_ops`), a
-finish's lands once per payload, before the gate, and an action the reserved finish turn
-refused ran no side fields at all. What the label nudge still owes (`reminder_pending`) is the
-leg's own and starts empty.
+Nothing extra is recorded: a hold is its observation and a label rides its action. The rebuild
+replays the live ORDER: a non-finish action's label lands after its own observation (a hold of
+that action counts first), a finish's once per payload before the gate, and an action the
+reserved finish turn refused ran no side fields. `reminder_pending` is the leg's own, empty.
 """
 
 from __future__ import annotations

@@ -1,15 +1,4 @@
-"""A file a routine wrote, opened in a NEW TAB, must not run as this console.
-
-Every file the console shows from a run is fetched with the bearer token and handed to the
-browser as a blob: URL, and a blob URL carries the ORIGIN of the page that made it. Opened
-top-level, a page a routine wrote therefore ran as the console itself: `localStorage` and the
-operator token in it, and every API route, were the page's to use. The artifact panel frames an
-html artifact in a sandboxed iframe for exactly that reason — the "open" link beside it, and the
-run file card's "open in a new tab", handed the same bytes over unframed.
-
-Each test plants a page whose script reports what it could read, opens it the way an operator
-would, and asks every frame of the new tab what the script found.
-"""
+"""A file a routine wrote, opened in a NEW TAB, must not run as this console."""
 
 from __future__ import annotations
 

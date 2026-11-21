@@ -1,27 +1,5 @@
 """An answer that arrived MID-RUN is recorded against its decision, not lost until the next
 report happens to mention it (the operator's correction, 2026-10-25).
-
-THE INCIDENT. He answered D210-D215 on the Decisions page between 02:07 and 02:17. Each answer
-wrote both records `web/api_audit.write_feedback` writes: the durable marker in
-`audit/decisions-answered.json`, and the queued `[AUDIT decision · D21x] selected: …` message
-carrying his actual words. self-audit's report still listed all six `status: "open"` with an
-empty `resolution`, because only its own next run writes that field — so every surface reading
-the report alone showed six answered decisions as awaiting him, and this builder told him so in
-a conversation. His instruction: *"also make the report record a resolution for an answer that
-arrived mid-run"*.
-
-The report file belongs to self-audit, so the ENGINE cannot write its `resolution` field. What
-the engine owns is the item read model every surface reads, and that model recorded the answer
-with NO WORDS BEHIND IT: a decision could read answered with an empty resolution, so no surface
-could say what was decided. These tests pin that his words travel with the answer.
-
-WHAT THESE TESTS DELIBERATELY DO NOT CHANGE — the item's `status`. It is the REPORT's
-(self-audit's judgement, where `settled` means the item is dealt with) and the answer is an
-OVERLAY the pages apply from `web/api_audit.answered_decisions`;
-`test_api.py::test_items_page_reflects_answered_decision_after_consumption` pins that division.
-A widening that let the marker flip `open` → `settled` was built on 2026-10-25, reddened that
-test and was reverted the same run: D213 was answered and the work it authorized (F756) is
-still unshipped, so `settled` would have misreported it.
 """
 from __future__ import annotations
 

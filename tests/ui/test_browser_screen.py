@@ -1,15 +1,4 @@
-"""The shared browser's screen: a nav link and a permanent read-only preview.
-
-The operator asked for both at once: "can't we make the novnc window into the browser
-available as a link in the left major sidebar and provide a permanent read only preview in
-the right minor sidebar?" — after opening the Tailscale port himself, which is why the
-address is configuration (`browser_view_url`) and not a constant: whether that port is
-reachable is a fact about the deployment.
-
-The load-bearing case is the NEGATIVE one. Most instances never publish a screen, and a nav
-link to a port nobody opened is worse than no link at all — so with no URL configured,
-neither surface may appear.
-"""
+"""The shared browser's screen: a nav link and a permanent read-only preview."""
 
 from __future__ import annotations
 
@@ -51,9 +40,6 @@ def test_publishing_a_screen_reveals_the_nav_link_and_the_preview(ui, ui_page):
     """With a URL set, both surfaces appear. The fixture publishes an ADDRESS with nothing
     behind it, which is a real state and the one the fleet was in — so the dock says the screen
     is unreachable rather than mounting a frame that paints noVNC's red banner on every page.
-
-    The read-only property is asserted where it lives: the ONE url builder both surfaces share,
-    and a stylesheet rule that swallows a click on any dock frame.
     """
     ui.server_cfg.browser_view_url = DEAD_SCREEN
 
@@ -90,13 +76,7 @@ def test_publishing_a_screen_reveals_the_nav_link_and_the_preview(ui, ui_page):
 
 
 def test_both_surfaces_load_through_the_console_not_the_raw_upstream(ui, ui_page):
-    """F527, the operator's blank screen over https.
-
-    Neither frame may point at `browser_view_url` directly: an https console cannot open the
-    `ws://` socket noVNC needs, so a direct embed is permanently blank with nothing saying
-    why. Both must load from this origin, and both must hand noVNC a same-origin websocket
-    `path` — that parameter is what decides the socket's scheme.
-    """
+    """F527, the operator's blank screen over https."""
     ui.server_cfg.browser_view_url = "http://198.51.100.9:6080/vnc.html"
 
     ui_page.goto(f"{ui.url}/#/routines")
@@ -124,17 +104,6 @@ def test_both_surfaces_load_through_the_console_not_the_raw_upstream(ui, ui_page
 def test_no_control_offers_to_open_the_bearer_gated_upstream(ui, ui_page):
     """F632, the operator's report: "'open the upstream directly' for the sidecar browser does
     not work".
-
-    It could never have worked. The upstream port answers `401` with "this browser port needs
-    `Authorization: Bearer <BROWSER_CDP_TOKEN>`", and a browser attaches no bearer header to a
-    top-level navigation — so the page offered a control whose only possible outcome was the
-    401 body. That is F527/F530's mistake in a third place: the relay supplies the credential
-    SERVER-side, which is exactly why nothing the browser requests itself can reach the
-    upstream.
-
-    So: no element on the page may NAVIGATE to `browser_view_url` — while the address itself
-    must still be shown, because naming what is being relayed is what makes a blank screen
-    diagnosable (the sibling test above depends on that too).
     """
     ui.server_cfg.browser_view_url = "http://198.51.100.9:6080/vnc.html"
 
@@ -152,16 +121,7 @@ def test_no_control_offers_to_open_the_bearer_gated_upstream(ui, ui_page):
 
 
 def test_the_relay_actually_serves_the_frame_instead_of_a_401_body(ui, ui_page):
-    """F530 — the test that was missing, and the reason the bug shipped.
-
-    Every other test here asserts on the iframe's `src` ATTRIBUTE, which proves the wiring
-    and nothing else. The operator saw `{"detail":"missing or invalid token"}` rendered
-    INSIDE both frames: the URLs were perfectly correct and every request they made was
-    refused, because an <iframe src> sends no header and noVNC builds its own asset URLs.
-
-    So this one LOADS the relay path in the real browser, from the page that mints the pass,
-    and looks at what comes back. It fails on the pre-0.362.0 code and passes after.
-    """
+    """F530 — the test that was missing, and the reason the bug shipped."""
     ui.server_cfg.browser_view_url = DEAD_SCREEN            # dead upstream on purpose
 
     ui_page.goto(f"{ui.url}/#/browser")
@@ -207,9 +167,6 @@ def test_the_preview_rests_collapsed_where_it_would_lie_on_the_content(ui, ui_pa
     lies ON the page. On a 1440px laptop it covered the first five lane rows' run-now / pause /
     ✎ buttons on Routines and the nano-gpt card's `save key` row in Settings, and the only way
     past it was the four-point `hide` in its own title bar.
-
-    So below the width the side TOC uses as its own "is there a margin?" gate it rests collapsed,
-    one click opens it as a transient overlay, and leaving the page folds it again.
     """
     ui.server_cfg.browser_view_url = DEAD_SCREEN
     ui_page.set_viewport_size({"width": 1440, "height": 900})
@@ -310,10 +267,6 @@ def test_an_unreachable_screen_is_a_note_not_a_red_vnc_frame(ui, ui_page):
     down — and the relay ACCEPTS the socket before it dials websockify, so even the handshake
     succeeds. Only a BYTE settles it: RFB is server-first, so a live screen sends its version
     banner at once and a dead one sends nothing before the close (the 1006 noVNC reports).
-
-    Without that, the dock pinned a red "Failed to connect to server" block, noVNC's dark
-    toolbar and an inert Connect button — unpressable, since the frame is pointer-events:none —
-    to every page of the console, in the colour reserved for what waits on a person.
     """
     ui.server_cfg.browser_view_url = DEAD_SCREEN
     ui_page.set_viewport_size({"width": 1960, "height": 950})

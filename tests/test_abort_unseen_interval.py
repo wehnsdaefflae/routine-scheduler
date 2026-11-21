@@ -1,18 +1,4 @@
-"""How long an abort went UNSEEN, recorded (F597).
-
-The defect: an abort that goes unseen for 30-60 seconds is unreproducible, because nothing
-recorded how long it took to land. The door's moment and the engine's moment were both known
-and never subtracted: `abortmark.write` already stamps the breadcrumb with `ts`, the engine
-resolves it at close-out, and in between sits exactly the interval three runs of real
-measurement failed to reproduce without instrumentation.
-
-What is pinned here: the interval is a FIELD (`unseen_s`), computed at the one place that holds
-both ends; it rides the finish event and the health row beside F751's `actor`/`cause`, so "which
-aborts took long to land" is a filter and not a reading of result.md; and the sentences F751
-pinned are untouched, because an actor's name is not a measurement. An abort whose door left no
-stamp (a signal handler, a parent's kill) has no interval rather than a zero — nothing measured
-is not "instant", which is the same distinction `actor: unknown` keeps.
-"""
+"""How long an abort went UNSEEN, recorded (F597)."""
 
 from __future__ import annotations
 

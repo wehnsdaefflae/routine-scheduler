@@ -174,10 +174,7 @@ def test_tools_allowlist_enforced_at_runtime(make_routine, scripted):
 
 
 def test_inbox_unreadable_message_logged_and_left(tmp_path, caplog, monkeypatch):
-    """An unreadable inbox file is skipped with a log trace and left for the next drain.
-
-    The read fails at its own seam rather than by chmod: root reads a mode-000 file anyway,
-    so the chmod version skipped itself wherever the suite runs as root."""
+    """An unreadable inbox file is skipped with a log trace and left for the next drain."""
     import logging
     from pathlib import Path
 
@@ -790,9 +787,6 @@ def test_finish_gate_rejects_an_incomplete_accounting(make_routine, scripted, mo
     """A depth-0 finish owes one `accounting` entry per Done-when line of its recipe; a finish
     that skips one, or gives a verdict with nothing after it, is set aside for one turn (the
     R108 deferral shape). The engine checks presence and shape, never the semantics.
-
-    The verifier is stubbed: this is the ACCOUNTING rung's test; a live judge would consume
-    a scripted reply for a verdict it says nothing about.
     """
     from rsched.engine import verifier
 
@@ -1424,16 +1418,7 @@ def test_subtask_starts_nonblocking_and_is_awaited(make_routine, scripted):
 
 
 def test_child_deliverables_are_collected_into_the_parent(make_routine, scripted):
-    """F338 (from R409/R410): a child hands work back by WRITING it, not by being scavenged.
-
-    Children run in their own dir by design — the isolation is deliberate, so concurrent
-    siblings never race a shared tree — but that left the parent to know the child's path,
-    search it and copy files out by hand, a procedure every routine reinvented and which the
-    spawn contract used to describe wrongly ("they share your working directory"). A child's
-    `artifacts/` (the same deliverable convention the Artifacts panel and detached background
-    tasks already use) is now copied into the PARENT's artifacts/, namespaced by child number,
-    and the finished-announcement names exactly what landed.
-    """
+    """F338 (from R409/R410): a child hands work back by WRITING it, not by being scavenged."""
     d, ep, status, _run_dir, events = _run(make_routine, scripted, [
         (PARENT, subtask("CHILD-A: produce the report.", label="build")),
         ("CHILD-A", write_file("artifacts/report.md", content="# the deliverable")),
@@ -1828,10 +1813,7 @@ def test_own_recipe_writes_need_the_recipe_authoring_capability(make_routine, sc
     as a SIDE EFFECT of an fs_write_root covering the routine dir, so granting a routine write
     access to its own working directory silently handed it the right to reword its own task.
     routine.yaml stays blocked either way.
-
-    The UNLOCKED direction is covered by test_revise_marker_unlocks_recipe_for_the_leg (the
-    same `recipe_unlocked` flag, driven the other way) plus the derivation test below; here the
-    subject is the denial and what it teaches."""
+    """
     from rsched.engine.transcript import read_events as _read
 
     d = make_routine(slug="frozen")
@@ -2856,14 +2838,6 @@ def test_loop_compaction_archives_middle_to_history(make_routine, scripted, monk
     elided middle lands as navigable files under runs/<ts>/history/, the archival call is
     routed to the tool_call model when its window fits, and the archival spend hits the run's
     books.
-
-    The second case is what used to be "the main model is the fallback": the main model here
-    has a 2,000-token window and the middle is ~5,600 tokens, so posting the archival to it
-    buys a 400 and loses the middle anyway (llmsectest-weekday:20260922-060001 did exactly
-    that against a 32k fallback). Every candidate now goes through the same `archival_fits`
-    reserve; when none passes, the deterministic digest stands alone and the compaction event
-    names why. The tool-window-too-small-but-MAIN-fits route is unit-tested in
-    tests/test_compaction_model.py, where the windows are explicit.
     """
     import yaml as _yaml
 

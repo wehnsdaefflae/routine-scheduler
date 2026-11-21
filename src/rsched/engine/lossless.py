@@ -1,23 +1,19 @@
 """LOSSLESS re-encodings of command output — each one a transform AND its exact inverse.
 
-A compressor that may lose data cannot be trusted with an agent's evidence; "probably
-faithful" is how Headroom's JSON crusher dropped array elements for a week without anyone
-noticing. So every encoding here comes with the function that undoes it; the caller keeps
-a candidate only when `decode(encode(x)) == x` BYTE FOR BYTE (JSON: value for value). A shape
-the encoder does not recognise returns None and the output goes through as it was.
+A compressor that may lose data cannot be trusted with an agent's evidence, so every encoding
+here comes with the function that undoes it; the caller keeps a candidate only when
+`decode(encode(x)) == x` BYTE FOR BYTE (JSON: value for value). A shape the encoder does not
+recognise returns None and the output goes through as it was.
 
 What each one removes is repetition a reader does not need twice, in a layout a model reads as
 easily as the original:
 
 - `grep`   — `path:line:text` search hits, every path written ONCE as a heading over its
-             hits (ripgrep's --heading layout). Measured over a month of fleet traffic:
-             grep-shaped output was the largest share of util output (code-search alone ~21%
-             of the context-weighted volume) and headings remove ~30% of it.
+             hits (ripgrep's --heading layout).
 - `paths`  — one-path-per-line listings (find, globs): every folder written once over the
-             names inside it (~31% on the listings measured).
+             names inside it.
 - `json`   — minified with the stdlib, with every array of same-keyed flat objects written as
-             one `{"$table": {"cols": […], "rows": […]}}` — column names once, not once per
-             row (~12% of JSON against ~7.5% for minifying alone).
+             one `{"$table": {"cols": […], "rows": […]}}` — column names once, not once per row.
 """
 
 from __future__ import annotations

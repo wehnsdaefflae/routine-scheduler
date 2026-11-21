@@ -1,13 +1,4 @@
-"""The design system's stylesheet rules as a machine check (CLAUDE.md "Standards", base.css head).
-
-"Colour is state" holds only while every colour is a TOKEN, every token is defined for BOTH
-themes, every token a rule asks for exists, and type comes from the three type tokens. Those
-rules lived in prose, and each has been broken in a way no eye caught for releases: a recipe bar
-hard-coded as a dark-mode violet that stayed violet on a white sheet (F371), `var(--line)` asked
-for by views.css when no stylesheet defined it, the search box's magnifier stroked with the dark
-theme's --ink-3 as a literal on both themes, a hand-written monospace stack beside --f-mono. A
-literal is invisible in the theme its author was using — which is the theme every author uses.
-"""
+"""The design system's stylesheet rules as a machine check (CLAUDE.md "Standards", base.css head)."""
 
 from __future__ import annotations
 
@@ -47,12 +38,7 @@ def test_views_css_adds_no_colour_of_its_own():
 
 
 def test_every_other_stylesheet_adds_no_colour_and_no_type_of_its_own():
-    """The same rule views.css carries, for every stylesheet beside it.
-
-    `rail.css`, `dev.css` and `obs.css` exist only because the two big sheets are frozen at
-    their ratchet ceilings — they are views.css by another name, and a literal colour hides in
-    the theme its author was using whichever file it sits in.
-    """
+    """The same rule views.css carries, for every stylesheet beside it."""
     assert AUX, "no auxiliary stylesheets found — the glob or the static dir moved"
     for name, css in AUX.items():
         for sel, body in _rules(css):
@@ -117,13 +103,6 @@ SERIF_FACE = re.compile(
 def test_no_type_token_names_a_serif_face():
     """The console uses no serif type (operator, 2026-10-12: "you need to make sure not to use
     serif fonts in the webui").
-
-    Checked at the TOKENS because `test_type_comes_from_the_three_type_tokens` already proves
-    no rule spells a face of its own — so the three token values are the whole type surface of
-    `static/`, and a serif cannot reappear anywhere else without failing that test first.
-    `docs_build.py` keeps its own copy of the token block for the standalone guide/docs pages
-    the console serves, which is part of the same web UI: a fix in one copy and not the other
-    is how the two drifted apart before.
     """
     from rsched import docs_build
 

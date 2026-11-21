@@ -2,11 +2,6 @@
 reply and everything after it are archived, the message that produced it is re-sent verbatim,
 and the conversation's uncensored model becomes its main model — while a flag the server
 refuses leaves the conversation exactly as it was.
-
-Three layers: what opened a reply and where the cut goes (`rewind.reply_opening`, the
-`rewind_transcript(before_reply=…)` cut), the route (GET says what a flag would do, POST does
-it), and the engine recording the flag as the `operator` seam's `refusal` event when it
-delivers the re-sent message.
 """
 
 from __future__ import annotations

@@ -1,15 +1,5 @@
 """F868 — an `llm` call reaching an endpoint the CATALOG does not carry, and the engine telling
 a util which endpoint its own routine runs on.
-
-Two halves of one requirement ("it should reach any endpoint", operator, 2026-11-10). The
-action's half: `model: "<endpoint>/<model id>"` resolves the ENDPOINT from the operator's
-config and the model ID freely, so a run can send work to a local model — which is what a
-privacy constraint needs and what the cloud-only catalog made impossible. The engine's half:
-`RSCHED_LLM` / `RSCHED_LLM_KEYS`, so an LLM-calling util stops hardcoding a provider.
-
-What is deliberately NOT here: a bare URL. The `llm` action runs in the engine, not in the util
-jail, so an endpoint named by a model would be an unreviewed network destination; the endpoint
-set stays the operator's and only the model id opens.
 """
 
 from __future__ import annotations

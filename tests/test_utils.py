@@ -1,11 +1,6 @@
-"""Util library: real uv-run of utils (catalog, run, selftest, composition). Uses uv.
+"""Util library: real uv-run of utils (catalog, run, selftest, composition). Uses uv."""
 
-Real runs use OFF/permissive sandbox policies: OFF where the test targets observation
-shaping or catalog logic, PERMISSIVE where the whole run chain (uv, the gu dispatcher)
-should pass through the real jail when the kernel offers one (test_landlock.py owns the
-enforcement assertions themselves).
-"""
-
+import os
 import shutil
 
 import pytest
@@ -356,10 +351,6 @@ def test_missing_connection_is_named_as_a_requestable_entity(tmp_path):
     broken, it is ungranted — the repair route must name the one-click
     `connection:<provider>` request, the way a missing fs-write root already does. The
     observed failure was an agent explaining the missing binding in prose and moving on.
-
-    Driven through the helper, not a subprocess: whether the util exits nonzero depends on
-    the ambient environment (a real GOOGLE_ACCESS_TOKEN makes it succeed), and that has
-    nothing to do with the routing rule under test.
     """
     from rsched.engine.exec_env import _unbound_connection_request
 
@@ -649,8 +640,7 @@ def test_write_and_remove_reject_non_slug_names(tmp_path):
 
 
 def test_dispatcher_list_skips_non_util_entries(tmp_path):
-    """`gu list` shows only real utils — __pycache__, removal residue, and stray files
-    must not appear."""
+    """`gu list` shows only real utils, never __pycache__, removal residue or stray files."""
     import subprocess as sp
     import sys
 
@@ -660,8 +650,8 @@ def test_dispatcher_list_skips_non_util_entries(tmp_path):
     (home / "utils" / "__pycache__").mkdir()
     (home / "utils" / ".ghost.removing.123").mkdir()
     (home / "utils" / "stray.txt").write_text("junk", encoding="utf-8")
-    r = sp.run([sys.executable, str(home / "gu"), "list"],
-               capture_output=True, text=True, timeout=30, check=False)
+    r = sp.run([sys.executable, str(home / "gu"), "list"], capture_output=True, text=True,
+               timeout=30, check=False, env={**os.environ, "GLOBAL_UTILS_HOME": str(home)})
     assert r.returncode == 0
     assert "adder" in r.stdout
     assert "__pycache__" not in r.stdout and "removing" not in r.stdout
@@ -680,8 +670,8 @@ def test_dispatcher_list_survives_an_oddly_written_util(tmp_path):
     for name, body in (("blank", b'"""   \n"""\n'), ("latin", b'"""caf\xe9 \xe9t\xe9."""\n')):
         (home / "utils" / name).mkdir()
         (home / "utils" / name / "main.py").write_bytes(body)
-    r = sp.run([sys.executable, str(home / "gu"), "list"],
-               capture_output=True, text=True, timeout=30, check=False)
+    r = sp.run([sys.executable, str(home / "gu"), "list"], capture_output=True, text=True,
+               timeout=30, check=False, env={**os.environ, "GLOBAL_UTILS_HOME": str(home)})
     assert r.returncode == 0, r.stderr
     assert "adder — " in r.stdout and "blank — " in r.stdout and "latin — " in r.stdout
 

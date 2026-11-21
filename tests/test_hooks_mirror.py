@@ -1,17 +1,4 @@
-"""The hook MIRROR — a report, a reminder write and an injection, each as one hook row.
-
-D152 campaign step 2 builds the mechanism BEHIND the existing surfaces, so these tests assert
-two things over the LIVE paths (never over constructed rows):
-
-1. each of the three mechanisms becomes ONE row whose trigger/addressee/delivery/disposition
-   say what it is — that is what makes them configurations of one mechanism rather than three
-   stores sharing a name;
-2. the existing surfaces are UNCHANGED — the report ledger and its delivery, the reminder
-   store, and the injected message all still read exactly as they did.
-
-(2) is the half that matters at this step: a mirror that alters what a routine sees is not a
-mirror. The record and the store itself are pinned in test_hooks_store.py.
-"""
+"""The hook MIRROR — a report, a reminder write and an injection, each as one hook row."""
 
 from __future__ import annotations
 

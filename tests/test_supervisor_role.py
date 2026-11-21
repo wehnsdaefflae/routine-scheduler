@@ -1,12 +1,5 @@
 """The SUPERVISOR model role (D164) — a fourth role beside main / tool_call / uncensored, for
 the escalation ladder's overseer.
-
-The operator's answer was option B: add the role, defaulting to `main`, and accept that a
-weaker-than-worker overseer becomes configurable. So the two things worth pinning are the
-DEFAULT (unset must behave exactly as the code-pinned `main` did, or every ladder on the
-instance changes behaviour the day this ships) and the FALLBACK DIRECTION (to the routine's
-own main, never to the server's system model — F643's lesson is that a role resolving
-somewhere nobody chose is how a routine goes dark).
 """
 
 import pytest

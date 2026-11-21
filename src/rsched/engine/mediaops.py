@@ -1,16 +1,10 @@
 """SEEING (or HEARING) a file — images, PDFs, audio and video, natively or via the vision util.
 
-Split out of `fileops.py` (F393). Reading text is one job; getting a picture in front of a model
-is another, and it has a fallback path that text reads do not: a multimodal model is handed the
-bytes, and everything else gets a described transcription from the vision util. The run's prose
-names the CAPABILITY, never the util, so the fallback can change without the recipe changing.
-
-Which types may be handed over is `endpoints/media_types.py`'s one modality-tagged allowlist,
-and whether THIS run's model takes a given modality is its resolved bits (`model_modalities`)
-ANDed with the adapter's wire. The two time-based modalities (D192) differ from images in one
-way here: there is no fallback for them — the vision util describes pictures — so a model not
-configured for audio or video is told so, with the native size bound, instead of being handed
-a useless description attempt.
+A multimodal model is handed the bytes; everything else gets a described transcription from
+the vision util. Which types may be handed over is `endpoints/media_types.py`'s allowlist, and
+whether THIS run's model takes a modality is its resolved bits ANDed with the adapter's wire.
+Audio and video have no fallback (the vision util describes pictures), so a model not
+configured for them is told so, with the native size bound.
 """
 
 from __future__ import annotations
@@ -42,23 +36,12 @@ def vision_describe(ctx: RunContext, abspath: str, prompt: str) -> str:
     single fallback used both by do_view_image and the loop's runtime net when the main
     endpoint can't take a file natively; the util bills its own key, out of the run's usage.
 
-    The call is the ENGINE's, so no exposure ask precedes it — but its environment is the
-    run's, assembled as for a util the run called: the routine's own scoped key shadows the
-    central one (D103), a not-granted optional secret is withheld (F290), and a secret the
-    user DECLINED for this routine is not handed over at all. Before this the util got the
-    central store's value whatever the routine's standing said.
-
-    A DECLINED secret REFUSES this call, where the same decline merely WITHHOLDS the
-    credential from a util the run chose (`secretgate.withheld_for_util`, F756). That is the
-    operator's recorded distinction (D213, 2026-10-25): the engine refuses for calls IT chose
-    to make and withholds for calls the RUN chose. It is one rule read from the run's side —
-    a decline never silently degrades work the run did not ask for. The run chose
-    `util vision …`, so withholding hands it a call it can still judge, retry or route
-    around. It did not choose THIS call: it asked to SEE a file, and the fallback is the
-    engine's own way of answering. Running it credential-less would fail inside the vision
-    util, with the util's own message, about a call the run never wrote — so it is refused
-    here instead, where the reason can name the decline and the repair route. Two words, two
-    situations, one principle.
+    The call is the ENGINE's, so no exposure ask precedes it, but its environment is the
+    run's: the routine's scoped key shadows the central one, a not-granted optional secret is
+    withheld, and a DECLINED secret REFUSES the call (D213) — the engine
+    refuses for calls IT chose and withholds for calls the RUN chose
+    (`secretgate.withheld_for_util`), so a decline never silently degrades work the run did
+    not ask for.
     """
     from .exec_env import _extra_secrets
     from .secretgate import declined_secrets, withheld_optional_secrets
@@ -67,12 +50,8 @@ def vision_describe(ctx: RunContext, abspath: str, prompt: str) -> str:
     if not utils_lib.exists(home, VISION_UTIL):
         return "error: the `vision` util is not installed, so this file cannot be described"
     if declined := declined_secrets(ctx, VISION_UTIL):
-        # D213: REFUSE here, do not withhold. This call is the engine's (the run asked to see
-        # a file, not to run the vision util), so a credential-less attempt would fail inside
-        # the util about a call the run never wrote. A util the RUN called is withheld from
-        # and proceeds instead (secretgate.withheld_for_util, F756) — the run can judge that
-        # outcome, because it chose the call. R17 holds either way: a decline enumerates
-        # nothing — a count, never the names it protected.
+        # REFUSE, do not withhold (see docstring). A decline enumerates nothing — a count,
+        # never the names it protected.
         return (f"error: the user declined exposing {len(declined)} secret"
                 f"{'s' if len(declined) != 1 else ''} the vision fallback needs to this "
                 "routine, so this file cannot be described here. The engine chose this call, "
@@ -117,14 +96,11 @@ def _resolve_for_view(ctx: RunContext, rel_path: str) -> tuple[Path | None, str]
 
 def _timebased_refusal(rel_path: str, mime: str, *, carried: bool,
                        too_big: str | None) -> dict | None:
-    """The observation for an AUDIO or VIDEO file that cannot ride natively — or None (D192).
+    """The observation for an AUDIO or VIDEO file that cannot ride natively — or None.
 
-    These two have no fallback: the vision util describes PICTURES, so routing a sound file to
-    it returns a useless "error:" from the util and tells the run nothing it can act on. The two
-    ways this fails have different fixes, so the refusal names which one happened — the model
-    is not configured for the modality (or its endpoint's wire does not carry it), or the file
-    is over the native cap. Both carry NATIVE_MEDIA_LIMIT_NOTE, because a video meets that cap
-    within seconds of footage and the way around it is the same either way.
+    No vision-util fallback exists for these, so the refusal names which of the two fixable
+    causes happened: the model/wire does not carry the modality, or the file is over the
+    native cap.
     """
     modality = modality_of(mime)
     if modality not in ("audio", "video"):
@@ -160,11 +136,8 @@ def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext, bits: dict)
                          "audio/video on a model configured for it) — read text files with "
                          "read_file instead"}
     ctx.seen_paths.add(str(path))   # viewed = seen: grounds a later overwrite of this file
-    # F623: the PRE-FLIGHT. `oversize_reason` is the one shared predicate — bytes AND the
-    # provider's per-side pixel bound — so a file that would make the provider refuse the whole
-    # message is described by the vision util instead of being sent and failing. The reason is
-    # carried into the observation, because "the model could not see it" without the limit and
-    # the file's measured size leaves the run no way to fix it.
+    # PRE-FLIGHT: a file the provider would refuse (bytes or per-side pixels) goes to the vision
+    # util instead, and the observation carries the reason so the run can act on it.
     too_big = oversize_reason(path, mime) if endpoint is not None else None
     carried = endpoint is not None and endpoint.supports_media(mime, **bits)
     native = carried and too_big is None
@@ -174,14 +147,8 @@ def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext, bits: dict)
         viewed = _view_via_vision(rel_path, str(path), prompt, ctx)
         return {**viewed, "oversize": too_big}
     if native:
-        # R1493: capture the BYTES here, not just the path. The media entry rides the
-        # observation's message and stays in the conversation, so the endpoint re-renders it on
-        # every later send — reading the path each time. A run that re-renders a check artifact
-        # into a fixed filename (or cleans it up) then invalidates its own earlier attachment,
-        # and the failure surfaces inside the endpoint, AFTER the observation already said
-        # "shown to you below; look at it now". Reading once, at the one moment existence was
-        # verified, makes the attachment immutable: what the model was told it would see is what
-        # the provider receives, this turn and every later one.
+        # Capture the BYTES now, not just the path: the entry is re-sent on every later turn,
+        # and a file rewritten or removed since would break an attachment already promised.
         try:
             data = read_media_b64(path)
         except OSError as exc:      # vanished between the stat and the read — say so now
@@ -193,14 +160,9 @@ def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext, bits: dict)
 def without_bytes(obs: dict) -> dict:
     """The observation as the TRANSCRIPT should keep it: every `media` entry minus its `b64`.
 
-    R1493 captures an image's bytes into the observation so the provider re-renders exactly
-    what the model was told it would see, and that dict was recorded verbatim. Nothing ever
-    reads the bytes back — `history.replay_messages` rebuilds observations text-only — while
-    one conversation's transcript.jsonl reached 10.0 MB of which 9.6 MB were 14 base64 blobs.
-    Over `fileops.READ_MAX_BYTES` (8 MiB) that file is REFUSED to self-audit and to every
-    other routine that reads transcripts, and the web renderer, the search index and the gzip
-    archive all pay for bytes no consumer uses. The live message keeps them; the record keeps
-    the path and the media type, which is what a reader needs.
+    Nothing reads the bytes back (`history.replay_messages` rebuilds observations text-only),
+    and kept verbatim they push a transcript past `fileops.READ_MAX_BYTES`. The live message
+    keeps them; the record keeps the path and the media type.
     """
     media = obs.get("media")
     if not media:
@@ -211,19 +173,15 @@ def without_bytes(obs: dict) -> dict:
 def natively_viewable(ctx: RunContext, rel: str) -> tuple[str, str] | None:
     """`(abspath, media_type)` if THIS run's main model can be shown `rel` directly, else None.
 
-    The one spelling of that question (F623's lesson: two predicates for one question drift
-    apart silently). Three callers ask it — the conversation's auto-attach, the `view_image`
-    pre-flight, and the `vision` refusal in `visionsteer` — and each needs the same bounds:
-    the main model is multimodal, the endpoint carries that media type natively, the file
-    exists, and it is inside the native size cap. None means the vision-util fallback is the
-    real path, so a refusal must never fire; it is also None for anything that is not a
-    readable local file at all (a URL, a flag, a missing path).
+    The one spelling of that question, shared by conversation auto-attach, the `view_image`
+    pre-flight and `visionsteer`'s refusal: multimodal main model, media type carried
+    natively, file exists, inside the native size cap. None means the vision-util fallback is
+    the real path — also for anything that is not a readable local file.
     """
     try:
         endpoint, ref = ctx.registry.for_model("main", ctx.routine.models, ctx.routine.efforts)
     except Exception:
-        # an unresolvable main model is the vision-util's case, not this one — and a run whose
-        # model cannot be resolved must never be told it can see the file
+        # a run whose model cannot be resolved must never be told it can see the file
         return None
     if not ref.multimodal:
         return None            # the common text-only case, answered before touching the disk
@@ -245,10 +203,7 @@ def media_from_paths(ctx: RunContext, rels: list[str]) -> list[dict]:
     type, too big, or a text-only endpoint) are skipped: the model can still view_image them,
     which then routes through the vision util.
     """
-    # the SAME predicate the view_image pre-flight and the `vision` refusal use (F623): one
-    # question, so a bound added to it is never missing here. An oversized or unsupported
-    # attachment is skipped, exactly as it always was — the model can still `view_image` it,
-    # which then routes through the vision util and says why.
+    # the SAME predicate the view_image pre-flight and the `vision` refusal use
     seen = (natively_viewable(ctx, str(rel)) for rel in rels)
     return [{"path": s[0], "media_type": s[1]} for s in seen if s is not None]
 

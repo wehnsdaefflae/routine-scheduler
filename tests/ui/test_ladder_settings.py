@@ -1,15 +1,4 @@
-"""The escalation ladder's settings, as a PERSON uses them.
-
-Operator, 2026-10-03: *"obviously it needs a complete ui"* — until then the ladder could only be
-switched on by editing `routine.yaml` by hand, so the feature was fully visible once it fired and
-invisible until then.
-
-What is pinned here is what the page does, not what the API accepts (that is
-`tests/test_ladder_settings_api.py`): the two controls exist in the two groups their authority
-class belongs to, the switch round-trips through the page's one accept into `routine.yaml`, and
-the interval knobs round-trip into `tuning.yaml` — including the cleared budget, whose whole
-meaning is "derive it again".
-"""
+"""The escalation ladder's settings, as a PERSON uses them."""
 
 from __future__ import annotations
 
@@ -79,9 +68,7 @@ def test_the_ladder_switch_is_in_limits_and_saves_through_the_one_accept(ui, ui_
 def test_the_interval_knobs_are_tuning_and_land_in_tuning_yaml(ui, ui_page):
     """`ladder_turn_interval` + `oversight_turns` are RECIPE-classed, so they sit beside
     Deliberation, the other tuning key — and they must never reach routine.yaml.
-
-    D189: this knob is a TURN INTERVAL and the label says so. "rung height" must not appear
-    next to it — that name now belongs to the recursion limit, over in Limits & reach."""
+    """
     ui_page.goto(f"{ui.url}#/routine/uir")
     unfold(ui_page)
     group = ui_page.locator(".rgroup", has=ui_page.locator(".rgroup-title", has_text="Models"))

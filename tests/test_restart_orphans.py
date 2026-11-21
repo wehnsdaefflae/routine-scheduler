@@ -1,16 +1,4 @@
-"""F746: an EXTERNAL restart leaves a breadcrumb, and the run it killed is resumed not aborted.
-
-The defect these pin, measured on the live instance 2026-10-22 (R2793, R2800): 79 orphaned runs
-over 50 boots, and of the 20 events carrying a cause at all, 15 read `unknown` and NOT ONE ever
-read `daemon_restart` — because `mark_deliberate_shutdown` had a single caller, the daemon's own
-self-update path. Every deploy, `systemctl restart` and container replacement therefore reaped
-every live run as an unexplained death, and `self-audit:20261021-223212` was closed `aborted` at
-turn 240 with 5125 s of work in it.
-
-The operator's ruling the same day: *"Drain in-flight runs before any restart, and resume rather
-than abort"*. A drain cannot hold an external SIGTERM (uvicorn bounds its graceful shutdown to
-10 s and a run lasts hours), so the equivalent is that the WORK continues on the next boot.
-"""
+"""F746: an EXTERNAL restart leaves a breadcrumb, and the run it killed is resumed not aborted."""
 
 from __future__ import annotations
 

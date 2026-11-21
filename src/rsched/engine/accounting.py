@@ -16,15 +16,12 @@ open outcome of the routine's finish line (`finishline.py`):
 What goes after the verdict is the ACCOUNT, and it has a content floor (`is_placeholder`): a
 clause of fewer than two words, or one made only of words a real account never consists of
 alone (`test`, `tbd`, `n/a`, `ok`, …), is refused with the entry named. The floor is about
-FORM, not truth — whether a `met` is actually supported is the claim verifier's question
-(`engine/verifier.py`), asked of the run's own transcript.
+FORM, not truth — truth is the claim verifier's question (`engine/verifier.py`).
 
-It is a field, not prose in the summary: the summary is written for the reader; verdicts
-read back out of prose were lost one time in six. The gate checks the field once, at the main
-finish only — a follow-up reply after the run ended answers the person, not the recipe; a
-conversation's reply owes its goals only when it declares itself final — and records it where
-every reader finds it: the run's status, the next run's digest, the finish line's distances,
-the goals' ledger.
+It is a field, not prose in the summary, because verdicts read back out of prose get lost. The
+gate checks it once, at the main finish only (a conversation reply owes its goals only when it
+declares itself final), and records it in the run's status, the next run's digest, the finish
+line's distances and the goals' ledger.
 """
 
 from __future__ import annotations
@@ -48,12 +45,9 @@ _EDGE = ".,;:!?()[]{}<>\"'`*…-–—_|/\\"
 
 
 #: `b<n> waits on <who>: <the act it waits on>` — an UNMET goal whose next move is not this
-#: routine's (2026-11-19). `who` is `operator`, `external` (the world: a release, a reply, a
-#: date) or a routine slug. It parses as `unmet` everywhere a verdict is read, so no reader of
-#: verdicts changes; `waits` reads the addressee, which `obligations.save` keeps and
-#: `daemon/owed_watch` routes — an obligation waiting on the operator becomes his Decisions
-#: card, one waiting on another routine or the world stops reading as this routine's overdue
-#: work. Goals only: a Done-when line is the run's own, whoever it waits on.
+#: routine's. `who` is `operator`, `external` (the world) or a routine slug. It parses as
+#: `unmet` everywhere; `waits` reads the addressee, which `obligations.save` keeps and
+#: `daemon/owed_watch` routes. Goals only: a Done-when line is the run's own, whoever it waits on.
 _WAITS_RE = re.compile(r"^\s*(b\d+)\s+waits\s+on\s+([a-z0-9][a-z0-9_.-]*)\s*:\s*(.*)$",
                        re.IGNORECASE | re.DOTALL)
 OPERATOR, EXTERNAL = "operator", "external"
@@ -82,20 +76,11 @@ def waits(entries: object) -> dict[str, str]:
 
 
 def arrived(entries: object) -> bool:
-    """Whether an `accounting` FIELD reached the engine at all — the distinction that cost
-    `birthday-admin:20261022-080004` ten turns (F805).
+    """Whether an `accounting` FIELD reached the engine at all (F805).
 
-    `parse` cannot answer it: a missing key, a `null`, an empty list and a list of blanks all
-    flatten to `{}`, so every owed id reads as `missing` and the refusal speaks about CONTENT a
-    run can still see in its own reply. That run re-sent the same nine entries nine times
-    ("re-submitting identically") and escaped only by rebuilding the list one entry at a time.
-    A field that arrived and says nothing is a content question; a field that never arrived is
-    not, and the two refusals have to differ.
-
-    The transport is the known author of the absence (`engine/paramsalvage.py`: a parameter
-    whose closing tag the provider mis-reads swallows the ones written after it, measured on
-    that same run and repaired where the three conditions hold) — which is why the refusal
-    names the shape rather than the model's diligence.
+    `parse` flattens a missing key, `null`, `[]` and blanks all to `{}`; a field that never
+    arrived needs a different refusal from one whose CONTENT falls short, because the usual
+    author of the absence is the transport (`engine/paramsalvage.py`), not the run.
     """
     return any(str(e).strip() for e in entries) if isinstance(entries, list) else False
 
@@ -103,17 +88,9 @@ def arrived(entries: object) -> bool:
 def is_placeholder(evidence: str) -> bool:
     """True when an evidence clause answers for NOTHING — the content floor, two tests deep.
 
-    MEASURED over every routine's transcripts for the 14 days to 2026-10-23: 286 finishes
-    carried 2 093 entries, and the clause after the verdict ran p0.5 = 4 chars, p1 = 9, p2 = 50,
-    median 240. Every entry under 9 characters was one run's `test` (`birthday-admin:
-    20261022-080004`, F748, which finished `ok` on `d1 met: test`). But the shortest LEGITIMATE
-    entries are only a hair longer — `no filing` (9), `no letter due`, `no letter to archive`
-    — so a character floor anywhere near the placeholders refuses real `not due` accounts. The
-    floor is therefore WORDS, not characters: fewer than two says nothing, and a clause made
-    only of `PLACEHOLDER_WORDS` (and punctuation) says nothing however many words it has.
-
-    Deliberately NOT a judgement about whether the evidence is TRUE: that is the claim
-    verifier's job (`engine/verifier.py`), and it reads the run's own transcript to do it.
+    WORDS, not characters: legitimate `not due` accounts are nearly as short as placeholders
+    (`no filing`), so fewer than two words says nothing, and so does a clause made only of
+    `PLACEHOLDER_WORDS` (and punctuation). Not a judgement of TRUTH — that is the verifier's.
     """
     words = [w for w in (t.strip(_EDGE) for t in evidence.split()) if w]
     return len(words) < 2 or all(w.lower() in PLACEHOLDER_WORDS for w in words)
@@ -128,18 +105,14 @@ def problems(verdicts: dict[str, tuple[str, str]], done: list[dict],
              outcomes: list[dict], *, final: bool = False,
              arrived: bool = True) -> dict[str, list[str]]:
     """What is wrong with an accounting: `absent` ids no field was received for at all
-    (`arrived=False`, F805 — exclusive with `missing`, because an entry nobody received is not
-    an entry that is wrong), `missing` ids, `bare` entries whose verdict needs a note
-    and has none, `placeholder` entries whose note answers for nothing (`is_placeholder` —
-    named as whole ENTRIES, not ids, because the refusal has to show the model what it wrote),
-    and `refused` entries that claim what their line cannot be (a `met` on an outcome only the
-    operator judges, a distance on a Done-when line, an unmet goal on a reply declared
-    `final`). Empty lists when sound.
+    (`arrived=False`; exclusive with `missing`), `missing` ids, `bare` entries whose verdict
+    needs a note and has none, `placeholder` entries whose note answers for nothing (named as
+    whole ENTRIES, so the refusal shows the model what it wrote), and `refused` entries that
+    claim what their line cannot be (a `met` on an outcome only the operator judges, a distance
+    on a Done-when line, an unmet goal on a reply declared `final`). Empty lists when sound.
 
-    `bare` and `placeholder` are exclusive — the empty clause and the hollow one are one
-    finding each, so the deferral says one thing about an entry. A placeholder entry is
-    rendered back from `parse`, which lowercases id and verdict: the clause is the model's own
-    text, the lead-in is normalised.
+    `bare` and `placeholder` are exclusive, so the deferral says one thing per entry. A
+    placeholder entry is rendered from `parse` (id and verdict lowercased, clause verbatim).
     """
     judges = {o["id"]: o["judge"] for o in outcomes}
     ids = set(owed(done, outcomes))
@@ -191,8 +164,7 @@ def gaps(found: dict[str, list[str]]) -> str:
 
 
 #: What every accounting deferral ends with: the entries the finish owes, in their forms. Both
-#: heads of `deferral` share it — the absent one and the incomplete one differ in the DIAGNOSIS,
-#: never in what the run has to carry.
+#: heads of `deferral` share it — they differ in the DIAGNOSIS, never in what is owed.
 _OWED_TAIL = ("Carry one entry per line you owe — each line of your recipe's Done when, each "
               "open goal (`b<n>`) and each open outcome of the finish line: `d<n> met: "
               "<evidence>`, `d<n> unmet: <what remains>`, `d<n> not due: <how established>`, "
@@ -202,13 +174,10 @@ _OWED_TAIL = ("Carry one entry per line you owe — each line of your recipe's D
 def deferral(found: dict[str, list[str]]) -> str:
     """The one observation a finish is set aside with when its accounting does not answer.
 
-    Two heads, because the two cases need opposite moves (F805). A field that ARRIVED and falls
-    short is a verdict about its CONTENT, and the run fixes the entries. A field that never
-    arrived is not: `birthday-admin:20261022-080004` read nine "incomplete" verdicts about nine
-    entries it could see in its own reply, re-sent them identically, and burned ten turns
-    bisecting them. So the absent head says the field was absent, says what eats one (the
-    transport, `engine/paramsalvage.py`) and names the move that works — a shorter summary —
-    instead of leaving the run to invent one.
+    Two heads, because the two cases need opposite moves (F805): a field that ARRIVED and falls
+    short is about its CONTENT, and the run fixes the entries; an ABSENT field was eaten by the
+    transport, so re-sending fails the same way and the head names the move that works — a
+    shorter summary.
     """
     if found.get("absent"):
         return ("OBSERVATION (finish deferred): no `accounting` field arrived with this "

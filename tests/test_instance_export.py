@@ -1,12 +1,5 @@
 """The library export (`util-seed/utils/instance-export`, live as `rsched export`) never puts a
 credential the instance holds into the mirror library-sync pushes, wherever a routine keeps it.
-
-The util is a standalone script and cannot import the package, so it keeps its own copies of
-what the scheduler defines — the Secrets stores' file names and format, the OAuth store's file,
-the redaction floor, the key a webhook trigger's token sits under. Its selftest checks its
-behaviour; this pins those copies to the scheduler's own, so a store the scheduler moves or a
-format it changes fails here instead of turning the guard blind. And it replays the incident
-that made the guard: config-optimizer kept a full copy of config.yaml in its `state/`; the export pushed the console token and an endpoint key with it (2026-09-25, found 2026-10-01).
 """
 
 from __future__ import annotations

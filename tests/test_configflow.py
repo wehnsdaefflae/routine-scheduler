@@ -1,12 +1,4 @@
-"""Mid-run config changes as in-flow messages (F337).
-
-The complaint this closes: a config edit made while a run is live reached it for SOME fields and
-silently not for others, and the run was never told either way — so "I changed it while it was
-running" had two different meanings depending on which field was touched.
-
-The anti-drift guard is `test_every_patch_field_declares_its_half`: a new config field cannot be
-added without declaring which half it is in, so the divergence cannot quietly come back.
-"""
+"""Mid-run config changes as in-flow messages (F337)."""
 
 from __future__ import annotations
 

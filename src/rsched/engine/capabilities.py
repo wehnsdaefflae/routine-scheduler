@@ -3,20 +3,16 @@ model + context window, the action kinds usable this run, the held permissions w
 short conduct notes, the spawnable workflow patterns as SLUGS, and the util catalog as an
 INDEX of NAMES (`engine/utilcatalog`, which owns it).
 
-Both catalogs are an index rather than a description since 2026-11-14 (goal b5 step 4): a
-util's summary and a pattern's description are one call away (`util name=search` /
-`util name=list`, and the library's `workflows/<slug>`) instead of in every prompt. The two
-compositions that do it are the whole of the trial, so reversing it is reversing them.
+Both catalogs are an index, not descriptions: a util's summary and a pattern's description are
+one call away (`util name=search` / `util name=list`, the library's `workflows/<slug>`).
 """
 
 from __future__ import annotations
 
 from .run_context import RunContext
 
-#: A held permission's note is cut at a CHARACTER budget, on a line boundary. It used to be cut
-#: at 14 lines, which dropped the very conduct 18 of 25 docs existed for (a line count says
-#: nothing about length; the conduct sat below the mechanism). The docs are now written
-#: conduct-first to fit, so the budget is a backstop, not a truncator.
+#: A held permission's note is cut at a CHARACTER budget, on a line boundary — a backstop; the
+#: docs are written conduct-first to fit.
 PERMISSION_NOTE_MAX_CHARS = 1_000
 
 #: The script gloss's last sentence, in both its forms (engine/thenscript.py): the turn between
@@ -52,14 +48,9 @@ def _permission_notes(ctx: RunContext, g) -> str:
 def _secret_notes(ctx: RunContext) -> list[str]:
     """The two secret scopes, as CAPABILITIES lines.
 
-    D46: the NAMES provisioned in the central store — no consent, values NEVER shown to a run
-    — so a run knows up front which credentials exist (and which do not) instead of probing
-    with a util. D103: the routine's OWN names listed apart, because they need no exposure
-    request (they are already its) and they shadow a central name of the same spelling — a
-    run that cannot tell them apart spends a turn asking for what it already holds.
-
-    A util still only RECEIVES a secret it declares on its `secrets:` header, so naming
-    either set here is informational and cannot leak a value.
+    The NAMES in the central store (D46), so a run need not probe; the routine's OWN names
+    (D103) listed apart, since they need no exposure request and shadow a central name. Names
+    only — a util receives just what it declares, so nothing here can leak a value.
     """
     try:
         from ..secrets import routine_secret_keys, secret_keys
@@ -90,11 +81,8 @@ def _machine_notes(ctx: RunContext) -> str:
     util, named here so it costs no discovery turn. Non-secret metadata only; readiness
     (key/host-key set) is reported live by `remote list`.
 
-    The SHARE half reports what this run actually HAS, never what the catalog asked for
-    (R514). The line used to be emitted from `mac.share` alone, so a run whose sshfs mount
-    had failed was still told its files were at `mnt/<name>/` — and the empty directory left
-    behind read as an empty source. Now a share is advertised only once proven live, and a
-    share that did not come up says so with its reason.
+    The SHARE half reports what this run actually HAS: a share is advertised only once proven
+    live, and one that did not come up says so with its reason.
     """
     bound = ctx.routine.machines
     if not bound:
@@ -118,12 +106,10 @@ def _machine_notes(ctx: RunContext) -> str:
                      "filesystem")
         else:
             share = ""
-        # An exclusive machine's compute is QUEUED, and what the run needs to know is its place
-        # in the rotation — not that the resource exists. Read from the daemon's mirror, so this
-        # costs no SSH round-trip per run; an unreachable box reads as unknown, never as free.
+        # An exclusive machine's queue position, read from the daemon's mirror (no SSH per run);
+        # an unreachable box reads as unknown, never as free.
         queue = ""
-        # getattr: a machine stub without the field is simply not exclusive — the same tolerance
-        # web/model_fit.discovered applies to a server object without a routines_home
+        # getattr: a machine stub without the field is simply not exclusive
         if getattr(mac, "exclusive", False):
             from ..machine_queue import capability_note
             queue = capability_note(ctx.server.routines_home, name, ctx.routine.slug)
@@ -136,20 +122,15 @@ def _machine_notes(ctx: RunContext) -> str:
 def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) -> str:
     """What this run can ACTUALLY do, stated up front: model + context window, the action
     kinds usable this run (workflow tools ∩ grants), the held permissions with their
-    capability notes, and the util catalog at one line per util. Every run — including the
-    clarify session, whose tools allowlist can't even call `util name=list` —
-    plans against this instead of guessing. Exact usage flags still come from
-    `util name=list` (live, never stale).
+    capability notes, and the util catalog. Exact usage flags come from `util name=list`.
     """
     from .. import utils_lib
     from . import utilcatalog
     from .kindsurface import effective_kinds
 
     parts: list[str] = []
-    # read at the ONE place the main model is resolved, so the util catalog's
-    # "this run is multimodal" note can never disagree with the "Model:" line above it; an
-    # unresolvable model stays False, which shows `vision` unannotated — the safe way round,
-    # since the engine's refusal is what actually enforces it (engine/visionsteer.py).
+    # read where the main model is resolved, so the catalog's multimodal note agrees with the
+    # "Model:" line; unresolvable stays False (the engine's refusal enforces vision anyway).
     multimodal = False
     try:
         _endpoint, ref = ctx.registry.for_model("main", ctx.routine.models, ctx.routine.efforts)
@@ -159,11 +140,8 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                      "the conversation to on-disk history at ~60-80% of that, so budget your "
                      "reads (large files via read_file ranges, not whole).")
     except Exception as exc:
-        # A silent `pass` here deleted the whole "Model: … context window ≈ N tokens" line from
-        # the prompt and said nothing: the run then planned its reads against a window it had
-        # never been told, and no transcript named the resolution failure. Say what is unknown
-        # and why, so the run budgets conservatively instead of guessing (and so the fault is
-        # legible to whoever reads the prompt afterwards).
+        # Never drop the line silently: say the window is unknown and why, so the run budgets
+        # conservatively and the fault is legible.
         parts.append(f"Model: this run's main model could not be resolved ({exc}) — its context "
                      "window is UNKNOWN here, so read in ranges and keep the conversation lean "
                      "rather than assuming headroom.")
@@ -178,9 +156,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                          "for its payload answers.")
     if g is not None:
         cap_bits = []
-        # Each line keys on `kinds` — the grant ∩ the workflow's `tools:` — never on the grant
-        # alone: a recipe that leaves a granted kind out of its tools would otherwise be told,
-        # here, about a kind its schema refuses.
+        # Each line keys on `kinds` (grant ∩ the workflow's `tools:`), never the grant alone.
         if "write_util" in kinds:
             placement = (" A util is GLOBAL, for every routine — a helper only THIS "
                          "routine will ever call belongs in its own scripts/, not the "
@@ -195,8 +171,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
             cap_bits.append("remove_util (delete a global util the library no longer needs; "
                             "refused while another util still calls it)")
         if "write_rule" in kinds:
-            # Named like the other emittable gated kinds, with its OWN approval dial: left out,
-            # a routine holding only rule-authoring read "(none beyond the base kinds)".
+            # named like the other gated kinds, with its OWN approval dial
             cap_bits.append("write_rule (author or revise a general rule in the shared library "
                             "— a revision reaches every routine holding the rule; " + {
                                 "always": "every write needs the user's approval",
@@ -283,13 +258,8 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         except Exception:
             patterns = []
         if patterns:
-            # SLUGS ONLY (goal b5 step 4, the operator 2026-11-14: "Let's try 3 for three days
-            # and see how it goes"). The per-pattern descriptions were 4,232 chars of every
-            # prompt that carries this block (37 of 52 measured captures), overlapping the
-            # enforced contract by 0.1% — a description, not a duplicate, so it moves one call
-            # away rather than disappearing. A slug states its own purpose well enough to pick
-            # from (`answer-a-mailbox`, `train-a-model`), and the child's own prompt carries the
-            # pattern whole, so the cost of picking wrong falls where it can still be corrected.
+            # SLUGS ONLY: descriptions are one read away, and the child's own prompt carries the
+            # pattern whole, so a wrong pick is still correctable.
             parts.append("Workflow patterns for child/detach — pick the one matching "
                          "the CHILD's purpose, never reflexively the default; what each covers "
                          "is in the library (workflows/<slug>), read it when the choice is not "

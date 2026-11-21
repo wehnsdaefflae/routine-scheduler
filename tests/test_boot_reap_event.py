@@ -1,26 +1,4 @@
-"""F799: a daemon boot reaches the health stream, so a recreate that resumed its runs is countable.
-
-THE DEFECT, measured 2026-10-29: pid 1 restarted at 23:58:22 and run `self-audit:20261029-233250`
-continued across it. `health-events.jsonl` held NOTHING — no `orphaned_run` (the run was
-resumed, not orphaned), no resume row, no shutdown mark. So the instance's own count of
-container recreates misses every CLEAN one, and the only recreates anybody can count are the
-ones that left wreckage. That is the wrong bias in a number used to judge whether the daemon is
-being killed: it under-reports exactly the cases where the engine coped.
-
-WHAT THIS PINS. One `boot_reaped` event per boot that reaped anything, carrying the four facts
-`recover_orphans` and its caller know between them and nothing else does:
-  * `pid1_started` — when this process tree's init began, which is what distinguishes a
-    container REPLACEMENT from a daemon that died inside a living container;
-  * the shutdown mark's reason, or its absence — read before `clear_shutdown_mark` consumes it;
-  * `orphans` — how many dead-pid runs were closed out;
-  * `resumed` — how many of those a deliberate restart killed and were re-opened (F746).
-
-WHY A BOOT THAT REAPED NOTHING FILES NOTHING. Almost every boot reaps nothing: the daemon
-restarts when it is idle, by design. An event per boot would be a row per restart saying "all
-quiet", and `health_cooldown` would then suppress the interesting ones behind the quiet ones
-within its window. The question this event exists to answer is "was a run alive when the
-process tree was replaced, and did it survive?", which only arises when something was reaped.
-"""
+"""F799: a daemon boot reaches the health stream, so a recreate that resumed its runs is countable."""
 
 from __future__ import annotations
 

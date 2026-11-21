@@ -75,15 +75,7 @@ def test_plain_secret_value_keeps_newlines(ui, ui_page):
 
 
 def test_a_secret_value_is_never_kept_as_a_draft(ui, ui_page):
-    """Values are write-only, and the console must not keep a copy of one either.
-
-    formpersist.js stores every text field's draft in sessionStorage and refills a field that
-    mounts empty. Its guard skips password inputs and fields whose key names a token, secret or
-    password — but the value box is a TEXTAREA (F149: a password input strips a PEM's newlines)
-    keyed by its placeholder "value", and the map-entry box is keyed by a placeholder that says
-    "pass". So every keystroke of a secret landed in the tab's storage, and the save's own
-    re-render refilled the fresh, empty box with the value it had just stored — the map entry's
-    in plain text."""
+    """Values are write-only, and the console must not keep a copy of one either."""
     ui_page.goto(f"{ui.url}/#/settings?section=secrets")
     value = ui_page.locator('textarea[placeholder="value"]')
     value.wait_for()

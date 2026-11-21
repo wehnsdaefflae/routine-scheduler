@@ -1,15 +1,4 @@
-"""What a test selection COSTS, and which readings bound it.
-
-Split out of `memgate.py` (2026-11-19) when the browser charge was measured: the charges, the
-measurements behind them and the question "which reading may refuse this selection" are one
-responsibility, and holding them beside the waiting logic put that module over the house line
-bar. `memgate` imports these names, so `memgate.need_mb`, `memgate.NEED_MB` and
-`memgate.prose_for` still resolve for every caller that already used them.
-
-Every figure here is MEASURED and says where from. Two cost whole release gates by being wrong:
-a charge too high refuses a stage that would have fit (the browser figure, 2026-11-19), and a
-charge too low admits one that then competes with a live routine run.
-"""
+"""What a test selection COSTS, and which readings bound it."""
 from __future__ import annotations
 
 #: MB each selection needs free — of the host's MemAvailable AND of this cgroup's own headroom
@@ -122,11 +111,7 @@ PER_WORKER_HOLD_MB = 610
 
 
 def fast_need_mb(workers: int) -> int:
-    """What a fast selection at `workers` xdist workers must be charged, rounded UP to 256 MB.
-
-    Rounded on the MB figure and never on the GB one — 3.29 GB rounds to 3,328 MB, which is
-    BELOW the hold it has to cover, the trap this module's own comment records.
-    """
+    """What a fast selection at `workers` xdist workers must be charged, rounded UP to 256 MB."""
     raw = CONTROLLER_HOLD_MB + max(0, int(workers)) * PER_WORKER_HOLD_MB
     rounded = -(-raw // 256) * 256
     return max(rounded, NEED_MB["serial"])
@@ -136,11 +121,6 @@ def need_mb(selection: str, workers: int = 0) -> int:
     """The CLASS charge for one selection — the fast one derived from its worker count, the
     others their measured constants. One reading, so the wait and the refusal message cannot
     disagree.
-
-    Since D295 this is the FALLBACK rather than the whole answer: `priced_need` below prefers
-    what THIS selection has actually held, and falls back here when it has no history. The
-    class figures stay because a selection nobody has measured must still be charged something,
-    and the worst case of its class is the only honest figure for it.
     """
     if selection == "fast" and workers:
         return fast_need_mb(workers)
@@ -160,11 +140,6 @@ SELECTION_PROSE = {
 def prose_for(selection: str, workers: int = 0) -> str:
     """How a refusal or a wait NAMES what it is waiting for — with the worker count it actually
     settled on (D291).
-
-    "the fast suite at 4 xdist workers" became a lie the moment the count was conditional, and
-    a refusal nobody can read is what sent R3376's author hunting a memory leak in a candidate
-    that had none. So the fast selection's phrase is built from the count, and the others keep
-    their constant prose.
     """
     if selection == "fast" and workers:
         return f"the fast suite at {workers} xdist workers"
@@ -172,15 +147,7 @@ def prose_for(selection: str, workers: int = 0) -> str:
 
 
 def selection_for(config, markexpr: str) -> str:
-    """Which NEED_MB entry this session should be charged — by what it will really start.
-
-    The browser suite is priced by its marker expression, because its cost is the Chromiums it
-    drives rather than the workers pytest starts. Everything else is priced by whether xdist
-    workers will exist: `-n 0` leaves `dist == "no"` and `numprocesses == 0` (measured on this
-    box with pytest 9.1.1 / xdist 3.8.0), while the default `addopts` selection resolves to
-    `worksteal` with 4. A worker process never reaches here at all — `should_wait` sends it
-    straight through, since the controller already waited for the whole selection.
-    """
+    """Which NEED_MB entry this session should be charged — by what it will really start."""
     if "not ui" not in markexpr:
         return "browser"
     serial = (getattr(config.option, "dist", "no") == "no"

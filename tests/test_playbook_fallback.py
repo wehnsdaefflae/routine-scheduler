@@ -1,28 +1,4 @@
-"""F907 — saving a conversation as a playbook tries the configured fallback chain.
-
-MEASURED FAILURE. The operator pressed save-as-playbook on `c-20261014-134208` and got an
-HTTP 502. Behind it: an upstream credential-pool **HTTP 429**, after which
-`playbook_distill._infer` let the exhausted `EndpointError` escape. It had resolved its model
-with `for_system()`, which does resolve the WHOLE chain — but `failover.pick` is resolve-time
-avoidance, and a failure that happens during the CALL had nowhere to go. So the `fallbacks:`
-the catalog already declared went untried, and the operator's request died on a transient.
-
-The engine's own turn loop has had call-time failover since `engine/degrade.py`; this button
-simply never ran through it. The repair uses that same primitive (`failover.next_after`) rather
-than a second policy, and these tests pin the four discriminating cases — one where the chain
-must be advanced and three where it must not be:
-
-1. a retryable failure on the head → the next rung is tried and its answer is returned;
-2. an auth failure → no fallback (the same key fails on every rung, so trying the chain would
-   turn one real error into several);
-3. a malformed or empty reply → not a transport failure at all; it raises as before, and the
-   chain is not walked (a model that answered badly must not be retried as though it had not
-   answered);
-4. the chain exhausted → the error propagates, naming what was tried, and nothing is written.
-
-The real `complete` is never called: each rung is a recording stub, so the test is about the
-control flow this fix adds and not about any provider.
-"""
+"""F907 — saving a conversation as a playbook tries the configured fallback chain."""
 
 from __future__ import annotations
 

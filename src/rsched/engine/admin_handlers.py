@@ -1,8 +1,7 @@
 """`schedule_run` and `report` — the two handlers that address something OUTSIDE this run.
 
-Split out of `interact.py` (F393), whose own docstring admitted they merely rode it: one is
-the ASK protocol, these two are a run reaching another routine's future (a one-shot fire) or
-another owner's queue (a report). They sit beside their renderer, `obs_admin`.
+A run reaching another routine's future (a one-shot fire) or another owner's queue (a
+report); `interact.py` is the ASK protocol. They sit beside their renderer, `obs_admin`.
 
 Neither asks the user anything, and neither writes config. `schedule_run` writes the daemon's
 request spool; `report` appends one row to the single append-only ledger. Both are best-effort
@@ -22,8 +21,7 @@ from . import runtree
 def _unknown_target(kind: str, target: str, home: Path,
                     valid: list[str] | None = None) -> dict:
     """The refusal for a target slug naming no routine — with the valid slugs and the close
-    matches, not a bare rejection: a run guessing a sibling's slug (the train-seat friction)
-    has to be able to correct the guess on its next turn. `valid` narrows the slugs offered
+    matches, so a run guessing a sibling's slug can correct it next turn. `valid` narrows those
     (a report offers only routines that would READ it); absent, every routine is valid.
     """
     slugs = valid if valid is not None else sorted(
@@ -38,22 +36,11 @@ def _target_cannot_read(kind: str, target: str, server, home: Path,
                         sender: str = "") -> dict | None:
     """The refusal for a target that exists but will never READ what is filed to it — or None.
 
-    A targeted report is delivered into `<home>/<target>/inbox` and read on that routine's next
-    SCHEDULED run. A routine that starts no run therefore accepts rows forever and reads none:
-    24 such reports were found open, the oldest six weeks (F614). Filing is where this is
-    catchable, because the sender still has the context to redirect it.
-
-    TWO different "off"s, and the refusal says WHICH, because they call for different moves:
-    `enabled: false` is the operator's switch — the routine may be paused for a day, so the row
-    may simply be early (one such routine had run two days before the count); `retired` is the
-    routine's own finish line reached, which means permanently done. The LAST RUN DATE is named
-    for the same reason: it is what tells the sender whether this is a pause or an ending.
-
-    The row is never dropped — nothing is written at all, the observation comes back instead, and
-    the sender decides — helped by SUGGESTIONS (`recipients.suggest`): the routine that carries
-    the target's work as a task, then its lane-mates, store-sharers and tag-sharers, every one a
-    routine that would read it. Or triage (no `target`), which is always read. A target that is
-    off only because its routine.yaml could not be READ is let through (`recipients.reads`).
+    A targeted report is read on that routine's next SCHEDULED run, so one that starts no run
+    would read nothing (F614); filing is where the sender can still redirect it. The refusal
+    says WHICH "off" (`enabled: false` may be a pause, `retired` is permanent) and the last run
+    date, and offers SUGGESTIONS (`recipients.suggest`) — or triage, which is always read.
+    Nothing is written. A target off only because its routine.yaml could not be READ passes.
     """
     info = registry.info(server, home, target)
     if info is None or recipients.reads(info):
@@ -77,17 +64,14 @@ def handle_schedule_run(loop, action: dict) -> dict:
     """Arm or cancel a one-shot time trigger on a routine — the cross-routine setter the
     `scheduling` capability gates. The engine writes the request spool un-sandboxed (like
     write_util's library write); the daemon's OneShotManager fires the request once at
-    fire_at then CONSUMES it (auto-deactivate). Scope (a): any scheduling-holder may target
-    ANY routine; self-targeting (a run arming its own follow-up) is the common case.
+    fire_at then CONSUMES it. Any scheduling-holder may target ANY routine; self-targeting is
+    the common case.
     """
     ctx = loop.ctx
     target = str(action.get("target") or "")
     home = ctx.server.routines_home
-    # Self-target is ALWAYS allowed (the schema promises it) — including for a
-    # CONVERSATION, which lives outside routines_home: its spool entry is namespaced
-    # (`conv--<slug>`) so a same-named routine can never be mis-fired, and the daemon's
-    # OneShotManager resolves that namespace back to conversations_home (waking the
-    # conversation by RESUMING it — the "remind me in 3 days" flow).
+    # Self-target is ALWAYS allowed, including for a CONVERSATION (outside routines_home): its
+    # spool entry is namespaced `conv--<slug>` so a same-named routine is never mis-fired.
     spool_slug = target
     if target == ctx.routine.slug and not (home / target / "routine.yaml").is_file() \
             and (ctx.routine.dir / "routine.yaml").is_file():
@@ -108,8 +92,7 @@ def handle_schedule_run(loop, action: dict) -> dict:
     rec = schedule_once.arm(home, spool_slug, fire_at=fire_at,
                             reason=str(action.get("reason") or ""),
                             requested_by=ctx.run_id)
-    # D152 gap 5: also a `schedule`-triggered hook, so the stream can answer what will fire
-    # later. Best-effort — the spool is the source and arming must never fail on a diagnostic.
+    # also a `schedule`-triggered hook (D152); best-effort — the spool is the source
     scheduleproj.record_armed(home, rec, spool_slug)
     return {"kind": "schedule_run", "target": target, "armed": rec["id"],
             "fire_at": rec["fire_at"]}
@@ -118,12 +101,8 @@ def handle_schedule_run(loop, action: dict) -> dict:
 def _decision_question(report_id: str, title: str, detail: str, target: str) -> str:
     """The prose the OPERATOR reads on the card for a report-born decision (F621).
 
-    He gets the report's own words, and the two facts a card has to carry to be answerable
-    without opening anything: which report this is, and who acts on the answer. The detail
-    rides WHOLE — `reports.clip_detail` bounds the delivered message, where a run's prompt
-    budget is the scarce thing (D177), and neither the ledger row nor this card is under that
-    constraint. The page renders block markdown, which is what a report's evidence is written
-    in, and a question the operator must answer is the last place to cut the evidence.
+    The report's own words plus which report this is and who acts on the answer. The detail
+    rides WHOLE: only the delivered message is clipped for a run's prompt budget.
     """
     owner = (f"**{target}** owns the work and will be told what you decide"
              if target else "it is in triage — whoever picks it up will be told what you decide")
@@ -135,24 +114,14 @@ def handle_report(loop, action: dict) -> dict:
     """File a REPORT — the ungated channel every routine holds for work that is not its own
     task. Appends to <routines_home>/.control/reports.jsonl under an `R<n>` id.
 
-    UNADDRESSED (no `target`): the entry waits in the stream for self-audit's triage. Filing
-    it is best-effort like the health log — a failed write never aborts the reporting run,
-    whose real job is elsewhere; it just reports filed=False.
+    UNADDRESSED: waits for self-audit's triage; best-effort, a failed write reports
+    filed=False. ADDRESSED (`target`): ALSO delivered into that routine's inbox for its next
+    scheduled run — nothing is fired or woken. Self-targeting is refused (use `note` or
+    `memory_write`). Works at any depth.
 
-    ADDRESSED (`target`): the report is ALSO delivered into that routine's inbox, and its next
-    scheduled run reads it. Nothing is fired and nothing is woken — another routine's schedule
-    is its own.
-
-    Self-targeting is refused: a note to yourself is `note` or `memory_write`, and queueing
-    prose into your own next prompt is a loop with no reader in between. Works at any depth —
-    subruns report too, and the row carries the run that saw the problem.
-
-    Four things can REFUSE a report here, each returning an observation instead of filing:
-    an unknown or self target; a target that would never read it (switched off or retired —
-    with suggestions where to send it instead); `supersedes` naming a row that cannot be taken
-    over; and the
-    OPEN-THREAD CAP, which names the ids already open to this owner so the run has something
-    to fold into rather than just a count (docs/items.md § Reports).
+    Refusals come back as observations, never a filing: unknown/self target, a target that would
+    never read it, an unusable `supersedes`, a disposal of a row not delivered to this routine,
+    and the OPEN-THREAD CAP (which names the open ids to fold into; docs/items.md § Reports).
     """
     ctx = loop.ctx
     title = str(action.get("title") or "").strip()
@@ -160,15 +129,10 @@ def handle_report(loop, action: dict) -> dict:
     target = str(action.get("target") or "").strip()
     home = ctx.server.routines_home
     target_dir = None
-    # A RUN-TREE address (`parent`, `child:<label>`) is a hook to another run of this same run
-    # tree, not an item for a routine: it is delivered at that run's next turn boundary and
-    # gets no `R<n>`, because an item is owed an answer by a routine and both of these runs are
-    # gone in minutes (F695 as a case of D152 — engine/runtree.py says why).
+    # A RUN-TREE address (`parent`, `child:<label>`) is a hook within this run tree, delivered
+    # at that run's next turn boundary with no `R<n>` (engine/runtree.py says why).
     if runtree.is_runtree(target):
-        # The disposal fields travel WITH it (F859). They cannot act on a hook — there is no row
-        # — but this branch returns before the ledger is read, so dropping them here is what let
-        # a run write `answers: R123`, have its hook delivered, and believe a row was disposed
-        # of. `send` names them back instead of swallowing them.
+        # disposal fields travel WITH it so `send` names them back rather than swallowing them
         return runtree.send(loop, target=target, title=title, detail=detail,
                             disposal={f: action.get(f) for f in runtree.DISPOSAL_FIELDS})
     if target:
@@ -184,29 +148,18 @@ def handle_report(loop, action: dict) -> dict:
     answers = str(action.get("answers") or "").strip()
     wanted = [str(i).strip().upper() for i in (action.get("supersedes") or [])]
     settles = [str(i).strip().upper() for i in (action.get("settles") or []) if str(i).strip()]
-    # One read of the ledger answers both preconditions below — which rows this report may fold
-    # into itself, and which it may dispose of.
+    # one ledger read answers both preconditions below (what may be folded, and disposed of)
     rows = (reports.read_reports(reports.reports_path(home))
             if wanted or settles or answers else [])
     folded: list[str] = []
     if wanted:
         folded, unusable = report_threads.supersedable(rows, wanted)
         if unusable:
-            # Naming them beats folding what it can: a run told "3 of 5 taken over" has to
-            # work out which two it still owns, and that is the bookkeeping this field exists
-            # to remove. PER ID (R3364), because the three causes need three different moves
-            # and one shared reason named none of them: a FOLDED row's clause carries the live
-            # row of its thread, which is the only thing the caller could not have known before
-            # it filed — the precondition is invisible until the refusal. `supersedable` words
-            # them, where the verdict is reached, so the wording cannot drift from the test.
+            # all-or-nothing, worded PER ID by `supersedable` (a folded row names its live row)
             return {"kind": "report", "target": target, "supersedes": wanted,
                     "unusable": unusable}
-    # D182: `answers` and `settles` dispose of a row FOR THE ROUTINE IT WAS DELIVERED TO. The
-    # grammar was validated thoroughly and the relationship not at all, so any report naming a
-    # row retired it — its own sender's included: 492 rows left this ledger that way, 317 of
-    # them never routed to anyone, so they went with nobody having read them. Checked here,
-    # against the ledger, because the author is the one who can act on the refusal; the read
-    # model is untouched, so what was already disposed of stays settled.
+    # D182: `answers` and `settles` dispose of a row only FOR THE ROUTINE IT WAS DELIVERED TO;
+    # checked here so the author can act on the refusal
     if wanted_disposals := ([answers.upper()] if answers else []) + settles:
         _ok, elsewhere, unrouted = report_threads.disposable(rows, wanted_disposals,
                                                             replier=ctx.routine.slug)
@@ -229,17 +182,11 @@ def handle_report(loop, action: dict) -> dict:
                 "open_to_target": cap.open_ids, "oldest": cap.open_ids[0]}
     out = {"kind": "report", "title": title, "filed": filed is not None,
            "id": filed[1] if filed else ""}
-    # F660: the detail cap used to bite in silence, so a filer could not tell that the
-    # conclusion or the question it had just written was not in what it filed. The row and
-    # the delivery carry the marker; this is the half that reaches the run while it can
-    # still re-file the rest.
+    # tell the filer the detail cap bit, while it can still re-file the rest
     if filed and (dropped := reports.clip_detail(detail)[1]):
         out["detail_truncated"] = dropped
-    # F770: prose that says it closes a row, while no field disposes of it, closes nothing —
-    # and the sender reads its own words and is satisfied, while the recipient sees a live row
-    # it may not close. Said HERE and nowhere else, because this turn is the only moment the
-    # author can still add the field; it does not refuse, since the prose may be right and the
-    # id merely cited in a shape the check reads as a claim.
+    # prose claiming to close a row no field disposes of closes nothing; said now, while the
+    # author can still add the field — not a refusal, since the id may merely be cited
     if filed and (claimed := report_threads.undisposed_claims(
             title=title, detail=detail,
             disposed=(answers, *settles, *(filed[2] or ())))):
@@ -247,10 +194,7 @@ def handle_report(loop, action: dict) -> dict:
     if target:
         out["target"] = target
         out["delivery"] = "the target reads it on its next scheduled run"
-    # F621: options on a report declare it a DECISION FOR THE OPERATOR as well as work for
-    # its target, so the same call that routes the work leaves a record on his Decisions page.
-    # Only once the report really landed: a refused or unwritten report must not leave a card
-    # asking him about work nobody owns. The qid rides the observation so the filer can name it.
+    # options make it ALSO a decision for the operator — filed only once the report landed
     if filed and (picks := [str(o) for o in (action.get("options") or []) if str(o).strip()]):
         from . import interact
 
@@ -262,10 +206,7 @@ def handle_report(loop, action: dict) -> dict:
     if settles and filed:
         out["settles"] = settles
     if filed and (answers or settles or filed[2]):
-        # This run has now disposed of those threads — the pre-finish assist reads what is
-        # LEFT. `answers` ends one exchange, `settles` ends every row it names, a fold hands
-        # a row to the thread that carries it now — all three have to leave the open set
-        # or the assist keeps asking for work that is already done.
+        # answered, settled and folded rows leave the open set the pre-finish assist reads
         done = {str(i).strip().upper() for i in (answers, *settles, *filed[2])} - {""}
         ctx.reports_open = [r for r in ctx.reports_open if str(r).upper() not in done]
     return out

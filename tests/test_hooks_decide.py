@@ -1,14 +1,4 @@
-"""D152 step 7: the ledger read back AS hooks, and the first DECISION taken from the stream.
-
-Step 4's claim was "the hook is the source" — written first, the ledger derived. This step's
-claim is stronger and is what these tests pin: the derivation is INVERTIBLE (so the history
-that predates the stream can be carried into it exactly, not approximately), and one decision
-in the engine now answers from the stream instead of from the projection.
-
-The round-trip is tested over GENERATED rows here and over the LIVE ledger in
-`test_report_hooks_roundtrip_live` — the live one is the measurement that mattered: 5,016 rows,
-zero mismatches, which is why the backfill carries history rather than reconstructing it.
-"""
+"""D152 step 7: the ledger read back AS hooks, and the first DECISION taken from the stream."""
 
 from __future__ import annotations
 
@@ -107,19 +97,7 @@ def test_the_thread_cap_now_decides_from_the_hook_stream(tmp_path, monkeypatch):
 
 
 def test_folding_the_stream_is_what_makes_the_two_agree(tmp_path, monkeypatch):
-    """A thread DISPOSED OF by a lifecycle fact must read the same on both sides.
-
-    The regression this pins, measured on the live instance 2026-11-06: five
-    `hook_stream_diverged` events in one day across three sender/owner pairs, every one
-    spurious. `stream_rows` is the RAW projection — a filing row and each lifecycle fact as
-    separate rows — while `rows` is already folded, and `_is_open` reads `retracted` /
-    `superseded` keys that only the fold writes onto a filing row. So an unfolded comparison
-    counts every disposed-of row as still open: scheduler-builder -> self-audit read 19 open
-    threads on the stream against the ledger's 3.
-
-    Three filings where the third folds the first two is the live shape: the ledger holds one
-    open thread, and the stream must say so too.
-    """
+    """A thread DISPOSED OF by a lifecycle fact must read the same on both sides."""
     home = tmp_path / "routines"
     (home / ".control").mkdir(parents=True, exist_ok=True)
     seen: list[dict] = []
@@ -138,13 +116,6 @@ def test_folding_the_stream_is_what_makes_the_two_agree(tmp_path, monkeypatch):
 def test_a_divergence_acts_on_the_stream_and_files_the_event(tmp_path, monkeypatch):
     """When the two stores disagree about a thread, the STREAM's answer is acted on and
     `hook_stream_diverged` is filed.
-
-    **The direction reversed at step 9 and this test is where that is visible.** Until the read
-    moved, the ledger was what every surface served, so a cap refusing a filing the ledger did
-    not justify would have been a defect reaching a run's work — hence the stream was consulted
-    and the ledger's answer returned. Now `rows` IS the stream's answer: returning the
-    projection's would mean refusing on a count no surface shows. What is unchanged is that the
-    disagreement is never swallowed.
     """
     home = tmp_path / "routines"
     seen: list[dict] = []
@@ -160,10 +131,6 @@ def test_a_divergence_acts_on_the_stream_and_files_the_event(tmp_path, monkeypat
 def test_the_owed_reply_hold_agrees_with_the_ledger_over_the_stream(tmp_path, monkeypatch):
     """D152 step 8, the second decision on the stream: which handed-in reports a run still owes
     a reply to. The two stores must agree over a real filing-and-closure shape, with no event.
-
-    This is the first moved decision that reads rows OTHER routines wrote (step 7's cap reads
-    one sender's own filings), so it is the first use that depends on the backfill being
-    complete across the fleet rather than within a thread.
     """
     home = tmp_path / "routines"
     (home / ".control").mkdir(parents=True, exist_ok=True)
@@ -187,11 +154,6 @@ def test_an_owed_reply_divergence_acts_on_the_stream_and_files_the_event(tmp_pat
     """The hold is placed on the STREAM's answer since step 9 — it is the reading every report
     surface shows, so holding a finish on the projection's would ask a run for a reply against
     a count nobody can see.
-
-    R2086's lesson survives the reversal and is why the backfill and the mirror-era repair are
-    preconditions of this step, not optional extras: answering from a store MISSING history
-    asks a run again for a reply it already sent. The fix is that the store is complete, not
-    that the answer comes from the old file.
     """
     home = tmp_path / "routines"
     seen: list[dict] = []
@@ -209,11 +171,6 @@ def test_the_finish_hold_predicate_reads_the_stream(tmp_path, monkeypatch):
     """THE pin on step 8's decision actually moving — the counterpart of the filing-path pin
     below. `assist_predicates._unclosed_delivered_report` is what HOLDS a run's finish, and it
     must consult the stream rather than the ledger alone.
-
-    Its answer is deliberately unchanged, so the observable difference is the divergence event:
-    against code that consults only ONE store, nothing is filed here and this fails. The seam
-    substituted is the PROJECTION — since step 9 the stream is the served reading and the old
-    file is the cross-check, so emptying the projection is what makes the two disagree.
     """
     from types import SimpleNamespace
 
@@ -238,11 +195,6 @@ def test_the_finish_hold_predicate_reads_the_stream(tmp_path, monkeypatch):
 def test_the_live_filing_path_reads_the_stream(tmp_path, monkeypatch):
     """THE pin on the decision actually moving: `file_report` — the engine's write path — must
     consult the stream, not just the ledger.
-
-    The cap's ANSWER over agreeing stores is unchanged, so the observable difference is the
-    divergence event. With the decision read from one store alone, nothing is filed here and
-    this test fails against that code. The seam substituted is the PROJECTION, because since
-    step 9 that is the cross-check and the stream is what the cap acts on.
     """
     home = tmp_path / "routines"
     (home / ".control").mkdir(parents=True, exist_ok=True)
@@ -256,87 +208,8 @@ def test_the_live_filing_path_reads_the_stream(tmp_path, monkeypatch):
     assert seen[0]["stream"] == 1 and seen[0]["ledger"] == 0
 
 
-def _run_backfill(home: Path) -> dict:
-    from rsched.migrate_report_hooks import run_migration
-
-    class Stub:
-        routines_home = str(home)
-
-    return run_migration(Stub())
-
-
-def test_the_backfill_carries_pre_stream_history_in_timestamp_order(tmp_path):
-    """The point of the whole step: a thread opened before the stream existed is countable
-    from the stream afterwards. The rows merge by ts, because a later row about an id is the
-    later fact about it.
-    """
-    home = tmp_path / "routines"
-    control = home / ".control"
-    control.mkdir(parents=True)
-    # R1's filing, R2's filing to `b`, and R2's DELIVERY — a delivery does not settle a
-    # thread, so R2 is a thread opened in July and still open, which is exactly the history a
-    # stream that began in October cannot see.
-    history = [ROWS[0], ROWS[1], ROWS[4]]
-    (control / "reports.jsonl").write_text(
-        "".join(json.dumps(r) + "\n" for r in history), encoding="utf-8")
-    (control / "hooks.jsonl").write_text(
-        json.dumps({"id": "rem-x", "ts": "2026-10-19T05:11:16+02:00", "source": "reminder",
-                    "trigger": {}, "addressee": "", "payload": {}, "delivery": "",
-                    "disposition": "live", "origin": {}}) + "\n", encoding="utf-8")
-    record = _run_backfill(home)
-    assert record["carried"] == 3, record
-    stream = [json.loads(line) for line in
-              (control / "hooks.jsonl").read_text().splitlines() if line.strip()]
-    assert [r["ts"] for r in stream] == sorted(r["ts"] for r in stream), "not in ts order"
-    assert [r["id"] for r in stream if r["source"] == "report"] == ["R1", "R2", "R2"]
-    # and the carried history is now DECIDABLE: R2's July thread is countable from the stream,
-    # which is what the cap needs. Without the backfill the stream would say `none` here and
-    # the divergence event would fire on every filing.
-    assert open_threads_now(home, read_reports(reports_path(home)),
-                            routine="a", target="b") == ["R2"]
-
-
-def test_the_backfill_is_idempotent_and_records_itself(tmp_path):
-    home = tmp_path / "routines"
-    (home / ".control").mkdir(parents=True)
-    (home / ".control" / "reports.jsonl").write_text(
-        "".join(json.dumps(r) + "\n" for r in ROWS), encoding="utf-8")
-    first = _run_backfill(home)
-    assert first["carried"] == len(ROWS)
-    assert (home / ".control" / "migrations" / "report-hooks.json").is_file()
-    assert _run_backfill(home) == {}, "a second boot must do nothing"
-    rows = [line for line in
-            (home / ".control" / "hooks.jsonl").read_text().splitlines() if line.strip()]
-    assert len(rows) == len(ROWS), "the second run appended duplicates"
-
-
-def test_the_backfill_skips_rows_already_in_the_stream(tmp_path):
-    """Keyed by (id, event) — a report that was filed, delivered and superseded is three facts
-    and three hooks, so the id alone cannot be the key.
-    """
-    home = tmp_path / "routines"
-    control = home / ".control"
-    control.mkdir(parents=True)
-    rows = [ROWS[1], ROWS[4]]                       # R2's filing and R2's delivery
-    (control / "reports.jsonl").write_text(
-        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
-    (control / "hooks.jsonl").write_text(
-        json.dumps(hook_of_row(ROWS[1]).as_record()) + "\n", encoding="utf-8")
-    record = _run_backfill(home)
-    assert record["carried"] == 1 and record["already_present"] == 1
-    stream = [json.loads(line) for line in
-              (control / "hooks.jsonl").read_text().splitlines() if line.strip()]
-    assert [(r["id"], r["payload"].get("event", "")) for r in stream] == [
-        ("R2", ""), ("R2", "delivered")]
-
-
 def test_an_unreadable_store_never_breaks_the_cap(tmp_path, monkeypatch):
-    """A comparison between the two stores must not become a new way for a filing to fail.
-
-    The raising side is now the PROJECTION (the cross-check read, step 9): the cap acts on the
-    stream's answer, which the caller already holds, so an I/O failure on the old file costs
-    the comparison and nothing else.
-    """
+    """A comparison between the two stores must not become a new way for a filing to fail."""
     home = tmp_path / "routines"
 
     def boom(_home):

@@ -24,10 +24,8 @@ from .run_context import RunContext, resolve_action_path
 
 def _entry(ctx: RunContext, raw: str) -> Path:
     """The path an action NAMES, its final component left unresolved — the directory entry
-    itself, as `rm` and `mv` see it. delete and move act on entries: resolving the whole path
-    followed a symbolic link, so deleting a link deleted what it pointed to and moving one
-    moved its target away, each leaving the link dangling (the `is_symlink` branches below were
-    written for links and could never run). The parent is resolved and jailed like any path.
+    itself, as `rm` and `mv` see it, so a link is acted on rather than its target. The parent
+    is resolved and jailed like any path.
     """
     p = expand(raw)
     if p.name in ("", ".", ".."):
@@ -50,13 +48,10 @@ def _unseen_destruction(ctx: RunContext, resolved, what: str) -> str | None:
     """The grounding gate for delete and move-src: destroying a path outside the routine's
     own dir that this run has never read. The own dir is exempt (state cleanup is a
     routine's normal mode); elsewhere the model must have LOOKED at what it destroys — a
-    read_file of the path, which for a directory is its listing, for a PDF or Office document
-    its converted text (docread.py), and for any other binary or oversized file its size (the
-    refusal grounds too). A shell `ls` does not count: the
-    engine cannot see what a shell command showed, only what read_file returned. The gate
-    text names the two forms because a run that reads "read_file it first" about a season
-    pack once read_file'd a 1.5 GB .mkv to comply (2026-09-14). A symbolic link is exempt
-    too: removing or relocating one destroys nothing but the link.
+    read_file of the path (a directory's listing, a document's conversion, or for a binary or
+    oversized file the refusal itself — see `grounding`). A shell `ls` does not count: the
+    engine sees only what read_file returned. A symbolic link is exempt: removing or
+    relocating one destroys nothing but the link.
     """
     if (resolved.is_symlink() or resolved.is_relative_to(_own_dir(ctx))
             or str(resolved) in ctx.seen_paths):

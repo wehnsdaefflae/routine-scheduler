@@ -1,19 +1,4 @@
-"""The file-action seals hold on every routine dir a run can REACH, compared resolved.
-
-Two ways the seals in `engine/fileops.py` used to open, both because they were anchored on
-`ctx.routine.dir` as given:
-
-- A CHILD run's own dir is its workspace, `runs/<ts>/sub/<n>/`, but its roots extend the
-  parent's tree (F185). Every seal was anchored on the workspace, so a sub-workflow — which
-  holds no capability at all — could rewrite the routine's recipe, its `.memory/` index and
-  its finish line, write the run's `control.json` (whose `config_change` the parent adopts
-  live: grants, budgets) and `status.json`, and read earlier runs despite having no run
-  history.
-- `resolve_rel` hands back a RESOLVED path, but the dir it was compared with was not. Behind a
-  symlinked routines home (or a relative CLI dir path) nothing matched: `runs/` was writable,
-  `.memory/` and the recipe were guarded only by the read-before-overwrite rule, and the
-  stage tracker never fired.
-"""
+"""The file-action seals hold on every routine dir a run can REACH, compared resolved."""
 
 from __future__ import annotations
 

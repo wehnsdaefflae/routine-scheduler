@@ -1,11 +1,4 @@
-"""The dashboard's activity feed (components/activityfeed.js) against the real console.
-
-It polls while a run is active, so what it asks the daemon for — and how many of those asks
-can pile up — is the whole of its cost. These tests pin that it reads the open-decisions count
-from the shared questions store instead of fetching it, counts "open" the way the badge does,
-keeps one load in flight at a time, and renders a run's transcript once however a row's
-expand toggle is clicked.
-"""
+"""The dashboard's activity feed (components/activityfeed.js) against the real console."""
 
 from __future__ import annotations
 

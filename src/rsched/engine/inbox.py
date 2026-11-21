@@ -5,36 +5,21 @@ Two filename shapes live in <routine>/inbox/, written atomically and never by ha
   msg-<stem>.json   {"text", "ts", "via", …}   — freight for a run, written by `file_message`
   answer-<qid>.json {"qid", "text", "source"}  — a question's answer, matched by qid
 
-This module owns the FIRST shape; `file_message` below is its one writer. The second shape's
-lifecycle lives in `engine/inbox_questions` and its one WRITER in `rsched/answerfile` (D143) —
-a separate seam, because an answer carries no `via`, has no delivery policy and must never buy
-a run. `tests/test_policy_inbox_writer.py` allow-lists exactly those two writers, so a third
-direct write into an `inbox/` fails the suite naming the seam to call. inbox_questions was
-split out (D143, 2026-09-24) when this file reached 530 lines against the repo's ~350 budget — two
-record shapes sharing a directory and a consume-by-rename discipline, and nothing else. Every
-public question name is re-exported at the foot of this module, so `inbox.file_question(...)`
-still resolves and no caller moved.
-
-`file_message` is the ONE writer of the `msg-*` shape. Every channel goes through it — the
-web layer, a sibling routine's report delivery, a daemon manager's trigger or one-shot text —
-because the alternative is what the codebase had: seven `atomic_write_json(... / "inbox" /
-f"msg-…")` call sites, each choosing its own `ts` spelling and its own uniqueness rule, and
-one of them a character-for-character copy of the line below. A channel that needs a
-DETERMINISTIC filename (so it can read its own pending delivery back, or replace it instead
-of queuing a second) passes `name=`; extra keys ride in `extra=`.
+This module owns the FIRST shape; `file_message` below is its one writer, so every channel
+shares one `ts` spelling and one uniqueness rule. The second shape's lifecycle lives in
+`engine/inbox_questions` and its one WRITER in `rsched/answerfile` (D143) — a separate seam,
+because an answer carries no `via`, has no delivery policy and must never buy a run.
+`tests/test_policy_inbox_writer.py` allow-lists exactly those two writers. Every public question
+name is re-exported at the foot of this module, so `inbox.file_question(...)` resolves.
 
 A fresh run's boot drains every message; live turn boundaries and a resumed leg's boot deliver
 only the LIVE_MESSAGE_VIAS set (the user talking to this run, plus the results of work this run
-started — a background task's, a branch's, a one-shot it armed — user order 2026-08-20).
-Every scanner selects `msg-*.json` — the stem the one writer produces — never "any file that
-is not answer-*", which also matched `atomic_write`'s in-flight `.msg-….json.XXXX.tmp`: on a
-fresh boot that temp file reached the unparseable branch below, was logged "not a message
-file" and RENAMED into consumed/, so the writer's `replace()` failed and the message was lost.
+started). Every scanner selects `msg-*.json` — never "any file that is not answer-*", which
+would also match `atomic_write`'s in-flight `.msg-….json.XXXX.tmp` and consume it.
 
 Consumed files move to <run_dir>/consumed/ for the audit trail. The drain and an in-place
-`rewrite_message` hold one lock (`inbox/.lock`): a rewrite is a read-check-write, and a drain
-renaming the file away between the check and the write let the write RE-CREATE it — the edited
-text then reached the run twice, once as consumed and once as a fresh message.
+`rewrite_message` hold one lock (`inbox/.lock`), so a drain cannot land between a rewrite's
+check and its write and let the write re-create a consumed message.
 """
 
 from __future__ import annotations
@@ -47,9 +32,8 @@ from pathlib import Path
 from ..ids import now_iso
 from ..paths import atomic_write_json, file_lock, read_json
 
-# The delivery channels and their policy live in `channels.py` (lifted there when this module
-# hit its size ceiling): `via` is the policy switch three subsystems read, not part of the
-# `msg-*` file shape this module owns. Re-exported so every `inbox.VIAS` caller still resolves.
+# The delivery channels and their policy live in `channels.py`; re-exported so every
+# `inbox.VIAS` caller resolves.
 from .channels import (
     LIVE_MESSAGE_VIAS,
     MACHINE_VIAS,
@@ -140,29 +124,19 @@ def _waiting(routine_dir: Path, *, vias: tuple[str, ...] | None,
              include_closures: bool, on_unparseable: bool):
     """The unconsumed messages a caller counts as "something is waiting", one at a time.
 
-    Five callers asked this question with five hand-rolled loops, and the differences between
-    them were real but undocumented — so the next message class to need an exemption would be
-    taught to one loop and not the other four. The differences are these three, and nothing
-    else:
+    Every "is anything waiting" caller asks here; they differ only on three axes:
 
     - `vias` — the delivery channels that count. None counts every channel; a live leg passes
       LIVE_MESSAGE_VIAS, the reap USER_MESSAGE_VIAS.
     - `include_closures` — whether a report that only CLOSES a thread counts. The report
-      trigger says no: a closure is the end of work, not work, and firing a run for one is how
-      a fleet of routines answering each other chains into runs nobody asked for.
-    - `on_unparseable` — what an unreadable or unrecognised file counts AS, and the axis that
-      cannot be collapsed. The trigger manager is fail-OPEN (anything it cannot read WAKES a
-      run: the cost of a spurious run is a run, the cost of a missed one is silence); every
-      live-run predicate is fail-CLOSED, mirroring `drain_messages` exactly, because counting
-      freight the drain will never consume makes a wait-yield or a finish-deferral spin
-      forever on it.
+      trigger says no: a closure is the end of work, and firing runs for closures chains.
+    - `on_unparseable` — what an unreadable file counts AS. The trigger manager and run gate
+      are fail-OPEN (a spurious run costs a run, a missed one is silence); every live-run
+      predicate is fail-CLOSED, mirroring `drain_messages`, because counting freight the drain
+      never consumes makes a wait-yield or finish-deferral spin forever.
 
-    Every one of them now asks here — the engine's wait/finish/loop-end checks, the reap, the
-    detached delivery, the run gate (fail-open, closures counted) and the report trigger with
-    the Triggers card's count (fail-open, closures not counted).
-
-    `answer-*` files are never counted here by anyone. They have their own matching pass
-    (`collect_deferred_answers`), and an answer is the one thing that must not buy a run.
+    `answer-*` files are never counted here: they have their own pass
+    (`collect_deferred_answers`), and an answer must not buy a run.
     """
     inbox = routine_dir / "inbox"
     if not inbox.is_dir():
@@ -209,21 +183,12 @@ def queued_freight(routine_dir: Path, *, exclude_vias: tuple[str, ...]) -> list[
     """What is WAITING in this routine's inbox that the current leg may not consume — one
     line per file, consuming nothing.
 
-    A leg that is not a fresh boot drains only `LIVE_MESSAGE_VIAS` (D92/D93: an audit
-    decision answer, a sibling's report delivery, a routine-page queued message is addressed
-    to the routine's NEXT FRESH run, and a follow-up leg draining it wholesale silently ate
-    answers meant for that night's run). That exclusion is right and stays. What was missing
-    is that the leg was not TOLD: on 2026-09-21 a decision was answered at 16:01, the run
-    finished at 16:02, and three continuation legs later the operator asked what that decision
-    meant — the run explained it as still OPEN, with a recommendation, because nothing in its
-    context said an answer was sitting in `inbox/` it was not allowed to read. "did you lose my
-    answer again?!"
-
-    So this is the read half of the same rule: the freight is named, never delivered. The
-    caller renders it as a digest section (boot composes AFTER the drain, so a fresh run —
-    which drains everything — sees nothing here and a resumed leg sees exactly what it may
-    not take). `text` is the first line only: enough to recognise, not enough to act on
-    without reading the file, which is the point — the run is told to go and look.
+    A leg that is not a fresh boot drains only `LIVE_MESSAGE_VIAS` (D92/D93): other freight is
+    addressed to the routine's NEXT FRESH run. This is the read half of that rule — the leg is
+    TOLD what waits, never handed it, so it does not treat an answered question as still open.
+    The caller renders it as a digest section (boot composes AFTER the drain, so a fresh run
+    sees nothing here). `text` is the first line only: enough to recognise, not to act on —
+    the run is told to go and look.
     """
     inbox = routine_dir / "inbox"
     if not inbox.is_dir():
@@ -236,9 +201,7 @@ def queued_freight(routine_dir: Path, *, exclude_vias: tuple[str, ...]) -> list[
         via = str(obj.get("via") or "")
         if via in exclude_vias:
             continue
-        # `next(…, "")`, not `[0]`: a whitespace-only text has no first line, and every other
-        # scanner here reads such a file as a message — an IndexError would take down the
-        # boot of the very leg this digest is composed for
+        # `next(…, "")`, not `[0]`: a whitespace-only text has no first line
         out.append({"file": path.name, "via": via, "ts": str(obj.get("ts") or ""),
                     "text": next(iter(str(obj["text"]).strip().splitlines()), ""),
                     **({"report": str(obj["report"]), "from": str(obj.get("from") or "")}
@@ -257,19 +220,13 @@ def file_message(routine_dir: Path, text: str, *, source: str = "",
     unknown one rather than filing freight on a policy nobody chose.
 
     `extra` is merged into the record for the keys ONE channel adds on top of that shape — a
-    conversation message's `attachments` rels and `command` flag (and, re-sent by the refusal
-    flag, its `refusal_flag`), a report delivery's `report`/`from`/`closes`, the audit
-    editor's structured feedback fields — so such a caller still files through this writer
-    instead of hand-rolling the filename beside it, which is how the unique-suffix rule and
-    the `ts` spelling start differing per endpoint.
+    conversation message's `attachments`/`command`/`refusal_flag`, a report delivery's
+    `report`/`from`/`closes`, the audit editor's feedback fields.
 
-    `name` is the message's STEM without the `msg-` prefix, for the channels whose filename
-    is a KEY rather than a timestamp: a report delivery is `msg-rep-<id>` so the sender can
-    see whether its own delivery is still queued and retract it, a background result is
-    `msg-bg-<task>` so a re-delivery replaces the pending one instead of queuing a second.
-    Those are idempotency keys and must stay deterministic; the default is the unique
-    `msg-<ts>-<rand>` form, because two submissions in one second must not clobber each
-    other (`now_iso()` is second-resolution).
+    `name` is the message's STEM without the `msg-` prefix, for channels whose filename is an
+    idempotency KEY: a report delivery is `msg-rep-<id>` (the sender can retract it while
+    queued), a background result `msg-bg-<task>` (a re-delivery replaces the pending one). The
+    default is the unique `msg-<ts>-<rand>` form, because `now_iso()` is second-resolution.
     """
     import uuid
 
@@ -292,10 +249,8 @@ def rewrite_message(path: Path, edit: Callable[[dict], dict]) -> dict:
     holds — and return what was written. `edit` maps the record as it is NOW to its new form.
 
     Raises LookupError once a drain has taken the file. The check and the write sit under the
-    drain's own lock (`LOCK_NAME`), because the write is an `atomic_write` — a rename that
-    CREATES the path when it is missing: a drain landing between a caller's existence check
-    and its write resurrected the message it had just consumed, and the edited text reached
-    the run twice. Withdrawing needs no such seam: `unlink` of a consumed file fails on its own.
+    drain's own lock (`LOCK_NAME`), because `atomic_write` CREATES a missing path and would
+    resurrect a just-consumed message. Withdrawing needs no lock: `unlink` fails on its own.
     """
     with file_lock(path.parent / LOCK_NAME):
         prev = read_json(path)
@@ -307,10 +262,8 @@ def rewrite_message(path: Path, edit: Callable[[dict], dict]) -> dict:
 
 
 # ---- the question half ------------------------------------------------------------------
-# Questions live in `engine/inbox_questions` (D143, 2026-09-24): same directory, same
-# consume-by-rename discipline, a different record shape. They are re-exported HERE because
-# every caller reaches them as `inbox.<name>` — the split is an internal seam and moved
-# nobody. The import sits at the FOOT of the module, after `_consume` is defined, because
+# Questions live in `engine/inbox_questions` (D143), re-exported here because callers reach
+# them as `inbox.<name>`. The import sits at the FOOT, after `_consume` is defined, because
 # inbox_questions imports it from here.
 from .inbox_questions import (  # noqa: E402 — re-export at the foot; see the comment above
     answered_questions,

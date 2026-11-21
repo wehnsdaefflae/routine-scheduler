@@ -1,9 +1,8 @@
 """Which routine dirs a run can REACH — its own, and for a child run every dir up its chain.
 
 A child run's own dir is a workspace under `runs/<ts>/sub/<n>/`, but its roots extend the
-parent's tree (F185), so anything anchored on `ctx.routine.dir` alone is anchored on the
-workspace: the file seals sealed nothing a child could actually write until they asked here
-(`fileops`), and a child could not find the routine's own `scripts/` (`executor`).
+parent's tree, so file seals (`fileops`) and script lookup (`executor`) anchor here, never on
+`ctx.routine.dir` alone.
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ def _is_workspace(d: Path) -> bool:
 def routine_dirs(ctx: RunContext) -> list[Path]:
     """Every routine dir this run's file actions can reach, RESOLVED, own dir first: for a
     top-level run its own dir alone; for a CHILD its workspace, each ancestor child's
-    workspace (the roots chain down to grandchildren, F185), and last the ROUTINE's own dir.
+    workspace, and last the ROUTINE's own dir.
     Each holds engine- and operator-owned paths a run must leave alone.
     """
     own = ctx.routine.dir.resolve()

@@ -24,17 +24,15 @@ projection. The event makes a drift findable while both stores are still written
 
 hook_stream_unreadable: the report read found NO report rows in the hook stream and fell back
 to `reports.jsonl` (`hooks/reportread`, D152 step 9), `rows` how many reports the projection
-holds. Either the stream was lost — restore it, or rebuild it from the ledger through
-`migrate_report_hooks` — or this is a fresh instance. A standing condition, so one row per
-window rather than one per read.
+holds. Either the stream was lost — restore it from a backup — or this is a fresh instance.
+A standing condition, so one row per window rather than one per read.
 
 reminder_stream_diverged: the reminder read found the hook stream implies FEWER reminders than
 `state/reminders.json` holds for that routine, and served the store (`hooks/reminderread`, D152
 step 4): `missing`/`served`/`from_stream` are the counts, `detail` names the ids. Unlike the
 report case the STORE's answer is used, because a lost definition changes what HOLDS a run — a
-reminder that vanished would stop interrupting the action it was written for. Repair with
-`migrate_premirror_reminders` / `migrate_store_wins` and the comparator
-(`hooks/reminderproj.drift`), which must read empty.
+reminder that vanished would stop interrupting the action it was written for. The comparator
+(`hooks/reminderproj.drift`) must read empty.
 
 reminder_stream_unreadable: the reminder read found the hook stream implies NO reminder at all
 for that routine and served `state/reminders.json` (`hooks/reminderread`), `served` how many the

@@ -1,8 +1,4 @@
-"""F896: concurrency, bounds, row fidelity and failures of the serve-time row scheduler.
-
-Events/barriers prove simultaneous work; timeouts only keep a broken implementation from
-hanging the suite. No latency or sleep-only assertion stands in for concurrency.
-"""
+"""F896: concurrency, bounds, row fidelity and failures of the serve-time row scheduler."""
 
 from __future__ import annotations
 

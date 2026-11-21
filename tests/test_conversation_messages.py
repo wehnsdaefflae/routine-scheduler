@@ -1,21 +1,4 @@
-"""A queued message in a CONVERSATION can be seen, revised and withdrawn (D139).
-
-The operator's ask: "when i inject a message into a conversation or routine run, i wanna see
-that message and be able to delete / revise it until it is consumed by the model."
-
-Half of it already existed. A ROUTINE's inbox has the full surface — list, edit in place
-(same file, so queue position holds), withdraw — each valid right up until a run drains the
-file. A CONVERSATION had only POST: no list, no edit, no withdraw, and the chat's optimistic
-echo bubble carries no id, so there was nothing to address even if the verbs had existed.
-
-The window is not small. A message to an idle conversation waits for the wake; mid-run it
-waits for the next turn boundary — routinely minutes. The only remedy for a typo was a second
-message correcting the first, which costs the model a turn reading both.
-
-The principle is stated in the routine surface's own docstring and is surface-independent:
-"the inbox file is the delivery vehicle, and what a routine's next run gets told is the user's
-call right up until a run drains it". Consumed stays immutable — the transcript owns it then.
-"""
+"""A queued message in a CONVERSATION can be seen, revised and withdrawn (D139)."""
 
 from __future__ import annotations
 

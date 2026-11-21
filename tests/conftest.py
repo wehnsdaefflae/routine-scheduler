@@ -43,13 +43,7 @@ pytest.register_assert_rewrite("helpers", "ui.helpers")
 
 
 def _static_is_dirty() -> bool:
-    """Does the working tree carry an uncommitted change under `static/`?
-
-    Cheap, and it is the one signal that turns "run the browser tests when necessary" from a
-    thing to remember into a thing the run says out loud. Any failure — no git, not a
-    checkout, git too slow — answers False: this is a reminder, and a reminder that breaks a
-    test run is worse than the drift it watches for.
-    """
+    """Does the working tree carry an uncommitted change under `static/`?"""
     import subprocess
 
     try:
@@ -62,19 +56,7 @@ def _static_is_dirty() -> bool:
 
 
 def pytest_terminal_summary(terminalreporter) -> None:
-    """Name the safety net that did not run.
-
-    The browser suite is what lets the frontend be reworked boldly, so deselecting it by
-    default trades that away for a two-minute inner loop. The trade is sound only while the
-    absence is LOUD — a suite silently not running reads exactly like a suite passing, which
-    is how the console shipped a stray `null`, a dock left in the page flow and a
-    table-of-contents nobody could see.
-
-    Keyed on the MARKER EXPRESSION rather than on a deselected count, because the count is
-    not knowable here: `pytest_deselected` fires inside each xdist worker while this runs in
-    the controller, so a count collected that way is right under `-n0` and silently empty on
-    every parallel run — the default.
-    """
+    """Name the safety net that did not run."""
     expr = getattr(terminalreporter.config.option, "markexpr", "") or ""
     if "not ui" not in expr.replace("  ", " "):
         return
@@ -107,11 +89,7 @@ PINNED_PYTHON = (Path(__file__).resolve().parents[1] / ".python-version").read_t
 
 
 def _refuse_a_foreign_interpreter() -> None:
-    """A run on another minor version is no evidence about the engine, so it does not start.
-
-    The host venv once ran 3.14 while the engine ran 3.12: three browser tests failed only
-    there, and every host run tested an interpreter production does not use.
-    """
+    """A run on another minor version is no evidence about the engine, so it does not start."""
     running = f"{sys.version_info.major}.{sys.version_info.minor}"
     if running != PINNED_PYTHON:
         pytest.exit(f"the tests run on Python {running}, the engine on {PINNED_PYTHON} "
@@ -120,25 +98,7 @@ def _refuse_a_foreign_interpreter() -> None:
 
 
 def pytest_configure(config) -> None:
-    """Distribute by GROUP whenever the browser tests are in the selection.
-
-    The browser suite shares one headful Chrome (tests/ui/conftest.py marks the directory as a
-    single `xdist_group`), and `loadgroup` is what makes a group mean one worker. Measured on
-    the release gate's own ledger: ~530 serial browser-test executions produced 3 reruns, while
-    every 3-worker invocation produced dozens and the full 3-worker browser gate timed out at
-    1500 s with 38 reruns and 6 reds — five of which passed on a serial re-run.
-
-    The fast suite is untouched: the default `-m "not ui"` selection keeps `worksteal`, which
-    is the scheduler its ~2 150 short tests were measured on. Under `-m ""` the browser group
-    is the largest work unit, so `--loadscope-reorder` (xdist's default) dispatches it first
-    and the release gate costs max(fast, browser) rather than their sum.
-
-    Both halves of xdist have to be told, because a worker RE-PARSES the command line instead
-    of inheriting the controller's options (workermanage sends an empty option dict): the
-    controller needs `dist` for the scheduler that reads the group, the worker needs
-    `loadgroup` for the hook that writes the group into the nodeid. Setting only the
-    controller's leaves every nodeid unsuffixed and the grouping is silently a no-op.
-    """
+    """Distribute by GROUP whenever the browser tests are in the selection."""
     _refuse_a_foreign_interpreter()
     markexpr = (getattr(config.option, "markexpr", "") or "").replace("  ", " ")
     if memgate.should_wait(config):          # the controller waits; workers and stubs do not
@@ -161,18 +121,7 @@ def _hermetic_home(tmp_path, monkeypatch):
     for 'aborted', 'testr', 'wubad', ...) into the LIVE health-events.jsonl. Redirect all
     "~" expansion in rsched.config (field defaults + HomePath validation, both of which
     resolve `expand` at call time) into this test's tmp dir.
-
-    The CONFIG DIRECTORY is redirected too, through the one variable `paths.config_file`
-    reads: beside config.yaml live both secret stores, the OAuth connections, the push keys
-    and the machine mounts, and assertions must not vary with whatever the host's real stores
-    hold (a conversation-create test read the live connections.json on every host that had
-    one). An environment variable rather than a patch, because it also reaches every
-    subprocess a test spawns — a gate's preparation child inherits no monkeypatch. A test
-    that needs its own config dir sets RSCHED_CONFIG after this and wins.
-
-    Two homes follow neither the config nor the patched `expand`, so each gets its own
-    variable (set one after this and it wins): the docs tree mounted at /docs, and the XDG
-    state dir, whose snapshot resolves via `Path.home()` (F684, test_state_home_fence.py)."""
+    """
     from rsched import paths as _paths
     fake_home = tmp_path / "hermetic-home"
     real = _paths.expand

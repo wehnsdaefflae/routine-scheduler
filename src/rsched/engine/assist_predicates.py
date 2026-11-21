@@ -4,14 +4,12 @@ A library document declares a check by NAME; the implementation lives here, beca
 prose in a git-synced multi-writer directory and must never be able to ship code.
 
 Every predicate is a pure question about the SITUATION — the action just emitted, the
-observation just returned, what this run has done so far — and never about the model's
-reasoning, which is not in the trace and is what makes compliance-checking impossible in the
-first place (see `rsched/assists.py`). Each declares the MOMENT it answers at, so the linter
-can refuse a rule that asks a pre-finish question at an observation.
+observation just returned, what this run has done so far — never about the model's reasoning,
+which is not in the trace. Each declares the MOMENT it answers at, so the linter can refuse a
+rule that asks a pre-finish question at an observation.
 
-Precision is the whole budget here. A line surfaced at the wrong moment is worse than no line
-at all: the run trusts a fired assist to be relevant, and a layer that cries wolf is ignored
-exactly when it is right. Prefer a predicate that misses to one that guesses.
+Precision is the whole budget: a line surfaced at the wrong moment is worse than none. Prefer
+a predicate that misses to one that guesses.
 """
 
 from __future__ import annotations
@@ -64,14 +62,10 @@ def failure_key(action: dict) -> str:
 def _repeated_failure(s: Situation) -> bool:
     """The same call has now failed twice in this run.
 
-    fix-the-cause's moment. The first failure is information and the run reads it; the
-    SECOND of the same call is where a run either changes route or starts engineering around
-    a wall — and it was the moment the old first-failure reminder missed: it fired 472 times
-    for an identical retry that happened after 0.3% of failures. `loop.failures` is tallied
-    through the same `exitgate.failure_tally_key` seam this asks, so the tally and the
-    predicate can never disagree about whether a call failed: a DECLARED informational exit
-    (F711) is not a failure on either side, and this asks only whether the count for this
-    call has just reached two.
+    fix-the-cause's moment: the SECOND failure of the same call is where a run either changes
+    route or starts engineering around a wall. `loop.failures` is tallied through the same
+    `exitgate.failure_tally_key` seam this asks, so the two can never disagree about whether a
+    call failed (a DECLARED informational exit is not a failure on either side).
     """
     from .exitgate import failure_tally_key
 
@@ -85,12 +79,10 @@ def _capability_denied(s: Situation) -> bool:
     """A permission refused this run something it wanted; the run moved on without
     asking for it.
 
-    ask-policy's moment. A refusal either happens at the validation seam — the action never
-    runs, the retry cycle corrects it (`ctx.last_denial_turn` marks the turn it cost) — or
-    comes back as the observation itself, as an fs or secret gate does. Both end in the ONE
-    wording `GrantPolicy.request_route` renders for an undecided entity, which is what makes
-    the observation half checkable without guessing. A run whose very next action files the
-    request has already done what the line says, so it is left alone.
+    ask-policy's moment. A refusal happens at the validation seam (`ctx.last_denial_turn`) or
+    comes back as the observation (an fs or secret gate), the latter carrying the ONE wording
+    `GrantPolicy.request_route` renders. A run whose next action files the request is left
+    alone.
     """
     from ..grantpolicy import REQUEST_ROUTE_MARK
 
@@ -106,11 +98,8 @@ def _capability_denied(s: Situation) -> bool:
 def _user_corrected(s: Situation) -> bool:
     """A user message reached this run since the last boundary.
 
-    fix-the-cause's moment: an intervention has just landed; the question the rule asks
-    — what standing preference does this correction imply? — is answerable now and stale
-    later.
-    `ctx.user_replies` counts the user's own utterances (a delivered report is a routine's
-    message and does not count), so this is the arrival edge without new bookkeeping.
+    fix-the-cause's moment: what standing preference a correction implies is answerable now
+    and stale later. `ctx.user_replies` counts only the user's own utterances.
     """
     seen = getattr(s.loop, "assist_user_replies", 0)
     return int(getattr(s.ctx, "user_replies", 0) or 0) > int(seen or 0)
@@ -119,9 +108,8 @@ def _user_corrected(s: Situation) -> bool:
 def _file_writes(s: Situation) -> list[str]:
     """The paths this run wrote or edited, from `turn_records`.
 
-    `turn_records` is the run history that SURVIVES compaction — the message list does not,
-    so a predicate that greps scrollback silently stops working on exactly the long runs that
-    need it most. A `brief` is the action's identifying field, whole (`compaction.turn_record`).
+    `turn_records` SURVIVES compaction (the message list does not); a `brief` is the action's
+    identifying field, whole (`compaction.turn_record`).
     """
     return [str(r.get("brief") or "")
             for r in getattr(s.loop, "turn_records", []) or []
@@ -131,21 +119,15 @@ def _file_writes(s: Situation) -> list[str]:
 def _uncheckpointed_repo_write(s: Situation) -> bool:
     """This action is about to edit a file inside a git repo the engine does not version.
 
-    git-checkpoint's moment, and the one the design note reserves the HOLD rung for: the cost
-    of skipping is irreversible in a way a reminder afterwards cannot undo. The engine
-    autocommits the routine's OWN directory at run end, so that tree always has an undo point;
-    a project repo the routine was granted a write root into has none unless the run makes one.
+    git-checkpoint's moment, a HOLD because skipping is irreversible. The engine autocommits
+    the routine's OWN directory at run end; a granted project repo has no undo point unless
+    the run makes one. Fires on the FIRST such write only (one fire per run), so no checkpoint
+    commit has to be detected.
 
-    Fires on the FIRST such write only — the one-fire-per-run rule is what makes "no checkpoint
-    yet" true without having to detect a checkpoint commit, which happens inside a util or a
-    shell command where the engine sees a command string and an exit code, nothing more.
-
-    A repo found CLEAN is an undo point for the rest of the run, so it is remembered
-    (`loop.assist_undo_points`) and never asked about again: HEAD restores what the run found.
-    Asked afresh, the run's own first edit read as uncommitted work and its second edit into
-    the same clean repo was held — and every edit paid a `git status` until one was. "The rest
-    of the run" spans its legs: the finding is named on this write's observation
-    (`assist.recorded`), which a resumed leg rebuilds the set from (engine/guardscope.py).
+    A repo found CLEAN is an undo point for the rest of the run, remembered in
+    `loop.assist_undo_points` and never asked about again. The finding is named on the
+    write's observation (`assist.recorded`), from which a resumed leg rebuilds the set
+    (engine/guardscope.py).
     """
     action = s.action or {}
     if action.get("kind") not in ("write_file", "edit_file"):
@@ -173,11 +155,8 @@ def _uncheckpointed_repo_write(s: Situation) -> bool:
 
 def _dirty(repo) -> bool:
     """Does this working tree hold changes its HEAD cannot restore? A clean tree IS an undo
-    point — 54 of the old hold's 102 fires were repos clean at HEAD, each overridden, so the
-    run had learned to click past the one hold that guards an irreversible write. A tree git
-    cannot read is treated as dirty: this is the hold that must not miss. It asks through
-    `libgit.git`, whose reads never take the index lock — this status runs in the operator's
-    own project repos, where a lock left behind would stop the operator's next commit.
+    point. A tree git cannot read is treated as dirty: this hold must not miss. Asks through
+    `libgit.git`, whose reads never take the index lock (these are the operator's repos).
     """
     import subprocess
 
@@ -193,10 +172,8 @@ def _dirty(repo) -> bool:
 def _asks_piling_up(s: Situation) -> bool:
     """This run has thrown several decisions over the wall without answers coming back.
 
-    ask-policy's moment. `ctx.asks_deferred` is the engine's own churn telemetry — a deferred
-    ask is a decision the run could not make and did not wait for — so a run accumulating them
-    is the exact shape the rule is about: exhaust your own reach first, then defer a JUDGMENT,
-    not a lookup.
+    ask-policy's moment: `ctx.asks_deferred` counts decisions the run could not make and did
+    not wait for.
     """
     return int(getattr(s.ctx, "asks_deferred", 0) or 0) >= _ASK_PILEUP
 
@@ -204,24 +181,12 @@ def _asks_piling_up(s: Situation) -> bool:
 def _unclosed_delivered_report(s: Situation) -> bool:
     """This run was handed work by another routine and is ending without answering it.
 
-    problem-routing's receiving half, and D131's moment (operator 2026-09-14: closing the
-    thread is part of SHIPPING the fix, not of the next audit's bookkeeping). The rule already
-    says it — "a hand-off nobody replied to is not settled, it is lost" — and the ledger
-    measured what saying it was worth: F486 found four COMPLETED fixes sitting as the oldest
-    open rows for eleven days, because a finish summary is not a closure.
+    problem-routing's receiving half (D131): closing the thread is part of shipping the fix,
+    and the finish is the last moment the run that did the work can do it.
 
-    `ctx.reports_open` is the engine's own bookkeeping, not a scan: the drain records what it
-    delivered and the report handler removes each id an `answers` closes. So this fires exactly
-    when the run still owes a reply, and never when it has already sent one. A closure
-    (`closes: true`) is never owed a reply and never enters the list.
-
-    The finish is the only moment this can be said at — after it, the run that did the work is
-    gone and the only thing left that could close the row is a person reading the ledger.
-
-    What is still owed is re-read from the LEDGER at the moment of asking (R2086): the run's
-    own list only learns of the replies it files through `report`, so a thread closed any
-    other way — settled by another routine or by the operator, folded into a later thread,
-    answered through a util — kept this assist asking a run for work it had already done.
+    `ctx.reports_open` is the engine's own bookkeeping (the drain adds, an `answers` reply
+    removes; a `closes: true` closure never enters). What is still owed is re-read from the
+    LEDGER at the moment of asking (R2086), since a thread can be closed other ways.
     """
     owed = list(getattr(s.ctx, "reports_open", None) or [])
     if not owed:
@@ -231,15 +196,9 @@ def _unclosed_delivered_report(s: Situation) -> bool:
 
     home = s.ctx.server.routines_home
     rows = reports.read_reports(reports.reports_path(home))
-    # Asked of the HOOK STREAM as well as the ledger (D152 step 8): the stream is the source
-    # every new report is written to and the ledger is computed from it, so a decision that
-    # only ever reads the projection leaves the claim untested. The ANSWER is still the
-    # ledger's while both stores are written — a hold placed on a stream-only reading would be
-    # this seam's defect reaching a run's finish — and a disagreement files
-    # `hook_stream_diverged` instead.
-    # `routine` only labels the health event, so it is read defensively like `reports_open`
-    # above: a raising predicate is INERT (the assist layer swallows it), which would disable
-    # this hold silently rather than loudly — the one failure mode worse than a wrong label.
+    # Also asked of the HOOK STREAM (D152); the ANSWER stays the ledger's, and a
+    # disagreement files `hook_stream_diverged`. `routine` only labels that event, so it is
+    # read defensively: a raising predicate is silently INERT.
     slug = str(getattr(getattr(s.ctx, "routine", None), "slug", "") or "")
     return bool(still_owed_now(home, rows, owed, routine=slug))
 
@@ -247,10 +206,8 @@ def _unclosed_delivered_report(s: Situation) -> bool:
 def _rendered_output_unseen(s: Situation) -> bool:
     """This run wrote something people LOOK at and never looked at it.
 
-    interface-craft's moment. A page, a stylesheet, a figure or a typeset document is judged
-    by how it renders; a run that only read its own source has judged none of it. The
-    look is any `view_image`, or a call to a util that renders or sees a page; the
-    deliverable is a file this run wrote or edited with a rendered extension.
+    interface-craft's moment. The look is any `view_image` or a call to a util that renders
+    or sees a page; the deliverable is a written/edited file with a rendered extension.
     """
     records = getattr(s.loop, "turn_records", []) or []
     looked = any(r.get("kind") == "view_image"
@@ -261,11 +218,9 @@ def _rendered_output_unseen(s: Situation) -> bool:
     return any(path.lower().endswith(_RENDERED) for path in _file_writes(s))
 
 
-#: How many unanswered deferred asks make a run's ask policy worth surfacing. Low, because the
-#: rule is about the FIRST reflex to defer rather than about a specific count.
+#: Unanswered deferred asks that make a run's ask policy worth surfacing; low on purpose.
 _ASK_PILEUP = 3
-#: The files a person judges by LOOKING at them rendered. The time-based ones (an animation, a
-#: screen recording) are judged by WATCHING, which is the same obligation: see tests/test_assists.
+#: Files a person judges by LOOKING at (or WATCHING) them rendered.
 _RENDERED = (".html", ".htm", ".css", ".js", ".svg", ".pdf", ".tex",
              ".mp4", ".webm", ".mov", ".gif", ".apng", ".webp")
 #: The utils through which a run sees a rendered page or image — or watches a moving one.
@@ -273,8 +228,7 @@ _LOOK_UTILS = frozenset({"browser-session", "vision", "video-extract"})
 
 
 #: name -> Predicate. The linter validates a rule's `predicate:` against these keys, so a
-#: name removed here turns every rule that declares it into a lint error rather than a
-#: silently dead assist.
+#: removed name is a lint error rather than a silently dead assist.
 PREDICATES: dict[str, Predicate] = {
     "repeated-failure": Predicate(moment="observation", check=_repeated_failure,
         describes="the same call has now failed twice this run"),

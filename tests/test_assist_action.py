@@ -1,27 +1,4 @@
-"""The `action` PAYLOAD on a rule assist — a rule that DOES the thing its moment calls for.
-
-`tests/test_hooks_perform.py` pins the performer (`hooks/perform.py`: one authored action
-through the model's own gates, no model turn, no veto). These pin its first PRODUCTION caller:
-a library rule declaring `payload: action` at the `boundary` moment, performed by
-`engine/assist.py` when its predicate fires.
-
-Why this is the step that matters, in the operator's own words (2026-10-26): *"The hook system
-also should allow to extend the implementation of parts of the harness^2 features we already
-started"*. Until something fires an `action` payload in a live run, the payload is honest in the
-registry and unexercised — which `assists.py` recorded for a month as the rung that "needs a
-helper channel that is not built".
-
-Three invariants are asserted, each one his ruling rather than this layer's taste:
-
-- a performed action RUNS and the run is TOLD, at no turn cost;
-- a FAILED one changes nothing about what the run does next — *"No veto ever — a hook performs
-  and reports; only a hold (prose to the model) can stop an action"*;
-- no assist may perform a kind that STEERS a run, because an assist is authored once in a
-  library rule and fires in every routine that holds it, with no model turn in between.
-
-A new file because `tests/test_assists.py` is AT its size-ratchet ceiling (857 lines) and may
-only shrink.
-"""
+"""The `action` PAYLOAD on a rule assist — a rule that DOES the thing its moment calls for."""
 
 import json
 
@@ -217,11 +194,6 @@ def test_an_action_the_routine_may_not_take_performs_nothing_and_the_run_is_told
     authored once and held by routines with different capabilities, so the gate is at FIRE
     time. A refused action is reported — it does not become a failed turn, and it does not
     stop the run.
-
-    `write_util` without the capability is REFUSED by its own handler with `declined`, not with
-    an `error` key — which is why the note's verdict is `observations.is_failure` and not a
-    check of `error`: the first version of this code told the run a declined util authoring
-    "completed".
     """
     _d, _ep, status, events, _run_dir = _run_with(
         make_routine, scripted,
@@ -240,14 +212,7 @@ def test_an_action_the_routine_may_not_take_performs_nothing_and_the_run_is_told
 
 
 def test_the_failure_classifier_counts_a_doc_standard_refusal_as_a_failure():
-    """The defect this step's first live fire exposed, pinned where it was found.
-
-    `observations.is_failure` is the engine's ONE answer to "did this observation report a
-    failure", and it checked `lint_ok`/`selftest_ok` but not `header_ok` — so a `write_util`
-    the doc-standard gate REFUSED (the util was never written) read as a success to every
-    consumer: the chain stopper, the exit gate, the `turn:error` reminder trigger, and the
-    boundary note this step added. The three `*_ok` flags are one shape and are read together.
-    """
+    """The defect this step's first live fire exposed, pinned where it was found."""
     from rsched.engine.observations import is_failure
 
     assert is_failure({"kind": "write_util", "name": "n", "header_ok": False,

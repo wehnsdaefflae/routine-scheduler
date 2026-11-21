@@ -1,10 +1,4 @@
-"""How the browser suite is COLLECTED and DISTRIBUTED — pinned by fast tests.
-
-Every fact here is decided before a browser exists: which markers the tests/ui directory
-carries, and which xdist scheduler a selection containing them runs under. So it is guarded on
-the two-minute gate rather than inside the twenty-minute one it exists to keep honest — which
-is where these assertions used to live, and therefore never ran when they mattered.
-"""
+"""How the browser suite is COLLECTED and DISTRIBUTED — pinned by fast tests."""
 
 from __future__ import annotations
 
@@ -23,13 +17,6 @@ def _load(relative: str, name: str) -> types.ModuleType:
     """Import a conftest by PATH under its own name — the hooks under test are plain module
     functions, and reaching them through the plugin manager would only hold for the runs that
     happen to have collected that directory.
-
-    The conftest's own flat imports (`import browsersource`, `from helpers import …`) resolve
-    because `tests/` is already on `sys.path` for this suite. Do NOT insert the loaded file's
-    own directory: `tests/ui/` is a package with its own `helpers.py`, so putting it first
-    shadows `tests/helpers.py` and the load fails on a name that resolves fine under pytest —
-    which is why the browser-source module lives in `tests/` beside `helpers.py` rather than
-    inside the ui package.
     """
     target = ROOT / relative
     spec = importlib.util.spec_from_file_location(name, target)
@@ -63,10 +50,6 @@ def _mark(item: _Item, name: str):
 def test_ui_items_carry_ui_and_rerun_markers_and_spread_when_each_worker_launches(monkeypatch):
     """The DEFAULT since 2026-10-22: no `RSCHED_TEST_CDP`, so every worker launches its own
     browser and the directory spreads like any other suite — no `xdist_group`.
-
-    Operator: *"Maybe we shouldn't use the sidecar for browser tests at all anymore"*. Sharing
-    ONE browser is what the grouping existed for (599 items / 913 s on a single worker, measured
-    2026-10-21); with a browser per worker the pinning only costs wall clock.
     """
     monkeypatch.delenv("RSCHED_TEST_CDP", raising=False)
     item = _Item(ROOT / "tests" / "ui" / "test_flows.py")

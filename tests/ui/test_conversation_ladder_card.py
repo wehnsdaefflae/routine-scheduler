@@ -1,15 +1,4 @@
-"""A CONVERSATION is switched into oversight from its own page — D216 (d), the last part.
-
-The engine half was never missing: `engine/ladder.ladder_settings` reads `ctx.routine.ladder`
-with no conversation gate, and a conversation IS a `RoutineConfig`, so the field existed and the
-engine honoured it. What was missing was the SURFACE — and the PATCH vocabulary behind it, where
-`ladder` was absent from `ConversationPatch` (which is `extra="forbid"`, so naming it was a 422).
-
-These tests load what the operator sees, because the gap was a PAGE. They mount the same two
-controls the routine page uses, through `ladderPanel`, so what is asserted here is the shared
-component's own vocabulary (`data-ladder-enabled`, `data-ladder-rung-height`,
-`data-ladder-interval`) over a conversation slug.
-"""
+"""A CONVERSATION is switched into oversight from its own page — D216 (d), the last part."""
 
 import yaml
 from playwright.sync_api import expect
@@ -100,18 +89,7 @@ def test_the_rung_height_and_the_turn_interval_land_in_their_own_files(ui, ui_pa
 
 
 def test_the_switch_says_what_it_supervises_in_a_conversation(ui, ui_page):
-    """The PROSE, which is the half every other test in this file cannot see.
-
-    0.504.0 mounted the routine page's `ladderSwitch` here and shipped its wording with it: the
-    label read "supervise runs of this routine" and the off-state "no run of this routine is
-    supervised". A conversation has REPLIES, not runs of a routine, so the control said something
-    false about the very thing it switches on — live for three days, and invisible to the three
-    browser tests above because every one of them asserts a `data-ladder-*` hook or a file that
-    was written, never a string a person reads.
-
-    Both directions are pinned. Asserting only the new words would still pass if the old ones
-    were printed BESIDE them, and the off-state is a separate string from the label.
-    """
+    """The PROSE, which is the half every other test in this file cannot see."""
     start_conversation(ui, ui_page, "decide the rollout order")
     _open_caps(ui_page)
 

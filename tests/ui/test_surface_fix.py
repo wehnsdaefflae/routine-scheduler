@@ -1,34 +1,5 @@
 """Fix links on the effective surface — the panel that diagnoses a dependency handing the
 reader the panel that owns it.
-
-The surface states a gap exactly (a held conduct doc whose required `shell` action is not
-switched on) and then stops, because the switch that closes it belongs to another panel and a
-read-only diagnosis must never become a second place to edit one value. What a row CAN carry is the
-address: the missing switch named in words, plus a jump that lands on the control and flashes
-it. A satisfied row carries nothing — an affordance there invites a click to find out whether
-what the row already says is true, which is the reading this panel exists to spare.
-
-Some fixes are not on this page at all: a secret absent from the instance store is added in
-Settings. Those say where they go and travel there, because a link that scrolls to nothing is
-worse than no link — and a fix whose target is not in the document DISABLES itself rather than
-firing into nothing.
-
-The same offer rides the SETUP-CHECK STRIP above the hero, which is where a failure is read
-first. One renderer feeds both, so the two can never put different words on one act.
-
-Five files meet here and each is owned apart — the server's `fix` vocabulary
-(`readmodels/surface.py`), the same vocabulary in words for a terminal
-(`readmodels/remedies.py`), the row control the client renders from it
-(`components/surface-view.js`), the strip that reuses it (`components/setupcheck.js`), plus the
-anchors the config sections and ability cards carry (`views/routine-config.js`,
-`components/abilities.js`). The seams this file drives them through are named once, below.
-
-Its spine is the TABLE further down. Three rounds of auditors each found the same defect — a
-link that travels to a place where the act cannot be performed — and each round's tests passed,
-because they asserted the DESTINATION and never that the destination could DO anything. Every
-kind the console can render therefore has a row in `CASES` naming the ONE control that performs
-it, which is asserted present AND operable; a kind with no such row fails
-`test_no_fix_kind_reaches_the_console_without_a_case_here` rather than a person.
 """
 
 from __future__ import annotations
@@ -199,12 +170,7 @@ def _row(ui_page, ui, entity: str):
 
 
 def _strip_row(ui_page, entity: str):
-    """The same node as the STRIP renders it — above the hero, where a failure is read first.
-
-    The band is weighted by its WORST row, and a strip whose every row is a note rests folded
-    under its own count — so the fold is opened the way the reader opens it, by its summary.
-    A strip carrying anything that fails or interrupts is never folded, and the click is skipped.
-    """
+    """The same node as the STRIP renders it — above the hero, where a failure is read first."""
     strip = ui_page.locator(STRIP)
     strip.wait_for(state="attached")
     if strip.evaluate("(n) => n.tagName === 'DETAILS' && !n.open"):
@@ -221,15 +187,7 @@ def _wording(offer) -> str:
 
 
 def _lands_on(ui_page, control, selector: str) -> dict:
-    """Press `control` and prove the reader ends up looking at `selector`.
-
-    No claim is made about where the page was BEFORE. Asserting the target is off-screen first
-    looks like proof that the press scrolled, but what it actually pins is the page's HEIGHT: it
-    holds only while enough sits above the target, so shortening the routine page would red this
-    file with a message about its own setup instead of about the feature. The claim that
-    survives a relayout is the one the reader cares about — after the press the thing is in front
-    of them; the flash says which of a page of panels was meant.
-    """
+    """Press `control` and prove the reader ends up looking at `selector`."""
     control.scroll_into_view_if_needed()
     settled = ui_page.evaluate(IN_VIEW, selector)
     start = ui_page.evaluate("() => window.scrollY")
@@ -243,12 +201,7 @@ def _lands_on(ui_page, control, selector: str) -> dict:
 
 
 def _operable(control, act: str) -> None:
-    """`control` is ONE thing a person can press; it is not greyed out.
-
-    This is the assertion the three previous rounds were missing. Every one of them checked
-    that the link arrived somewhere; none checked that what it arrived at could be operated, so
-    a disabled select, a read-only list and a page with no button each shipped as a live offer.
-    """
+    """`control` is ONE thing a person can press; it is not greyed out."""
     expect(control).to_have_count(1)
     kind = control.evaluate(CONTROL_KIND)
     assert kind in OPERABLE, f"{act}: the landing carries a <{kind}>, which nobody can operate"
@@ -436,13 +389,7 @@ def test_no_fix_kind_reaches_the_console_without_a_case_here():
 
 @pytest.mark.parametrize("case", CASES, ids=[c.kind for c in CASES])
 def test_every_fix_kind_lands_on_a_control_that_can_perform_it(ui, ui_page, monkeypatch, case):
-    """One row, one act, one control that is there and operable.
-
-    A fix link spends the reader's trust as well as their time: it says the act is one press
-    away. Arriving at a disabled select, at a read-only list or at a page with no button spends
-    both for nothing — worse than the row saying nothing at all, which is why the offer
-    and the control are asserted together, per kind, here.
-    """
+    """One row, one act, one control that is there and operable."""
     case.seed(ui, monkeypatch)
     row = _row(ui_page, ui, case.entity)
     offer = row.locator(FIX)
@@ -483,10 +430,6 @@ def test_a_capability_this_routine_owns_can_be_switched_off_where_the_row_says(u
     orphan card listed uncovered capabilities read-only; dropping one happened as an
     invisible side effect of a save — the server's floor strips a capability no held doc
     requires. The act was reachable, by a control that did not say so.
-
-    So the offer lands on a real drop; the PAYLOAD is what proves it: an accept alone could
-    have stripped this capability anyway, so only the request the CLIENT sends can tell the
-    control apart from the floor doing its job.
     """
     write_util(ui.server_cfg, "poster")
     _configure(ui, capabilities={"utils": ["poster"]})
@@ -513,10 +456,6 @@ def test_a_missing_util_offers_the_half_a_person_can_perform(ui, ui_page):
     offers "+ new" for rules and permissions and none for utils, so an offer to go there and
     write one is the third repetition of this file's whole subject: a link to a place where the
     act cannot be performed.
-
-    So the row LEADS with the half that is performable — stop holding the name — and states the
-    other half without a control behind it, which is what an offer carrying no destination
-    renders as.
     """
     _configure(ui, capabilities={"utils": ["ghost-util"]})
 
@@ -591,9 +530,6 @@ def test_the_offer_lands_on_the_control_not_the_top_of_the_panel(ui, ui_page):
     hands back the hunt the row had just ended. The failing card carries its own badge and the
     switch inside it, so that is where the press lands — and pressing it stages exactly the
     capability the row named, for the page's one accept.
-
-    The route is unchanged — this fix lives here, so leaving the page would lose the diagnosis
-    that sent them.
     """
     _hold_needs_shell(ui)
     row = _row(ui_page, ui, "permission:needs-shell")
@@ -660,9 +596,6 @@ def test_an_offer_for_one_of_a_class_never_prints_the_asterisk(ui, ui_page):
     so every routine holding it with nothing bound read "bind *": a glyph out of the read model's
     internals, addressed to nobody, in the one line on the row that is supposed to be an
     instruction.
-
-    The CLI half has said this properly all along (`bind a machine to this routine`); the console
-    meets it. The wildcard is an ABSENCE of a name, so the offer says the class instead.
     """
     _hold_remote_machines(ui)
     row = _row(ui_page, ui, "machine:*")
@@ -681,17 +614,6 @@ def test_an_offer_for_one_of_a_class_never_prints_the_asterisk(ui, ui_page):
 def test_a_withheld_secret_is_a_statement_with_nothing_to_press(ui, ui_page):
     """F609: a secret the operator DECLINED is his settled decision, so its row says so and
     offers nothing.
-
-    It used to read `fails` and carry a `clear_grant` offer — the surface asking him to undo the
-    answer he had just given. That is the same rule `action:write_recipe` "on" is decided by: a
-    row reporting a deliberate act carries no fix, because the only act it could name is the
-    reversal. The dial that would perform it is still in Secret exposure, because changing his
-    mind is his to start.
-
-    Worse than cosmetic, which is why the assertion is here rather than only on the read model:
-    `daemon/library_watch` files every `blocks` row as library drift, so this row put his own
-    decision back on the Decisions page as blocked work on every library commit for five weeks
-    (`pc-20261002-223218-c0137c.json`, status null).
     """
     secrets.set_secret("UI_FIX_TOKEN", "v")
     write_util(ui.server_cfg, "poster", secrets="UI_FIX_TOKEN")
@@ -717,12 +639,6 @@ def test_a_lane_suppressed_cron_offers_this_routines_own_schedule(ui, ui_page):
     routine's cron makes the file say what happens, while rescheduling the lane changes when
     every OTHER member fires — instance state, spent to repair one stale line in one config.
     The primary act is therefore the routine's own Schedule panel, on this page.
-
-    The second half is the contrast that gives an ABSENT offer its meaning. Two NOTE rows sit in
-    this table: a suppressed cron, which is unmet and fixable, beside `action:write_recipe` "on",
-    which is a deliberate switch working exactly as set. Offering to undo the second would read
-    as a defect report on a routine that is right. One rule covers both — a row that is not unmet
-    carries no fix — and it is only legible because the two rows are side by side.
     """
     lane = lanes.create(ui.routines, name="Nightly", members=[{"slug": "uir"}], cron="0 3 * * *")
     _configure(ui, capabilities={"actions": ["write_recipe"]})
@@ -763,9 +679,6 @@ def test_the_strip_offers_the_same_act_as_the_panel(ui, ui_page):
     """The strip is the surface an operator reads FIRST — it sits above the hero and shows only
     what is unmet. Rendering the diagnosis there and the way out six collapsed groups further
     down abandons exactly the reader the strip was built for.
-
-    Both are fed by one renderer, which is the point: this asserts the offer is THERE, that it
-    WORKS, and that the two readings of one row do not put different words on one act.
     """
     _hold_needs_shell(ui)
     _open(ui_page, ui)
@@ -793,11 +706,6 @@ def test_the_strip_stays_silent_about_a_row_that_is_not_unmet(ui, ui_page):
     """The strip filters on "not ok", which is a WIDER test than "unmet": a NOTE reporting a
     deliberate switch reaches it too. That row carries no offer by design, so the strip has to
     read as a statement there rather than as a task somebody forgot to finish.
-
-    It also has to be QUIETER than a failure. A routine with nothing but notes wore the same
-    amber flag as one about to park on a blocking secret, which taught the reader to skip the
-    strip and then failed on the one case it exists for — so a note-only strip rests folded
-    under its own count, and the statement is one click below it.
     """
     _configure(ui, capabilities={"actions": ["write_recipe"]})
     _open(ui_page, ui)

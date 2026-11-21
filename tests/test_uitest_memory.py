@@ -1,13 +1,6 @@
 """D226: the browser stage's job comes back with the PEAK MEMORY of the `uitest` container's own
 memory cgroup for that job's duration — measured inside the container that does the work, since
 the caller (the gate, in the engine container) cannot read that cgroup.
-
-Offline throughout: the cgroup is a directory tree in `tmp_path`, never the host's. What these
-tests pin is the seam's three promises — the number is read where it can be read, it travels
-under a key both halves agree on, and no failure of the measurement changes a job's outcome.
-They cannot pin the ONE thing the number never claims: that no OOM occurred (a restart starts a
-fresh cgroup; only the host's `journalctl -k` settles it), so the reading says so itself and
-`test_a_reading_never_claims_no_oom` holds it to that.
 """
 from __future__ import annotations
 
@@ -70,13 +63,7 @@ def test_a_peak_that_could_not_be_reset_is_an_upper_bound_not_an_exact_one(tmp_p
 
 def test_a_refused_reset_falls_back_to_sampling_rather_than_the_lifetime_mark(tmp_path,
                                                                              monkeypatch):
-    """THE DEPLOYED SHAPE, and the defect this test exists for.
-
-    The `uitest` container mounts `/sys/fs/cgroup` read-only, so writing "0" to `memory.peak`
-    fails [Errno 30] on every job. The reading that reached the gate was then the CONTAINER's
-    lifetime mark with `samples: 0` — a number that answers nothing about the stage being
-    measured, which is why `memory-peaks.jsonl` held no usable uitest row for a week.
-    """
+    """THE DEPLOYED SHAPE, and the defect this test exists for."""
     root, proc = _tree(tmp_path, {"memory.peak": "9000\n", "memory.current": "100\n",
                                   "memory.max": "10000\n"})
     monkeypatch.setattr(cgroupmem, "_write_zero", lambda _path: False)   # a read-only mount
@@ -213,12 +200,7 @@ def test_a_runner_that_reports_nothing_and_one_that_reports_more_both_read(tmp_p
 
 @pytest.fixture
 def fake_cgroup(tmp_path, monkeypatch):
-    """Point the reader at a tree we control, so the host's own kernel cannot sway these.
-
-    `memory.current` only, with no `memory.peak`: a fake tree has no kernel to refill a mark
-    this code resets, so the SAMPLING path is the one an offline end-to-end test can exercise
-    honestly — the `memory.peak` path is pinned above, against a tree whose peak is set by hand.
-    """
+    """Point the reader at a tree we control, so the host's own kernel cannot sway these."""
     root, proc = _tree(tmp_path / "fake", {"memory.current": "2048\n", "memory.max": "8192\n"})
     monkeypatch.setattr(cgroupmem, "CGROUP_ROOT", root)
     monkeypatch.setattr(cgroupmem, "PROC_CGROUP", proc)

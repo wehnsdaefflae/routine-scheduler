@@ -1,21 +1,4 @@
-"""The run rail's SCRIPTS section (components/runscripts.js).
-
-OPERATOR ORDER 2026-11-01: *"a routine's scripts should have a section in the right routine run
-sidebar"*. A routine's `scripts/` are the tooling its runs call every fire, and the run page —
-where a run is actually watched — named none of them: the only way to see what a run could call
-was to open the recipe browser and list a directory.
-
-Four claims, all about what a PERSON sees:
-
-- a run page names each of the routine's scripts, with the one-line summary from its own
-  docstring header, in a foldable rail section like every other;
-- the name is not repeated in the line below it (`parse_header` keeps the whole first line, so
-  the summary arrives as "outcome — what this routine…"; the rail is narrow);
-- consecutive scripts are separate blocks — the jobs card's run-on-paragraph defect (F646,
-  `static/rail.css`) would otherwise repeat here, since this card reuses that class;
-- a routine with NO scripts/ gains no caption, and the section's read does not poll: a routine's
-  script set is a property of the recipe, not of the run.
-"""
+"""The run rail's SCRIPTS section (components/runscripts.js)."""
 
 from __future__ import annotations
 
@@ -92,30 +75,7 @@ def test_a_routine_without_scripts_gains_no_section(ui, ui_page):
 
 
 def test_the_section_is_captured_for_a_person_to_look_at(ui, ui_page):
-    """LEAVE THE CAPTURE BEHIND, at both widths (interface-craft).
-
-    Every other test here asserts a property; none of them LOOKS. The 0.488.0 release shipped
-    after a red gate found a defect no assertion of mine had named — a script whose filename and
-    whose docstring header spell its name differently kept a redundant lead — and the thing that
-    found it was reading the failure dump, i.e. looking. So: write the rail section to a PNG at
-    desktop and at phone width and name the path, because a rail that collapses under 980px is
-    exactly where a new section goes wrong unseen.
-
-    The capture goes under `<repo>/.audit-wt/captures/` — inside the checkout, which is what the
-    `uitest` container mounts, and gitignored (.gitignore:26). `RSCHED_GATE_ARTIFACTS`, the
-    convention test_message_concepts_render.py uses, matches no carried env prefix
-    (protocol.ENV_PREFIXES) and so cannot reach a browser-stage job; `RSCHED_UI_` can.
-
-    TWO THINGS THE CAPTURES DO NOT SHOW, so nobody reads them for more than they are:
-
-    - an element screenshot captures the page REGION the element occupies, so the fixed bottom
-      bar paints over the phone capture, and the rail is clipped at about viewport height — the
-      second script card is below that fold. The assertions, not the image, are what cover it.
-    - the probe below reads `covered: False` only AFTER scrolling to the end of the document.
-      Probing straight after `scroll_into_view_if_needed` reported the card covered by the
-      bottom bar, and that reading is an artefact of the minimal scroll, not a defect: it would
-      report EVERY last element on every page as covered. It nearly became a finding of mine.
-    """
+    """LEAVE THE CAPTURE BEHIND, at both widths (interface-craft)."""
     import os
     from pathlib import Path
 

@@ -1,12 +1,7 @@
 """The semantic checks for the two reminder side fields — `remind` and `remind_feedback`.
 
-Its own module because it is PURE: it reads the action dict and the grant policy and returns
-problem strings, with no loop, no store write and no turn of its own. `engine/actions.py` calls
-it inside the schema-retry cycle, so a malformed op is corrected before it becomes a turn —
-beside `goalops.field_problems` and `decideaction.field_problems`, which are the same shape.
-
-Split out of `engine/remind.py` in 0.425.0: that module is over the repo's size bar and may only
-shrink, and validation that needs no run state was the boundary it already had.
+PURE: reads the action dict and the grant policy and returns problem strings — no loop, no
+store write. Called inside the schema-retry cycle, so a malformed op never becomes a turn.
 """
 
 from __future__ import annotations
@@ -17,18 +12,16 @@ from ..reminders import LABEL_HELP
 
 
 def field_problems(action: dict, grants) -> list[str]:
-    """Semantic checks for the two side fields, run inside the schema-retry cycle
-    (`actions.validate_action`) so a malformed op is corrected and never becomes a turn.
+    """Semantic checks for the two side fields (`actions.validate_action`).
 
-    The capability check lives here rather than in `GrantPolicy.deny`'s kind gate because these
-    fields ride EVERY kind, including the always-available ones the kind gate skips.
+    The capability check lives here, not in `GrantPolicy.deny`'s kind gate, because these
+    fields ride EVERY kind, including the always-available ones that gate skips.
     """
     problems: list[str] = []
     if (op := action.get("remind")) is not None:
         problems += _remind_problems(op, grants)
     if (fb := action.get("remind_feedback")) is not None:
-        # the capability gates the LAYER, not just the write: a run without it has no fires to
-        # label, and an accepted label there would answer a channel the docs say is closed
+        # the capability gates the LAYER, not just the write: without it there is nothing to label
         if grants is not None and (denial := grants.reminder_denial("local")):
             problems.append(denial)
         else:
@@ -48,15 +41,13 @@ def _remind_problems(op: object, grants) -> list[str]:
     problems: list[str] = []
     if grants is not None and (denial := grants.reminder_denial(scope)):
         return [denial]
-    # the TRIGGER: omitted means `action`, the kind every reminder had before D152-C
+    # the TRIGGER: omitted means `action`
     kind = store.DEFAULT_KIND if op.get("kind") is None else op.get("kind")
     if (p := checks.kind_problem(kind)) and verb != "delete":
         return [p]          # every further check depends on which moment this watches
     kind = kind if isinstance(kind, str) and kind in store.KINDS else store.DEFAULT_KIND
-    # the TARGET: another routine's slug. Acting on someone else's store is a different act
-    # from leaving a reminder for yourself, so it is checked here. `revise` is the one verb it
-    # cannot mean — a foreign hook's wording is its HOLDER's to change — while `dead` and
-    # `delete` are the curator's disposal of a row in that store (D231).
+    # the TARGET: another routine's slug. Never with `revise` (a foreign hook's wording is its
+    # holder's); `dead`/`delete` are the curator's disposal of a row there (D231).
     if (target := op.get("target")) is not None:
         from ..ids import is_slug
 
@@ -72,11 +63,8 @@ def _remind_problems(op: object, grants) -> list[str]:
             problems.append("`remind.target` and `scope=global` are two different reaches: a "
                             "global reminder already reaches every routine it is curated for, "
                             "so a target would mean nothing")
-    # `dead` is the CURATOR's disposal of a row in another routine's store (D231): it names
-    # whose store, which row, and WHY — the reason is stored with the annotation and is the
-    # whole difference between retiring a row and losing the evidence for retiring it. The
-    # dial is asked engine-side (`remind_write.curate`), where the store being written is
-    # known; here the grammar alone is settled, so a malformed op never becomes a turn.
+    # `dead` names whose store, which row, and WHY (the reason is stored with the annotation).
+    # The dial is asked engine-side (`remind_write.curate`); only the grammar is settled here.
     if verb == "dead":
         if op.get("target") is None:
             problems.append("`remind.op=dead` needs the `target` whose store holds the row — "
@@ -121,8 +109,7 @@ def _feedback_problems(fb: object) -> list[str]:
     if str(fb.get("label") or "") not in store.LABELS:
         problems.append(f"`remind_feedback.label` must be one of {list(store.LABELS)} — "
                         f"{LABEL_HELP}")
-    # the DISPOSITION rides the same field (D152-C step 2): the moment a foreign hook fires is
-    # the moment its usefulness to its target is observable, so the say and the label are one act
+    # the DISPOSITION rides the same field: a foreign hook's fire is when its usefulness shows
     if (disp := fb.get("disposition")) is not None and disp not in store.DISPOSITIONS:
         problems.append(f"`remind_feedback.disposition` must be one of "
                         f"{list(store.DISPOSITIONS)} — keep (leave it live), mute (silence it "

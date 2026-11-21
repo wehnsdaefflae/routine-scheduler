@@ -1,42 +1,4 @@
-"""The inbox's `msg-*` shape has ONE writer, and every inbox scanner names that stem (F499).
-
-`engine/inbox.file_message` has called itself the one writer of that shape since it was
-written, and for months seven modules wrote the filename themselves anyway — one of them
-character-for-character. Each hand-rolled site chose its own `ts` spelling and its own
-uniqueness rule, so the shape drifted per endpoint; two of them also assumed an `inbox/`
-directory that only `file_message` creates, and silently lost a trigger event or a one-shot's
-wake-up reason delivered to a routine that had never been given one.
-
-The read side had the mirror defect: a scanner that selected "every file that is not
-`answer-*`" also matched `paths.atomic_write`'s in-flight `.msg-….json.XXXX.tmp`. On a fresh
-boot the drain reached that temp file, could not parse it, logged "not a message file" and
-RENAMED it into `consumed/` — so the writer's own `replace()` raised and the message was lost.
-
-Both halves were unified across 0.365.0. Neither is expressible as a runtime assertion: the
-defect is the EXISTENCE of a second call site, which no amount of exercising the first one can
-see. So it is a source scan, in the company of this repo's other conventions that broke
-silently once (`tests/test_policy.py`'s premise) — the one instrument that fails the moment a
-future change re-opens the seam, rather than months later, in production, as a lost message.
-
-**Scope, deliberately narrow.** Both checks look only at expressions that name an INBOX. The
-first draft of this file asked "does this module mention an inbox, and does it glob anything?"
-and returned ten hits, every one a false positive: `daemon/detached.py` globbing its request
-spool, `composer.py` globbing `runs/*/result.md`, `search/sources.py` and `inbox.py` globbing
-`questions/pending/*.json`, and two `iterdir()` slug listings that skip dotfiles. A check that
-reports on directories it never meant to read teaches its reader to skim past it, so the
-receiver has to be an inbox for the row to mean anything.
-
-Both checks report the offending `path:line` and name the call that replaces it, because a
-policy failure whose repair the reader has to work out is a policy that gets deleted.
-
-**Both shapes are policed, by one allow-list** (D143). The directory holds two record shapes,
-and only the first was ever unified: `answer-<qid>.json` had seven hand-rolled write sites in
-four modules, each spelling the filename and stamping its own `ts` — the state `msg-*` was in
-before F499. They cannot share a writer, because an answer must never be counted as freight
-(the one thing that must not buy a run), so `SANCTIONED_WRITERS` names the owner of each shape
-WITH the reason it is allowed: adding a direct write is a failure that names the seam to call,
-and adding an entry here is a design decision a later reader can check against its reason.
-"""
+"""The inbox's `msg-*` shape has ONE writer, and every inbox scanner names that stem (F499)."""
 
 import re
 from pathlib import Path
@@ -119,12 +81,7 @@ def _py_files() -> list[Path]:
 
 
 def _code_lines(text: str) -> list[tuple[int, str]]:
-    """Every line that is not inside a docstring.
-
-    The prose ABOUT this contract quotes the banned forms verbatim — `inbox.py`'s own module
-    header does, and so does this file — so a scan that read docstrings would fail on the
-    documentation of the rule it enforces.
-    """
+    """Every line that is not inside a docstring."""
     out: list[tuple[int, str]] = []
     in_doc = False
     fence = ""
@@ -192,15 +149,7 @@ def test_every_inbox_scanner_names_the_one_writers_stem():
 
 
 def _inbox_writes(path: Path) -> list[tuple[int, str]]:
-    """Every line in `path` that writes a file INTO an inbox — (line, the name it wrote).
-
-    Two shapes, because both occur in the live tree: the write inline in the expression that
-    builds the path (`api_questions`), and the write of a name bound earlier in the same
-    function (`api_question_decline`'s `marker`, nine lines up, past a 409 guard). Bindings are
-    dropped at every `def`: `path` names an inbox answer in `inbox_questions.take_answer` and
-    the ANSWERED-archive record two functions below, and conflating them would report a
-    sanctioned write as a breach.
-    """
+    """Every line in `path` that writes a file INTO an inbox — (line, the name it wrote)."""
     found: list[tuple[int, str]] = []
     bound: dict[str, int] = {}
     for n, line in _code_lines(path.read_text(encoding="utf-8")):

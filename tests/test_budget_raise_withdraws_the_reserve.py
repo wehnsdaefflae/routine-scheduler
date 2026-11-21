@@ -1,21 +1,4 @@
-"""A live budget raise WITHDRAWS the spent reserved finish turn — D244 (review item E1.4).
-
-The first budget violation grants a reserved finish turn: one more turn with the schema narrowed
-to `finish`, so the run ends in its own words instead of an engine string
-(`engine/loopnudge.reserve_finish`). Budgets are LIVE config, adopted at a turn boundary
-(`engine/switches.apply_config_change`, F337).
-
-The two did not meet, and the reason is pure ORDERING. `EngineLoop.run`'s loop asks
-`ctx.budget_spent()` at the TOP, then calls `_turn_boundary()` — and the boundary is where the
-raise is adopted. So a run whose operator raised the spent budget stood in its reserved turn with
-a finish-only grammar, holding ceilings it was no longer over: the raise arrived one step too
-late, every time, and could not be used until the next RUN.
-
-The fix withdraws the reserve where the raise lands: once `budgets` has been adopted, if the
-violated resource is back within its limit, `_finish_reserved` is cleared, the full action schema
-is restored, and ONE engine note says so — a run that is told "this is your LAST turn" must be
-told just as plainly when that stops being true.
-"""
+"""A live budget raise WITHDRAWS the spent reserved finish turn — D244 (review item E1.4)."""
 
 from __future__ import annotations
 
@@ -39,14 +22,6 @@ def _raise_turns(run_dir, to: int = 12) -> None:
 def _raising(run_dir, action: dict, to: int = 12):
     """A scripted reply that writes the raise AS IT IS ASKED FOR — the only way to land it
     mid-run rather than before the first boundary.
-
-    Timing is the whole subject here, so it has to be exact. `EngineLoop.run` asks
-    `ctx.budget_spent()` at the TOP of its loop and calls `_turn_boundary()` after it, and the
-    boundary is where `apply_config_change` adopts a raise. Writing control.json before the run
-    starts therefore adopts it at the FIRST boundary, with nothing spent, and the reserve never
-    fires at all — which is how the first version of this test passed while proving nothing.
-    Written from inside the LAST pre-violation turn, the raise is adopted at the boundary
-    immediately after `reserve_finish` has run, which is the case the decision is about.
     """
     def reply():
         _raise_turns(run_dir, to)
@@ -59,10 +34,6 @@ def test_a_raise_arriving_in_the_reserved_turn_gives_the_run_its_turns_back(
         make_routine, scripted):
     """THE DEFECT, end to end: the run spends its 2-turn budget, is handed the reserved finish
     turn, the operator raises `max_turns` — and the run must go on WORKING, not finish.
-
-    `write_file` is the probe deliberately: under the reserved turn's narrowed grammar it is
-    not even expressible, so a `write_file` that lands proves the schema was restored and not
-    merely that the flag flipped.
     """
     d = make_routine(slug="raised", budgets={"max_turns": 2})
     run_dir = d / "runs" / TS

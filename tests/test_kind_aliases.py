@@ -1,40 +1,4 @@
-"""`websearch` and `code_search` as action kinds — a SPELLING of the util call, not a port.
-
-D290, answered by the operator 2026-11-14: *"Make `websearch` and `code-search` action kinds,
-matching what callers already attempt — two more kind bullets in every routine's prompt, and the
-util catalog loses its two most-used entries to a second front door"*. He chose it over three
-alternatives that all left the schema alone.
-
-WHAT THE MEASUREMENT SAID, because it shapes the whole design. `kind: websearch` /
-`kind: code-search` account for 23 rejected turns in 30 days across 12 routines and 3
-conversations, the third-largest action-schema rejection class, and both `claude-sonnet-5` and
-`claude-opus-5` do it. Every one recovered inside its own turn — `global-utils-review:
-20261113-031130` turns 77/89/90 read *"Correcting the call shape — websearch is a util, not a
-kind"* with `kind="util", name="websearch", args=[query]` succeeding immediately after. So the
-INTENT behind the rejected shape is known exactly: a util call whose payload is the query.
-
-THEREFORE THE KIND IS A SPELLING, REWRITTEN BEFORE ANY GATE. `normalize_action` turns the alias
-into the ordinary util action the run meant, which is the only form that cannot drift:
-
-* ONE implementation. A second code path to the same util would be a second place for its
-  arguments, its timeout and its failure shape to diverge.
-* ONE permission. The util's secret gate, its reservation and its grant checks are the util
-  kind's, and they run on the rewritten action exactly as for a hand-written util call. A new
-  kind with its own executor entry would route around every one of them.
-* ONE telemetry row. `util_rejection_outcome` and `count_util` see `name="websearch"`, so the
-  Stats tab keeps counting the util it has always counted instead of growing a second row.
-
-`code_search` IS THE KIND AND `code-search` IS ACCEPTED ANYWAY. No action kind may contain a
-hyphen — `tests/test_wrong_kind_diagnosis.py` pins that property, because it is the
-discriminator that diagnoses every OTHER util-name-as-kind mistake, and a hyphenated kind would
-turn those diagnoses into misdiagnoses. The rewrite runs before the schema validator, so the
-hyphenated spelling callers actually send never has to be a kind to be understood.
-
-AND IT DECLINES RATHER THAN GUESS. An alias action carrying no derivable payload is left exactly
-as it came, so the validator refuses it inside the schema-retry cycle (a correction that costs
-no turn) instead of running a util call with an empty query (a usage error that costs a real
-turn). Tolerance here is strictly cheaper than optimism.
-"""
+"""`websearch` and `code_search` as action kinds — a SPELLING of the util call, not a port."""
 
 from __future__ import annotations
 
@@ -132,19 +96,7 @@ def test_a_side_field_survives_the_rewrite():
 
 @pytest.mark.parametrize("kind", sorted(ALIAS_KINDS))
 def test_an_alias_kind_may_defer_because_the_util_call_it_becomes_may(kind):
-    """A search is exactly the fetch a run should background, so the flag must be allowed.
-
-    AND IT COLLIDES WITH AN EXISTING INVARIANT, which is why this is asserted here rather than
-    left to that file: `test_background_actions.py::test_the_background_runner_matches_the_
-    foreground_routing_table` requires every backgroundable kind to be in `executor.DISPATCH`,
-    because a backgrounded kind with no runner raised `KeyError` in a live run (F633, R2255).
-    An alias reaches no runner under its own name — `normalize_action` rewrites it inside
-    `completion.judge`, which runs for a chained element too (`chain._next_unfit` puts the
-    JUDGED action back in the queue), so there is no path on which an alias arrives at a
-    runner. What must be in DISPATCH is therefore the kind it BECOMES; an executor entry for
-    the alias itself could only ever be dead code, and dead code at a dispatch seam is exactly
-    how 0.535.2's F888 fix came to sit in an adapter this instance never executes.
-    """
+    """A search is exactly the fetch a run should background, so the flag must be allowed."""
     assert kind in BACKGROUNDABLE_KINDS
     assert "background" in KIND_FIELDS[kind][1]
     from rsched.engine import executor

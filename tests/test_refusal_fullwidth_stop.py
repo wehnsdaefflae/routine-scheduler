@@ -1,18 +1,4 @@
-"""R2844: the opening-sentence split must end at a FULLWIDTH or CJK stop too.
-
-`_OPENING_STOP` split on ASCII `.!?;:` followed by whitespace. A reply whose first sentence
-ends in `。` / `！` / `？` / `．` / `；` / `：` was therefore never split, so the whole
-`_HEAD_CAP` (200) character head was taken as "the opening sentence" — and the zero-cost
-marker shortcut, which exists to decide on ONE sentence, then matched a refusal marker
-occurring anywhere in those 200 characters.
-
-Reported by scheduler-builder (R2844, restated in R2863) and handed back to self-audit as a
-one-run live-tree fix. The failure mode is over-eagerness, not laxness: a reply that genuinely
-answers can be classified as a refusal because its third sentence quotes one.
-
-The stops split with NO whitespace lookahead, because the writing systems that use them put
-no space after them — which is the whole reason the ASCII rule missed them.
-"""
+"""R2844: the opening-sentence split must end at a FULLWIDTH or CJK stop too."""
 
 from __future__ import annotations
 

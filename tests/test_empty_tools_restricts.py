@@ -1,27 +1,4 @@
-"""An empty `tools:` list RESTRICTS, it does not open the gates — D242 (review item E1.6).
-
-`engine/loopsetup.configure` read the allowlist with a FALSY test:
-
-    loop.allowed_tools = set(allowed_tools) | {"finish"} if allowed_tools else None
-
-`None` means "every kind allowed", and `[]` is falsy — so a workflow declaring `tools: []`
-(nothing but the always-kinds) got exactly the opposite of what it declared: the full `KINDS`
-surface, with the action schema projected from it. A restriction that fails OPEN is the one
-direction a restriction must never fail in, and nothing downstream could catch it: both other
-readers of the allowlist are already correct (`engine/kindsurface.effective_kinds` tests
-`allowed_kinds is None`, and `workflows/lint._tools_problems` tests `tools is None`), so the
-list arrived at them already turned into "unrestricted" by this one line.
-
-The fix is the same `is not None` the other two use. The always-kinds still ride through —
-`finish` so a run can always end, and `report`/`list_models` by `ALWAYS_KINDS` in
-`effective_kinds` — so `tools: []` means "the always-kinds and nothing else", which is what a
-workflow declaring it is asking for. An ABSENT `tools:` key still means every kind: both call
-sites (`engine/runtime.load_workflow` and `engine/childrun`) pass `None` for a missing key and a
-list only when the frontmatter really carries one, so no existing workflow changes.
-
-Pinned through a real `EngineLoop`, not through the source line: what matters is the SET the
-run ends up with, which is what the action schema is projected from.
-"""
+"""An empty `tools:` list RESTRICTS, it does not open the gates — D242 (review item E1.6)."""
 
 from __future__ import annotations
 
@@ -82,12 +59,6 @@ def test_an_absent_tools_list_still_means_every_kind(make_routine):
     """The other half of the contract, which must NOT change: a workflow that declares no
     `tools:` at all is unrestricted. `None` and `[]` were the same value before this fix and
     are two different declarations after it.
-
-    Asserted on the KINDS the run ends up with, not on `allowed_tools is None`: on an instance
-    with no DECISION model `loopsetup` materializes the unrestricted case into
-    `set(KINDS) - {"decide"}` so the schema omits a kind that cannot work, and the test server
-    configures none. So "unrestricted" is a property of the set's CONTENTS either way — which
-    is also what the action schema is projected from.
     """
     kinds = effective_kinds(_loop(make_routine, None).allowed_tools)
 

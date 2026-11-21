@@ -128,20 +128,7 @@ async def test_pause_delivers_the_finished_task_but_holds_the_wake(tmp_path):
 
 
 def test_pause_holds_the_reaps_post_finish_wake(tmp_path, monkeypatch):
-    """The reap's stranded-message wake is an AUTOMATIC run leg, so a pause holds it.
-
-    F721 gave the pause the two detached phases that start a run, and verified the general
-    fact behind it: `runner.fire_blocker` does not test the pause, and
-    `engine/control.pause_gate` holds only runs MARKED at the pause click — a freshly resumed
-    leg carries no mark. `reap_resume.resume_for_stranded` is the same shape and was missed:
-    neither a click nor a schedule, and it spawns an engine process. (F746 moved it out of
-    `runner_reap` into `reap_resume`, beside the restart re-open that obeys the same hold.)
-
-    It is HELD, not dropped: the message stays durable in the owner's inbox, so the first wake
-    after the resume makes it good. The sigkill retry beside it is deliberately NOT held — that
-    one fires once, when the process dies, and holding it would consume the single automatic
-    recovery a kernel-killed run is owed.
-    """
+    """The reap's stranded-message wake is an AUTOMATIC run leg, so a pause holds it."""
     from types import SimpleNamespace
 
     from rsched.daemon import pause, reap_resume

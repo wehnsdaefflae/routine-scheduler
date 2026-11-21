@@ -1,17 +1,4 @@
-"""The run-history depth is a REAL boundary: the jail refuses what the action gate refuses (D207).
-
-The measurement that opened this: `read_file` refused an older `runs/<ts>/gate.json` with
-"previous runs are readable at the default 'last' depth only", while `gu json get <the same
-absolute path>` returned it. The cap lived in the action layer, and a util is handed the path
-and opens it with ordinary access inside a jail that mounted the whole routine dir readable —
-its own `runs/` tree included. The operator decided it is a real boundary and that it belongs
-where the jail is composed.
-
-So the test that matters here is the one that runs a real jailed command at a real old run
-directory and asserts the KERNEL refuses it. The rest of this file is the arithmetic around it:
-which run dirs a depth admits, that both doors into `sandbox.wrap` carve, and that the run is
-TOLD what was withheld instead of meeting a bare permission error.
-"""
+"""The run-history depth is a REAL boundary: the jail refuses what the action gate refuses (D207)."""
 
 from __future__ import annotations
 
@@ -102,13 +89,7 @@ def _mounts(own: Path, scope) -> tuple[set[str], set[str], set[str]]:
 
 
 def _granted(rules: set[str], path: Path) -> bool:
-    """Is `path` covered by any rule in `rules` — at it, or beneath it?
-
-    Landlock rights are inherited DOWN the hierarchy, so literal set membership is the wrong
-    question and asserting it is how a boundary test passes against unenforced code: mounting
-    the routine dir `ro` grants every run dir beneath it without ever naming one. (The same
-    trap `test_own_dir_seal._writable` documents for the write seal.)
-    """
+    """Is `path` covered by any rule in `rules` — at it, or beneath it?"""
     return any(path == Path(r) or path.is_relative_to(Path(r)) for r in rules)
 
 
@@ -237,21 +218,7 @@ def test_no_depth_scope_adds_no_field(tmp_path):
 
 def test_a_jailed_command_handed_an_older_runs_path_is_refused_by_the_kernel(
         make_routine, tmp_path, monkeypatch):
-    """THE test for this decision: the exact bypass the measurement recorded, run for real.
-
-    A util or shell command is handed an ABSOLUTE path to an older run's file and opens it with
-    ordinary access — that is what made the action-layer cap prompt economy rather than a
-    boundary. Proving the refusal outside pytest, or against a spec dict, would prove it in the
-    wrong environment: a spec with the right strings in it says nothing about what the kernel
-    does.
-
-    The toolchain's tmp rules are withheld for the duration, and here they must be withheld
-    ENTIRELY rather than moved to read-only as `test_own_dir_seal` does: pytest's `tmp_path`
-    lives under /tmp, `_toolchain()` mounts /tmp and /var/tmp read-WRITE for every jailed
-    command, and a READ refusal cannot be proven at a path another rule grants read on. (On the
-    live instance routine dirs are under the routines home, so nothing is weakened there — this
-    is a test-location artefact.)
-    """
+    """THE test for this decision: the exact bypass the measurement recorded, run for real."""
     import tempfile
 
     if not sandbox.available():

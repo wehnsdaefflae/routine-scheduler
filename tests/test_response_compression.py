@@ -1,37 +1,4 @@
-"""Responses are COMPRESSED when the client asks and the body is worth it.
-
-The operator's complaint, 2026-10-30: *"The webui at rsched.markwernsdorfer.com is super
-slow."* What was measured before the fix, from this instance:
-
-* no `content-encoding` on ANY response — not from the app, not from Caddy in front of it, for
-  `/`, `/static/app.js` or any `/api/*` read;
-* `GET /api/questions` is ~1.1 MB of JSON — it returns the whole fleet's question HISTORY, rows
-  settled since September, with no limit, no window and no projection (`api_questions.py`) —
-  and `static/app.js` refetches it **every 30 s for every open tab**;
-* gzip -9 takes this instance's own captured API payloads to ~31 % of their size.
-
-So the first fix is the one that changes no behaviour at all: compress what is already sent.
-Nothing is hidden, no payload is capped, and deleting the middleware line restores the previous
-bytes exactly. Capping `/api/questions` is a separate, behavioural change with its own record.
-
-WHAT THIS FILE PINS, and why each half matters:
-
-1. **A large payload comes back gzipped** when the client sends `Accept-Encoding: gzip`. The
-   whole point; without it the console pays full bytes on every poll.
-2. **A small body is untouched.** `minimum_size=1024` is what keeps
-   `tests/test_served_file_containment.py`'s `content-length == len('{"ok": 1}')` assertion
-   true, and compressing 9 bytes costs more than it saves.
-3. **A client that does not ask gets identity.** The negotiation is the client's; a proxy or a
-   `curl` without the header must still get plain bytes.
-4. **The CSP survives compression.** The two middlewares are wired in one seam
-   (`appwiring._add_middlewares`) and gzip is the OUTER one, so it compresses a response that
-   already carries the policy. If the order were ever inverted, a compressed response could
-   lose the header — hence this assertion lives here rather than only in the CSP file.
-
-A WebSocket scope never reaches an http middleware, so the live streams are outside this
-entirely (the same reason `app.py`'s timing middleware cannot count one); there is no SSE in
-this app, and Starlette's GZip excludes `text/event-stream` and the binary media types anyway.
-"""
+"""Responses are COMPRESSED when the client asks and the body is worth it."""
 
 from __future__ import annotations
 

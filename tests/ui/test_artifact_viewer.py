@@ -1,10 +1,4 @@
-"""The artifact panel shows the file the reader picked, as the file is written.
-
-components/artifacts.js lists a run's deliverables and renders the one a row opens. Each test
-here is a way it used to show something else: an earlier click's file landing over a later
-one, "could not load" for a JSON file one comma off, a quoted CSV value split across columns,
-and a report written mid-reply that the panel did not list until the reply ended.
-"""
+"""The artifact panel shows the file the reader picked, as the file is written."""
 
 from __future__ import annotations
 

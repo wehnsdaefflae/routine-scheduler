@@ -1,13 +1,4 @@
-"""F837 — a model switch written while a run is TERMINAL lands on its resumed leg's first turn.
-
-The web half (`POST /runs/{id}/model` no longer 409s a finished/failed/aborted run, and says the
-switch is armed for the resume) is pinned in `tests/test_api.py`; this file pins the ENGINE half
-the API's reply promises, which needed no new code: `switches._fresh` edge-triggers on
-`control.json` against the `control-applied.json` ledger the resumed leg re-seeds from, and
-`loop._turn_boundary` applies the switch BEFORE the leg's first completion. Without this pin the
-console could say "takes effect at this run's resume" over a mechanism that quietly stopped
-honouring it.
-"""
+"""F837 — a model switch written while a run is TERMINAL lands on its resumed leg's first turn."""
 
 from __future__ import annotations
 

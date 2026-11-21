@@ -1,10 +1,8 @@
 """Which `.memory/` notes the routine's runs actually READ — counted by the engine, per note.
 
-A note is written once and then sits in every run's digest as an INDEX line whether anyone
-consults it or not. D268 gave a note an expiry the WRITER foresaw (`stale_after`); nothing said
-which notes no run has needed in months, so a notebook only grew. Hermes Agent's skill curator
-reads the same signal (a skill unused for 30 days goes stale, then is archived); this module
-counts it and lets the post-run review leg (engine/reviewleg.py) act on it.
+A note sits in every run's digest as an INDEX line whether anyone consults it or not; this
+module counts which notes runs actually read and lets the post-run review leg
+(engine/reviewleg.py) act on the ones no run has needed.
 
 THE RECORD is `.memory/.reads.json`, engine-owned like `INDEX.md` beside it (`.memory/` is sealed
 from every generic write and the jail): the number of routine runs counted, and per note the run
@@ -16,9 +14,8 @@ depth-0 routine run at the close-out, deterministically, before the autocommit c
 THE READING is `unread`: a note no run has read in the last `UNREAD_RUNS` counted runs, its age
 counted from when it was first seen, so a note written last week is never "unread". It decides
 nothing by itself. The review leg names those notes and may fold one into the note that covers
-it; nothing here deletes, archives or demotes a note (`.memory/` is versioned by the routine's
-repo, and absence of a read is not proof of no value — Hermes' own curator never prunes on use
-counts alone).
+it; nothing here deletes, archives or demotes a note — absence of a read is not proof of no
+value.
 """
 
 from __future__ import annotations

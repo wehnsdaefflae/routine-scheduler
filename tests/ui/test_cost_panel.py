@@ -1,16 +1,4 @@
-"""Per-run cost on the routine's DEVELOPMENT page, in the real console (D163).
-
-`readmodels/cost_profile.py` shipped in 0.495.0 and no surface read it, so the operator who
-asked for "a real cost profile per routine" could not see one. The panel
-(components/cost-panel.js) renders it at #/changes/<slug> beside Outcome.
-
-The assertion that matters is the HONESTY one: the read model decides whether its own figures
-can be trusted (a depth-0 run reporting less volume than its own `#sub<n>` child rows add up to
-was understated by the accounting defect closed in 0.494.0, R3112), and a window it calls mixed
-must SAY so where its median is read — in words, in the warn tone, not only in a payload field.
-Every assertion below first asserts the element is PRESENT: a selector matching nothing passes
-vacuously, and a console that lost the panel entirely would pass with it.
-"""
+"""Per-run cost on the routine's DEVELOPMENT page, in the real console (D163)."""
 
 from __future__ import annotations
 

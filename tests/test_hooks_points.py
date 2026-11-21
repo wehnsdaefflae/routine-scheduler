@@ -1,16 +1,4 @@
-"""The HOOK POINT REGISTRY — `rsched/hooks/points.py` and the one evaluator over it.
-
-The operator asked (2026-10-26) whether hooks are fully implemented, naming pre-action, post
-action and pre finalize hooks "and many more". Three of those already fired — at hard-coded
-call sites, with nothing naming the set, so the question could only be answered by reading the
-turn loop. These pin the table that answers it.
-
-What they are really defending is the thing a registry is for: that it stays the SAME
-vocabulary as the layers it describes. A table that drifts from `assists.MOMENT_PAYLOADS` or
-from `reminders.KINDS` is worse than no table, because it reads as fact while being a second
-opinion — the "three stores with a shared name" failure the hook design names in its own
-docstring.
-"""
+"""The HOOK POINT REGISTRY — `rsched/hooks/points.py` and the one evaluator over it."""
 
 from __future__ import annotations
 
@@ -49,19 +37,6 @@ def test_every_reminder_trigger_kind_is_a_point():
 def test_exactly_two_points_can_change_what_runs_and_the_rest_are_free():
     """Which points can alter control flow — and a CORRECTION to the hook design's rule 2,
     found by building this table.
-
-    The design (`state/hooks-design.md`, 2026-10-18) says `hold_before_action` is the only
-    delivery that can change what runs, "every other moment rides an observation or a prompt
-    section". That was true when it was written and is not true of the engine now: the
-    pre-finish rung (`engine/finishgate.py` asking `assist.at_finish`) SETS THE FINISH ASIDE,
-    so the run takes another turn it would not have taken. It costs a turn and it changes what
-    runs, which is the definition the rule cares about.
-
-    So there are two, and they are different in kind: `pre-action` PREVENTS an action,
-    `pre-finalize` DEFERS a finish. Both are pinned by count, because a third appearing here
-    without a decision would mean control flow can be altered somewhere the design does not
-    account for — which is exactly what this test would have caught about pre-finalize if the
-    table had existed when that rung was built.
     """
     assert points.HOLDING_POINTS == ("pre-action", "pre-finalize")
     assert dispatch.holds("pre-action") is True

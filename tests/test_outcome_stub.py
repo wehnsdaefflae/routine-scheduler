@@ -1,21 +1,4 @@
-"""A new routine is born MEASURING what it was created to produce.
-
-D286, the operator's answer verbatim (2026-11-12): *"At creation: scaffold a
-`scripts/outcome.py` stub derived from the `produces` lines, so a new routine measures
-something from its first run (the reporter's preference)"*.
-
-`create_routine` REQUIRES `produces` before anything is created, so the contract always
-existed and the measuring script never did: `drawerrr-irreversible-actions` was created on
-2026-11-10 and immediately flagged itself on its own settings page — "recipe:outcome — it
-declares an outcome but has no scripts/outcome.py to measure it — every run records an outcome
-error instead of a reading". A routine born in a state its own surface calls broken.
-
-The stub is DERIVED from the `produces` lines (`engine/outcome_words.contract`), never guessed:
-one measure per line, named by its id. It must satisfy the reader that flags its absence
-(`engine/outcome.parse` — exit 0 and one JSON object on the last line carrying a number for
-every declared measure), and it must be HONEST about being a stub: a TODO naming, per measure,
-what a real measurement would read.
-"""
+"""A new routine is born MEASURING what it was created to produce."""
 
 from __future__ import annotations
 

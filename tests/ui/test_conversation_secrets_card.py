@@ -1,16 +1,4 @@
-"""A CONVERSATION's own secrets, written from its own page (D216 rank 1).
-
-The engine half was never missing: the scoped store is keyed by the RUN's slug, and a
-conversation's slug is its directory name exactly as a routine's is, so
-`secrets.d/<conversation-slug>.env` was already injected into its util calls and already
-skipped the exposure gate. What was missing was any surface to PUT one through — so the only
-credentials a conversation could use were the central store's, exposure decision and all.
-
-These tests load what the operator sees, because the gap was a PAGE: the router shipped first
-(`web/api_conversation_secrets.py`, pinned in tests/test_conversation_secrets.py) and a write
-surface with no card is not the gap closed. The same shared card the routine page mounts, so
-the assertions are deliberately the routine ones over a conversation slug.
-"""
+"""A CONVERSATION's own secrets, written from its own page (D216 rank 1)."""
 
 from playwright.sync_api import expect
 

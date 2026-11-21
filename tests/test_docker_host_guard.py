@@ -1,19 +1,4 @@
-"""A deploy script refuses before it drives a Docker daemon that is not on this host.
-
-The defect (2026-10-01): `deploy/nat64.sh off` was run on omen-laptop inside the sshfs mount of
-the SERVER's checkout. The script rewrote the server's `.env` through the mount, then talked to
-the laptop's Docker Desktop, whose empty container list passed nat64.sh's only safety check. It
-built rsched, rsched-tor and rsched-chrome on the laptop (~5.2 GB), pulled cliproxy and created
-the project's browser network there; it stopped only because the default network's address pool
-overlapped a laptop network. With a free subnet the laptop would have started a SECOND scheduler
-daemon bound to its stale July copy of ~/routines. Meanwhile the server stayed on NAT64 while the
-script printed "NAT64 off", and `status` run from the laptop reported nothing wrong.
-
-Pinned here, against `deploy/docker-host-guard.sh` with stubbed `docker`/`hostname`/`findmnt`:
-the daemon-name mismatch refuses, a network-filesystem checkout refuses BEFORE any docker call
-(so a refusal leaves `.env` untouched), an unreachable daemon refuses, the matching host passes,
-and both scripts that actually drive compose call the guard.
-"""
+"""A deploy script refuses before it drives a Docker daemon that is not on this host."""
 
 from __future__ import annotations
 

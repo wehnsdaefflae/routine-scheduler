@@ -107,14 +107,7 @@ def _lib(tmp_path, utils=()):
 
 
 def _rendered(obs: dict) -> str:
-    """One refusal observation as the model sees it — through BOTH paths that render one.
-
-    A declaration gate returns `{kind, name, error}`: the call never ran, so it carries no
-    `exit`. The renderer used to assume one for every util/script observation and raised
-    `KeyError` — mid-turn in the loop, and again in `replay_messages` on every attempt to
-    resume, because the crashing observation is already in the append-only transcript. So
-    the assertion here is worth nothing unless it covers the replay path too.
-    """
+    """One refusal observation as the model sees it — through BOTH paths that render one."""
     from rsched.engine.history import replay_messages
     from rsched.engine.observations import format_observation
 

@@ -1,19 +1,4 @@
-"""The fs-root notes must not tell a run to stop trying something that works (F829).
-
-R3164, from `llmsectest-weekday`: the operator granted an `fs-write` root permanently while the
-run was live, and the config-change note the web sends after every forever-decision
-(`web/api_questions._tell_live_run`) said *"takes effect at your NEXT RUN … widening it mid-run
-would not reach the jails already created"*. The very next identical util call succeeded with
-the new root in effect.
-
-The note was wrong because `sandbox.policy_for_ctx` builds the jail PER CALL from
-`ctx.write_roots()` — the config roots **plus `ctx.granted_now`**, the run's grant overlay that
-`requests.apply_decision` writes the moment the operator answers. What genuinely waits is a
-CONFIG EDIT: `ctx.routine` is the config composed at boot. The `fs_read_roots` entry always drew
-exactly that line; `fs_write_roots` never did. Same shape as F802's `machines` entry
-(`tests/test_configflow_machines.py`): compare the prose against the behaviour, and pin both
-fs-root fields to one distinction so they cannot drift apart again.
-"""
+"""The fs-root notes must not tell a run to stop trying something that works (F829)."""
 
 from __future__ import annotations
 

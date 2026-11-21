@@ -1,10 +1,4 @@
-"""The action-schema projection: what a run is SHOWN must match what it may DO.
-
-The load-bearing property is completeness — a projected schema may never omit a field an
-allowed kind needs, or a legal action becomes unrepresentable. It is checked against
-KIND_EXAMPLES (one minimal valid action per kind) rather than a second hand-written map,
-so a new kind is covered the moment it gets an example.
-"""
+"""The action-schema projection: what a run is SHOWN must match what it may DO."""
 
 from __future__ import annotations
 
@@ -106,29 +100,7 @@ def test_a_shared_field_describes_every_kind_that_accepts_it():
 
 
 def test_a_shared_fields_clauses_each_carry_their_own_lead():
-    """Set equality above is not enough, and a live prompt proved it.
-
-    `_project_description` keeps a clause whose lead it does not recognize — the rule that
-    lets universal prose through, and deliberately so: trimming never drops prose it did not
-    positively understand. The trap is a clause-led list that CONTINUES past its lead without
-    re-naming its kind. Those continuations name no kind, so they are kept for EVERY kind.
-
-    `verb` shipped that way. `task:` led only the first of six task clauses, and a run holding
-    `manage_lane` and not `task` was shown `create (id + title + brief)`, `update (id + what
-    changes)`, `open (…)`, `checkpoint (…)` and `delete (id)` as manage_lane's own verbs —
-    measured in a live self-audit prompt. Both kinds appeared somewhere, so the set-equality
-    assertion above was satisfied.
-
-    So the invariant is about the DESCRIPTION, not the projection: once a SHARED field's
-    prose has started leading clauses with kinds, every later clause must carry a lead too.
-
-    Scoped to fields SEVERAL kinds accept, because that is the only place the harm exists. A
-    field just one kind takes (`answer_type` → decide, `state` and `outcome` → task) may
-    continue its list unled: those clauses are kept for every kind, but no other kind is ever
-    shown the field at all, so there is nowhere for them to leak to. Widening this test to
-    them would demand churn on prose that reads perfectly, which is how a guard stops being
-    believed.
-    """
+    """Set equality above is not enough, and a live prompt proved it."""
     from rsched.engine.kindsurface import _clause_kinds
 
     for field, spec in ACTION_SCHEMA["properties"].items():

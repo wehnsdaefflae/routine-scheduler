@@ -1,11 +1,7 @@
 """The HARNESS CONTRACT — the first thing the orchestrator reads, and the rules it runs under.
 
-Split out of `composer.py` (F393): assembling the prompt from parts is one job, and writing the
-part that states the contract is another — this one is almost entirely prose the model obeys.
-
 Identity, the action chain and its order, the `say` contract at the routine's deliberation
-level, the
-working directory and every extra root, the shared stores and their notes channel, the hub tab,
+level, the working directory and every extra root, the shared stores and their notes channel,
 how code runs, the concrete budgets, a gloss of each action kind THIS run can use. Every
 sentence is load-bearing and `docs/prompt-anatomy.md` pins the wording — a change here without a
 change there fails `tests/test_prompt_anatomy.py`, deliberately.
@@ -23,17 +19,9 @@ from .runkind import is_conversation
 def _subrun_allowance(ctx: RunContext) -> str:
     """What THIS node may still start — not the tree total (D147-A).
 
-    `max_child_runs` is a cumulative LIFETIME total for the whole run tree:
-    `run_context.sub_counter`
-    is one shared list, `childrun` increments it and never decrements, and `subruns._cap_reason`
-    gates on it. But this contract used to render the raw ceiling into EVERY node's prompt, so a
-    child that had started nothing was told it had the full eight. The specimen (R1870/F549): a
-    run spawned three children numbered 5, 7 and 8; all three were refused at their own first
-    spawn and all three finished PARTIAL, each quoting the number it had been promised.
-
-    So a node with the whole budget in front of it reads the plain number, and a node whose
-    siblings have spent some of it reads what is LEFT plus what it is a remainder of — because a
-    remaining count with no total is as unplannable as a total with no remainder.
+    `max_child_runs` is a LIFETIME total shared by the whole run tree (`run_context.sub_counter`,
+    never decremented). A node with the whole budget reads the plain number; one whose siblings
+    spent some reads what is LEFT beside the total it is a remainder of.
     """
     total = ctx.budgets.max_child_runs
     used = ctx.sub_counter[0]
@@ -51,9 +39,8 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
     if r.fs_read_roots or r.fs_write_roots:
         extra = (f"\nAdditional readable roots: {[str(p) for p in r.fs_read_roots]}; "
                  f"writable roots: {[str(p) for p in r.fs_write_roots]}.")
-    # The stores this routine SHARES, each with the routines on the other end, plus the notes
-    # channel between them (F335) — named beside the roots because a store a run does not know
-    # it shares is one it never looks in; a channel it does not know about does not exist.
+    # The stores this routine SHARES and their notes channel — a store a run does not know it
+    # shares is one it never looks in.
     from ..sharedstores import contract_section
 
     extra += contract_section(ctx.server.routines_home, r.slug, r.fs_write_roots)
@@ -72,20 +59,15 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
                          "auto-approved once its selftest passes.",
         }.get(g.confirm if g else "never", "")
     else:
-        # The write_util BULLET is filtered out entirely when the kind is denied (its
-        # approval prose would describe a channel that doesn't exist for this run), so this
-        # sentence is the only place a denied run learns why — keep it self-explaining.
+        # The write_util bullet is filtered out when denied, so this sentence is the only place
+        # a denied run learns why — keep it self-explaining.
         authoring = ("Creating or revising utils is switched OFF in this routine's "
                      "capabilities — the engine rejects write_util. Work with the "
                      "existing utils; if a needed one is missing or broken, file a "
                      "deferred ask_user naming it.")
         util_confirm = ""
-    # Where the task lives differs by kind. A top-level ROUTINE's task is BAKED INTO its recipe
-    # (main.md + stages/), self-contained and authoritative — the sole source of truth. A SUBRUN's
-    # task is the INSTRUCTION section (its parent's self-contained brief). A CONVERSATION runs at
-    # depth 0 but its task is NOT the recipe: it is the first message (instruction.md), and the
-    # converse workflow only defines HOW to work a reply — so it gets its own ownership prose and
-    # the INSTRUCTION section below (see build_system_prompt).
+    # Where the task lives: a ROUTINE's is its recipe; a SUBRUN's the INSTRUCTION section (its
+    # parent's brief); a CONVERSATION's its first message — its workflow only says HOW.
     if ctx.depth > 0:
         ownership = ("Ownership of prose: your task is the INSTRUCTION section below — a "
                      "self-contained brief written by your parent; everything you need to do, and "
@@ -110,14 +92,8 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
                      "main.md entry and the stages/<name>.md modules it routes to) fully defines "
                      "your task: goal, deliverable, constraints, and what a finished run leaves "
                      "behind (its Done when). It is the single source of truth for what to do. ")
-    # Recipe ownership must match what the ENGINE enforces: since 0.261.0 own-recipe writes are
-    # the `write_recipe` CAPABILITY (the recipe-authoring conduct doc) or a user-requested
-    # revise leg, derived in loopsetup — not, as before, a side effect of a write root covering
-    # the routine's own dir. The sentence names the real grant: it went on citing the write
-    # root after that stopped being the reason, and a wrong reason is a falsehood too.
-    # Telling such a run its recipe is "READ-ONLY to you" is a falsehood it will obey —
-    # routine-improver:20260723-112446 queued ITSELF (include-toggle on) and then skipped
-    # every lens on the self target, citing this very sentence (F165).
+    # Recipe ownership must match what the ENGINE enforces (`recipe_unlocked`, derived in
+    # loopsetup) and name the real grant: a run told "READ-ONLY" will obey it (F165).
     if g is not None and g.recipe_unlocked:
         recipe_line = ("Your own recipe (main.md, stages/, tuning.yaml) IS WRITABLE "
                        "to you this run — the user granted it (the recipe-authoring "
@@ -126,10 +102,7 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
     else:
         recipe_line = ("Your own recipe (main.md, stages/) is "
                        "READ-ONLY to you — the routine-improver meta routine refines recipes")
-    # The say contract scales with the routine's deliberation level (the user's knob over
-    # how much thinking lands on paper); think-on-paper adds a standing notes-file paragraph.
-    # D62: an admin conversation leg — tell the model its capability gating is lifted (so it
-    # does not route reachable work to a needless ask_user) AND that every action is audited.
+    # D62: an admin leg is told its gating is lifted (so it skips needless asks) AND audited.
     admin_banner = ("\n\n**ADMIN CONVERSATION** — the operator authenticated this leg with the "
                     "admin token, so capability gating is LIFTED: every gated action kind and "
                     "reserved util is available to you this leg. Structural limits still hold "
@@ -137,10 +110,8 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
                     "conversation-only kinds stay conversation-only). Every action you take is "
                     "logged to the admin audit trail. Wield this deliberately.") \
         if g is not None and g.admin else ""
-    # The consequence-reminder layer's STANDING INSTRUCTION, only where the capability is
-    # on. Two halves, and the second is the one that makes it work: the posture (an action
-    # can have an effect you did not intend) is useless without "record it on the turn you
-    # notice", because the realisation does not survive to a later turn.
+    # The reminder layer's standing instruction (capability on only). "Record it on the turn
+    # you notice" is the half that works: the realisation does not survive to a later turn.
     reminder_line = ""
     if g is not None and g.reminders_on:
         reminder_line = (
@@ -156,15 +127,11 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
                     "workspace (the `job` action)") if g is not None and g.jobs_on else ""
     level = ctx.deliberation or r.deliberation
     standing = deliberation.standing_note(level)
-    # Only the kinds this run may emit get a bullet — the same projection the ACTION SCHEMA
-    # section uses, so the two never describe different vocabularies.
+    # Only the kinds this run may emit get a bullet — the same projection as the schema section.
     usable = kinds if kinds is not None else effective_kinds(None, g)
     bullets = kind_bullets(usable, util_confirm=util_confirm,
                            ask_timeout_min=b.ask_timeout_min)
-    # How code runs, stated for the channels this run actually HAS. `shell` is a capability
-    # (0.287.0, was a reserved util) held by a minority of routines, so the sentence names it
-    # only where it exists — and names it as the escape hatch, so a run holding it does not
-    # start reaching for it ahead of the library.
+    # `shell` is named only where held, and as the escape hatch, never ahead of the library.
     code_line = ("You run code through a global util (the `util` action)."
                  if "shell" not in usable else
                  "You run code through a global util (the `util` action); for a one-off no "

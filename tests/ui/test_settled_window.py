@@ -1,10 +1,4 @@
-"""The Decisions page shows the settled archive as a WINDOW and says so (F810).
-
-`/api/questions` sends settled decisions only when a reader asks (`web/decisions_window.py`),
-so the page — the one surface that shows history — asks for the newest 25, names how many
-exist, and fetches more on a click instead of a list that silently stops. When the page goes
-away it releases the window: the badge's 30 s read carries no history again.
-"""
+"""The Decisions page shows the settled archive as a WINDOW and says so (F810)."""
 
 from __future__ import annotations
 

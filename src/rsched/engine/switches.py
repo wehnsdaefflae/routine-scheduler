@@ -1,11 +1,9 @@
 """Turn-boundary SWITCHES — what the user changed while the run was already going.
 
-Split out of `control.py` (F393). One discipline, five signals (a model switch, a deliberation
-switch, a bound rule, an unbound rule, a config change): the WEB layer writes `control.json`,
-the engine only ever reads it, and an applied-ts ledger stops a resumed leg re-firing a stale
-signal. The composed prompt is immutable under the caching contract, so a switch reaches the
-model as an APPENDED engine note rather than a rewrite — which is also why the run can see, in
-its own transcript, that the ground moved under it.
+One discipline for every signal (model, deliberation, bound/unbound rule, config change,
+supervise-now): the WEB layer writes `control.json`, the engine only reads it, and an applied-ts
+ledger stops a resumed leg re-firing a stale signal. The composed prompt is immutable under the
+caching contract, so a switch reaches the model as an APPENDED engine note.
 """
 
 from __future__ import annotations
@@ -25,9 +23,8 @@ def _applied_path(loop):
 
 def load_applied_baselines(loop) -> None:
     """Seed the mid-run-switch edge-triggers from the run's applied ledger. control.json is
-    web-owned (the engine never writes it), so a consumed signal can't be cleared there —
-    without this ledger every RESUME leg would re-fire the run's stale signals (re-pinning
-    models the user has since changed back, and re-injecting the same engine notes every leg).
+    web-owned, so a consumed signal can't be cleared there; without this ledger every RESUME
+    leg would re-fire stale signals.
     """
     applied = read_json(_applied_path(loop))
     if isinstance(applied, dict):
@@ -39,10 +36,9 @@ def load_applied_baselines(loop) -> None:
 
 
 def _fresh(loop, signal: str, last_ts: str) -> dict | None:
-    """The payload of `signal` when control.json carries one newer than `last_ts` — the `ts`
-    this run last applied — recorded in the applied ledger; else None. The edge-trigger every
-    signal shares: the engine never has to write control.json, which stays web-owned. The
-    caller advances its own `last_ts` from the payload.
+    """The payload of `signal` when control.json carries one other than `last_ts` (the `ts`
+    this run last applied), recorded in the applied ledger; else None. The caller advances its
+    own `last_ts` from the payload.
     """
     obj = read_json(loop.ctx.root_run_dir / "control.json")
     sw = obj.get(signal) if isinstance(obj, dict) else None
@@ -55,10 +51,8 @@ def _fresh(loop, signal: str, last_ts: str) -> dict | None:
     return sw
 
 
-#: What `ladder.rung_is_due` reports when a PERSON asked for this rung — kept distinct from the
-#: three `ladder.PULL_FORWARD` events, which are facts the engine noticed about the run, because a
-#: transcript reader must be able to tell a rung the operator called for from one the mechanism
-#: produced on its own.
+#: What `ladder.rung_is_due` reports when a PERSON asked for this rung — distinct from the
+#: `ladder.PULL_FORWARD` events, so a reader can tell a requested rung from an automatic one.
 REQUESTED_BY_PERSON = "person_requested"
 
 
@@ -66,28 +60,13 @@ def person_asked(loop) -> str | None:
     """`REQUESTED_BY_PERSON` when a person has asked THIS run for a supervisory rung since the
     last ask it honoured, else None — the sixth signal, and the ask is consumed by the read.
 
-    THE DOOR THIS OPENS (F750). A person could not start a supervisory run by hand while the run
-    it would supervise was live: `runner.fire_blocker` refuses a second run of a routine (two UI
-    toasts on 2026-10-16, "routine fau is busy", the operator pressing run-now with the brief
-    "rung" while `fau:20261016-125013` was going), and that refusal is RIGHT — one run per
-    (home, slug), because two concurrent runs of one routine race its state. The ladder already
-    supervises a live run the only way that is safe: in-process, at the worker's own turn
-    boundary, as an OVERSIGHT child whose turns are its own (`engine/ladder.escalate`). So the
-    door is a REQUEST ON THE RUN, not a second run of the routine.
+    A REQUEST ON THE RUN rather than a second run of the routine (one run per routine; the
+    ladder supervises a live run in-process as an OVERSIGHT child, `ladder.escalate`). It needs
+    no knob: the ask IS the authorization, so `ladder.at_boundary` reads it before
+    `ladder.enabled`. Consuming it on read is safe because every path out of `escalate` writes
+    an event; it must never become a MODE that rungs every boundary.
 
-    IT NEEDS NO KNOB. `ladder.enabled` is false on every routine by default, so an ask gated on
-    it would be shut on exactly the run the operator is watching. The ask IS the authorization,
-    and `ladder.at_boundary` therefore reads it before it reads the knob or the interval.
-
-    CONSUMED BY THE READ, which is safe only because every path out of `escalate` writes an
-    event — the pattern-missing hard skip, a child the tree cannot start, a supervisor that
-    returns no directive, and the directive itself. One ask is one rung, and the person is never
-    left with silence. It must not become a MODE: an ask that stayed set would put a rung on
-    every boundary for the rest of the run.
-
-    `_last_supervise_ts` is read through `getattr` because a loop stand-in in a test carries only
-    the attributes the mechanism under test needs, and a required attribute here would turn an
-    unrelated test into an AttributeError instead of a missed ask.
+    `_last_supervise_ts` is read via `getattr` so a minimal test loop stand-in still works.
     """
     seen = str(getattr(loop, "_last_supervise_ts", "") or "")
     if (ask := _fresh(loop, "supervise_now", seen)) is None:
@@ -141,16 +120,9 @@ def apply_deliberation_switch(loop) -> None:
 def apply_config_change(loop) -> None:
     """Turn-boundary: a config PATCH made while this run is LIVE (F337).
 
-    Two halves, one signal. The fields `configflow` classes as LIVE are ADOPTED into the run
-    context here; every other patched field is named as taking effect at the next run. Naming
-    both is the point — the complaint F337 records is not that some fields wait, it is that the
-    run was never told WHICH did, so "I changed it while it was running" meant two different
-    things depending on the field.
-
-    Same edge-trigger discipline as the model/deliberation/rule switches: the web layer writes
-    control.json, the engine only reads it, and the applied-ts ledger stops a resumed leg
-    re-firing a stale signal. The composed prompt is immutable (the prompt-caching contract), so
-    the change reaches the model as an appended engine note rather than a rewrite.
+    Fields `configflow` classes as LIVE are ADOPTED into the run context; every other patched
+    field is named as taking effect at the next run. The note names both halves, so the run
+    knows WHICH changes reached it.
     """
     from ..configflow import ADOPTABLE, change_note
 
@@ -174,19 +146,10 @@ def apply_config_change(loop) -> None:
 def _withdraw_reserve(loop) -> None:
     """A RAISE takes back the reserved finish turn — D244 (review item E1.4).
 
-    The first budget violation grants one more turn with the schema narrowed to `finish`
-    (`loopnudge.reserve_finish`), so the run ends in its own words. Budgets are LIVE config. The
-    two never met, for one reason: `EngineLoop.run` asks `ctx.budget_spent()` at the TOP of its
-    loop and calls `_turn_boundary()` after it — and the boundary is where the raise is adopted.
-    So the raise always arrived one step too late, and a run whose operator had just given it
-    another 40 turns still stood in a finish-only grammar until the next RUN.
-
-    Here, right after `budgets` has been adopted, the violation is re-asked. If nothing is over
-    its limit any more the reserve is given back: the flag cleared, the FULL action schema
-    restored (the narrowed grammar is the thing that actually stops the run working), and one
-    engine note saying so — a run told "this is your LAST turn" has to be told just as plainly
-    when that stops being true. A raise too small to clear the violation changes nothing, so
-    this cannot be used to walk past a budget by patching it upward by one.
+    Right after `budgets` is adopted the violation is re-asked (the loop's own check ran
+    before the boundary). If nothing is over its limit the reserve is given back: flag cleared,
+    FULL action schema restored, and an engine note saying so. A raise too small to clear the
+    violation changes nothing.
     """
     if not getattr(loop, "_finish_reserved", False) or loop.ctx.budget_spent():
         return
@@ -201,9 +164,8 @@ def _withdraw_reserve(loop) -> None:
 
 
 def _adopt(loop, field: str, value: object) -> None:
-    """Apply ONE live-classified field to the running context. Best-effort per field: a value
-    the run cannot use must not cost the run — the note still tells the model it changed, and a
-    bad value is the operator's to see on the page, not a crash mid-run.
+    """Apply ONE live-classified field to the running context. Best-effort per field: a bad
+    value is logged, never a crash mid-run.
     """
     ctx = loop.ctx
     try:
@@ -211,10 +173,8 @@ def _adopt(loop, field: str, value: object) -> None:
             if value in DELIBERATION_LEVELS and value != ctx.deliberation:
                 ctx.deliberation = value
         elif field == "budgets" and isinstance(value, dict):
-            # `ctx.budgets` carries the CONFIG's own field names (max_turns, …) and the
-            # ledger is derived from it per check, so setting the fields is enough — the
-            # next boundary's violation/warning test reads the new ceilings. Unknown keys
-            # are ignored rather than raising: a stray key must not end a live run.
+            # the ledger is derived from these config fields per check, so setting them is
+            # enough; unknown keys are ignored
             for name, limit in value.items():
                 if hasattr(ctx.budgets, str(name)) and isinstance(limit, int):
                     setattr(ctx.budgets, str(name), limit)
@@ -233,11 +193,8 @@ def _adopt(loop, field: str, value: object) -> None:
 def apply_rule_additions(loop) -> None:
     """Turn-boundary: honour general rules the USER bound to a LIVE run from the web layer.
 
-    Recording the slug in routine.yaml is the web layer's job (rules.py); what cannot wait is
-    the prose reaching the model, and the composed prompt is immutable (prompt-caching
-    contract), so each added rule arrives as an appended engine note read straight from the
-    library — and its assists start firing with it (`assist.rules_bound`). From the next run it
-    is an ordinary standing practice.
+    The web layer records the slug; each added rule's prose arrives here as an appended engine
+    note read from the library, and its assists start firing (`assist.rules_bound`).
     """
     from .. import library_docs
 
@@ -260,9 +217,7 @@ def apply_rule_additions(loop) -> None:
     assist.rules_bound(loop, slugs)
 
 
-# The two carriers of a rule's prose inside a live thread. A bound rule is NOT inlined in the
-# composed prompt — the digest lists slugs and the run reads what it needs — so the text can
-# only be in a mid-run bind note or in a read_rule observation.
+# The only two carriers of a rule's prose in a live thread (the digest lists slugs only).
 def _carries_rule(content: str, slug: str) -> bool:
     return (f"the user bound the general rule {slug!r}" in content
             or f"OBSERVATION (read_rule {slug}," in content)
@@ -271,20 +226,12 @@ def _carries_rule(content: str, slug: str) -> bool:
 def apply_rule_drop(loop) -> None:
     """Turn-boundary: honour a mid-run UNBIND written to control.json by the web layer.
 
-    Binding already reached a live run; unbinding used to wait for the next one, on the
-    reasoning that prose already in a context cannot be unsaid. That is true of the TEXT and
-    false of its authority: the run can simply be told the rule no longer binds, which costs
-    one appended note and nothing else. So an unbind now takes effect immediately, symmetric
-    with a bind — and the rule's assists stop with it (`assist.rules_unbound`), or the rule
-    would go on holding actions and deferring the finish of a run it no longer binds.
+    Takes effect immediately, symmetric with a bind: the run is told the rule no longer binds,
+    and its assists stop (`assist.rules_unbound`).
 
-    `erase` is the escalation, for when the prose itself is the problem rather than its
-    standing. It rewrites the messages that carry the rule into a tombstone — content, never
-    the entries themselves, so the user/assistant alternation the transport requires survives.
-    Rewriting the list INVALIDATES the provider's prompt cache from the first edited message
-    on, which is why it is opt-in and why the note says so: the composed prompt is a caching
-    contract, and compaction, schema-retry cleanup and the media fallback are the only other
-    things allowed to break it (CLAUDE.md and docs/architecture.md name all four).
+    `erase` also rewrites the messages carrying the rule's text into a tombstone (content only,
+    so the user/assistant alternation survives). That INVALIDATES the prompt cache from the
+    first edited message, so it is opt-in — one of the few rewrites the caching contract allows.
     """
     ctx = loop.ctx
     if (sw := _fresh(loop, "drop_rules", loop._last_rule_drop_ts)) is None:

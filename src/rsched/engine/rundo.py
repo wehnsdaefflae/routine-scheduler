@@ -1,37 +1,24 @@
-"""UNDO A RUN: revert what one run wrote to a versioned routine — D269's second increment.
+"""UNDO A RUN: revert what one run wrote to a versioned routine (D269).
 
-The order (decided 2026-10-08, `docs/designs.md`): *"'Undo this run' on the RUN PAGE, for a
-versioned routine: revert that run's autocommit limited to its deliverables and the recipe
-(never `state/`), refused when a later commit touched the same paths."* The first increment
-shipped in 0.530.0 for the unversioned case — a conversation's per-reply artifact snapshots and
-the ⟲ rewind that restores them (`engine/artsnap.py`). This is the versioned half, and it is a
-different mechanism for a reason: a routine's working directory IS a git repo, autocommitted at
-every run end (`engine/autocommit.py`), so the material to undo is a commit rather than a
-snapshot.
+A routine's working directory is a git repo autocommitted at every run end
+(`engine/autocommit.py`), so the material to undo is a commit. (The unversioned case — a
+conversation's artifact snapshots — is `engine/artsnap.py`.)
 
-**Three bounds, each from the order and each load-bearing:**
+**Three load-bearing bounds:**
 
-1. **Deliverables and the recipe — NEVER `state/`.** `state/` is where a run writes what the
-   NEXT run reads: its plan, its notes, its ledger of what it already did. Reverting that does
-   not undo work, it makes the next run repeat it or act on a world that no longer exists. So
-   the revert is restricted to paths outside `state/`, and a run whose commit touched only
-   `state/` has nothing to undo — said as such, rather than performed as an empty revert.
-2. **Refused when a LATER commit touched the same paths.** A revert that silently loses someone
-   else's later edit is worse than no undo at all, and a routine's repo has several writers (its
-   own runs, `routine-improver`'s recipe edits, the operator by hand). The refusal NAMES the
-   commits in the way, so the reader can decide instead of guessing.
-3. **A RESUMED run is several commits.** Every leg autocommits, so a run id can own two, three
-   or ten commits (`<run id>: ok`, and `<run id>: recipe revision (ok)` for a revision leg).
-   Undoing "the run" means undoing all of them, newest first — a revert of only the last leg
-   would leave the run half-undone, which is the state nobody can reason about.
+1. **Deliverables and the recipe — NEVER `state/`.** `state/` is what the NEXT run reads;
+   reverting it makes the next run repeat work or act on a world that no longer exists. A run
+   that touched only `state/` has nothing to undo, said as such.
+2. **Refused when a LATER commit touched the same paths** — a repo has several writers, and a
+   revert that silently loses a later edit is worse than none. The refusal names the commits.
+3. **A RESUMED run is several commits** (one per leg); undoing the run reverts all of them,
+   newest first, never only the last leg.
 
-**It reverts, it never rewrites.** `git revert --no-commit` plus one new commit: the history
-keeps both the run's work and its undo, so the undo itself is undoable and nothing that was
-pushed has to be force-updated. A rewrite would also break the library mirror, which pushes
-these repos.
+**It reverts, it never rewrites:** history keeps both the work and its undo, so the undo is
+undoable and nothing pushed needs a force-update.
 
-Read-only by default: `plan()` answers what an undo WOULD do and why it would be refused, which
-is what the run page's control reads before it offers the button at all.
+`plan()` is read-only: what an undo WOULD do and why it would be refused, read by the run page
+before it offers the control.
 """
 
 from __future__ import annotations
@@ -51,14 +38,9 @@ PROTECTED = "state/"
 class Plan:
     """What an undo of one run would do. `ok` is False when it cannot or need not run.
 
-    `commits` has NO DEFAULT on purpose, and the reason is a repo policy rather than a design
-    preference: `tests/test_double_conformance.py` refuses a `SimpleNamespace` stand-in for a
-    dataclass whose required fields the namespace already supplies (F766 — a hand-built surface
-    silently lacks the field production adds tomorrow). With `run_id` as the ONLY required
-    field, this class made every pre-existing `SimpleNamespace(run_id=…)` in the suite read as a
-    stand-in FOR IT — five of them, in test files with nothing to do with undoing a run. A
-    second required field removes the collision, and asking every caller to say which commits it
-    is talking about is no loss: a plan with no commit list is not a plan.
+    `commits` has NO DEFAULT on purpose: with `run_id` the only required field, every
+    `SimpleNamespace(run_id=…)` in the suite would read as a stand-in for this class to
+    `tests/test_double_conformance.py`.
     """
 
     run_id: str
@@ -104,11 +86,7 @@ def _touched(routine_dir: Path, commit: str) -> list[str]:
 
 
 def _later_commits_on(routine_dir: Path, newest: str, paths: list[str]) -> list[dict]:
-    """Commits AFTER `newest` that touched any of `paths` — what makes an undo unsafe.
-
-    Asked per path set rather than per path, because the question is "has anything landed on
-    this material since", and one answer is what the refusal needs to name.
-    """
+    """Commits AFTER `newest` that touched any of `paths` — what makes an undo unsafe."""
     if not paths:
         return []
     rows = _lines(routine_dir, "log", "--format=%h%x09%s", f"{newest}..HEAD", "--", *paths)
@@ -158,11 +136,9 @@ def plan(routine_dir: Path, run_id: str) -> Plan:
 def undo(routine_dir: Path, run_id: str) -> dict:
     """Perform the undo: revert the run's commits, keeping `state/` exactly as it is.
 
-    The sequence is `revert --no-commit` newest-first, then `checkout` of every protected path
-    from `HEAD` (undoing the revert's effect on it), then ONE commit. Done in that order because
-    git reverts a whole commit: there is no "revert these paths of it", so the protected paths
-    are restored after the fact rather than excluded up front — and if anything goes wrong in
-    between, the final `reset --hard` leaves the repo exactly as it was.
+    `revert --no-commit` newest-first, then `checkout` of every protected path from `HEAD`
+    (git reverts whole commits, so protected paths are restored after the fact), then ONE
+    commit. On any failure, `reset --hard` leaves the repo exactly as it was.
     """
     ready = plan(routine_dir, run_id)
     if not ready.ok:
@@ -189,8 +165,7 @@ def undo(routine_dir: Path, run_id: str) -> dict:
         git(routine_dir, "reset", "--hard", "HEAD", timeout=30)
         return {"ok": False, **ready.as_dict(), "why": f"the undo failed: {exc}"}
     # The STATUS, never the object: `libgit.Commit` is a dataclass, so `bool(landed)` is True
-    # even for `failed` and for `clean` — a truthiness test here would have reported a commit
-    # that never landed as a completed undo, which is the one lie this control may not tell.
+    # even for `failed` and `clean`.
     if landed.status != "committed":
         git(routine_dir, "reset", "--hard", "HEAD", timeout=30)
         return {"ok": False, **ready.as_dict(),

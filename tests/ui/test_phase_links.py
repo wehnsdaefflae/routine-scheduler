@@ -1,15 +1,5 @@
 """The run rail NAVIGATES (D193): a phase node and a sub-run row each take the reader to the
 turn they name, in the real console.
-
-The rail was a readout — it said a phase ran 2 turns and never said which, so the reader
-scrolled the transcript hunting for the divider. These cases load a run page and assert the
-thing a person actually uses: the node is a LINK, clicking it lands on that turn's box, and the
-URL then says where the reader is (so the position is shareable and survives a reload).
-
-Asserting the <a> alone would not do it — a link whose target does not exist on the page looks
-identical in the DOM. Each case therefore follows the click through to the turn box being
-scrolled to and flashed (static/landing.js `.ref-flash`), which only happens when the address
-resolved to a real box.
 """
 
 from __future__ import annotations

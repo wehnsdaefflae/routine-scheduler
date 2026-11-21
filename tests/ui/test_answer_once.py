@@ -1,11 +1,4 @@
-"""An answer is sent once, however it is started (components/answerform.js).
-
-The form disabled only its send button while the answer was in flight. A double-click on an
-option button — or Enter pressed twice — posted the answer twice: two toasts, two `onSuccess`
-calls, and on the Decisions page the second one spliced ANOTHER question's input out of the
-arrow-key order (`indexOf` of the already-removed input is -1, and `splice(-1, 1)` drops the
-last). A slow daemon is exactly when a person clicks again.
-"""
+"""An answer is sent once, however it is started (components/answerform.js)."""
 
 from __future__ import annotations
 

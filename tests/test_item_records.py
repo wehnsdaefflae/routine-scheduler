@@ -1,9 +1,4 @@
-"""No finding or decision self-audit's report.json ever carried can vanish (rsched/item_records).
-
-The specimen: F216, F217, F322, F355 and F445 left report.json while open or in_progress, no
-changelog row named them, and they disappeared from every surface — found 2026-11-05 by walking
-all 239 committed versions of the file.
-"""
+"""No finding or decision self-audit's report.json ever carried can vanish (rsched/item_records)."""
 
 from __future__ import annotations
 

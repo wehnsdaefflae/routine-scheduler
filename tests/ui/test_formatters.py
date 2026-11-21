@@ -1,10 +1,4 @@
-"""util.js's usage line speaks the console's one compact count and one cost rule.
-
-`fmtTokens` (the run header, the routine page's runs table, the transcript's per-turn usage, the
-LLM dock) carried private copies of both: a count that never left thousands — a long run read
-"2300.0k in", the same total the dashboard and Stats print as "2.30M" — and a cost rule copied
-from `fmtCost`. Evaluated as pure functions in the browser ESM context.
-"""
+"""util.js's usage line speaks the console's one compact count and one cost rule."""
 
 
 def test_the_usage_line_uses_the_shared_count_and_cost(ui, ui_page):

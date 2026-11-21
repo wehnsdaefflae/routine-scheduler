@@ -1,10 +1,4 @@
-"""The health stream's read side (readmodels.health_stream) and `/api/health/blocked`.
-
-The blocked-fleet events had fourteen writers and no reader inside the product: a
-refused fire, a stopped chain and a capped trigger produce no run; a commit that did not land
-happens after a run's finish or outside any run. No other surface can carry them. These tests pin the fold (one row per event+subject, newest first, windowed) and
-the route, plus the per-routine budget/partial split the usage stream cannot make.
-"""
+"""The health stream's read side (readmodels.health_stream) and `/api/health/blocked`."""
 
 import json
 from datetime import UTC, datetime, timedelta, timezone

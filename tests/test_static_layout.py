@@ -1,24 +1,4 @@
-"""The conversations view uses the run page's layout (user orders, 2026-07-16).
-
-Both conversations subpages (list + detail) mount the run view's .run-rail pattern:
-the chat owns the main column, the conversation list parks in the LEFT rail and
-state/tasks/artifacts in the RIGHT one — and the rails PERSIST at every desktop
-width: fixed viewport margins at the top end, sticky grid columns beside the chat
-below that (the view escapes the reading column), stacked only on a narrow screen.
-The old three-pane grid (conv-layout + drag handles + fold rails) must stay gone,
-and views.css must style BOTH rail positions the views mount.
-
-Since F619 the traffic runs the other way too: the RUN view carries the conversation
-list's counterpart, a routine list in a left rail (components/routine-rail.js), and
-its left column is styled in `rail.css` because views.css is frozen at its ratchet
-ceiling and scopes the rules it has to `.conv-view`.
-
-The WIDTHS moved with the 0.277.0 console rework and are read from the stylesheet
-rather than pinned here: the navigation rail now takes 212px of the viewport, so the
-free margin a fixed rail parks in starts much later, and pinning the old numbers
-would assert the layout of a shell that no longer exists. What is asserted is the
-REGIME — that a mid-width grid exists, escapes the reading column, and sticks.
-"""
+"""The conversations view uses the run page's layout (user orders, 2026-07-16)."""
 import re
 from pathlib import Path
 
@@ -88,10 +68,6 @@ def test_the_run_view_has_a_left_column_for_its_routine_rail():
 def test_rails_persist_at_mid_widths():
     """User order 2026-07-16: the rails must REMAIN beside the chat below the fixed-margin
     width too — a sticky three-column grid regime, with the view freed from the reading column.
-
-    The escape is `main:has(.conv-view)`, never `main.conv-view`: app.js renders every view into
-    its OWN container inside `main`, so the class lands on that container and the element
-    selector matched nothing at all — the escape had never once fired.
     """
     css = (STATIC / "views.css").read_text(encoding="utf-8")
     blocks = [css[m.end():].split("@media", 1)[0] for m in MID_QUERY_RE.finditer(css)]

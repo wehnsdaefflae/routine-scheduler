@@ -1,22 +1,4 @@
-"""UNDO A RUN — D269's second increment, over a real git repo.
-
-The order (`docs/designs.md`, decided 2026-10-08): *"'Undo this run' on the RUN PAGE, for a
-versioned routine: revert that run's autocommit limited to its deliverables and the recipe
-(never `state/`), refused when a later commit touched the same paths."*
-
-Each of those clauses is a test here, because each one is what makes the control safe to offer:
-
-1. the run's deliverables and recipe go back;
-2. **`state/` does not** — that is what the NEXT run reads, and reverting it would make the
-   next run repeat the work or act on a world that no longer exists;
-3. a LATER commit on the same paths REFUSES the undo, naming what is in the way — a revert that
-   silently drops someone else's later edit is worse than no undo;
-4. a RESUMED run is several commits and all of them go, newest first;
-5. it REVERTS rather than rewrites, so the undo is itself a commit (and itself undoable).
-
-The repo is real, not a stand-in: the whole subject is what git does with a revert, and a
-mocked `git` would prove only that this module calls the function I wrote.
-"""
+"""UNDO A RUN — D269's second increment, over a real git repo."""
 
 from __future__ import annotations
 

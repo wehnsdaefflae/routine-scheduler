@@ -1,12 +1,4 @@
-"""A REPLACEMENT CANDIDATE (engine/candidate.py) and its one-accept SWAP (web/api_pending.py).
-
-On 2026-10-17 the operator replaced two failing routines by hand, because the routine that
-maintains the others could only make small, reversible changes. These tests pin what replaces
-the hand: a run holding the routine-rebuild permission creates the candidate at once — with
-the old routine's settings and NONE of its secrets, on no schedule, in no lane — and files ONE
-decision; accepting it moves the old routine's lane place, schedule and secrets to the
-candidate and switches the old one off, and discarding it switches the candidate off.
-"""
+"""A REPLACEMENT CANDIDATE (engine/candidate.py) and its one-accept SWAP (web/api_pending.py)."""
 
 from __future__ import annotations
 

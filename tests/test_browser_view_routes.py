@@ -1,11 +1,4 @@
-"""The relayed browser screen, end to end through the real app (F527).
-
-`test_browser_proxy.py` pins the URL arithmetic; this pins the ROUTES: that the console
-serves the noVNC page from its own origin, that an unconfigured instance says so instead of
-proxying nowhere, that a wedged upstream reports loudly rather than showing a blank frame,
-and — the case that actually breaks a page — that noVNC's own asset requests, which carry no
-credential of any kind, are still served.
-"""
+"""The relayed browser screen, end to end through the real app (F527)."""
 
 from __future__ import annotations
 
@@ -61,10 +54,6 @@ def test_the_relay_is_reachable_with_a_pass_and_refused_without_one(app_client):
     """noVNC's assets are fetched by the browser from inside the frame and carry NO bearer
     header — and no query string either, because noVNC builds those URLs itself. They must
     still be served, or the page half-loads and the screen is blank for a second reason.
-
-    This asserted an SSE TICKET until 0.362.0. That was the shipped bug (F530): a ticket can
-    only ride in a URL, and the URLs that mattered were never the console's to write. The
-    pass is a cookie precisely so the browser attaches it to requests the page never sees.
     """
     client, cfg = app_client
     cfg.browser_view_url = "http://127.0.0.1:1/vnc.html"

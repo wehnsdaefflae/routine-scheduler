@@ -1,10 +1,4 @@
-"""The off switch has ONE spelling — the top-level `enabled: false` every reader reads.
-
-It had two: the console's pause toggle, its "Disabled" cadence and goal retirement wrote
-`schedule.disabled`, while creation, patterns and the conversation and background homes wrote
-`enabled`, and the loader folded the first into the second and gave it the final word. Which
-key a file's switch lived in depended on which door last touched it.
-"""
+"""The off switch has ONE spelling — the top-level `enabled: false` every reader reads."""
 import pytest
 import yaml
 

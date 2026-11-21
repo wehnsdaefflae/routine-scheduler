@@ -1,12 +1,5 @@
 """read_file meets a DOCUMENT (engine/docread.py): a PDF or an Office file is converted to
 Markdown by the `doc-read` util and paged like a text file, instead of refused as a binary.
-
-Pinned here: what makes a file a document (its magic bytes — and the util's own copy of that
-test agrees), the content-hash cache (a re-read converts nothing, a changed file converts
-again, nothing failed is kept), paging over the converted text, the fallback to the binary
-refusal with what failed, the observation's wording, the grounding a converted read gives,
-the engine-owned cache, and the one engine call — offline although the util's tree is not.
-The last test runs the REAL util through the real runner on a hand-made PDF.
 """
 
 from __future__ import annotations

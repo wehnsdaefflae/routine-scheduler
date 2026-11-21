@@ -1,21 +1,4 @@
-"""The two SWAP LAYERS, once the fleet has a default for the `tool_call` role (D230).
-
-The operator's proof predicate has a second half: *"a run that calls role_swap cheap shows a
-lower per-turn cost in its own usage row"*. Neither swap layer goes through
-`EndpointRegistry.for_model_chain` — both read `routine.models["tool_call"]` and stand down when
-it is empty — so binding the role for the `llm` action and the claim verifier alone would have
-changed NOTHING for the mechanism D217/D230 exist to feed: 31 of 32 routines would still read
-"could not be served".
-
-`autoswap._cheap_model` recorded exactly why it stood down: an unset role resolved to
-`system_model`, "which is not necessarily cheaper" — the model `main` was already running. A
-default FOR THE ROLE is what replaces that premise, so both layers now resolve through the one
-rule (`roleswap.cheap_model`), which still answers None when the resolved cheap model is the one
-`main` runs on. With no default set, nothing here changes behaviour at all.
-
-Split from `tests/test_tool_call_default.py` (the config + resolution + readout half) to keep
-both files under the repo's 350-line bar.
-"""
+"""The two SWAP LAYERS, once the fleet has a default for the `tool_call` role (D230)."""
 
 from __future__ import annotations
 

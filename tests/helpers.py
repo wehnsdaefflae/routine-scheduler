@@ -1,12 +1,4 @@
-"""Builders the fast suite's files used to carry a copy of each.
-
-A server over tmp homes, a RunContext over a scaffolded routine, a routine's capabilities
-rewritten by hand: each was copied into every file that needed one, so a constructor or a
-layout that changed had to be found and answered in every copy. These are plain functions —
-none holds state or needs a teardown; the fixtures that do live in conftest.py, beside the
-config and client builders they share a home with. A helper with one caller stays in its test
-file.
-"""
+"""Builders the fast suite's files used to carry a copy of each."""
 
 from __future__ import annotations
 
@@ -31,40 +23,7 @@ from rsched.reminders import Reminder
 # ---- test websockets --------------------------------------------------------------------
 
 def idle_socket(client, url: str, *, hold_s: float = 0.0) -> None:
-    """Open a test WebSocket that receives NOTHING, hold it, and leave it CLEANLY.
-
-    The three tests that only need a socket to EXIST (a stream is slow by design and must not
-    be counted; an http header belongs to no websocket scope) used to write
-    `with client.websocket_connect(url): pass` — and that form fails about two invocations in
-    three under the gate's parallel stage, with `concurrent.futures._base.CancelledError` out
-    of `starlette.testclient`.
-
-    It is a harness race, not a product defect and not the box's memory: MEASURED 2026-11-02,
-    the four files holding those sockets failed 8 of 12 `-n auto --dist worksteal` invocations
-    while the engine's memory cgroup sat at 37.2 % of its 5 GiB ceiling, so a bigger ceiling
-    would not have prevented one of them. The cause is the exit stack
-    `WebSocketTestSession.__enter__` builds (starlette 1.8.0): it registers `fut.result`, then
-    the portal's `cs.cancel`, then `close(1000)`. Unwinding LIFO, the close is sent and the
-    task scope is cancelled IMMEDIATELY after it — so when the server's handler has not yet
-    come back from its own close, `fut.result()` re-raises the cancellation into the test. Under
-    `-n auto` the workers are descheduled exactly often enough for that to be the common case.
-    Every socket in this suite that does NOT flake receives frames (`_frames_until_close`) or
-    waits on a server-side event (`test_ioload._close_and_wait`, whose docstring names this
-    same race) — i.e. it synchronizes with the handler before teardown.
-
-    DRAINING TO THE DISCONNECT DOES NOT WORK HERE and the measurement is why this helper is
-    shaped as it is: `/api/events` is a live BUS stream with nothing queued, so a post-close
-    `ws.receive()` BLOCKS instead of returning the server's close frame — 12 iterations went
-    from ~7 s each to minutes each and still failed. `test_ioload._close_and_wait` can wait
-    because it has a server-side event to wait ON (`gate.freed`); an idle socket has none.
-
-    So what this helper does is narrower and honest: it suppresses the TEARDOWN artefact, and
-    only that. The cancellation is raised by starlette's own exit stack after the assertions
-    this kind of test makes (the handshake completed; the request was or was not counted) have
-    already succeeded — the app never raises it. It cannot mask a real failure either: a socket
-    the server REFUSES raises `WebSocketDisconnect` with its close code, which is what every
-    refusal test in this suite asserts on, and that is not suppressed here.
-    """
+    """Open a test WebSocket that receives NOTHING, hold it, and leave it CLEANLY."""
     with contextlib.suppress(CancelledError), client.websocket_connect(url):
         if hold_s:
             time.sleep(hold_s)
@@ -286,14 +245,6 @@ def pid_alive(pid: int) -> bool:
 def mock_proxy(monkeypatch, handler) -> None:
     """Send every request the CLIProxy management client makes to `handler` instead
     (an httpx MockTransport handler).
-
-    RE-ENTRANT (F755): a second call in the same test RE-AIMS the mock instead of wrapping
-    it. It used to read `httpx.Client` off the module it had already patched, so the second
-    lambda called the first one with `transport=` — which `httpx.Client` had already been
-    given — and the resulting `TypeError: got multiple values for keyword argument
-    'transport'` surfaced as "could not reach the proxy's management API", a sentence about
-    the network describing a bug in the test. `_REAL_CLIENT` is captured once at import, so
-    every call builds a client from the real class.
     """
     monkeypatch.setattr(cliproxy_mgmt.httpx, "Client", lambda **kw: _REAL_CLIENT(
         transport=httpx.MockTransport(handler), **kw))

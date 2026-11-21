@@ -1,11 +1,4 @@
-"""What the RECOMMENDER is told and what it keeps — the creation draft of 2026-11-20.
-
-Creating `feeld-webui-maintainer` on the `code-maintainer` pattern wrote a draft proposing
-`fs_write_roots: ["work"]` (a relative path inside the routine's own directory) and the
-`android-actuation` permission "for observe/navigate" — which that doc's own WITHOUT line says
-needs no permission. Both came from a prompt that never named the routine's directory and listed
-permissions by summary alone (`patterns/recommend._prompt`, `patterns/recommend_roots`).
-"""
+"""What the RECOMMENDER is told and what it keeps — the creation draft of 2026-11-20."""
 
 
 def test_the_recommender_never_proposes_the_routine_s_own_directory(tmp_path, monkeypatch):

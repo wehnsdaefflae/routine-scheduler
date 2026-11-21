@@ -1,10 +1,4 @@
-"""A read that failed once is asked again — it is not the answer.
-
-Two components remembered a FAILED fetch for the life of the tab: the full-description toggle
-(components/docexpand.js) marked its doc loaded before the read and kept the error text on
-every later open, and the run-gate editor (components/gate-editor.js) cached the rejected
-promise of its check vocabulary, so one refused read broke every gate editor until a reload.
-"""
+"""A read that failed once is asked again — it is not the answer."""
 
 from __future__ import annotations
 

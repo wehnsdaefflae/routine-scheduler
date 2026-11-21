@@ -1,17 +1,4 @@
-"""The prompt's per-turn SEGMENT breakdown (D270) — and the one thing it must never do.
-
-`engine/promptsegments.py` measures what the prompt is MADE OF: the composer's own
-`(name, text)` sections plus the two segments the message list grows (the model's replies,
-the observations it was handed). The breakdown is diagnostic: a run reads it to see where its
-window is going.
-
-The decisive test here is the last one. The composed prompt is a CACHING CONTRACT — appended
-to, never mutated (engine/window.py's header) — so a measurement that changed one byte of
-what is sent would invalidate the provider's prompt cache for the rest of the run. That is
-money, not tidiness: a cold 1M-token window has cost over $100 on this instance. So the
-measurement is proved to leave both halves of the request untouched — the joined system
-prompt and the message list, media included.
-"""
+"""The prompt's per-turn SEGMENT breakdown (D270) — and the one thing it must never do."""
 
 from __future__ import annotations
 
@@ -72,11 +59,7 @@ def test_a_turn_with_nothing_said_yet_measures_zero_not_the_system_prompt() -> N
 
 
 def test_the_measurement_changes_not_one_byte_of_what_is_sent() -> None:
-    """The hard constraint from the order: diagnostic only, never in the cached prompt.
-
-    Both halves of the request are compared before and after: the JOINED system prompt (what
-    `build_system_prompt` sends) and the MESSAGE LIST itself, media attachments included.
-    """
+    """The hard constraint from the order: diagnostic only, never in the cached prompt."""
     sent_system = join_sections(SECTIONS)
     messages = [{"role": "system", "content": sent_system},
                 {"role": "assistant", "content": '{"kind": "read_file"}'},

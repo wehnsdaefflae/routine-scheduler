@@ -1,9 +1,6 @@
 """R2249 bug 1, the prompt-surface half: the util catalog tells a MULTIMODAL run that `vision`
 is for a text-only one, before any call is made. The engine's refusal (engine/visionsteer.py)
 is what enforces it; this is the same fact stated where it costs no turn.
-
-Kept beside the other catalog assertions in spirit but in its own file, because
-tests/test_composer.py is already 1000+ lines and the house size bar applies to tests too.
 """
 
 from __future__ import annotations

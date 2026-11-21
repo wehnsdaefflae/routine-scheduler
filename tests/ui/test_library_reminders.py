@@ -1,11 +1,4 @@
-"""The Library's curated consequence reminders: the one lever the page owns over them is REMOVAL.
-
-An approval decides what gets into the curated store; without this button nothing could take
-an entry out again short of editing the library repo by hand. The button posted its DELETE to
-`/library/reminders/<id>` — a path outside the `/api` mount, which only ever answers 404 — and
-awaited it with no catch, so the confirm dialog closed onto nothing: no toast, no change, the
-entry still listed.
-"""
+"""The Library's curated consequence reminders: the one lever the page owns over them is REMOVAL."""
 
 from __future__ import annotations
 

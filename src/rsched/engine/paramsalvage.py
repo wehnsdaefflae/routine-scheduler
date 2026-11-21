@@ -1,48 +1,23 @@
 """A tool parameter that SWALLOWED the ones written after it, put back before validation.
 
-MEASURED on `birthday-admin:20261022-080004`. The model closed its `summary` parameter with a
-MISMATCHED tag — `</summary>` instead of `</parameter>` — and the provider's pseudo-XML
-tool-call reader then ran on to the next real `</parameter>`. So `summary` arrived carrying its
-own text PLUS its own closing tag followed by `<parameter name="accounting">[...]`, and the
-`accounting` field arrived ABSENT. The engine answered "your `accounting` is incomplete: no
-entry for d1…g1" — truthfully, about a field the model had written and could still see in its
-own reply.
-
-WHAT IT COST, which is why this is repaired rather than merely counted: that run spent turns
-84-95 bisecting the field it could see — re-sending the same accounting, stripping unicode,
-shortening entries, then one entry at a time — twelve turns at full prompt price. It ended by
-shipping a 47-character diagnostic stub as the run's permanent summary ("Test call to diagnose
-accounting field parsing.") with placeholder entries ("d2 met: test"), which the accounting
-check accepted. The run's work was sound; only its record was destroyed.
-
-THE SHAPE, from that transcript: the swallow hit every finish whose summary ran long
-(1470-5170 chars, 9 of them) and no short one (47-103 chars, 5 of them) — the longer the
-parameter, the likelier the model loses its closing tag. A scan of 149 fleet transcripts over
-14 days found it in that one run: rare, and expensive when it happens.
-
-WHY HERE. `normalize_action` already exists to strip provider and grammar debris before the
-semantic validator judges the model's intent — an empty-string field a constrained decoder
-minted, a tool-call envelope, a stray `thinking` key. A parameter the transport glued onto its
-neighbour is the same class of damage, one layer earlier.
+The defect: the model closes a long parameter with a mismatched tag (`</summary>` instead of
+`</parameter>`), the provider's pseudo-XML reader runs on to the next real `</parameter>`, and
+the following fields arrive glued inside the carrier and ABSENT on the action. The run is then
+told a field it can see in its own reply is missing, and burns turns bisecting it. Rare, and
+expensive when it happens, so it is repaired rather than merely counted — beside
+`normalize_action`'s other transport-debris repairs, before the semantic validator.
 
 THREE CONDITIONS, all required, because a false repair eats text the model meant to write:
 
-1. The closer must name the field CARRYING it — `</summary>` inside `summary`, immediately
-   followed (whitespace aside) by `<parameter name="…">`. A run auditing this very defect
-   quotes the broken shape in its own prose, and that prose must survive untouched.
-2. Every restored name must be a REAL action field (`ACTION_SCHEMA`'s properties). Anything
-   else is the model's own words about something that is not a field.
-3. The field being restored must be EMPTY on the action. A value the provider did deliver is
-   the model's; the salvage only ever fills a hole.
+1. The closer must name the field CARRYING it, immediately followed (whitespace aside) by
+   `<parameter name="…">` — prose quoting the broken shape must survive untouched.
+2. Every restored name must be a REAL action field (`ACTION_SCHEMA`'s properties).
+3. The field being restored must be EMPTY on the action; the salvage only fills a hole.
 
-Any one of them failing abandons the WHOLE repair and returns the action untouched, by
-identity — a partial guess is worse than the defect, which at least announces itself.
+Any failure abandons the WHOLE repair and returns the action untouched, by identity.
 
-NOT SILENT. Each repair files `tool_param_salvaged`, one row per run, so the fleet rate of a
-transport defect is readable instead of hidden behind a fix. It is deliberately NOT blocked
-work (`readmodels/health_stream.BLOCKED_EVENTS`): the turn happened and its action ran —
-`git_lock_cleared` is the precedent. It is deliberately NOT a `wrong_turn_detected` reason
-either: that event IS blocked work, and its rows are the corpus of turns that produced nothing.
+Each repair files `tool_param_salvaged`, one row per run. It is NOT blocked work
+(`health_stream.BLOCKED_EVENTS`) nor a `wrong_turn_detected` reason: the action ran.
 """
 
 from __future__ import annotations
@@ -71,11 +46,8 @@ _OPEN = re.compile(r'^<parameter name="([A-Za-z_][A-Za-z0-9_]*)">')
 
 
 def _value(text: str) -> object:
-    """A swallowed parameter's text as the field's value: JSON when it is JSON, else the text.
-
-    The transport carries every parameter as text, so a list field (`accounting`, `args`,
-    `paths`) arrives as its JSON rendering and must be read back as one. Anything that does not
-    parse stays the string it is — a summary that merely opens with a bracket is not a list.
+    """A swallowed parameter's text as the field's value: JSON when it parses (a list field
+    arrives as its JSON rendering), else the text unchanged.
     """
     stripped = text.strip()
     if stripped[:1] in ("[", "{"):
@@ -89,9 +61,8 @@ def _value(text: str) -> object:
 def _chain(rest: str) -> list[tuple[str, str]] | None:
     """The `(name, text)` pairs packed into `rest`, or None if it is not that shape.
 
-    Each parameter runs to its own closing tag followed by the next opening one, and the last
-    runs to the end — the reply was cut where the model stopped writing, so the final field has
-    no closer at all.
+    Each parameter runs to its own closer + the next opener; the last runs to the end (it has
+    no closer at all).
     """
     pairs: list[tuple[str, str]] = []
     while (opening := _OPEN.match(rest)) is not None:
@@ -117,9 +88,8 @@ def carrier(action: dict) -> str:
 def repair(action: dict) -> tuple[dict, list[str]]:
     """`action` with any swallowed parameters put back, and the names that were restored.
 
-    Returns the action ITSELF (same object, empty list) when nothing is wrong or when any of
-    the three conditions fails — the hot path allocates nothing and a doubtful case is left
-    exactly as the model sent it.
+    Returns the action ITSELF (same object, empty list) when nothing is wrong or any condition
+    fails — the hot path allocates nothing.
     """
     key = carrier(action)
     if not key:
@@ -141,9 +111,7 @@ def repair(action: dict) -> tuple[dict, list[str]]:
 
 
 def _already_filed(ctx: RunContext) -> bool:
-    """Whether this run already filed a salvage row. Fails OPEN: a suppressor that cannot read
-    its own history must not become the thing that silences the log.
-    """
+    """Whether this run already filed a salvage row. Fails OPEN, so it never silences the log."""
     from pathlib import Path
 
     try:
@@ -159,10 +127,7 @@ def _already_filed(ctx: RunContext) -> bool:
 def record(ctx: RunContext, before: dict, fields: list[str]) -> None:
     """File one `tool_param_salvaged` row for this run.
 
-    ONE row per run, not per turn: what the row answers is WHICH RUN met the transport defect,
-    and the per-turn record is already on the transcript — the landed action carries the
-    restored fields, so the repair is visible where the turn is read.
-
+    One row per run, not per turn: the per-turn record is the landed action on the transcript.
     Best-effort: a measurement must never cost the turn it measures.
     """
     from pathlib import Path

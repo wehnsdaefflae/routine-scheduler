@@ -2,10 +2,6 @@
 recipe's `## Done when`, `engine/donewhen.py`), the finish ACCOUNTING that answers for both
 (`engine/accounting.py`), the digest block that says so at boot (`engine/finish_digest.py`) and
 the routine page's endpoint (`web/api_finishline.py`).
-
-The three questions have three owners; most of what is pinned here is that none of them can
-speak for another: a run cannot claim an outcome only the operator judges, the operator's save
-cannot erase what a run reported, and a date outcome is nobody's verdict but the calendar's.
 """
 
 from __future__ import annotations

@@ -1,12 +1,4 @@
-"""The daemon asks whether each endpoint's CREDENTIAL is still alive, and says so once.
-
-R2195. The daemon has kept user CONNECTIONS alive since `daemon/oauth_refresh.py`; the MODEL
-credentials every run depends on had no such pass, and on 2026-09-14 06:18 a claude-proxy
-subscription token expired and eight routines failed at turn 0 within two minutes, each `503
-auth_unavailable`. These pin the four things that fix has to get right: the VERDICT (a rate limit
-is not a dead credential), the RECORD and its event, the CADENCE (minutes, and one row a day),
-and the REGISTRATION in both the writer's vocabulary and the reader's.
-"""
+"""The daemon asks whether each endpoint's CREDENTIAL is still alive, and says so once."""
 
 from __future__ import annotations
 
@@ -269,13 +261,6 @@ def test_the_event_is_in_the_writers_vocabulary_and_deliberately_not_in_the_read
     """Both halves of the registration, which is what keeps a new event from being written and
     read by nobody (`tests/test_health_events.py` checks the enum both ways; this pins the
     JUDGEMENT about the other surface).
-
-    `BLOCKED_EVENTS` means WORK THAT WAS DUE DID NOT HAPPEN. A dead credential is a PREDICTOR of
-    that, not an instance of it: at the moment this event is filed nothing has been refused yet,
-    no fire was dropped and no turn was paid for — the next fire WILL fail, which is the whole
-    point of noticing early. Putting it on the blocked-fleet fold would count a prediction among
-    the misses and inflate "what is the fleet not doing" with work that has not come due. When a
-    run does then fail, `fire_refused`/`run_failed` already say so.
     """
     from rsched import health_vocab
     from rsched.readmodels.health_stream import BLOCKED_EVENTS

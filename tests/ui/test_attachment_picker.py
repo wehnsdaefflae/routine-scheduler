@@ -1,9 +1,4 @@
-"""The attachment picker's chips (components/filepicker.js) are removable from the keyboard.
-
-A picked or pasted file shows as a chip that removes it — and the chip was a bare <span> with a
-click handler: no role, no tab stop, no key. A keyboard user could attach a file and never take
-it off again.
-"""
+"""The attachment picker's chips (components/filepicker.js) are removable from the keyboard."""
 
 from __future__ import annotations
 

@@ -1,12 +1,5 @@
 """The REVISE path of `create_routine` (D198) — rewriting an EXISTING routine's recipe in
 place, gated behind that routine's own `revise_confirm` dial.
-
-The operator's answer, 2026-10-19: *"Add a revise path to `create_routine` (or a sibling
-action) gated by a per-routine dial, like `config_confirm`"*. These tests pin the three things
-that answer makes true: a caller without recipe-authoring is refused; the dial consulted is the
-TARGET's, not the caller's (`configdial`'s cross-routine rule, which this one follows); and the
-EDIT is always made by the routine that owns the recipe, never by the proposer — `always` files
-one decision card, `invited` hands the prose straight to the target's next run.
 """
 
 from __future__ import annotations

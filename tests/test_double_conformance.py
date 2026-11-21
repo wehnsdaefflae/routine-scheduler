@@ -2,98 +2,6 @@
 class it impersonates, and a `SimpleNamespace` the real dataclass would have CONSTRUCTED is not
 allowed to exist. The extraction is tests/double_survey.py; this module is the rules and the
 design record of what they waive and why.
-
-F644 (0.399.1, 2026-10-09): `engine/ladder.py` dispatched through `loop.subs` where the real
-attribute is `loop.subruns`, so "a rung has never judged anything" — for months, behind a green
-suite. The release's own words: *"The ladder's own tests passed because their fake loop defined
-`subs` to match the caller."* That mechanism, not the typo, is what this file exists for: a
-hand-built double's attribute surface is AUTHORED BY THE TEST, out of the same misreading that
-produced the calling code, so such a test asserts only that the two agree with each other.
-`SimpleNamespace` is the suite's universal double (410 occurrences over 81 files, measured
-2026-10-10) and nothing here bans it, rewrites one or adopts a mocking framework: this test
-READS the doubles that already exist and checks them against the real class.
-
-HOW A DOUBLE IS RECOGNISED as impersonating class X — by NAME, the same convention production
-code follows when it takes one of these objects as a parameter (`ladder.at_boundary(loop)`,
-`run_context.work_dir(ctx)`). Three shapes, all read statically with `ast`, never imported: 81
-test modules are slow to import and many of them need fixtures.
-  1. `<name> = SimpleNamespace(...)` where <name> is a key of IMPERSONATED.
-  2. `SimpleNamespace(<name>=SimpleNamespace(...))` — the double a test reaches through that
-     keyword (a doubled `ctx` carries `routine=`, `budgets=`, `transcript=`), the keyword
-     naming the impersonated class.
-  3. `class _Loop:` … `self.x = …` — a hand-written stub class named in STUBS; every attribute
-     its methods assign to `self` is its surface. A method such a stub DEFINES is out of scope
-     here: this checks the attributes a double ASSIGNS, which is what F644 turned on.
-
-THE TRAP this file had to solve: `dir(EngineLoop)` does not contain `subruns`. The real class
-declares most of what it HOLDS as bare class-level annotations filled in by
-`loopsetup.configure`, and `_recipe_unlocked` is not named in `engine/loop.py` at all — only
-`engine/loopsetup.py:155` assigns it. A class's real surface is therefore read from four
-places: class-level annotations, class-level assignments, `self.x = …` inside its own methods,
-and COLLABORATOR assignments — `<name>.x = …` anywhere under `src/rsched`, where <name> is
-that class's convention parameter name (22 engine modules assign onto a `loop`). A class whose
-attributes are declared somewhere none of those four reach cannot be checked this way, which is
-what the MIN_SURFACE floors below are for.
-
-THE SECOND DIRECTION, and why the first one could not have caught F766 (0.448.0, 2026-10-24).
-`Completion` is what every scripted endpoint in the suite returns, and
-tests/test_util_guard.py:85 stood in for one with `SimpleNamespace(parsed=…, text="")`. Both of
-those ARE real `Completion` fields, so the assigns-only rule above was GREEN: what broke the
-release was the field the stand-in OMITTED — `parsed_rest`, which F754 had just added and
-`engine/completion.py:279` reads through `replyactions.py:124`
-(`AttributeError: 'types.SimpleNamespace' object has no attribute 'parsed_rest'`, found by a
-25-minute release gate, paid for with a restore and a full rebuild). No check of assigned names
-can ever see a field that is not there: a hand-built surface is missing tomorrow's field by
-construction, and the defect arrives when production starts reading it, never when the double is
-written. So the second rule removes the hand-built surface instead of policing it — a
-`SimpleNamespace` that the real dataclass would have CONSTRUCTED from the very same keywords is
-the violation, and the fix is always the same one line: construct the dataclass.
-
-WHY CONSTRUCTIBILITY AND NOT A FIFTH `IMPERSONATED` ENTRY — measured on this tree, 2026-10-25,
-and the numbers are why a hand-maintained coverage list was not extended:
-  * `IMPERSONATED` detects by NAME, and NOT ONE Completion stand-in in the suite is held in a
-    variable called `completion` (or `comp`): all of them are
-    `def complete(...): return SimpleNamespace(...)`, returned straight out of a fake endpoint,
-    or bound into `SimpleNamespace(complete=lambda …)`. A fifth entry would have been VACUOUS —
-    red-free on arrival, exactly like the green run that shipped F766.
-  * Constructibility, on 441 keyworded `SimpleNamespace(...)` sites in tests/: 4 flagged, all 4
-    `Completion`, 0 false. It also found a FOURTH site the report's own grep missed
-    (tests/test_create_routine_outcome.py:133), which is the argument for a predicate over a
-    list in one line.
-  * SCOPE was measured too. Over all 48 dataclasses under `src/rsched` the same rule flags 12
-    sites of which 8 are false, every one of them from a dataclass with NO required field:
-    `GrantPolicy` (20 fields, 0 required) claims five `SimpleNamespace(libraries_home=…)`
-    server doubles, and `Commit` claims a bare `status=`. Hence two exclusions in
-    `scoped_dataclasses()` — a class needs at least one required field to be claimable, and the
-    scan covers `endpoints/` and `engine/`, the objects production dispatches through.
-  * A namespace is claimed only when exactly ONE scoped dataclass fits. Two fits is ambiguous
-    and silence is correct there; `**rest` is skipped because its keywords are not static.
-
-THE FLOORS are what stop this file passing vacuously, and the two rules need DIFFERENT ones.
-Rule 1 has standing violations to count: MIN_DOUBLES reds if detection breaks, MIN_SURFACE reds
-if surface extraction stops finding a real class. Rule 2's healthy state is ZERO hits, so a
-floor on its hits would be a floor on the defect — it gets a floor on its MACHINERY instead
-(MIN_SCOPED dataclasses discovered, MIN_NAMESPACE_SITES namespaces actually walked) plus
-`test_the_detector_catches_the_f766_shape`, which feeds it the historic stand-in verbatim and
-requires the violation the suite was green on. `test_the_detector_catches_the_f644_shape` does
-the same for rule 1.
-
-ONE EXEMPTION KIND, and it is itself guarded: a stub that RECORDS what it was told carries
-bookkeeping the real class has no reason to have (`_Transcript.events`, a list the test reads
-back where the real `Transcript.event()` appends to a file). Those sit in RECORDERS with the
-reason written out, and `test_an_exempt_recorder_is_never_read_by_production` reds if any
-module under `src/` ever READS an exempted name off the real object — without that guard, the
-table would be a hole of exactly F644's shape. Rule 2 has no exemption table at all: the fix
-for every hit is to construct the real class, so a waiver would only ever buy back the defect.
-
-WHAT THIS DOES NOT COVER, stated so nobody mistakes a green run for more than it is. Rule 1 is
-by NAME, so a double held in a variable called something else (`fake`, `l2`, a fixture return)
-is invisible to it, and only the four classes in IMPERSONATED are checked. Rule 2 is by SHAPE
-and so needs no list — but it sees only `SimpleNamespace`, only dataclasses whose fields are
-readable from their own file (one with base classes is skipped), and only keywords written
-literally at the call. A class whose attributes come from a dict at runtime (the pydantic
-`RoutineConfig`/`ServerConfig`) cannot be checked statically at all, which is why neither is
-in either rule.
 """
 
 from __future__ import annotations
@@ -193,12 +101,7 @@ def test_every_attribute_a_double_assigns_exists_on_the_real_class(name: str) ->
 
 
 def test_no_namespace_stands_in_for_a_real_dataclass() -> None:
-    """Rule 2 (F766): a `SimpleNamespace` the real dataclass would have built is the violation.
-
-    There is no exemption table and there is no fix but one: construct the dataclass. A
-    hand-built surface is missing the field production adds TOMORROW, which is what broke
-    0.448.0 — and the assigns-only rule above cannot see a missing field at all.
-    """
+    """Rule 2 (F766): a `SimpleNamespace` the real dataclass would have built is the violation."""
     bad = stand_ins()
     lines = "\n".join(
         f"  {s.where}  SimpleNamespace({', '.join(f'{k}=…' for k in s.kwargs)}) "
@@ -228,11 +131,7 @@ def test_the_check_cannot_pass_vacuously(name: str) -> None:
 
 
 def test_the_stand_in_scan_cannot_pass_vacuously() -> None:
-    """Rule 2's floors are on its MACHINERY, because its healthy state is zero hits.
-
-    A floor on hits would be a floor on the defect. What must not collapse is what the scan
-    READ: the claimable dataclasses it compares against, and the namespaces it walked.
-    """
+    """Rule 2's floors are on its MACHINERY, because its healthy state is zero hits."""
     scoped = scoped_dataclasses()
     names = {name for name, _m, _f, _r in scoped}
     sites = namespace_sites()
@@ -249,11 +148,7 @@ def test_the_stand_in_scan_cannot_pass_vacuously() -> None:
 
 
 def test_an_exempt_recorder_is_never_read_by_production() -> None:
-    """An exemption may cover BOOKKEEPING, never a name production code dispatches through.
-
-    Without this, `RECORDERS` would be a hole of exactly F644's shape: a double and a caller
-    agreeing on a name the real class does not have, waved through by a table in the test.
-    """
+    """An exemption may cover BOOKKEEPING, never a name production code dispatches through."""
     # (convention name, attribute) → the exemption it would be using, e.g.
     # ("transcript", "events") → "_Transcript.events".
     exempt = {(STUBS[stub], attr): f"{stub}.{attr}" for stub, attr in RECORDERS}

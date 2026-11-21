@@ -64,9 +64,6 @@ def test_a_report_to_a_routine_that_no_longer_exists_is_unroutable_not_worklist(
     owner who cannot act — R2629 (steward-hub-maintainer → grants-radar, archived 2026-10-19,
     which `registry.scan` cannot see either) sat there for days. It is counted and named APART, never silently dropped: the row is real
     work somebody once filed, and only a person can decide to re-route or retract it.
-
-    A SWITCHED-OFF target is a different thing and stays on the worklist: the routine exists,
-    the operator can switch it back on, and its row reads as the stuck row it is.
     """
     installed = {"grants-radar", "scheduler-builder", "switched-off", "self-audit"}
     active = item_counts.counts(ROWS, readers={"grants-radar", "scheduler-builder"},

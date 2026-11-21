@@ -1,20 +1,4 @@
-"""Machine-checked repo policies — conventions that broke silently once are tests now.
-
-1. **Delete-after-convergence** (migrations): one-shot migration code must declare its own
-   expiry with a `MIGRATION(expires=YYYY-MM-DD)` marker comment next to the code, and the
-   suite FAILS once that date passes — a "temporary" migration can never silently become
-   permanent. It fires for real: the 2026-08-31/09-01 batch was deleted on its expiry, and the
-   five settings-patterns markers of 2026-10-20 were deleted four days early because of it.
-   The grammar and the one reader live in `rsched.migration_markers`, which also says why
-   NARRATION about a marker is not a declaration (R2596: a tombstone comment that quoted its own
-   marker reddened `main` itself and blocked every release on the host) and why a back-compat
-   ALIAS TABLE must declare an expiry too (F699). The deploy scripts are read as well: they
-   migrate the state they keep (backup.sh's snapshot layout), and a marker nothing reads is
-   exactly the silent permanence this exists to stop.
-2. **Version discipline**: a bump of `rsched.__version__` must come with a matching
-   `## [x.y.z]` header at the top of CHANGELOG.md (0.27 shipped without notes once).
-   A pre-commit hook runs this file so the mismatch never reaches a commit.
-"""
+"""Machine-checked repo policies — conventions that broke silently once are tests now."""
 
 import itertools
 import re
@@ -68,11 +52,6 @@ def test_narration_about_a_marker_is_not_a_declaration():
     tombstone comment that SPELLED the marker it was describing; the morning after that date the
     check read the sentence as a live declaration, `main` itself went red and every release on
     this host was blocked by a comment about code that no longer existed.
-
-    Both directions are the assertion. A marker that OPENS its sentence declares — in a comment,
-    a docstring, after an em dash or a bracket, every form the live tree actually uses — and one
-    that follows a word is prose about one. The real specimen is the third case: it is the
-    tombstone as it was written, and it must not red a gate.
     """
     declaring = [
         '"""One-shot boot migration onto ONE off switch — MIGRATION(expires=2026-11-15).',
@@ -143,21 +122,7 @@ def test_a_back_compat_alias_table_must_declare_an_expiry(tmp_path):
 
 
 def test_migrations_expiring_soon_are_warned_about_before_they_turn_red(recwarn):
-    """F628: the hard expiry above keeps the policy; this gives it LEAD TIME.
-
-    The enforcement was never missing — one grep disproved that — but its signal was binary and
-    landed the morning it was already too late, on the gate every release must pass, in front of
-    whoever happened to ship that day. So this emits a WARNING (never a failure) for every marker
-    inside `MIGRATION_WARN_DAYS`, naming the file, the date and the days left. `pytest -W` shows
-    it, the gate's log carries it, and the person who wrote the migration can still act on it.
-
-    The warning is no longer the only reader: `daemon/marker_watch` files the same window into
-    the health stream, where the console renders "something due did not happen" (F702). This is
-    the half a release gate sees; that is the half a person sees without running one.
-
-    It must never fail: a warning that can fail is a second hard deadline with a different name,
-    and the one above is deliberately the only one.
-    """
+    """F628: the hard expiry above keeps the policy; this gives it LEAD TIME."""
     today = datetime.now(tz=UTC).date()
     soon = [(left, d.path.relative_to(REPO), d.expires)
             for left, d in markers.due_soon(today, MIGRATION_WARN_DAYS, _policed())]
@@ -192,12 +157,6 @@ def test_the_warn_window_is_actually_delivered_and_not_merely_computed(recwarn):
     """F628's own trap: a warning emitted by a PASSING test is folded into a summary that the
     gate's xdist run suppresses, so a check that only warned would give no lead time at all —
     which is the defect it was built to fix. This asserts the DELIVERY, not the computation.
-
-    It runs the real check against the real tree. When nothing is inside the window there is
-    nothing to deliver, the stale notice is removed, and that is the whole assertion; when
-    something is, it must be in the WRITTEN notice (the channel that outlives the run) AND in a
-    warning (what a `-W error` run can escalate), naming the file and the date — a count alone
-    tells nobody what to delete.
     """
     test_migrations_expiring_soon_are_warned_about_before_they_turn_red(recwarn)
     warned = [str(w.message) for w in recwarn.list if "MIGRATION marker" in str(w.message)]

@@ -1,17 +1,4 @@
-"""The run rail's OVERSIGHT strip — what the escalation ladder did to this run.
-
-A supervised run is the one a reader most needs explained: turns were spent on a child nobody
-asked for and the worker was redirected mid-run. Before this strip the only trace was four
-transcript events the console dropped, so the page showed a redirected run with nothing naming
-who redirected it.
-
-Two claims are pinned here, and both are about what a PERSON sees:
-
-- a run whose ladder fired shows the rung, the countdown and the verdict, in words;
-- a run with no rung gains NO card — the rail's caption list is unchanged. An always-present,
-  always-empty card teaches a reader to skip the one place supervision is reported, and
-  `tests/ui/test_finish_line.py` pins that caption list exactly.
-"""
+"""The run rail's OVERSIGHT strip — what the escalation ladder did to this run."""
 
 from __future__ import annotations
 

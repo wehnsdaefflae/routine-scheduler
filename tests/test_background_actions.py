@@ -1,16 +1,4 @@
-"""D118 phase 1 — a read or a fetch marked `background: true`.
-
-Two halves, deliberately in one file because they are one contract:
-
-* **the field** — which kinds may carry it, that a kind which may NOT is refused with the reason
-  rather than having the flag quietly dropped, and that the field survives the schema
-  normalisation at all (a sub-field the flat `ACTION_SCHEMA` does not declare is stripped in
-  silence, which is how two earlier action fields shipped doing nothing);
-* **the behaviour** — through a REAL scripted run with a REAL `Transcript`: the flagged action
-  returns a *started* observation on its own turn, and the real observation is appended at a
-  LATER turn boundary. A fake transcript that accepts anything cannot fail the way production
-  does, so these go through `run_routine`.
-"""
+"""D118 phase 1 — a read or a fetch marked `background: true`."""
 
 import threading
 import time
@@ -286,12 +274,6 @@ def test_the_background_runner_matches_the_foreground_routing_table():
 def test_there_is_no_concurrency_cap():
     """D166 asked how many background calls one run may hold in flight and the operator answered
     **(c) unbounded**: "simplest, and the run's own turn budget is already the practical limit".
-
-    F650 is why this test is written as an ABSENCE. 0.392.0 shipped option (a) — a fixed cap of 3
-    — because the ledger row had recorded (a) from an earlier delivery of the same decision; the
-    operator had since answered it differently, and the code, its test, the CHANGELOG entry and
-    the prompt text every run reads were all built to the option he did not choose. So the thing
-    to pin is not a bigger number: it is that no cap mechanism exists to drift back into one.
     """
     from rsched.engine import background
 
@@ -331,10 +313,6 @@ def test_six_concurrent_background_calls_all_start_and_all_deliver(
     """D166's answer, through a real run. Six slow calls are flagged back to back, well past the
     cap of three that 0.392.0 shipped: every one of them STARTS with its own handle, none is
     refused, and every one DELIVERS its observation at a later boundary.
-
-    Six and not four on purpose: four would pass against a cap of 4, and the specimen F650
-    records is a cap that came back as a number nobody re-read. Delivery is asserted too, because
-    "started" alone would also be true of a fan-out whose results the run never receives.
     """
     _slow_util(monkeypatch, seconds=1.0)
     d = make_routine(slug="bgnocap")
@@ -372,14 +350,6 @@ def test_six_concurrent_background_calls_all_start_and_all_deliver(
 def test_a_backgroundable_refusal_renders_without_reading_a_result_field():
     """The regression the capacity refusal paid for on its first run, kept as a guard after the
     refusal itself was removed (F650 / D166 = unbounded).
-
-    An observation for an action the engine did NOT execute must carry `rejected` + `reason` —
-    the one shape `observations._not_executed` words. Carrying a util-shaped `error` instead fell
-    through to the util renderer, which read `obs['name']` and raised `KeyError: 'name'`, killing
-    the turn AND every later resume (a resume re-renders each stored observation). The property
-    belongs to the shape, not to the one refusal that happened to use it first, so it is pinned
-    on a payload built here: whatever pre-dispatch refusal this seam grows next inherits a
-    renderer that is known to survive missing result fields.
     """
     from rsched.engine.observations import format_observation
 
@@ -737,19 +707,7 @@ def test_cancelling_a_handle_that_is_not_in_flight_teaches_the_valid_ones(
 
 def test_a_cancelled_call_leaves_the_live_list_and_delivers_no_observation(
         make_routine, scripted, monkeypatch):
-    """The feature, through a real run, in the terms the decision allows it to claim.
-
-    Three slow calls are in flight; one is cancelled. The claim is that `cancel` drops the
-    Pending from the LIVE LIST at once — `collect` reads that list at every boundary, so a
-    handle still on it would deliver — and that the cancelled handle therefore never appears as
-    a landed (non-`started`) observation, nor in any BACKGROUND RESULT message.
-
-    Until F650 this test proved the removal INDIRECTLY: a fourth flagged call was accepted
-    "where it would otherwise have been refused", and that acceptance stood in for the freed
-    slot. D166's answer is (c) unbounded, so there is no refusal left to be the contrast — the
-    cancel's own `in_flight` list and the absent delivery are the direct evidence, and the
-    `kill` observation is the one surface that publishes that list.
-    """
+    """The feature, through a real run, in the terms the decision allows it to claim."""
     _slow_util(monkeypatch, seconds=3.0)
     d = make_routine(slug="bgcancel")
     scripted([
@@ -883,10 +841,6 @@ def test_cancelling_a_backgrounded_shell_actually_kills_the_subprocess(
         make_routine, scripted, monkeypatch):
     """THE claim. A backgrounded `shell` sleeping far past the run's end is cancelled, and the
     process it started is GONE — not merely undelivered.
-
-    The command writes its own pid, then sleeps 120 s and only then writes a "finished" marker.
-    After the cancel the pid must be dead and the marker must never appear: a run that merely
-    stopped listening would leave both. This is the difference between a kill and a detach.
     """
     import os
     import signal as sig
@@ -984,13 +938,7 @@ def test_cancelling_an_llm_stops_only_the_delivery_and_says_so(
 
 
 def test_the_cancel_check_is_keyed_by_handle_not_by_the_turn_that_started_it():
-    """Why this was unreachable until now, pinned so it cannot regress.
-
-    `control.cancelled_for_turn` keys the F586 intent channel by TURN — deliberately: a cancel
-    clicked just as a long call finishes must not kill the NEXT call. A background call outlives
-    its starting turn, so that key can never fire for it again. The fix is a context carrying
-    `background_stop`, which the same function prefers when present.
-    """
+    """Why this was unreachable until now, pinned so it cannot regress."""
     import threading as th
 
     from rsched.engine.control import cancelled_for_turn

@@ -52,9 +52,8 @@ def load(routine_dir: Path) -> dict:
     """The document, normalized to `{outcomes, until}`. A missing or unreadable file is the empty
     finish line: a routine that runs until it is switched off.
 
-    Every outcome comes back with an id. The web's save assigns them, but a file edited by hand
-    can lack one — and an outcome without an id is owed an accounting entry no run can write
-    (an entry is `g<n> <verdict>: …`), so every finish would be set aside until the budget died.
+    Every outcome comes back with an id: a hand-edited file can lack one, and an outcome without
+    an id is owed an accounting entry (`g<n> <verdict>: …`) no run can write.
     """
     raw = read_json(path(routine_dir))
     doc = normalize(raw if isinstance(raw, dict) else {})
@@ -65,10 +64,8 @@ def load(routine_dir: Path) -> dict:
 def _iso_date(raw: object) -> str:
     """`raw` when it names a real calendar day as YYYY-MM-DD, else "".
 
-    The shape alone is not enough: `2026-02-30` has it, and every later question to the
-    calendar (`is_reached`, `reached`) would raise on it — inside `registry.scan`, so one bad
-    date took down the listing of every routine, and the web's save wrote the file before the
-    retirement check that raised.
+    The shape alone is not enough: `2026-02-30` has it, and every later calendar question
+    (`is_reached`, `reached`) would raise on it — inside `registry.scan`, for every routine.
     """
     text = str(raw or "")
     if not _DATE_RE.match(text):

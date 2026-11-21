@@ -1,17 +1,4 @@
-"""A resumed run that finishes `ok` must read `ok` on every surface (F637 + F703).
-
-A run killed by three rejections of the same correctable mistake, then resumed and finished
-`ok`, left two surfaces permanently disagreeing about whether it failed. The run's OWN record
-self-corrects — the resumed leg overwrites status.json and result.md, and `usage_stream`'s
-leg fold keeps the newest leg's status — but the health stream is APPEND-ONLY and has no
-vocabulary for "that ending was superseded": its `run_failed` / `budget_exhausted` /
-`attempts_exhausted` rows say the run failed, forever, to every reader of the fold.
-
-So a correction is a LATER EVENT that the readers resolve to, never an edit of the original.
-The original row really happened and stays in the history — the audit trail is the whole point
-of an append-only stream. These tests pin both directions, because a correction that fires too
-eagerly is worse than the bug: a run that stayed failed must still read failed.
-"""
+"""A resumed run that finishes `ok` must read `ok` on every surface (F637 + F703)."""
 
 import json
 from datetime import UTC, datetime, timedelta

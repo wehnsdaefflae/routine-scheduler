@@ -384,8 +384,8 @@ the edit is judged by whether THAT failure came back, not by whether an average 
   change never repeated it ("an edit that cannot name the moment is speculation"). An unreadable
   commit range leaves `aims` null — unknown, never "none declared".
 - **Unknown is not clean.** A run with no `frictions` (recorded before 0.454.0 and not
-  backfilled, or no transcript to read) is left out of both sides. The one-shot boot backfill
-  (`migrate_frictions.py`) counted every run whose transcript retention kept, on its newest leg.
+  backfilled, or no transcript to read) is left out of both sides. A one-shot boot backfill
+  counted every run whose transcript retention kept, on its newest leg.
 
 What reaches MANY routines at once is judged across them, POOLED (`readmodels/change_fleet.py`):
 each routine adds the runs on either side of its boundary that carry its own key unchanged, its
@@ -684,8 +684,7 @@ DOMAIN ledger — named for what it tracks, worked through the routine's own scr
 reports — is invisible to a conservative classifier, and routine-improver's outcome review (a
 routine whose outcome series stays flat while its runs finish `ok`) is the complementary net. The usage stream is the ONE source: a run whose row
 carries no `overhead` is unmeasured and left out, never recomputed from a transcript and never a
-zero. The kept runs before this release were measured once, at boot, from their transcripts
-(`migrate_overhead.py`, the `migrate_frictions.py` shape).
+zero. The kept runs before this release were measured once, at boot, from their transcripts.
 
 Where the reading goes, over the bar:
 
@@ -731,7 +730,7 @@ a call that used a token class whose rate its source does not publish, gets no f
 the cache's `unpriced` list names every such configured model; nothing is estimated, defaulted or
 borrowed. Rows from before 2026-10-17 carry `notional_cost: null` (what those tokens cost at the
 prices of the day was never recorded), and their `volume` was backfilled from what each run
-itself recorded (`migrate_usage_volume.py`), `null` where nothing did.
+itself recorded, `null` where nothing did.
 
 ### …and what a cost BUDGET meters (`budgets.max_cost`)
 
@@ -869,19 +868,12 @@ health stream for that window held exactly one event, about an unrelated oversiz
   mid-turn — every member failed hard or is cooling. It carries `model`, `last_model` and
   `cooldown_s`. A `model_failover` costs money; a `model_chain_exhausted` costs the run.
 - `error_class_undecided` (`engine/errorclass.py`, R3108) is the META reading on both: how often
-  the classifier behind that `reason` had no structural basis for its verdict. The `reason`
-  above is derived by matching ENGLISH SENTENCES in the provider's error text
-  (`degrade._FAILOVER_REASONS`, ~20 needles), as is the window guard's overflow test
-  (`overflow._OVERFLOW_HINTS`), and a list that misses a vendor silently disarms its guard for
-  it — `c-20261016-075101` died twice in 30 s as `model_chain_exhausted … after 0 rungs` on
-  2026-10-16, and `self-audit:20260921-000321` 400'd four times on 2026-09-21 with a prompt
-  growing 1,017,305 → 1,045,385 because the Anthropic wording matched no hint. One row is filed
-  when a failover class falls through to `other`, and one when both overflow nets decline a 400
-  whose body quotes token counts, carrying `classifier`, `reason`/`declined_by` and
-  `error_keys_in_excerpt`. Read it as a RATE against `model_failover`: a high
-  `declined_by: no_hint_match` share says the prose lists are load-bearing and a vendor is
-  missing from them, a near-zero one says they can be replaced by structured fields. It changes
-  no policy — every retry, failover and shrink decision is identical with it and without it.
+  the classifier behind that `reason` had no structural basis for its verdict. Retry, failover
+  and overflow policy read what a failed call DECLARED (`endpoints/errorsignal.py`), not its
+  prose; one row is filed when a failover class still falls through to `other`, and one when both
+  overflow nets decline a 400 whose body quotes token counts, carrying `classifier`,
+  `reason`/`declined_by` and `error_keys_in_excerpt`. Read it as a RATE against
+  `model_failover`. It changes no policy.
 - Read both by the HEAD, not by the count: one event is a provider hiccup, while a run of
   them sharing one `model` is a primary that is not serving the fleet. The per-run transcript
   `error` event with its `failover` payload stays the record of which model served a given

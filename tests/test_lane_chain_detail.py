@@ -1,16 +1,4 @@
-"""F826 — a lane chain's end-of-chain row says figures that reconcile against the store.
-
-`daemon/lane_runs._finalize` printed `len(rec["log"])` as "<n> member runs", and the chain LOG
-is not runs: a member switched off (or retired) is logged `outcome: "skipped"` with no run id.
-Measured 2026-11-01 over 31 `lane_chain_done` rows: `Professional · Daily` read "5 member runs"
-on every fire from 10-25 to 11-01 while two of its five members were `enabled: false` and only
-three runs existed. The existing test of exactly that shape (`test_lane_runs.py`, the
-switched-off member) asserted "2 member runs" for ONE run — the suite pinned the defect.
-
-`chain_detail` now names the chain's MEMBERS (its arm-time fire list), how many RAN, which were
-SKIPPED, which were NOT-OK and how many a stopped chain never REACHED, so
-members = ran + skipped + missing + not reached for every chain.
-"""
+"""F826 — a lane chain's end-of-chain row says figures that reconcile against the store."""
 
 from __future__ import annotations
 

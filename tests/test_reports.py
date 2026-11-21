@@ -1,11 +1,4 @@
-"""The `report` action — the ONE channel a run uses for work that is not its own task.
-
-Ungated and in ALWAYS_KINDS, so every routine holds it. What varies is whether the reporting
-run can name an owner: UNADDRESSED goes to the triage stream, ADDRESSED (`target`) is also
-delivered into that routine's inbox for its NEXT SCHEDULED RUN.
-
-The load-bearing property, asserted directly below: an addressed report NEVER starts a run.
-"""
+"""The `report` action — the ONE channel a run uses for work that is not its own task."""
 
 from __future__ import annotations
 
@@ -240,9 +233,6 @@ def test_a_report_to_a_disabled_routine_is_refused_at_filing_naming_the_state_an
     """F614: a targeted report is read on the TARGET's next scheduled run, and a routine that
     is switched off starts none — so it accepted rows forever and read none (24 open, oldest six
     weeks). Filing is the only place with a sender who still has the context to redirect it.
-
-    The refusal names the STATE and the LAST RUN DATE because `disabled` may be a pause: one of
-    those 24 targets had run two days before the count, so `disabled` is not `defunct`.
     """
     loop, home = _loop(tmp_path, slug="self-audit")
     target = _disabled_routine(home, "eye-stabilize-folder")
@@ -670,19 +660,7 @@ def test_a_report_whose_text_holds_a_line_separator_is_still_one_row(tmp_path):
 
 
 def test_options_on_a_report_file_an_open_decision_for_the_user(tmp_path):
-    """F621 — the blocked-on-the-operator hole, closed.
-
-    A `report` routes work to a ROUTINE, read on that routine's next scheduled run. A run
-    whose report's substance is a question for the OPERATOR therefore reached no surface of
-    his at all: his Decisions page renders file-backed records, and the asking routine's own
-    card read `open_questions: 0` while a campaign sat halted on him. Measured on the live
-    instance 2026-10-11: D118 phase 3 and R2413 both "waiting on the operator", with
-    `open_questions: 0`, `decision_backlog: false` and nothing on the Decisions page.
-
-    Naming `options` says the call is his. The same filing that delivers the work leaves the
-    ONE record every operator surface already reads — so no new source, no new page, and the
-    `R` id rides it so his answer can be relayed to whoever owes the work.
-    """
+    """F621 — the blocked-on-the-operator hole, closed."""
     loop, home = _loop(tmp_path)
     bare_routine(home, "self-audit")
     out = handle_report(loop, {

@@ -1,15 +1,11 @@
 """The three NUDGES the loop gives a run about its own behaviour.
 
-Split out of `loop.py` (F393): the turn state machine is one job; noticing that a run is drifting
-and saying so is another, and all three of these are prompt surface rather than control flow.
+Prompt surface rather than control flow, so kept apart from the turn state machine in `loop.py`.
 
 `build_util_reminder` is the ONE-SHOT pointer to the util catalog and the route for a missing
 util, appended to the first user message only (the kickoff, or a resume's engine note).
-`repeat_streak` counts identical consecutive actions, which is how a loop-in-a-loop shows up —
-and at the streak the loop warns on it files one `wrong_turn_detected` health event (R2652,
-`engine/wrongturn.py`), so the FLEET rate of runs that stop moving is readable instead of
-visible only in one run's prompt. A measurement: nothing about the warning, the schema shedding
-or `REPEAT_FAIL` changes.
+`repeat_streak` counts identical consecutive actions and, at the warned streak, files one
+`wrong_turn_detected` health event (`engine/wrongturn.py`) — a measurement only.
 `reserve_finish` is the important one: the FIRST budget violation spends a one-time reserved
 turn with the schema narrowed to `finish`, so the run authors its own summary. The engine never
 ends a run the model could have ended itself — a run overruns a budget by at most one turn, and
@@ -28,10 +24,9 @@ REPEAT_FAIL = 5
 
 
 def build_util_reminder(loop) -> str:
-    # One-shot nudge appended to the FIRST user message only (kickoff / resume note) —
-    # the catalog already sits in CAPABILITIES and a failed util call carries its own
-    # repair hint, so repeating this on every observation was rent without information
-    # (~60 tokens × every turn, re-read for the rest of the run).
+    # One-shot nudge appended to the FIRST user message only (kickoff / resume note): the
+    # catalog sits in CAPABILITIES and a failed util call carries its own repair hint, so a
+    # per-turn copy would be rent without information.
     if loop.allowed_tools is not None and "util" not in loop.allowed_tools:
         return ""
     if loop.grants.allows_kind("write_util"):
@@ -48,19 +43,13 @@ def build_util_reminder(loop) -> str:
 
 def reserve_finish(loop, spent: dict) -> None:
     """Spend the reserved finish turn: one more turn, schema narrowed to `finish`, so the
-    run ends in ITS OWN words instead of an engine string. Before this, a budget violation
-    returned an engine-authored `partial` and the model was never told — for a scheduled
-    routine that costs the next run its handover; in a CONVERSATION the reply IS the
-    product, so the user read "Run stopped by the engine: turn budget exhausted (10)".
-    The reserve is spent at most once per BUDGET WINDOW (the caller force-finishes on a second
-    violation), so it can overrun a budget by exactly one turn. Unlike the once-only guards
-    (engine/guardscope.py), a resumed leg does not carry it over: the leg gets a fresh budget
-    window, and with it a fresh reserve.
+    run ends in ITS OWN words (its handover, or a conversation's reply) instead of an engine
+    string. Spent at most once per BUDGET WINDOW (the caller force-finishes on a second
+    violation), so a budget is overrun by exactly one turn. Unlike the once-only guards
+    (engine/guardscope.py), a resumed leg gets a fresh budget window and a fresh reserve.
 
-    `spent` (`ctx.budget_spent()`) is KEPT on the loop, because which budget ended the run is
-    the fact nothing recorded: the note went into the message list only, and the finish's
-    health event carried the model's summary. A fifth of the fleet's runs end here, and
-    config-optimizer could not tell a wall clock from a turn cap from a token cap.
+    `spent` (`ctx.budget_spent()`) is KEPT on the loop so the record can say WHICH budget
+    ended the run.
     """
     from .kindsurface import schema_for_kinds
 
@@ -90,13 +79,10 @@ def reserve_finish(loop, spent: dict) -> None:
 def repeat_streak(loop, action: dict) -> int:
     """How many times this exact action (narration aside) has now landed in a row.
 
-    At `wrongturn.WARN_STREAK` — the streak the loop already warns the run about — the run also
-    files ONE `wrong_turn_detected` health event (R2652). An identical repeated action is the
-    OTHER half of "a turn that came back wrong in a way the engine can already see": every
-    action is individually schema-valid and the run has stopped moving, which is the chained-
-    state blind spot the later effort increment is aimed at. Filed at the onset of a streak
-    only, and a MEASUREMENT: the warning tail, the schema shedding and `REPEAT_FAIL` all behave
-    exactly as before.
+    At `wrongturn.WARN_STREAK` — the streak the loop already warns about — it also files ONE
+    `wrong_turn_detected` health event: each action is schema-valid, yet the run has stopped
+    moving. Filed at the onset only, and a MEASUREMENT: the warning, the schema shedding and
+    `REPEAT_FAIL` are unaffected.
     """
     key = {k: v for k, v in action.items() if k != "say"}
     digest = hashlib.sha1(json.dumps(key, sort_keys=True).encode("utf-8"),

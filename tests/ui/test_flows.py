@@ -266,9 +266,6 @@ def test_the_files_card_offers_no_click_for_a_file_it_cannot_serve(ui, ui_page):
     """D172: the card used to render a clickable chip for EVERY path a run touched, and a path
     outside the served trees answered 400 — a chip the console could never honour. A row the
     server marks `servable: false` now gets no button at all, and says why.
-
-    The operator's premise stands on the other side of this: a path the routine WAS permitted
-    to read is served (tests/test_api.py pins that end). Here is the row that is not.
     """
     run_dir = ui.seed_run("uir", "20260716-101500", "finished", summary="done")
     rdir = ui.routine_dir("uir")

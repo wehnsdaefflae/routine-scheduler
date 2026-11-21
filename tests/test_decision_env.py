@@ -1,28 +1,4 @@
-"""A util can learn which DECISION models its routine reaches (D288, goal b6 increment 1).
-
-The operator, 2026-11-14: **"Convert fully"** — `llm` and `decide` stop being action kinds and
-become ONE util with both capabilities. The asymmetry this closes is why `decide` could only ever
-be an action: `endpoints/routine_env` has injected the routine's INFERENCE endpoints into a
-declaring util's environment since it shipped (`RSCHED_LLM` / `RSCHED_LLM_KEYS`), and the DECISION
-catalog had no such injection at all. The engine knew which decision model a routine reaches and
-a util did not, so a util could only hardcode one — which for a routine configured to a LOCAL
-model is not a cost problem but a privacy breach, the same argument the inference half makes.
-
-Both injections now live side by side in one module, deliberately: a reader who has understood
-one has understood the other, and they cannot drift into two designs.
-
-What is pinned here is the contract a util depends on:
-  - the role map resolves a routine's own binding first, then the INSTANCE default — the same
-    order `endpoints/decisions.pick_decision_model` uses, so a util reaches the model the engine
-    would reach for that routine rather than a different one;
-  - a role naming a model the catalog no longer carries reads as None, never substituted;
-  - keys reach the ROLE endpoints only, so an engine-injected blob cannot route around the
-    operator's own `secret:<NAME>` decision;
-  - **the PROTOCOL rides the metadata**, which is F888's lesson rather than decoration: that
-    defect cost nine days because the fix landed in the `openai` adapter while all three of this
-    instance's models speak `systemone`, and a util that cannot see its protocol can only
-    rediscover it by failing.
-"""
+"""A util can learn which DECISION models its routine reaches (D288, goal b6 increment 1)."""
 
 from __future__ import annotations
 

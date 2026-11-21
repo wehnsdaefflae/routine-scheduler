@@ -1,13 +1,5 @@
 """The materialization pipeline's OUTPUT BUDGET (`workflows/pipeline.py`): what each call asks
 for, against what the model can actually return.
-
-The per-artifact constants (OUTLINE/MAIN/STAGE_MAX_TOKENS) are what ONE recipe document needs.
-What the model can deliver is its resolved cap, `ModelRef.max_tokens` — per-model config, then
-the provider-discovered `max_output_tokens` of `endpoints/limits.py`, then the endpoint default,
-then the engine floor. A request above that cap is one the provider rejects or truncates
-(`input + requested_output <= window`), so the pipeline asks for the SMALLER of the two: the
-constant is a ceiling, never a target. A model whose cap is unresolved falls back to the
-constant — never to zero, never to a crash.
 """
 
 from __future__ import annotations

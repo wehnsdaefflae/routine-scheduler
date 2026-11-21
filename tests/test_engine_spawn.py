@@ -1,12 +1,5 @@
 """The engine-spawn contract: what the daemon tells `engine-run`, and what `engine-run`
 refuses when it is not told (F394).
-
-The regression these pin is an ESCAPE, not a crash. A test's engine stub stopped taking
-after a refactor moved the symbol it patched; the daemon's Runner spawned the real
-`rsched.cli engine-run`; that fresh interpreter inherited nothing, loaded the production
-config from `~`, and ran a tmp-homed fixture routine against the live instance — real
-endpoint, real money, real rows in the report ledger. Both halves are covered here: the
-spawner must NAME its config and its homes, and the child must REFUSE anything else.
 """
 
 from __future__ import annotations

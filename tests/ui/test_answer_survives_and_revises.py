@@ -1,19 +1,4 @@
-"""What you answered stays on the page, and you can change it (F525).
-
-The operator's report, 2026-09-21: *"i just answered a question asked by this routine... i
-accidentally answered just one of the four questions. why can't i see this answer in the
-routine's inbox? i want to revise it to add the other answers."*
-
-Both halves had one cause. `collect_deferred_answers` consumed the inbox answer file AND
-unlinked the pending record, writing nothing in their place — and the Decisions page derives
-"answered" by reading exactly those two. So the settled card, with his own words in it,
-disappeared the moment the next run booted, and no surface could offer a revision of an
-answer the system no longer had.
-
-These flows drive the REAL console across that boundary: answer, let a run consume it,
-reload, and the answer is still readable and still amendable. The file on disk is the proof,
-because that file is what the next run actually reads.
-"""
+"""What you answered stays on the page, and you can change it (F525)."""
 
 from __future__ import annotations
 

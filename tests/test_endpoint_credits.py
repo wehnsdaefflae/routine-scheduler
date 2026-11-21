@@ -1,11 +1,4 @@
-"""Endpoint credit/balance support: which providers, and the Nano-GPT URL shape.
-
-The /settings/endpoints/{name}/credits route shows the account balance for providers
-that expose one — OpenRouter (GET {base}/credits, Bearer auth) and Nano-GPT
-(POST /api/check-balance on the ORIGIN, x-api-key auth; verified live 2026-07-16:
-returns string usd_balance/nano_balance). These pin the provider sniff, the manage
-links, and the balance-URL derivation from the configured /api/v1 base.
-"""
+"""Endpoint credit/balance support: which providers, and the Nano-GPT URL shape."""
 from types import SimpleNamespace
 
 from rsched.web.settings.endpoint_probe import credits_provider, nanogpt_balance_url

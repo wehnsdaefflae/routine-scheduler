@@ -1,44 +1,22 @@
 """The REVISE path of `create_routine` — rewriting an EXISTING routine's recipe in place,
 gated behind a per-routine approval dial (D198).
 
-The operator's answer, 2026-10-19, verbatim: *"Add a revise path to `create_routine` (or a
-sibling action) gated by a per-routine dial, like `config_confirm`"*. `create_routine` with
-`revises: true` is that path, `rsched/revisedial.py` is that dial, and this module is its
-handler — deliberately `candidate.py`'s sibling in shape, because the two are the same kind of
-act on the same action: that one REPLACES a routine under a new slug, this one REVISES the one
-that exists.
+`create_routine` with `revises: true` is the path, `rsched/revisedial.py` the dial, and this
+module the handler — `candidate.py`'s sibling: that one REPLACES a routine under a new slug,
+this one REVISES the one that exists. A routine's OWN recipe has three other mechanisms
+(`write_recipe`, `engine/revise.py`, `engine/recipeproposal.py`); this one answers "who may
+rewrite WHOSE recipe", replacing the ungated route of editing another routine's `main.md`
+through a write root: the SUBJECT's dial decides, and the edit is made by the run that owns the
+recipe (`rsched/reciperevise.py`).
 
-WHAT WAS ALREADY BUILT, so this adds a path rather than a third copy of one:
-
-- a routine rewriting its OWN recipe — three ways already: the `write_recipe` capability
-  (standing), `engine/revise.py` (the operator's on-demand one-leg unlock from the run view),
-  and `engine/recipeproposal.py` + `web/api_recipe_revision.py` (D200: a finishing run proposes
-  revisions, the operator approves, the proposing run is resumed with its recipe writable);
-- `replaces: <slug>` — `engine/candidate.py`, shipped 2026-10-17, which is a REPLACEMENT under
-  a new slug and was not what this answer asked for.
-
-The hole all of them leave is the one the decision's title names — "who may rewrite WHOSE
-recipe". A routine holding `write_recipe` whose `fs_write_roots` cover `~/routines`
-(routine-improver does, both) can already write ANOTHER routine's `main.md` with `edit_file`:
-the recipe seal is scoped to the run's own routine dirs (`engine/fileops._write_gate` →
-`engine/reach.routine_dirs`, which is `[own]` at depth 0), so outside them nothing but a write
-root is consulted. That is the ungated route this path replaces: silent, unrecorded, decided by
-the editor, and invisible to the routine whose instructions changed. Here the SUBJECT's dial
-decides, the operator sees a card unless he has said otherwise, and the edit is made by the run
-that owns the recipe (`rsched/reciperevise.py`).
-
-THE SHAPE, and why each piece is where it is:
-
-- the CALLER needs `write_recipe` — the capability that already means "the operator trusts this
-  routine with recipe prose". A new capability would be a second decision his sentence does not
-  make, and `grants.py` is at its size ceiling with no room for one.
+- the CALLER needs `write_recipe` — the capability that already means "trusted with recipe
+  prose"; no second capability.
 - the DIAL belongs to the TARGET (`revisedial`, which gives the reasons).
 - `always` (the default) files ONE `revise-routine` decision card; `invited` arms the
   invitation at once. Either way the write is the target's own next run under the one-leg
   unlock, never the proposer's.
-- a routine may not revise ITSELF through this path: that is what the three own-recipe
-  mechanisms above are for, and routing it here would hand a routine with `write_recipe` a
-  second, unrecorded way to do what it can already do openly.
+- a routine may not revise ITSELF through this path — that would be a second, unrecorded way
+  to do what the own-recipe mechanisms already do openly.
 """
 
 from __future__ import annotations
@@ -48,15 +26,14 @@ from ..ids import is_slug
 from .run_context import RunContext
 
 KIND = "revise-routine"
-#: How many revision lines one proposal carries — `recipeproposal.MAX_LINES`, because the
-#: operator reads both on the same page and a card has to stay readable at a glance.
+#: How many revision lines one proposal carries — matches `recipeproposal.MAX_LINES`.
 MAX_LINES = 8
 
 
 def _lines(action: dict) -> list[str]:
     """The revision, one line per change. `prompt` is the field the action already carries for
     "what this routine should do", so the revise path reads it as the revision rather than
-    adding a field the schema would have to grow for (`actionschema.py` has zero slack).
+    growing the schema.
     """
     raw = action.get("prompt")
     text = raw if isinstance(raw, str) else ""
@@ -65,7 +42,7 @@ def _lines(action: dict) -> list[str]:
 
 def _problem(ctx: RunContext, slug: str, lines: list[str]) -> str:
     """Why this revision may not be proposed at all — "" when it may. One ladder, each rung its
-    own teaching exit (`candidate._problem`'s shape and `authoring`'s reason for it).
+    own teaching exit (`candidate._problem`'s shape).
     """
     home = ctx.server.routines_home
     if ctx.depth > 0:

@@ -1,13 +1,4 @@
-"""The console's DOM helpers, evaluated as pure functions in the browser's ESM context.
-
-util.js `el()` promises it has no HTML pathway, so a string handed to it can never become
-markup. One attribute name broke that: an `on*` key whose value was not a function fell through
-to setAttribute, and a string there IS an inline handler the browser compiles as script — under
-any case, since HTML lowercases attribute names. It is refused now.
-
-landing.js `openFolds` and `flash` are the two moves of every landing journey (a ref link, a
-settings field, a setup fix, the side TOC), each of which used to write them out by hand.
-"""
+"""The console's DOM helpers, evaluated as pure functions in the browser's ESM context."""
 
 from __future__ import annotations
 

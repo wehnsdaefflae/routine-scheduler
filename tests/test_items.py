@@ -299,14 +299,7 @@ def test_api_items_merges_filters_and_carries_the_header(api_client):
 
 
 def test_api_items_filters_by_the_routine_a_report_is_addressed_to(api_client):
-    """`routine` and `target` are the two ENDS of a report and only the first existed.
-
-    A routine reconciling its own inbox asks "what is addressed to me" — and until 0.326.0 no
-    filter expressed that, so `?target=steward-hub-maintainer` was silently ignored and the
-    WHOLE store came back: a 1 MB body that truncated into invalid JSON for the caller, which
-    is how R1404 was filed. Origin and target must not be conflated: R3 below is addressed to
-    a routine that did not file it, and R1/R2 are addressed to nobody.
-    """
+    """`routine` and `target` are the two ENDS of a report and only the first existed."""
     c, tmp = api_client
     routines = tmp / "routines"
     audit = routines / "self-audit" / "audit"

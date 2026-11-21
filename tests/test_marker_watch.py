@@ -1,15 +1,4 @@
-"""A migration deadline reaches a surface someone looks at (F702).
-
-The policy had its enforcement (`test_policy`) and its 21-day lead time (F628) and neither
-reached a reader: a warning on a PASSING test is folded into a summary xdist suppresses, and the
-written window sits beside gate evidence nothing consumes. Both times a deadline came due it was
-found by a blocked release — `pending_edits.py` on the morning it expired, and the five
-settings-patterns markers by hand at an audit's orientation three days out.
-
-So these tests assert the DELIVERY, in the two places that make a health event readable: the
-machine-checked vocabulary and the console's blocked-work fold. The computation is
-`test_policy.py`'s subject and the grammar is `migration_markers`'.
-"""
+"""A migration deadline reaches a surface someone looks at (F702)."""
 
 from __future__ import annotations
 

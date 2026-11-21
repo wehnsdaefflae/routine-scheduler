@@ -2,29 +2,6 @@
 mounted (R2885). The widened form of the conv-*/pane-* class contract that used to live in
 tests/test_static_layout.py, which now points here. The extraction is tests/class_survey.py;
 this module is the two rules and the design record of what they waive.
-
-WHY TWO RULES, MEASURED. `views.css:300-328` is a design document in comments: the refusal's
-dashed border means "nothing is known about this work", a cancel takes the injection palette
-because "nothing failed", an oversight rung keeps the injection's weight so "a reader must be
-able to tell a rung redirecting the run from the operator doing it".
-`tests/test_stylesheet_tokens.py` machine-checks the palette's INPUTS — every colour a token,
-every token defined for both themes. Nothing checked the OUTPUT, and 0.399.2 is what that cost:
-`ladderstrip.js` emitted a bare `bad`/`warn`/`ok` and *a rung that BROKE rendered in exactly the
-ink of a rung that declined to run*. Found by rendering the strip, not by reading it.
-
-Widening the old check's SCOPE alone would NOT have caught it. `bad` IS named in a stylesheet —
-`.test-result.bad` (views.css:511), `.outcome-move.bad` and `.outcome-table .bad` (dev.css:10) —
-and `ladderstrip.js` can reach none of them: it mounts neither `test-result` nor `outcome-table`.
-Verified by reproducing the defect: with the three `.ladderstrip .bad|.warn|.ok` rules removed,
-rule A below PASSES and rule B reds, naming all three tokens and the rules that cannot match
-them. So:
-
-  rule A  every class token a module mounts is NAMED by some rule in some stylesheet
-          (`test_every_mounted_class_is_styled`) — waivable through ALLOWLIST below;
-  rule B  for the palette's STATE words, being named somewhere is not enough: some rule naming
-          the token must be REACHABLE from the module that mounts it
-          (`test_a_state_class_is_reachable_where_it_is_mounted`) — never waivable, because the
-          allowlist is for classes that carry no meaning and a state word carries nothing else.
 """
 from __future__ import annotations
 

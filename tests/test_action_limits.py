@@ -1,14 +1,4 @@
-"""`/api/status`'s `action_limits` — the engine's own default operation limits, served once.
-
-`static/components/actiontime.js` compares an action's elapsed time with the limit the engine
-would apply to it, and carried a COPY of those numbers (`{util: 300, script: 300, shell: 120,
-wait: 600}`). Nothing tied that copy to the engine: raising `shell`'s default in `shellrun.py`
-left the console measuring against 120 s, and no test anywhere noticed (D252). The server
-publishes them instead, built from the constants themselves.
-
-These assertions read the constants rather than restating their values — a test that retyped
-the numbers would be a third copy to drift.
-"""
+"""`/api/status`'s `action_limits` — the engine's own default operation limits, served once."""
 
 from __future__ import annotations
 

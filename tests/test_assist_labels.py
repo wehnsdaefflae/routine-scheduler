@@ -1,18 +1,5 @@
-"""The outcome label for a rule assist's HOLD (D239) — the four coupled parts, end to end.
+"""The outcome label for a rule assist's HOLD (D239) — the four coupled parts, end to end."""
 
-A `hold`-payload assist costs the run a turn and had no way to say whether that turn bought
-anything: `state/assists.json` was an int per key, `remind_feedback` answered an assist key
-with "no reminder … is live for this run", the health read model showed a bare count, and the
-hold's own wording asked for prose in the next `say` instead of a structured label. One
-assist in the library carries that payload and stood at 72 turns across three routines with
-no way to tell a useful hold from a false positive — the one number that decides whether a
-trigger keeps a turn-costing rung.
-
-One test per part, then the acceptance the increment exists for: a held run labels its hold
-and the label lands in the tally under the assist's own key and is visible in the read model.
-"""
-
-import json
 from types import SimpleNamespace
 
 import yaml
@@ -100,63 +87,6 @@ def test_the_tally_keeps_the_same_stat_fields_a_reminder_does(tmp_path):
     assert got["fires"] == 1 and all(got[lbl] == 0 for lbl in LABELS)
 
 
-def test_the_migration_converts_the_live_int_per_key_file_in_place(tmp_path):
-    """The real shape on disk — seven keys, an int each (313 bytes in a live routine dir).
-    The int is the fire count and must survive as `fires`."""
-    from rsched import migrate_assist_stats as mig
-
-    routines = tmp_path / "routines"
-    d = routines / "scheduler-builder"
-    (d / "state").mkdir(parents=True)
-    live = {"ask-policy/when-asks-pile-up": 5, "fix-the-cause/on-a-correction": 21,
-            KEY: 11, "interface-craft/look-at-the-render": 25}
-    (d / "state" / "assists.json").write_text(json.dumps(live), encoding="utf-8")
-
-    record = mig.run_migration(SimpleNamespace(routines_home=routines))
-
-    assert record["converted"] == 1 and record["keys"] == 4
-    after = json.loads((d / "state" / "assists.json").read_text(encoding="utf-8"))
-    assert after[KEY] == {"fires": 11, **dict.fromkeys(LABELS, 0)}
-    assert mig.run_migration(SimpleNamespace(routines_home=routines)) == {}   # one-shot
-
-
-def test_a_stand_in_server_without_the_homes_cannot_kill_the_boot():
-    """R3132's shape: `cmd_daemon` is handed a four-attribute stand-in by the fresh-container
-    boot test, so every attribute read here is a `getattr` — a hard read would fail the whole
-    daemon boot for a question this migration was not asked."""
-    from rsched import migrate_assist_stats as mig
-
-    assert mig.run_migration(SimpleNamespace()) == {}
-    assert mig.run_migration(SimpleNamespace(routines_home="")) == {}
-
-
-def test_a_homeless_server_writes_nothing_rather_than_into_the_current_directory(tmp_path,
-                                                                                monkeypatch):
-    """The half the return value above does not cover, and it cost a release gate.
-
-    `routines_home` was read as `getattr(server, "routines_home", "") or "."`, so a stand-in
-    without a home resolved to the PROCESS's current directory — and a test run from the repo
-    wrote `.control/migrations/assist-stats.json` into the CHECKOUT. Gate
-    1793979003964198600 (0.505.0's first arming) duly reported its own worktree `dirty`.
-    Asserting the return value could never catch that: the write happens on the way to it.
-    """
-    from rsched import migrate_assist_stats as mig
-
-    monkeypatch.chdir(tmp_path)
-    assert mig.run_migration(SimpleNamespace()) == {}
-    assert not (tmp_path / ".control").exists(), "the migration wrote into the cwd"
-    assert list(tmp_path.iterdir()) == []
-
-
-def test_the_daemons_boot_sequence_actually_runs_it():
-    """A migration nothing CALLS is a silent no-op that passes its own suite."""
-    import inspect
-
-    from rsched import cli_daemon
-
-    assert "migrate_assist_stats" in inspect.getsource(cli_daemon.cmd_daemon)
-
-
 # --- part 3: the health read model and its table gain the four columns ---------------------
 
 def test_the_read_model_carries_the_four_labels_per_assist(tmp_path):
@@ -175,23 +105,6 @@ def test_the_read_model_carries_the_four_labels_per_assist(tmp_path):
     row = next(r for r in cautions(server, d)["assists"] if r["key"] == KEY)
     assert row["fires"] == 31
     assert row["stats"]["could_not"] == 2 and row["stats"]["would_have"] == 7
-
-
-def test_a_legacy_int_tally_still_reads_as_a_row(tmp_path):
-    """The read model promises a routine whose store is old or hand-broken shows what it has
-    rather than a broken page — the migration runs at boot, the page may be read before it."""
-    from rsched.config import ServerConfig
-
-    server = ServerConfig()
-    server.routines_home = tmp_path / "routines"
-    server.libraries_home = tmp_path / "library"
-    d = server.routines_home / "r"
-    (d / "state").mkdir(parents=True)
-    (d / "state" / "assists.json").write_text(
-        json.dumps({"x/pre-action": 4, "y/observation": "lots"}), encoding="utf-8")
-
-    rows = [(r["key"], r["fires"], r["stats"]["did"]) for r in cautions(server, d)["assists"]]
-    assert rows == [("x/pre-action", 4, 0), ("y/observation", 0, 0)]
 
 
 # --- part 4: the `assist_hold` observation asks for the label ------------------------------
@@ -254,12 +167,6 @@ def test_neither_hold_promises_that_a_re_emit_runs():
     can still be held by the other. Both sentences said "it runs this time" / "runs it", which
     is false exactly when a reminder AND a rule match one action: the run is held twice having
     been promised once, and reads that as the seam ignoring its own confirmation.
-
-    Fails if either promise comes back, in EITHER of the two places that make it — which is
-    the second half of why this is a pin and not a one-line fix: the engine composes the hold a
-    run reads (`engine/obs_hold`) and the console composes the hold a PERSON reads in the
-    transcript (`static/components/obs-text.js`), and nothing compared the two. The console's
-    copy had drifted to the stronger claim on its own.
     """
     import re
     from pathlib import Path

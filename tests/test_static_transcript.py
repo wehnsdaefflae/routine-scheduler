@@ -1,12 +1,4 @@
-"""The console's transcript renderer knows every event type the engine writes.
-
-engine/transcript.py's EVENT_TYPES is read by two consumers — the web renderer and the meta
-routine — and "an unknown kind reads as corruption", so the tuple and both readers are extended
-together (CLAUDE.md, "Transcript events"). Nothing checked the web half: `stages_skipped`
-(F521) joined the tuple and the CLI renderer, and the console silently drew nothing for it.
-The renderer dispatches in components/transcript.js `add()` — three types by an explicit
-`ev.type === "…"` branch, the rest through the SIMPLE table — so both are read here.
-"""
+"""The console's transcript renderer knows every event type the engine writes."""
 
 import re
 from pathlib import Path

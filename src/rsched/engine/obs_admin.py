@@ -2,19 +2,12 @@
 sub-calls and questions — and the ONE wording of an ask-back on any blocking decision
 (`dialog_reply`), which the library, secret-gate and reminder renderers share.
 
-Split out of `observations.py` (F393). Each one either changes instance state or asks something
-of a person, so the wording's job is to be honest about what did NOT happen yet: a draft is not
-a routine, a queued proposal is not a creation, a filed report starts no run, and a deferred
-question may never be answered.
+Each one changes instance state or asks something of a person, so the wording must be honest
+about what did NOT happen yet: a draft is not a routine, a queued proposal is not a creation, a
+filed report starts no run, and a deferred question may never be answered.
 
-That honesty is the whole reason `queued` is checked FIRST, in one shared branch, before any
-kind's success wording. F328 gave `create_routine` and `manage_lane` a proposal path for a
-scheduled run, but taught only the HANDLERS about it: the queued observation then fell through
-to each kind's success line and read as a completed action over a payload that was not there —
-"created routine 'x' from workflow None" (the F378 false-success class, again), "armed a
-sequential fire of lane None (0 member(s))" (R1200) and "lane None (None) now has members []"
-(R1183), the last of which reads as a lane that was just emptied. One shared branch is also
-why the two cannot drift apart again.
+That is why `queued` is checked FIRST, in one shared branch, before any kind's success wording:
+otherwise a queued proposal falls through to a success line over a payload that is not there.
 """
 
 from __future__ import annotations
@@ -22,8 +15,8 @@ from __future__ import annotations
 from .. import recipients
 from ..report_threads import TRIAGE_READER
 
-#: The kinds that can come back QUEUED — a scheduled run's proposal for the Decisions page
-#: (F328). Both carry the same three keys (`queued`, `id`, `next`) plus a self-describing
+#: The kinds that can come back QUEUED — a scheduled run's proposal for the Decisions page.
+#: Both carry the same three keys (`queued`, `id`, `next`) plus a self-describing
 #: `proposal` line written by the handler, so one branch renders both.
 QUEUEABLE_KINDS = ("create_routine", "manage_lane")
 
@@ -41,13 +34,11 @@ def dialog_reply(obs: dict, what: str, resubmit: str, until: str = "") -> str:
     """The ONE wording for the console's "ask back" on a blocking decision — the body every
     kind's observation (and the curated-reminder note) carries after its own head.
 
-    The operator replied WITHOUT deciding: they need some back-and-forth first. Their words are
-    the whole point of the reply, so they come verbatim; then what to do with them — address
-    them, and re-submit the action that asked, which files the decision again and replaces the
-    open record (`interact.handle_ask` supersedes by subject). One pattern for every kind, so a
-    question, an approval and a request cannot drift into dialects of the same promise; a kind
-    supplies only its noun (`what`), how it is re-submitted, and what stays untouched until the
-    operator decides (`until`). `obs` carries `qid` and `user_message` (`askback.still_pending`).
+    The operator replied WITHOUT deciding. Their words come verbatim, then the move: address
+    them and re-submit the action, which replaces the open record (`interact.handle_ask`
+    supersedes by subject). One pattern for every kind; a kind supplies only its noun (`what`),
+    how it is re-submitted, and what stays untouched until the operator decides (`until`).
+    `obs` carries `qid` and `user_message` (`askback.still_pending`).
     """
     tail = f" {until}" if until else ""
     return (f"the user replied WITHOUT deciding — a dialog reply, NOT the answer; the {what} "
@@ -58,10 +49,7 @@ def dialog_reply(obs: dict, what: str, resubmit: str, until: str = "") -> str:
 def _choice_lists(obs: dict) -> str:
     """The lists a create_routine draft (or a refusal naming an unknown workflow) asks the model
     to put to the user — `workflow_catalog`, `settings_patterns`, `design_checks`. The handler's
-    `next` points at them ("its options are the entries of workflow_catalog"), so they must be IN
-    the text: riding only the observation dict, they never reached the model, which was told to
-    offer options it could not see and answered the workflow question from memory (F383's
-    failure, back through the renderer).
+    `next` points at them, so they must be IN the text — the model never sees the dict.
     """
     out = []
     if catalog := obs.get("workflow_catalog"):
@@ -85,12 +73,8 @@ def _runtree_line(obs: dict) -> str:
     """Wording for a RUN-TREE hook — the `report` action with `target: parent` / `child:<label>`
     (engine/runtree.py). Its own shape: `delivered` and a `hook` id, never `filed` and an `R<n>`.
 
-    It is rendered FIRST, before any branch that assumes a ledger row, because this is the hole
-    R2924 reported: the renderer had no case for it, so a hook that had been DELIVERED fell
-    through to "could NOT write the reports log (I/O error) — the report was not filed", and so
-    did every refusal `resolve` wrote. Measured 2026-10-26: a child believed that line, re-sent,
-    and both copies reached its parent. A false failure costs more than a refusal, because the
-    sender redoes work that already landed.
+    Rendered FIRST, before any branch that assumes a ledger row: falling through would report a
+    DELIVERED hook as a failed write, and the sender would redo work that already landed.
     """
     if not obs.get("delivered"):
         if refused := obs.get("refused"):
@@ -137,9 +121,7 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
             return (f"OBSERVATION (create_routine: replacement candidate {slug!r} for "
                     f"{obs.get('replaces')!r} CREATED at {obs.get('dir')}. {obs.get('next')})")
         if obs.get("draft"):
-            # D92's preview step MUST NOT read as success: before 0.222.0 this fell through
-            # to the created-copy below, so the agent announced a routine that did not exist
-            # (R476/R477/R478, conversation c-20260822-174836).
+            # The preview step MUST NOT read as success (D92).
             state = "draft UPDATED — confirmation restarted" if obs.get("updated") \
                 else "draft stored"
             held = f" HELD: {obs['held']}" if obs.get("held") else ""
@@ -160,10 +142,8 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
         verb = obs.get("verb")
         if verb == "list":
             rows = obs.get("lanes") or []
-            # F424/R1142: the listing names its MEMBERS, in fire order. A count answered
-            # "how big" and nothing answered "which routines are in it" — and no other tool
-            # does, so a run reasoning about a lane had to guess. Slugs are short; the fire
-            # order is the lane's whole semantics.
+            # The listing names its MEMBERS in fire order — the lane's whole semantics, and
+            # no other tool answers "which routines are in it".
             def _one(lane: dict) -> str:
                 slugs = [str(m.get("slug", "")) for m in (lane.get("members") or [])]
                 who = " → ".join(slugs) if slugs else "no members"
@@ -206,14 +186,11 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                     f"{obs.get('valid_targets')}. Retry with one of those, or drop `target` "
                     "to send it to triage.)")
         if obs.get("target_unreachable"):
-            # F614: 24 reports sat open against routines that start no run, the oldest six
-            # weeks. The STATE and the LAST RUN DATE are the refusal's substance — `disabled`
-            # is the operator's switch and may be a pause (one such routine had run two days
-            # before the count), `retired` is a finish line reached and is permanent.
+            # The STATE and LAST RUN DATE are the substance: `disabled` may be a pause,
+            # `retired` (a finish line reached) is permanent.
             when = (f"it last ran {obs['last_run']} ({obs.get('last_run_state')})"
                     if obs.get("last_run") else f"{obs.get('last_run_state')}")
-            # Where the work went is the other half of "it is off": a routine is usually
-            # switched off because its work MOVED (merged, or carried as another's task).
+            # Where the work went: a routine is usually off because its work MOVED.
             return (f"OBSERVATION (report REFUSED — {obs.get('target')!r} is "
                     f"{obs.get('state')}: {obs.get('because')}, and {when}. "
                     f"{obs.get('reason')} "
@@ -227,14 +204,13 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                     f"`supersedes` naming the ones it takes over (start with "
                     f"{obs.get('oldest')!r}), or with `answers` if it replies to one. Nothing "
                     "was filed.)")
-        if obs.get("unusable"):   # R3364: a clause PER ID, worded by `supersedable`
+        if obs.get("unusable"):   # a clause PER ID, worded by `supersedable`
             return ("OBSERVATION (report REFUSED — `supersedes` names rows that cannot be "
                     f"taken over: {'; '.join(f'{r} {c}' for r, c in obs['unusable'])}. "
                     "Nothing was filed; re-emit without them.)")
         if obs.get("undeliverable_disposal"):
-            # D182: the two refusals need different moves, so they are never merged into one
-            # "not yours" sentence. A row delivered elsewhere is its owner's to answer; an
-            # unrouted row has to reach an owner before anyone can settle it.
+            # D182: two refusals with different moves, never merged — a row delivered
+            # elsewhere is its owner's to answer; an unrouted row must reach an owner first.
             parts = []
             if elsewhere := obs.get("elsewhere") or []:
                 named = ", ".join(f"{rid} → {owner or 'unknown'}"
@@ -257,27 +233,22 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
             took = (f" It TAKES OVER {', '.join(obs['supersedes'])}: they leave triage now and "
                     f"settle when this one does, so do not route them again."
                     if obs.get("supersedes") else "")
-            # F660: a cut detail is named HERE, with the size of the loss. D177: the loss is
-            # only the DELIVERY's — the ledger row keeps the detail whole and the delivered
-            # marker sends the reader there — so this says nothing needs re-filing. It once
-            # offered "re-file it as a short follow-up", and runs did: a mechanical fix the
-            # engine already applies, paid for again as a turn and a second ledger row (P3).
+            # A cut detail is named with the size of the loss; only the DELIVERY lost it —
+            # the ledger row keeps it whole (D177) — so nothing needs re-filing.
             cut = (f" Its detail was TRUNCATED IN DELIVERY: {obs['detail_truncated']} "
                    "characters past the cap did not reach the reader's prompt. Nothing needs "
                    "re-filing: the ledger row keeps it whole and the delivered copy points the "
                    "reader at that row for the rest."
                    if obs.get("detail_truncated") else "")
-            # F621: options made it a decision for the OPERATOR too. Say that the card
-            # exists and that his answer comes back HERE — a run told only "filed" would
-            # keep treating itself as blocked on a question nobody could see.
+            # `options` also filed a decision for the operator: say the card exists and
+            # that his answer comes back to this routine's inbox.
             decided = (" Its `options` also filed it as an OPEN DECISION for the user "
                        f"({obs['decision_qid']}): it is on his Decisions page now, counted "
                        "on your routine card, and his answer arrives in YOUR inbox for your "
                        "next run — so do not also ask it as an ask_user."
                        if obs.get("decision_qid") else "")
-            # F770: your words say you closed a row that none of your FIELDS dispose of, so it
-            # is still open and only you can still fix that — this turn. Not a refusal: the
-            # prose may be a citation this check read as a claim.
+            # The prose claims a disposal no FIELD performs: the row stays open. Not a
+            # refusal — the prose may be a citation this check read as a claim.
             said = (" Your text says it disposes of "
                     f"{', '.join(obs['claimed_not_disposed'])}, but `answers`, `settles` and "
                     "`supersedes` name none of them — so " +
@@ -299,14 +270,10 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
         return f"OBSERVATION (llm reply):\n{obs['reply']}"
     if kind == "ask_user":
         if err := obs.get("error"):
-            # The ask was REFUSED before any record was filed (e.g. a config_patch naming a
-            # routine that does not exist — D123/F458). Nothing is pending and nobody was
-            # asked, so say that plainly instead of falling through to the "filed as
-            # deferred" line, which assumed every ask_user observation carries a qid.
+            # REFUSED before any record was filed: nothing is pending, nobody was asked.
             return (f"OBSERVATION (ask_user REFUSED — no question was filed): {err}")
         if obs.get("batch"):
-            # D212: ONE action, N decision records. Say how many and how many of them you
-            # marked as stopping your work — the class is a recorded fact, not a wait.
+            # D212: ONE action, N decision records; "blocking" is a recorded class, not a wait.
             return (f"OBSERVATION (ask_user): {obs['count']} questions filed as one batch "
                     f"({obs['batch']}), {obs.get('blocking') or 0} marked blocking. They are "
                     "on the user's Decisions page together; answers reach a future run. "
@@ -339,9 +306,7 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                 "question answering them", "Nothing is granted until they decide."))
         if obs.get("dialog"):
             # The console's "ask back": the user replied to a BLOCKING question without
-            # deciding it. Their words are the whole point — this used to fall through to the
-            # "filed as deferred … Continue." line below, so the model never saw them and
-            # carried on as if nobody had answered.
+            # deciding it, and their words must reach the model.
             return "OBSERVATION (ask_user): " + dialog_reply(
                 obs, "question", "ask again with ask_user (the original question, or a sharper "
                 "version)")

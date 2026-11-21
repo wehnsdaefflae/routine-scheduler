@@ -1,12 +1,4 @@
-"""A file the console serves is proven contained on what it OPENED, not on a path it checked.
-
-Every web read of a file under a run home addresses a directory a jailed util may write — and
-the routine token that util may hold reads these routes. A containment check made on a path
-before the open can be raced: the util lets the check pass on a real directory and swaps that
-directory for a symlink before the open, and the console then reads, for it, a file its own
-jail forbids (the daemon's config with the operator's token in it). Each test below replays
-exactly that interleaving: the swap lands right after the route's own check returned.
-"""
+"""A file the console serves is proven contained on what it OPENED, not on a path it checked."""
 
 from __future__ import annotations
 

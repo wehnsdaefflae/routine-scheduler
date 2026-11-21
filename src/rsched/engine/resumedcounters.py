@@ -1,51 +1,35 @@
-"""Two once-per-RUN counters a resumed leg used to forget — rebuilt from the transcript (D245).
+"""Two once-per-RUN counters a resumed leg must not forget — rebuilt from the transcript (D245).
 
-`engine/guardscope.py` rebuilds every once-only LEDGER a resumed leg would otherwise start
-empty. These two are counters rather than ledgers, and they were missed:
+The counter twins of `engine/guardscope.py`'s ledgers:
 
 * **`loop.failures`** — how often each call has failed this run. The fix-the-cause rule assist
-  fires at the SECOND failure of one call (`assist_predicates._repeated_failure`): the first
-  failure is information, the second is where a run either changes route or starts engineering
-  around a wall. With the tally reset per leg, a call that failed once before a restart and
-  once after it reads as two first failures, so the moment never arrives — in exactly the run
-  that needed it, since a leg that died mid-work is the one most likely to resume into the
-  same wall.
-* **`loop._schema_off`** — the provider's response-format grammar switched off for the rest of
-  the run, after repeat-streak shedding rescued the run twice (`loop._repeat_warning`). A
-  restart turned it back on, re-imposing the grammar that was suppressing fields for that
-  model.
+  fires at the SECOND failure of one call, so a tally reset per leg would never reach it across
+  a restart.
+* **`loop._schema_off`** — the response-format grammar switched off for the rest of the run
+  (`loop._repeat_warning`); a restart must not re-impose it.
 
-**The transcript is the record** — the rule `guardscope` states, and neither counter needs a
-payload extension to honour it:
+**The transcript is the record**, with no payload extension:
 
-* a failure is `exitgate.failure_tally_key(ctx, action, obs)`, a pure function of the action
-  and its own observation, which the transcript records as a paired `assistant_action` +
-  `observation` of the same turn. The pairing is by TURN, and an observation with no action
-  before it is skipped rather than guessed at — a leg killed between the two events leaves
-  exactly that.
-* `_schema_off` already writes an `error` event whose message says the format was disabled for
-  the rest of the run. The fact was on the record and simply never read back.
+* a failure is `exitgate.failure_tally_key(ctx, action, obs)` over a paired `assistant_action` +
+  `observation` of the same TURN; an observation with no action before it is skipped.
+* `_schema_off` is read back from the `error` event that recorded the decision.
 
-The same gate as the live loop (`donothing.grounds_a_finish`) decides what counts, so a held
-action — one the engine never ran — is not tallied here either. That is D243's defect one level
-down: two readers of one condition must not disagree, which is why both ask the one predicate
-rather than restating it.
+The live loop's gate (`donothing.grounds_a_finish`) decides what counts, so a held action is not
+tallied here either: two readers of one condition ask the one predicate.
 """
 
 from __future__ import annotations
 
-#: The sentence `loop._repeat_warning` records when it turns the grammar off for good. Matched
-#: on this phrase rather than on `attempt == 0`, because an ordinary schema error also carries
-#: an attempt number — the fact being read back is the DECISION, not the error.
+#: The sentence `loop._repeat_warning` records when it turns the grammar off for good — the
+#: DECISION, which `attempt` alone cannot tell from an ordinary schema error.
 _SCHEMA_OFF_MARK = "disabled for the rest of the"
 
 
 def failures_from(ctx, events: list[dict]) -> dict[str, int]:
     """`{failure key: how many times it failed}` over the events of one guard scope.
 
-    `ctx` is the run context `exitgate.failure_tally_key` needs to read a callee's declared
-    informational exits (F711) — None is accepted, and then a declared code counts, exactly as
-    an unreadable source does in the live tally.
+    `ctx` lets `exitgate.failure_tally_key` read a callee's declared informational exits; with
+    None a declared code counts, as an unreadable source does in the live tally.
     """
     from .donothing import grounds_a_finish
     from .exitgate import failure_tally_key

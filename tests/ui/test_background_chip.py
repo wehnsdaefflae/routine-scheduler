@@ -1,23 +1,4 @@
-"""D118 phase 2 — a backgrounded call is VISIBLE in the conversation, and its result resolves.
-
-Phase 1 made a read or a fetch runnable in the background: the turn comes back at once with a
-*started* observation, and the REAL observation is appended at a later turn boundary. From the
-transcript's side that is two rows for one call, and a reader has to be able to tell:
-
-* the ⏳ row — the call is RUNNING. No exit code, no output, no verdict. It must not be rendered
-  by the util branch, which would print "exit undefined" (the misrender the secret-gate branch
-  already exists to prevent for the other callable-with-no-exit case), and it must not look like
-  success or failure, because nothing is known yet;
-* the row that RESOLVES it — the ordinary observation, carrying the same handle, rendered exactly
-  as a synchronous one of its kind would be;
-* the row nobody read — a result that landed after the last turn, or a call still running when
-  the run ended. Nothing failed, and the result may be right there, which is precisely why it
-  needs its own appearance: what is wrong is that nothing acted on it.
-
-These load the REAL renderer and the REAL stylesheet in the real browser, and assert the computed
-style for the two rows the feature is about, not only their class — a class assertion alone would
-pass over a stylesheet that never shipped the rule (the lesson test_observation_states.py states).
-"""
+"""D118 phase 2 — a backgrounded call is VISIBLE in the conversation, and its result resolves."""
 from playwright.sync_api import expect
 
 _FIXTURE = """async (rows) => {

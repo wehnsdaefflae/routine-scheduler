@@ -1,23 +1,4 @@
-"""The `machines` note must not tell a run to stop trying something that works (F802).
-
-R3057, from conversation `c-20261029-080013`: the operator granted `machine:omen` mid-run and the
-grant-applied note said *"Saved, but it takes effect at your NEXT RUN — you are still running
-under what you booted with: machines: the machine bindings and share mounts are resolved at
-boot"*. The very next action in the SAME process ran `gu remote list --json` and got omen back
-with `"ready": true`, then `gu remote test omen` succeeded.
-
-The note was wrong because `exec_env._machine_env` composes the machine env PER UTIL CALL from
-`ctx.routine.machines` **plus `ctx.granted_now`** — the run's own grant overlay, which
-`requests.apply_decision` writes the moment the operator answers an access request. So for
-EXEC, a mid-run machine grant reaches the run already going. What genuinely waits for the next
-run is the sshfs SHARE MOUNT, which the daemon makes at binding time; `_machine_env`'s own
-docstring draws exactly that line ("A one-time grant covers EXEC only").
-
-`tests/test_configflow.py` cannot catch this: it asserts only that every field declares one of
-the two halves and that the reason is non-empty, never that the reason is TRUE. These two tests
-compare the prose against the behaviour, which is the only thing that could have caught it — the
-same shape as the `fs_read_roots` entry, whose note has always drawn this distinction.
-"""
+"""The `machines` note must not tell a run to stop trying something that works (F802)."""
 
 from __future__ import annotations
 

@@ -1,22 +1,4 @@
-"""A queued proposal's field values are judged at FILING, not on the operator's click (D229/F610).
-
-F610 measured it: "proposed settings carry invalid vocabulary and fail only when the operator
-clicks accept — three different fields in one day". The accept is the worst possible place for
-that refusal. It reaches the one party who cannot fix the field, at the one moment he cannot act
-on it, and the run that COULD have fixed it finished days earlier — so the card sits on the
-Decisions page as something he can read and not take.
-
-D229 (operator's answer (a)): validate every proposed value against the LIVE vocabulary at
-filing time and refuse the proposal with the field named. These tests are that predicate, from
-both ends: the refusal arrives in the observation the FILING run reads, and the Decisions page
-shows no proposal whose accept would refuse it.
-
-Each case below is a value that reached the queue BEFORE this change and raised on the accept:
-a workflow the library does not hold, a slug `scaffold` refuses, a cron croniter cannot parse,
-an `on_failure` outside `lanes.ON_FAILURE`, a lane id the accept cannot find — and one that did
-NOT raise and was worse for it: a lane member naming no routine, which the queue path alone
-would have built into the store.
-"""
+"""A queued proposal's field values are judged at FILING, not on the operator's click (D229/F610)."""
 
 from __future__ import annotations
 

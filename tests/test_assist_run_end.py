@@ -1,24 +1,4 @@
-"""The `run-end` HOOK POINT — the first point whose carrier reaches the NEXT run (D152 step 8).
-
-`hooks/points.py` has carried `run-end` with an empty `fires` since the registry shipped in
-0.458.0. Steps 6 and 7 wired the two RUN-TREE points (`child-exit`, `spawn`), both of which
-carry an `engine_note`: the line reaches the model that is still running. `run-end` is the
-first of the two remaining, and it is different in kind — its carrier is `prompt_section`, so
-whatever fires there reaches the NEXT run and never this one. The run is over.
-
-What these defend, beyond "it fires":
-
-- **THE CARRIER IS NOT INVENTED.** The instance already has a next-run channel the model uses
-  every run — `state/notes.md`, whose tail the state digest renders (`engine/composer.py`). A
-  hook at `run-end` writes there, stamped like any other note. A new store would have needed a
-  new reader in the prompt, and the one that exists is the one the next run already reads.
-- **THE SITE.** It fires in `engine/loopend.finish_run`, after `result.md` is written and
-  BEFORE the autocommit — so the line the next run reads is committed with the run that wrote
-  it. `engine/rewind.py` rewrites `result.md` without going through `finish_run`, so a rewind
-  cannot re-fire it.
-- **THE PAYLOAD.** `note`, not `remind`: at this point there is no model left to remind. The
-  assist vocabulary gains the name the point registry already used for exactly this.
-"""
+"""The `run-end` HOOK POINT — the first point whose carrier reaches the NEXT run (D152 step 8)."""
 
 from __future__ import annotations
 

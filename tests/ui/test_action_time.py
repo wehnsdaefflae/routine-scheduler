@@ -3,11 +3,7 @@ from playwright.sync_api import expect
 
 
 def _serve_limits(page, limits):
-    """Serve the REAL /api/status with `action_limits` replaced.
-
-    Only that one field is overridden, so the test proves the row reads what the SERVER
-    published — numbers the component cannot have had a copy of.
-    """
+    """Serve the REAL /api/status with `action_limits` replaced."""
     def patched(route):
         resp = route.fetch()
         body = resp.json()
@@ -20,12 +16,6 @@ def _serve_limits(page, limits):
 def test_the_operation_limit_is_the_served_engine_default_not_a_copy(ui, ui_page):
     """The row compares elapsed time with the limit THE ENGINE would apply, so the engine's
     constants are served (`/api/status.action_limits`, web/actionlimits.py) and read here.
-
-    actiontime.js carried its own `{util: 300, script: 300, shell: 120, wait: 600}`. Nothing
-    tied that copy to the engine: raising `shell`'s default in shellrun.py left every console
-    drawing its bar against 120 s with nothing failing (D252). Served values that differ from
-    the old copy are what prove the copy is gone — a `shell` row must read the served 300 and
-    a `wait` row the served 42.
     """
     _serve_limits(ui_page, {"util": 300, "script": 300, "shell": 300, "wait": 42})
     ui_page.goto(f"{ui.url}/#/routines")
@@ -97,10 +87,6 @@ def test_action_time_advances_and_stops_on_observation(ui, ui_page):
 def test_a_running_call_offers_the_cancel_and_sends_its_turn(ui, ui_page):
     """F586 / D160-C, step B4: the operator's own words were *"i want the option to cancel a util
     run. just the once currently running. via a red x or sth on the message."*
-
-    What this LOADS, rather than asserting about the attribute that points at it: the ✕ is on the
-    running row, clicking it calls the view's `cancelAction` with THIS row's turn — the key that
-    stops the cancel landing on the next call — and the control then takes itself away.
     """
     ui_page.goto(f"{ui.url}/#/routines")
     ui_page.wait_for_selector("h1")

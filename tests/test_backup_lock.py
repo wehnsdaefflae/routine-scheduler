@@ -1,11 +1,4 @@
-"""`deploy/backup.sh` never mistakes a held lock for a snapshot taken.
-
-On 2026-11-09 the 01:09 nightly found its lock held — by a release gate's own backup tests, which
-ran the real script on the default `/tmp` lock that the engine container shares with the host —
-and exited 0 with "nothing to do". systemd recorded a success, the failure push never fired, and
-no snapshot existed for that night. Now a contended run waits `LOCK_WAIT_S` and then FAILS, and
-`BACKUP_LOCK` lets every test take a lock of its own.
-"""
+"""`deploy/backup.sh` never mistakes a held lock for a snapshot taken."""
 from __future__ import annotations
 
 import fcntl

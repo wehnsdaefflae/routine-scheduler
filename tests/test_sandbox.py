@@ -425,14 +425,7 @@ def test_a_root_naming_a_credential_store_openly_stays_mounted(tmp_path, monkeyp
 
 
 def _make_unreadable(monkeypatch, victim: Path) -> None:
-    """Present `victim` the way a flaky mount does: every kernel probe of it raises EIO.
-
-    R2260's live case (`/mnt/laptop/.../profiles` returning Errno 5) cannot be reproduced by
-    permissions — an unreadable DIRECTORY still stats fine, and the root of the live failure
-    was the stat itself failing. So the three calls the jail assembler makes on a granted root
-    — stat (behind `exists`/`is_dir`), `mkdir` and `resolve` — are made to raise for that one
-    path and to behave normally for every other, which is what a half-dead mount does.
-    """
+    """Present `victim` the way a flaky mount does: every kernel probe of it raises EIO."""
     import errno
     import os as _os
 
@@ -537,10 +530,7 @@ def test_every_granted_root_probe_in_wrap_goes_through_one_decision(tmp_path, mo
     """STRUCTURAL: R2260 existed because five separate places in the composition touched every
     granted root and each could raise. The probe is now ONE function; a sixth touch point added
     later must use it too, or this test fails and the abort cannot come back.
-
-    `_unreadable` is made to record every root it was asked about; then wrap() runs with a
-    granted read AND write root, and both must have been asked about before any mount list or
-    mkdir used them."""
+    """
     _force_abi(monkeypatch, 4)
     monkeypatch.setattr(sandbox, "_warned", set())
     asked: list[str] = []

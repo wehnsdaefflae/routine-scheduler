@@ -1,42 +1,21 @@
 """The NARROW revise leg: approving a recipe-revision card buys an EDIT, not another run.
 
-D200 resumes the run that proposed a revision to its own recipe, with the recipe writable
-(`web/api_recipe_revision.py` → `engine/revise.py`). Until this module that leg was a whole run:
-it re-oriented, re-read its stages, was offered every kind the routine holds, fired the rules'
-pre-finish assists, re-checked its jobs, wrote ledgers and re-edited `phase.json` — work the
-PROPOSING leg had already done and accounted for. Measured over the 34 legs on disk that took
-a turn (2026-11-06): median 7 turns, 8 of them past 12, the longest 26 (fau 2026-10-27: five
-`shell` greps, a memory write and a hand-appended LEDGER entry around fourteen edits), and the
-seven legs of fau and moltbook-heartbeat alone cost 98 turns. The operator approved an edit.
+D200 resumes the proposing run with its recipe writable (`web/api_recipe_revision.py` →
+`engine/revise.py`); the operator approved an edit, so the leg the card arms (`leg: edit`,
+`revise.NARROW`) is shaped by the ENGINE to be one:
 
-So a leg the card arms (the marker's `leg: edit`, `revise.NARROW`) is shaped to be one, and
-every part is decided by the ENGINE, never asked of the model:
-
-- **what it may emit** — `LEG_KINDS`: the recipe edit kinds and `finish`/`report`, scoped by
-  the existing one-leg unlock (`recipe_unlocked`); nothing else is in its schema.
-- **how long it may take** — `LEG_TURNS`, a backstop and never a pace. The edit work in the
-  measured legs was 3-8 turns; the long tail was orientation and records this leg no longer
-  holds the kinds for, and independent edits may ride one reply (D203). The reserved finish
-  turn is unchanged, so an overrun leg still authors its summary and names what it left.
-- **what its finish owes** — nothing: no Done-when, goal or outcome accounting, no due-job
-  checkpoint, no verifier challenge and no rule assist (`finish_rungs.Rung.on_revise_leg`).
-  The proposing leg answered for the run; the leg's rules are cleared at boot for the same
-  reason — they govern the TASK, and this leg does none.
+- **what it may emit** — `LEG_KINDS` only, under the one-leg unlock (`recipe_unlocked`).
+- **how long** — `LEG_TURNS`, a backstop, never a pace; the reserved finish turn still applies.
+- **what its finish owes** — nothing: no accounting, job checkpoint, verifier or rule assist
+  (`finish_rungs.Rung.on_revise_leg`); the rules are cleared at boot, as they govern the TASK.
 - **what its ending changes** — only the recipe and the leg's own record. The RUN's verdict
-  stays the proposing leg's (`run_status`): status.json, the usage row's status, the health
-  stream (no new not-ok row, and no `run_corrected` row claiming a failed task was redone), and
-  `result.md`, to which the leg's summary is APPENDED (`result_text`) — freelance-hunter
-  2026-11-02 lost its run summary to a summary of the recipe edit alone. The outcome script,
-  the obligations save and the per-run telemetry are not re-run, and the leg's usage row is
-  marked (`usage_log.REVISE_LEG`) so the per-run fold adds its spend and keeps the task leg's
-  verdict, quality and outcome reading.
+  stays the proposing leg's (`run_status`: status.json, usage status, health stream), the
+  leg's summary is APPENDED to `result.md` (`result_text`), outcome/obligations/telemetry are
+  not re-run, and its usage row is marked `usage_log.REVISE_LEG` (spend only).
 
-What is NOT narrow, and why: a D198 invitation (`rsched/reciperevise.py`) arms the target's
-NEXT SCHEDULED run — a full run that also does its task, so its finish owes that task's
-accounting and its tools and budget are the task's; and the run view's "editable recipe"
-checkbox carries whatever the operator typed, which may ask for more than an edit. Both keep
-the full leg. A narrow leg also leaves a waiting D198 invitation for that next fire instead of
-taking it, so the leg does exactly what the card approved.
+Not narrow: a D198 invitation (the target's next scheduled run also does its task) and the run
+view's "editable recipe" checkbox (it carries whatever the operator typed). A narrow leg leaves
+a waiting D198 invitation for that next fire.
 """
 
 from __future__ import annotations
@@ -46,7 +25,7 @@ from pathlib import Path
 #: The kinds a narrow leg may emit. `list_models` rides `actions.ALWAYS_KINDS` like everywhere.
 LEG_KINDS = ("read_file", "edit_file", "write_file", "finish", "report")
 
-#: The leg's per-window turn backstop (see the module docstring for the measurement).
+#: The leg's per-window turn backstop.
 LEG_TURNS = 12
 
 
@@ -67,12 +46,10 @@ def active(loop) -> bool:
 
 def boot(loop, prior_finish: dict) -> str:
     """On the resume: keep the run's verdict, drop the task's rules, cap the window — and
-    return the engine note that frames the leg (it replaces the follow-up note, whose "finish
-    again with the previous result plus what changed" is the opposite of this leg's job).
+    return the engine note framing the leg (in place of the follow-up note).
     """
     ctx = loop.ctx
-    # no earlier finish (a leg that never ended) leaves no verdict to keep: the leg's own
-    # status is then the run's (`run_status`), and the note says the verdict is unknown
+    # no earlier finish: the leg's own status becomes the run's, and the note says "unknown"
     loop.revise_prior_status = str(prior_finish.get("status") or "")
     loop.assists = []
     budgets = ctx.budgets

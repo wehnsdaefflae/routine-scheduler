@@ -176,15 +176,7 @@ def test_a_finishing_run_abandons_an_archive_that_would_stall_it(tmp_path, monke
 
 
 def test_abandoning_an_archive_terminates_its_open_llm_record(tmp_path, monkeypatch):
-    """F572: the abandoned call must report back, because nothing else ever will.
-
-    `start()` runs the completion in a DAEMON thread, so at process exit the interpreter kills
-    it mid-`complete()` without unwinding — the instrumentation wrapper's `except BaseException`
-    never runs, no `finished`/`failed` record is written, and the task centre (which sets
-    `done_at` only from such a record) keeps the task `running` for the daemon's lifetime.
-    Measured in conversation c-20260915-074755's sidecar: 17 of 23 leaked tasks were archival.
-    `settle()` is the party that knows, and it is still alive when it decides.
-    """
+    """F572: the abandoned call must report back, because nothing else ever will."""
     from rsched.endpoints import instrument
     from rsched.engine import compaction
 

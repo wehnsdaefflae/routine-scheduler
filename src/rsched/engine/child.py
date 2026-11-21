@@ -1,40 +1,20 @@
-"""The CHILD RUN — one concept, three scheduling modes.
+"""The CHILD RUN — one concept, several scheduling modes (F338).
 
-This module is the single definition the rest of the child machinery reads from. It exists
-because the system had grown three names for one thing (F338): a `spawn` produced a
-"subroutine", a `subtask` produced a "subtask", and conversation branching (F325) was about to
-add a third word for the same shape. Three names invited three mental models, and the prompt
-copy drifted between them until it claimed something false — that children share the parent's
-working directory (R409/R410), a lie that cost a run a recovery detour.
+The single definition the child machinery reads from, so the prompt copy, observations and docs
+cannot drift into separate mental models. A child run is an isolated run with its own
+directory, budget and recipe, and a declared relationship to its parent. A parallel and a
+sequential `child` (its `mode` field, D241) and a conversation `branch` differ only in MODE —
+when it runs relative to the parent and who drives it.
 
-**A child run is:** an isolated run with its own directory, its own budget, its own recipe or
-pattern, and a declared relationship to its parent. That is the whole concept. What varies
-between a parallel child, a sequential child and a conversation `branch` is only the MODE —
-*when* it runs relative to the parent and *who* drives it — never what a child IS.
+Every mode obeys one contract:
 
-At the action surface the mode is a FIELD of one kind: `child` takes `mode` (parallel or
-sequential) and `children` lists them (D241, 0.566.0). The scheduling intent a run chooses
-between used to be carried by two kind NAMES, `spawn` and `subtask`, which is how one concept
-read as two mechanisms. The conversation fork (F325) stays the person's own surface. All of
-them share this contract underneath.
-
-The contract has three parts, and every mode obeys all three:
-
-1. **Isolation.** A child gets its OWN directory and never writes into its parent's. Concurrent
-   siblings therefore cannot race a shared tree, and the engine arbitrates nothing.
-2. **A budget of its own**, sliced from the parent's remainder as the child starts — no single
-   child can outspend the run that started it. Parallel siblings are each sliced from the
-   remainder they see and are NOT netted against each other (their usage folds into the
-   parent only as each one exits), so a fan-out can together spend more than the parent had
-   left. That generosity is the operator's choice (2026-10-01); the run-level budget still
-   ends the tree once their usage has folded back.
-3. **A declared HAND-BACK.** A child returns its summary always, and returns FILES by writing
-   them into its own `artifacts/` — the same convention the Artifacts panel and detached
-   background tasks already use. The engine copies those into the parent's
-   `artifacts/<handback_dirname(noun, key)>/` and NAMES the landed paths in the notification.
-   Nothing is declared in the action schema, so a non-child run pays nothing for this and a
-   child that writes nothing hands back only its summary. Before this the parent had to know
-   the child's dir and search it — a procedure every routine reinvented.
+1. **Isolation.** A child gets its OWN directory and never writes into its parent's.
+2. **A budget of its own**, sliced from the parent's remainder as it starts. Parallel siblings
+   are not netted against each other (by choice); the run-level budget still ends the tree once
+   their usage folds back.
+3. **A HAND-BACK.** Summary always; FILES by writing into its own `artifacts/`, which the engine
+   copies to the parent's `artifacts/<handback_dirname(noun, key)>/`, naming the landed paths.
+   Nothing in the action schema, so a non-child run pays nothing.
 """
 
 from __future__ import annotations
@@ -45,27 +25,19 @@ from pathlib import Path
 
 log = logging.getLogger("rsched.engine.child")
 
-# The scheduling modes. A mode answers "when does this child run, relative to its parent, and
-# who drives it" — nothing else. Adding a mode is adding a schedule, never a new kind of child.
+# The scheduling modes: when a child runs relative to its parent, and who drives it.
 PARALLEL = "parallel"        # the default: runs concurrently; the parent keeps working
 SEQUENTIAL = "sequential"    # an ordered step: the parent waits for it before moving on
-BRANCH = "branch"            # F325 — a conversation forked at a message; the USER drives it
-# The escalation ladder. The one mode whose AUTHORITY IS INVERTED: the three above are a parent
-# delegating downward, while an oversight child is started by the ENGINE on the worker's behalf
-# and its directive BINDS the run below it. It obeys the same three-part contract as the others
-# (own directory, own budget, declared hand-back), which is why it is a mode and not a new kind
-# of child — the only thing it changes is who is serving whom.
+BRANCH = "branch"            # a conversation forked at a message; the USER drives it
+# The escalation ladder: authority INVERTED — started by the ENGINE, its directive binds the run
+# below it. Same three-part contract, so a mode rather than a new kind of child.
 OVERSIGHT = "oversight"
 
 # How each mode reads in prose the model sees — and, by its keys, the mode vocabulary itself.
-# Kept here rather than inline at each call site so the three surfaces (kind copy, observations,
-# docs) cannot drift apart again, which is the failure F338 is about.
 MODE_NOUN = {
     PARALLEL: "parallel child run",
     SEQUENTIAL: "sequential child run",
     BRANCH: "branched child conversation",
-    # Named for what it does to the run, not for where it sits in the tree: a worker is told it
-    # is being SUPERVISED, and a supervisor is told what it is supervising.
     OVERSIGHT: "oversight run supervising the run below it",
 }
 
@@ -73,10 +45,7 @@ MODE_NOUN = {
 HANDBACK_SUBDIR = "artifacts"
 
 
-#: The lower-case form the CLI transcript renders in its one-line rows. D241: the two
-#: scheduling modes read as what they are — a child, and when it runs — because "subrun" and
-#: "subtask" were two names for this one concept, and "subrun" meant both "any child" and "a
-#: parallel child" depending on which surface you read.
+#: The lower-case form the CLI transcript renders in its one-line rows (D241).
 MODE_SHORT = {PARALLEL: "child", SEQUENTIAL: "child (seq)", BRANCH: "branch",
               OVERSIGHT: "oversight"}
 
@@ -92,18 +61,9 @@ def finished_headline(*, mode: str, n: int, label: str, status: str, turns: int,
                       workflow: str = "") -> str:
     """THE headline for a child's exit — one wording, whichever reporter gets there first.
 
-    A child's exit is announced by two paths and which one wins is a timing race: the
-    turn-boundary hook (`control.announce_finished_subruns`) and a `wait` the parent was
-    already in (`obs_children`). They said the same thing two ways — the hook
-    `CHILD RUN FINISHED (parallel child run) — #1 'x' (pattern p, status ok, 7 turns)`, the
-    wait `SUB-WORKFLOW 1 'x' FINISHED (status ok, 7 turns)` — off a SECOND mode vocabulary
-    (`MODE_SHOUT`, whose only caller that was) that contradicted the documented rule for the
-    first: *one headline whatever the mode, with the mode named INSIDE it rather than changing
-    the noun* (docs/child-runs.md, F338). So the shout table is gone rather than re-worded, and
-    this is the only place the sentence exists (D246).
-
-    `workflow` is the hook's extra — a wait does not carry the child's pattern — and is simply
-    left out when it is not known, rather than printed as an empty field.
+    Two paths race to announce an exit (`control.announce_finished_subruns` and a `wait` in
+    `obs_children`); this is the only place the sentence exists, the mode named inside it
+    (D246). `workflow` is left out when unknown (a wait does not carry it).
     """
     what = f"pattern {workflow}, " if workflow else ""
     return (f"CHILD RUN FINISHED ({mode_noun(mode)}) — #{n} {label!r} "
@@ -115,12 +75,9 @@ def mode_short(mode: str) -> str:
     return MODE_SHORT.get(mode, "child")
 
 
-#: The hand-back NOUNS, and deliberately their own table rather than keys of MODE_NOUN: the
-#: mode dicts above ARE the mode vocabulary, and a detached background task is not a mode (its
-#: budget never folds back into a parent — docs/child-runs.md § Process model). What it does
-#: share is this: it writes into its own `artifacts/`, the engine copies them up, and the
-#: parent is told the landed paths. That is the hand-back, and it has one implementation.
-SUB = "sub"                  # spawn / subtask — namespaced by the child's number
+#: The hand-back NOUNS — their own table, not MODE_NOUN keys: a detached background task is
+#: not a mode (its budget never folds back) but shares the one hand-back implementation.
+SUB = "sub"                  # a `child` in either mode — namespaced by the child's number
 BACKGROUND = "bg"            # a detached task's delivery, namespaced by the task id
 BRANCH_HANDBACK = "branch"   # a forked conversation's result, namespaced by the branch slug
 
@@ -128,10 +85,8 @@ BRANCH_HANDBACK = "branch"   # a forked conversation's result, namespaced by the
 def handback_dirname(noun: str, key: str | int) -> str:
     """The parent-relative directory one child's collected deliverables land in.
 
-    Namespaced by the child's own key so concurrent siblings cannot overwrite each other, and
-    stable so a parent can name the path in its own later work. The three spellings used to
-    live at their three call sites (`from-sub-`, `from-bg-`, `from-branch-`), which is how a
-    module claiming to own the hand-back came to know only one of them.
+    Namespaced by the child's key so siblings cannot overwrite each other, and stable so a
+    parent can name the path later.
     """
     return f"{HANDBACK_SUBDIR}/from-{noun}-{key}"
 
@@ -140,20 +95,12 @@ def collect_handback(src_dir: Path, parent_dir: Path, noun: str, key: str | int)
     """Copy a finished child's `artifacts/` into its parent's, and return the parent-relative
     paths that landed — the HAND-BACK half of the contract, for every mode.
 
-    Overwriting on purpose: namespaced, so it never clobbers the parent's own files, and
-    idempotent when a child hands back more than once as it goes. Best-effort — a copy failure
-    must never turn a finished child into a failed one; the summary still arrives.
+    Overwriting on purpose (namespaced, idempotent on repeat hand-backs). Best-effort: a copy
+    failure never turns a finished child into a failed one. Returns PATHS, not a count.
 
-    Returns PATHS, not a count, because that is the difference between a parent that can read
-    what it was given and one that has to go and list a directory to find out.
-
-    The answer is enumerated from the SOURCE and confirmed against the destination, never
-    listed from the destination: the landing slot is namespaced by the child's NUMBER, so every
-    run's child #1 lands in the same directory and that directory accumulates. Measured
-    2026-11-07 — a child that wrote 2 files was announced as handing back 66, the other 64 from
-    earlier runs between 2026-09-11 and 2026-10-27, burying the real deliverable at position 36.
-    The copy stays additive (a child may hand back more than once as it goes, and another run's
-    deliverables are not this one's to delete); only the ANSWER is narrowed to this child.
+    The answer is enumerated from the SOURCE and confirmed against the destination: the slot
+    is keyed by child NUMBER, so it accumulates other runs' files. The copy stays additive;
+    only the answer is narrowed to this child.
     """
     if not src_dir.is_dir() or not any(src_dir.iterdir()):
         return ()
@@ -170,10 +117,8 @@ def collect_handback(src_dir: Path, parent_dir: Path, noun: str, key: str | int)
 
 
 def handback_paths_line(paths: tuple) -> str:
-    """How a parent is told WHAT it was handed — "" when the child wrote nothing.
-
-    One spelling, because the two reporters of a child's exit (the `wait` observation and the
-    turn-boundary announcement) race each other and whichever wins is what the parent reads.
+    """How a parent is told WHAT it was handed — "" when the child wrote nothing. One spelling
+    for both racing reporters of a child's exit.
     """
     if not paths:
         return ""
@@ -185,11 +130,8 @@ def handback_text(*, headline: str, summary: str, paths: tuple, follow_on: str) 
     """The one wording of a hand-back: what finished, what it said, what it left you, and what
     to do with it.
 
-    Three renderers used to spell this, and they had already drifted: a subtask's parent was
-    told the PATHS, while a branch's and a background task's were told a COUNT and had to list
-    a directory to learn the names. `headline` and `follow_on` stay the caller's — a sequential
-    child's result feeds the next one, a background task's is relayed to the user, a branch's
-    is weighed against the parent's own line of work — and only those genuinely differ.
+    `headline` and `follow_on` stay the caller's — the only parts that genuinely differ
+    between modes.
     """
     body = [headline, "", summary.strip() or "(no summary was written.)"]
     if line := handback_paths_line(paths):
