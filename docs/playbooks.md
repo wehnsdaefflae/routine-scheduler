@@ -55,6 +55,11 @@ agent actually took — into a generalized playbook:
 - it picks a **generalization axis** and turns the things that should vary into `{{parameters}}`,
 - and it writes a one-line **when** (when to reach for this playbook) and a few **tags**.
 
+When a conversation has done substantial work (eight turns or more, finished), the console asks
+first, above the button: *"This conversation did real work — 23 turns — distil the procedure that
+satisfied it into a playbook?"* — one prompt at the right moment, not a nag on every conversation.
+Started from a playbook, the same line offers the refinement instead.
+
 Save always creates a **new** playbook (the slug is suffixed if it collides). A toast tells you the
 slug and the axis it chose. If the axis or steps aren't quite right, open the playbook in the
 Library tab and edit `MAIN.md` directly.

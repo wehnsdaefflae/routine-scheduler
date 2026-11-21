@@ -34,6 +34,16 @@ def offer(info, *, bound_playbook: str | None) -> dict:
     operator, naming the measurement, never empty) and `turns`/`threshold` so the reason can be
     read back without recomputing it.
 
+    THE `reason` CONTRACT WHEN `show` IS TRUE: it is a sentence FRAGMENT that COMPLETES the
+    console's clause — components/playbook-row.js renders "This conversation did real work —
+    {reason}?". So: no subject, no leading capital, no terminal punctuation, and no word of the
+    lead-in repeated (0.443.0 said "work" twice; the refine wording said "this conversation
+    did" twice). The sentence exists in neither file, so the guard that holds this is the
+    browser case tests/ui/test_playbook_offer_sentence.py, which reads the composed line; the
+    unit tests below cannot see the console's half. The three `show: False` reasons are
+    STANDALONE sentences instead — nothing renders them today, and reconciling the two grammars
+    is a separate decision (R3645).
+
     `bound_playbook` is the conversation's own source playbook (`cfg.playbook_slug`): a
     conversation SEEDED from a playbook is offered the refinement (PUT) rather than a second
     near-duplicate (POST), which is what `mode` says.
@@ -52,7 +62,11 @@ def offer(info, *, bound_playbook: str | None) -> dict:
         return {"show": False, "mode": mode, "turns": turns, "threshold": SUBSTANTIAL_TURNS,
                 "reason": (f"{turns} turn{'s' if turns != 1 else ''} so far — a playbook is "
                            f"offered from {SUBSTANTIAL_TURNS}")}
-    what = (f"refine “{bound_playbook}” with what this conversation did differently"
+    # "what went differently here", not "what this conversation did differently": the console
+    # leads with "This conversation did real work — ", so the refine wording repeated THREE of
+    # its words. Same defect as the 0.443.0 one below, in the other positive branch; found by
+    # tests/ui/test_playbook_offer_sentence.py, which reads the COMPOSED sentence (R3645).
+    what = (f"refine “{bound_playbook}” with what went differently here"
             if bound_playbook else "distil the procedure that satisfied it into a playbook")
     # "turns", not "turns of work": the console leads with "This conversation did real
     # work — ", so 0.443.0 rendered "did real work — 23 turns of work — distil…", saying

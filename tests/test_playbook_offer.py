@@ -25,6 +25,10 @@ def test_a_conversation_that_did_real_work_is_offered_a_playbook():
     # 0.443.1: the console leads with "This conversation did real work — ", so a reason
     # beginning "N turns of work" rendered "did real work — 23 turns of work —". The two
     # halves live in different files and each read fine alone; only the render showed it.
+    # This stays a blocklist of ONE, and cannot be more: this module imports playbook_offer and
+    # has no access to the console's lead-in. The guard on the COMPOSED sentence (one sentence,
+    # one "?", no word repeated across the join) is the browser case
+    # tests/ui/test_playbook_offer_sentence.py, which renders the row — R3645.
     assert "turns of work" not in o["reason"]
 
 

@@ -4,8 +4,11 @@
 // (option c, "keep it and make it earn its place") is that the surface should ASK when the
 // conversation actually did substantial work — "so the corpus grows from use rather than from
 // intent". The server decides whether to ask and sends its own reason line
-// (src/rsched/web/playbook_offer.py); this component never recomputes the threshold, so the
-// sentence a user reads and the predicate tests/test_playbook_offer.py pins are one thing.
+// (src/rsched/web/playbook_offer.py); this component never recomputes the threshold. The
+// SENTENCE a user reads is COMPOSED here — the lead-in and the question mark below, the
+// server's fragment inside it — so it exists in neither file, and the server-side predicate
+// cannot see this half. tests/ui/test_playbook_offer_sentence.py asserts the composed sentence
+// in the browser, which is the only side that sees both (R3645).
 //
 // Extracted from views/conversations.js, which is over the house line bar and may only shrink.
 
@@ -32,6 +35,7 @@ export function playbookRow(slug, detail) {
   if (pbOffer && pbOffer.show) {
     savePb.classList.remove("ghost");
     row.prepend(el("div", { class: "muted small", style: "flex-basis:100%",
+      "data-pb-offer": true,          // the hook the browser case selects the sentence on
       title: `${pbOffer.turns} turns of work, offered from ${pbOffer.threshold}` },
       `This conversation did real work — ${pbOffer.reason}?`));
   }
