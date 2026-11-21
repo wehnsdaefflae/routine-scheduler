@@ -15,7 +15,7 @@ model by name** — except one `llm` call, which may also name an endpoint plus 
 
 This instance sends every call through a separate gateway (Otari, with CLIProxyAPI holding the
 subscription logins beside it) — see the [model gateway guide](model-gateway.md). **Decision
-models** — Jev, OpenAI's Decisions API, local-model-server on predator — are not chat transports
+models** — Jev, local-model-server on predator — are not chat transports
 and have their own catalog and Settings section: see [decision models](decision-models.md). The
 `anthropic` kind also accepts an Anthropic-compatible gateway or proxy URL and its client key;
 billing belongs to the upstream account, not the wire protocol.
@@ -24,7 +24,7 @@ billing belongs to the upstream account, not the wire protocol.
 
 | kind | what it talks to | credential | billing |
 |---|---|---|---|
-| `openai` | any OpenAI-compatible chat API: OpenRouter, Featherless, vLLM, Ollama, Together, … | API key (or none for local Ollama) | per provider (metered or subscription) |
+| `openai` | any OpenAI-compatible chat API: OpenRouter, Featherless, vLLM, Together, … | API key (or none for a local server) | per provider (metered or subscription) |
 | `anthropic` | Anthropic-compatible Messages API | provider API key, or a gateway's / proxy's client key | upstream plan (direct Anthropic is metered) |
 
 Nine times out of ten you want `openai`: one kind covers every provider that speaks the
@@ -48,7 +48,7 @@ OpenAI chat-completions dialect, cloud or local.
    null means "delete it". A save that would leave the endpoint with **no** resolvable
    credential is refused (400) naming the `key_var` to provision: you cannot clear the last
    key, nor point a working endpoint at a secret nobody holds. An endpoint that already
-   resolves nothing keeps saving normally — a keyless local backend (Ollama, vLLM), or one
+   resolves nothing keeps saving normally — a keyless local backend (vLLM), or one
    added with no credential field at all, which is why step 1 above does not ask for one.
    Filling `key_var` in on the **add** form does mean the secret has to be in the store
    already: add the secret first, or add the endpoint bare and give it a key on its card.
@@ -109,8 +109,7 @@ system_tool_call_model: ""        # fleet default for the tool_call role; blank 
 
 ### Endpoint fields (the transport)
 
-- `base_url` — everything before `/chat/completions`. Local Ollama:
-  `http://127.0.0.1:11434/v1`. Self-hosted vLLM: `http://host:8000/v1`.
+- `base_url` — everything before `/chat/completions`. Self-hosted vLLM: `http://host:8000/v1`.
 - `api_key` / `key_var` / `key_env_file` — credential lookup order: inline `api_key`
   first, then `key_var` in the Secrets store, then `key_var` inside `key_env_file`
   (a `~/.credentials/*.env` style file). `key_var` defaults per kind — `OPENAI_API_KEY`
@@ -119,17 +118,14 @@ system_tool_call_model: ""        # fleet default for the tool_call role; blank 
   absent and `""` keep whatever is stored, `null` clears it
   (`web/settings/endpoint_keys.py`).
 - `schema_mode` — how the endpoint enforces the one-JSON-action-per-turn contract:
-  - `json_schema` (default): strict `response_format` — OpenRouter, OpenAI, Ollama ≥ 0.5.
+  - `json_schema` (default): strict `response_format` — OpenRouter, OpenAI, vLLM.
     Providers that reject it — with a 400, or a generic 503 that hides a schema-incapable
     backend — get one degraded retry without it, so it is safe to leave on.
-  - `json_object`: weaker "any JSON" mode; the scheduler's validator does the rest.
 - `tool_choice` — `anthropic` kind only: how the action tool is offered. `auto` (the default)
   lets the role's reasoning effort and its thinking reach it; `forced` keeps a route validated
   only forced (the Codex models the subscription proxy serves on this wire), at the cost of the
   effort — a forced call is answered without thinking. Config-only: a Settings save that does
   not send it keeps what config.yaml says.
-  - `ollama_native`: Ollama's own `format` field — REAL constrained decoding; best for
-    small local models that otherwise drift off-schema.
   - `none`: nothing requested; the code-level validate-and-retry loop does all the work.
 - `context_tokens` — the full input + output token window used as a fallback when model
   metadata is unavailable. Default `25_000`. Provider discovery takes precedence over this
@@ -485,8 +481,8 @@ the status classifier, the Retry-After read, the retry wrapper) and keep every l
 earns its place, because each provider-specific degrade needs the raw status and body: the
 `output_config`/`cache_control` strip for gateways, the `temperature` and effort drops for the
 Claude models that refuse them, the `response_format` 400 **and** the generic
-503 that hides a schema-incapable backend, the 402 "can only afford N" retry, Ollama's native
-`/api/chat`, the four catalog readers, the proxy-management routes. On top of that the Anthropic
+503 that hides a schema-incapable backend, the 402 "can only afford N" retry, the three catalog
+readers, the proxy-management routes. On top of that the Anthropic
 SDK is built on `httpx2` — a second HTTP stack beside the `httpx` the daemon, web layer and utils
 already use — its structured-output helpers duplicate an engine-side schema guard that must stay
 provider-agnostic, and its retry policy is the one `tenacity` already implements here with a
@@ -535,7 +531,7 @@ endpoints:
   omen:
     kind: openai
     base_url: http://192.168.0.201:8790/v1
-    # key_var: OMEN_AGENT_KEY   # only if the server wants one; local vLLM/Ollama need none
+    # key_var: OMEN_AGENT_KEY   # only if the server wants one; local vLLM needs none
 ```
 
 ## Provider recipes
@@ -552,12 +548,6 @@ fine-tunes and abliterated/uncensored variants included) — `kind: openai`,
 model with 100+ downloads and a supported architecture is served automatically; larger
 models need the bigger plan (72B-class on the base tier, 700B-class like GLM 5.2 on the
 top tier).
-
-**Ollama** (local, free) — `kind: openai`, `base_url: http://127.0.0.1:11434/v1`, no key,
-`schema_mode: ollama_native`. **Set the ENDPOINT's `context_tokens` to the largest window
-you serve**: `ollama_native` sizes its decode ceiling (`num_ctx`) from that value, and a
-prompt longer than it is truncated silently — discovery corrects compaction's budget but
-does not reach the decode ceiling.
 
 **Self-hosted vLLM** (any HF model on your own GPUs, incl. rented ones — Runpod
 serverless exposes `https://api.runpod.ai/v2/<endpoint-id>/openai/v1`) — `kind: openai`,
@@ -654,7 +644,6 @@ What can be discovered, per endpoint:
 | behind a **gateway** (`gateway:` set) | the catalog of the ROUTE the name resolves to (below) | the same |
 | `openai` @ OpenRouter | `GET /models` → `top_provider.context_length` (the row's own when absent) | `top_provider.max_completion_tokens` |
 | `openai` @ Nano-GPT | its detailed listing, `/api/v1/models?detailed=true` | `max_output_tokens` there |
-| `openai` @ Ollama | `POST /api/show` → the arch's `context_length` | none published |
 | `openai`, other | `max_model_len` / `context_length` if the gateway emits one (vLLM does) | none published |
 | `anthropic` @ Anthropic | a built-in Claude table (see below) | none published |
 | `anthropic` @ a proxy, no gateway | whatever its `/v1/models` carries | the same |
@@ -817,11 +806,11 @@ models to the scheduler.
 
 **Nano-GPT** (`kind: openai`) is the turnkey cloud path today: it serves abliterated models
 directly (e.g. `huihui-ai/DeepSeek-R1-Distill-Llama-70B-abliterated`), so no self-hosting.
-Use **`schema_mode: json_object`**, not `json_schema`: these run on community GPU backends
+Use **`schema_mode: none`**, not `json_schema`: these run on community GPU backends
 that can't do strict schema-constrained decoding and reject a `json_schema` `response_format`
 with a generic `503 service_unavailable` (which looks like an outage, not a schema problem).
-The adapter self-heals a stray 503 by retrying once without the schema, but `json_object`
-avoids that wasted probe every turn.
+The adapter self-heals a stray 503 by retrying once without the schema, but `none` avoids
+that wasted probe every turn.
 
 **A 402 that prices out `max_tokens` degrades instead of killing the turn** (F362). A
 credit-metered provider (OpenRouter) answers `402` when the REQUESTED output ceiling costs
@@ -841,7 +830,7 @@ endpoints:
     kind: openai
     base_url: https://nano-gpt.com/api/v1
     key_var: NANO_GPT_API_KEY     # value goes in Settings → Secrets
-    schema_mode: json_object
+    schema_mode: none
     context_tokens: 100000
 ```
 
@@ -911,12 +900,12 @@ its MAIN model from then on) - see the **Conversations** guide.
 - **✗ auth problem** on test → wrong/missing key. Check the endpoint's card: inline key
   set? `key_var` present in Secrets (Settings → Secrets)?
 - **schema VIOLATED** on test → the model can't hold the JSON contract in that mode. Try
-  `ollama_native` (Ollama), `json_object`, or a stronger model. Weak models + `none`
-  still work — the engine repairs and retries — but burn turns.
+  `json_schema` or a stronger model. Weak models + `none` still work — the engine repairs and
+  retries — but burn turns.
 - **✗ 503 service_unavailable** on test, yet the model *is* in the provider's model list →
-  its backend can't honor the requested `response_format`. Set `schema_mode: json_object`
+  its backend can't honor the requested `response_format`. Set `schema_mode: none`
   (common for NanoGPT abliterated/community models). The adapter also retries once without
-  the schema on such a 503, but `json_object` avoids that extra probe every turn.
+  the schema on such a 503, but `none` avoids that extra probe every turn.
 - **Truncated / empty answers from reasoning models** → the model spent its output budget
   thinking. The engine already maps effort to the provider's reasoning knob; pick a lower
   effort for that model role (the routine page's effort control), or a non-reasoning model.

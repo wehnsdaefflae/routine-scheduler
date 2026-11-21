@@ -44,8 +44,6 @@ PROBE = DecisionQuestion("probe", "yes_no",
 
 def _endpoint_view(name: str, ep: DecisionEndpointConfig) -> dict:
     src = api_key_source(api_key=ep.api_key, key_var=ep.key_var, key_env_file=ep.key_env_file)
-    if src["source"] == "none" and ep.protocol == "openai":
-        src["keyless_ok"] = True   # a self-hosted server on a trusted network may need none
     return {"name": name, "protocol": ep.protocol, "base_url": ep.base_url,
             "default_base_url": DEFAULT_BASE_URLS[ep.protocol], "key_var": ep.key_var,
             "key_env_file": ep.key_env_file, "timeout_s": ep.timeout_s,

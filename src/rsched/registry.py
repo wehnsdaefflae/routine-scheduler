@@ -92,7 +92,7 @@ class RoutineInfo:
 
         Two different "no"s: `enabled` is the user's switch, `retired` is the routine's own
         finish line being reached. `retired` used to be honoured by the schedule and the lane chain
-        alone, so a routine the system calls DONE still fired on a report trigger or an earlier
+        alone, so a routine the system calls DONE still fired on an event trigger or an earlier
         run's `schedule_run` — spending a run re-asserting a met goal and re-filing the
         retirement proposal that is already waiting on the Decisions page.
         """

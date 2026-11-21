@@ -239,7 +239,7 @@ def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
     """No active-reply guard: like the PATCH above, a conversation reads routine.yaml only at
     each reply's boot, so a permission/capability edit lands on the NEXT reply — blocking on a
     live reply would only add friction. A reply in flight is TOLD so (F337), as the PATCH and
-    the routine side's PUT /permissions tell theirs; this route used to stay silent.
+    the routine side's PATCH tell theirs; this route used to stay silent.
     """
     info = conversation_info(request, slug)
     active, caps = resolve_permission_layers(request.app.state.server, body,

@@ -88,8 +88,7 @@ def reap(runner, run: ActiveRun, cfg: RoutineConfig, stderr: bytes) -> None:
     # idle conversation takes. Only a CLEAN finish re-wakes — resuming a failed/
     # aborted run on its own leftover message invites a crash-resume loop (and an
     # abort was the user stopping it). Report/trigger/one-shot/audit deliveries never
-    # wake: each has its own contract (reports wait for the schedule or the routine's
-    # own report trigger).
+    # wake: each has its own contract (reports wait for the schedule).
     if (info.state == "finished" and info.outcome != "skipped"
             and stranded_input(cfg.dir, run.home)):
         log.info("post-finish inbox sweep: user input stranded — resuming %s", run.slug)

@@ -96,7 +96,7 @@ def test_every_shipped_pattern_can_still_be_proposed_whole(tmp_path):
     """
     home = tmp_path / "routines"
     shipped = store.list_all(SEED)
-    assert len(shipped) == 14
+    assert len(shipped) == 12
     for p in shipped:
         changes = {k: {"value": v, "reason": "the value this pattern carries"}
                    for k, v in p["settings"].items()}
@@ -107,11 +107,11 @@ def test_every_shipped_pattern_can_still_be_proposed_whole(tmp_path):
 
 @pytest.mark.parametrize(("value", "ok"), [
     ([], True),
-    ([{"type": "report", "cooldown_s": 900, "max_fires_per_day": 24}], True),
+    ([{"type": "webhook", "cooldown_s": 900}], True),
     ([{"type": "webook"}], False),                               # the typo a person makes
-    ([{"type": "report", "cooldown_s": "soon"}], False),
+    ([{"type": "webhook", "cooldown_s": "soon"}], False),
     ([{"type": "webhook", "secret": "x"}], False),               # not a trigger's key
-    ([{"type": "report"}, {"type": "report"}], False),           # one inbox, one watcher
+    ([{"type": "report"}], False),                               # the removed report trigger
 ])
 def test_a_trigger_list_is_judged_by_its_own_owner_not_the_patch_model(value, ok):
     """`triggers` has no field on `RoutinePatch` — the accept routes it to

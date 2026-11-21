@@ -26,7 +26,7 @@ ask the user (blocking or deferred), or finish. Children never outlive the paren
 sub-run tree is shown live in the run rail. A conversation can also `detach` a LONG job that OUTLIVES a
 reply (its own daemon-managed process, reporting back on completion). The engine commits each routine's working dir automatically. Endpoints
 are model **transports** only, and there are two kinds: any OpenAI-compatible API
-(OpenRouter, Featherless, vLLM, local Ollama) and the Anthropic Messages API — which is also
+(OpenRouter, Featherless, vLLM) and the Anthropic Messages API — which is also
 how a Claude or Codex SUBSCRIPTION is billed, through a gateway in front of CLIProxyAPI on the
 `anthropic` kind (`docs/model-gateway.md`). Setup guide with per-provider recipes:
 [docs/endpoints.md](docs/endpoints.md). What is banned is a second *agent loop* in the
@@ -80,8 +80,7 @@ Stats tab.
 ## Install
 
 ```bash
-./deploy/install.sh    # host install: uv sync, config + token, seeds, systemd user service
-docker compose up -d   # or containerized (deploy/DOCKER.md): engine-only image, everything
+docker compose up -d   # containerized (deploy/DOCKER.md): engine-only image, everything
                        # mutable bind-mounted — the instance migrates as a tarball
 ./deploy/bundle.sh     # one-shot migration tarball of every data home
 ./deploy/backup.sh     # nightly dated snapshots of the same homes (NOT the tarball's job)
@@ -139,9 +138,8 @@ endpoints, the central Secrets store, GitHub, the library repo.
   them, with FILES attached (drag a screenshot in, or paste one straight into the box) and
   shown back on the message for viewing or download; an undelivered hand-off can be
   retracted from the outbox.
-- **Help** — documentation generated from this very source at every boot: hand-written
-  guides (`docs/*.md`, e.g. endpoint setup) plus an API reference rendered from the
-  code's docstrings by pdoc.
+- **Help** — the hand-written guides (`docs/*.md`, e.g. endpoint setup), rendered from this
+  very source at every boot.
 
 ## Creating a routine
 
@@ -250,7 +248,7 @@ leaving a half-written file behind. See `docs/usenet.md`.
 process), `run-once` (`--model kind=name` overrides a model role with a catalog model),
 `engine-run` (internal — the daemon spawns it with `--config` and `--homes`, both
 required, so the child can never adopt a config nobody pointed it at), `validate`,
-`lint`, `suggest`, `scaffold`, `abort`, `drain` and `postdeploy` (the two that BRACKET a deploy),
+`lint`, `scaffold`, `abort`, `drain` and `postdeploy` (the two that BRACKET a deploy),
 and `reports --wrongly-settled` (read the report ledger: the rows a non-owner disposed of before
 D182 closed that gate — a READ, so no row re-opens) and `census` (what the instance uses and
 never uses of its action kinds, side fields, config keys and health events — read-only).
@@ -295,8 +293,7 @@ user-facing here.
   `daemon/` (cron scheduler + subprocess runner), `web/` (FastAPI + WebSockets),
   `workflows/` (library, lint, adapt, scaffold, suggest, generate)
 - `static/` — no-build vanilla-JS frontend; `docs/` — hand-written guides, rendered into
-  the Help tab next to the pdoc-generated API reference (`docs_build.py`, at boot, from the
-  checkout named by Settings → Source)
+  the Help tab (`docs_build.py`, at boot, from the checkout named by Settings → Source)
 - `library-seed/` + `util-seed/` — seeded to `~/.local/share/routine-scheduler-libraries`,
   ONE git repo holding `workflows/`, `rules/`, `permissions/`, `playbooks/`, `patterns/`,
   `reminders/`, `web/` (the Steward kit the two remaining own-body pages are built on) and `utils/` (with

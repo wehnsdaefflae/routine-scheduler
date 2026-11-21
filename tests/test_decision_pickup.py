@@ -23,7 +23,7 @@ def _info(*, cron="", enabled=True, retired=False, triggers=()):
     (_info(cron="0 3 * * *"), None, AT, None, None, "scheduled"),
     (_info(), {"id": "g", "name": "L"}, None, AT, None, "scheduled"),
     (_info(), None, None, None, AT, "scheduled"),
-    (_info(triggers=[{"kind": "report"}]), None, None, None, None, "trigger"),
+    (_info(triggers=[{"type": "webhook"}]), None, None, None, None, "trigger"),
     (_info(), {"id": "g", "name": "L", "paused": True}, None, None, None, "never"),
     (_info(), None, None, None, None, "never"),
 ])

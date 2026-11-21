@@ -121,7 +121,7 @@ def test_every_stale_trigger_row_drains_without_stopping_the_queue(tmp_path):
     empties completely: each unknown kind is recorded as its own failure, none respools, and a
     real edit behind all of them still lands. One bad row must never wedge the queue."""
     rdir = _routine(tmp_path)
-    for kind, payload in (("trigger_create", {"entry": {"id": "rep2", "type": "report"}}),
+    for kind, payload in (("trigger_create", {"entry": {"id": "hk2", "type": "webhook"}}),
                           ("trigger_create", {"entry": {"id": "hk", "type": "webhook"}}),
                           ("trigger_update", {"trigger_id": "hk", "fields": {"cooldown_s": 60}}),
                           ("trigger_delete", {"trigger_id": "rep1"})):

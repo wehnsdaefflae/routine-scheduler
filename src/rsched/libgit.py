@@ -266,7 +266,7 @@ def _first_lines(text: str) -> str:
 
 def install_push_hook(home: Path, *, overwrite: bool = False) -> None:
     """Install the auto-push-on-commit hook from `deploy/post-commit` — the ONE hook
-    source (deploy/install.sh installs the same file). Never overwrites an existing hook
+    source (deploy/DOCKER.md installs the same file by hand). Never overwrites an existing hook
     unless asked (a library may carry its own richer one). Best-effort: no repo or no
     source file is a silent no-op.
     """

@@ -447,7 +447,7 @@ async def test_reap_sweeps_stranded_user_message_and_resumes(make_routine, tmp_p
 
 async def test_reap_sweep_ignores_non_user_messages(make_routine, tmp_path, monkeypatch):
     """A finish with ONLY report/trigger-style deliveries queued wakes nothing — those
-    wait for the schedule (or the routine's own report trigger)."""
+    wait for the schedule."""
     d = make_routine(slug="quiet")
     cfg, _ = load_routine(d)
     atomic_write_json(d / "inbox" / "msg-rep-R1000.json",

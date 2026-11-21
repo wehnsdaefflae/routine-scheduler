@@ -2,7 +2,7 @@
 already carries.
 
 Every transport this instance speaks enforces `loop.action_schema` STRUCTURALLY (Anthropic as
-a tool's `input_schema`, OpenAI-compatible as strict `response_format`, Ollama as `format`),
+a tool's `input_schema`, OpenAI-compatible as strict `response_format`),
 and the descriptions inside it are what the model reads there. Dumping the same object into
 the system prompt paid for the contract twice (about a quarter of a typical prompt).
 
@@ -13,7 +13,7 @@ the INDEX (what is callable, with which fields) and the wire carries the PROSE. 
 model gets wrong is taught at that moment by `schema_guard.retry_message` with
 `schemamemo.field_help`.
 
-An endpoint whose `schema_mode` is `none` or `json_object` requests no grammar, so only the
+An endpoint whose `schema_mode` is `none` requests no grammar, so only the
 prompt states the contract; `chain_carries` asks this of EVERY chain member and composes the
 full dump if any is unenforced, because the prompt is a caching contract (`window.py`) and
 cannot be rewritten later. A mid-run shed (`loop._schema_off`, `loop._shed_schema_turns`) is
@@ -41,9 +41,9 @@ _HEAD = ("# ACTION SCHEMA (your every reply matches this)\n"
 
 
 #: The `schema_mode` values whose request carries the SCHEMA OBJECT ITSELF, descriptions
-#: included. `json_object` and `none` send no schema. The `anthropic` wire has no mode and
+#: included. `none` sends no schema. The `anthropic` wire has no mode and
 #: ALWAYS offers the schema as a tool's `input_schema`, so no `schema_mode` at all carries it.
-_PROSE_MODES = ("json_schema", "ollama_native")
+_PROSE_MODES = ("json_schema",)
 
 
 def carried_on_the_wire(endpoint) -> bool:

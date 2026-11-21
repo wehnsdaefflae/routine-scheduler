@@ -540,7 +540,6 @@ pre.hl-json .tok-const { color: var(--warn); }
   flex: 0 0 auto; font-family: var(--f-mono); font-size: var(--t-xs); text-transform: uppercase;
   letter-spacing: 0.18em; color: var(--ink-3); padding: 0 8px 4px;
 }
-.help-index-cap.gen { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--rule); }
 /* `flex: 0 0 auto` is load-bearing: a flex item with `overflow: hidden` has an automatic
    minimum size of ZERO, so in a height-capped column the entries shrink away to nothing
    instead of the column scrolling — which is exactly what the folded phone index did. */

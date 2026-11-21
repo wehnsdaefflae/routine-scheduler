@@ -15,8 +15,8 @@ PNG_1PX = base64.b64decode(
 
 
 def test_help_view_says_so_before_the_docs_build_lands(ui, ui_page):
-    """A fresh instance boots before pdoc finishes, so the Help tab's first state is the
-    empty one — and it must SAY that rather than render a blank page or throw (the ui_page
+    """A fresh instance boots before the docs build finishes, so the Help tab's first state is
+    the empty one — and it must SAY that rather than render a blank page or throw (the ui_page
     teardown asserts the console stayed clean)."""
     ui_page.goto(f"{ui.url}/#/help")
     ui_page.wait_for_selector("h1:has-text('Help')")
@@ -25,19 +25,18 @@ def test_help_view_says_so_before_the_docs_build_lands(ui, ui_page):
 
 
 def test_help_view_embeds_the_built_docs(ui, ui_page):
-    """With a build on disk the tab is an index entry per guide plus the API reference, and the
-    chosen page in an iframe. Seeded here rather than built, because a pdoc run is ~19 s and
-    the contract under test is index.json → index + frame."""
+    """With a build on disk the tab is an index entry per guide and the chosen page in an
+    iframe. Seeded here rather than built: the contract under test is index.json → index +
+    frame."""
     (ui.docs / "guides").mkdir(parents=True)
     (ui.docs / "guides" / "getting-started.html").write_text("<h1>Start</h1>", encoding="utf-8")
     (ui.docs / "index.json").write_text(json.dumps({
         "version": "9.9.9", "stamp": "t",
-        "guides": [{"slug": "getting-started", "title": "Getting started"}],
-        "api": "api/rsched.html"}), encoding="utf-8")
+        "guides": [{"slug": "getting-started", "title": "Getting started"}]}),
+        encoding="utf-8")
 
     ui_page.goto(f"{ui.url}/#/help")
     expect(ui_page.locator(".help-entry", has_text="Getting started")).to_be_visible()
-    expect(ui_page.locator(".help-entry", has_text="API reference")).to_be_visible()
     expect(ui_page.locator("iframe.help-frame")).to_be_visible()
 
 

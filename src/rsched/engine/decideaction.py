@@ -1,7 +1,7 @@
 """The `decide` action — a typed question put to a DECISION model, probabilities back.
 
 Where `llm` asks a chat model and parses its prose, `decide` asks a decision model
-(endpoints/decisions.py: TypeSafe's Jev, OpenAI's Decisions API, the predator server) and gets
+(endpoints/decisions.py: TypeSafe's Jev, the predator server) and gets
 the answer as a distribution over the answers it was offered: P(yes) for a yes/no question, a
 probability per option for a choice, a probability-weighted level for a score. There is no reply
 text, so the empty-completion and refusal-in-prose failures `llmaction.py` defends against

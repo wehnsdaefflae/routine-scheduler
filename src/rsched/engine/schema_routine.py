@@ -44,14 +44,10 @@ ROUTINE_FIELDS: dict[str, dict] = {
                                 "PRODUCE, in the user's words — `principal: <who>` once, "
                                 "then per measure `<id> · <count|level> · <higher|lower> — "
                                 "<what it counts>`; its own scripts/outcome.py counts them"},
-    "replaces": {"type": "string",
-                 "description": "create_routine: an EXISTING routine's slug — create a "
-                                "REPLACEMENT CANDIDATE at once (routine-rebuild), unscheduled "
-                                "and without its grants, plus ONE swap decision for the user"},
     "revises": {"type": "boolean",
                 "description": "create_routine: REVISE the EXISTING routine `target` names "
                                "instead of creating one (recipe-authoring) — `prompt` is the "
-                               "revision, one line per change. Its own `revise_confirm` dial "
-                               "decides: one decision for the operator, or armed at once. "
-                               "Either way ITS next run makes the edit, never you"},
+                               "revision, one line per change. It is one decision for the "
+                               "operator; once approved ITS next run makes the edit, never "
+                               "you"},
 }

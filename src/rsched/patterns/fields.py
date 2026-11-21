@@ -6,7 +6,7 @@ Three readers need the same answer to "is this routine's value the pattern's val
 "Save as new pattern" button (enabled only when the routine matches no pattern at all). One
 canonical form per field is what keeps them agreeing — a list of rules is a SET, so `[a, b]` and
 `[b, a]` are the same value; a trigger's id and webhook token are identity, not configuration,
-so two routines with a report trigger each hold the same value.
+so two routines with a webhook trigger each hold the same value.
 
 A field is `governable` when a pattern may carry it; `name` and `description` are never — they
 are what makes one routine this routine. `ask_first` fields are never applied without the
@@ -71,7 +71,7 @@ FIELDS: tuple[Field, ...] = (
 BY_KEY = {f.key: f for f in FIELDS}
 GOVERNABLE = tuple(f.key for f in FIELDS if f.governable)
 
-#: A trigger's identity and its secret are not configuration: two routines each holding a report
+#: A trigger's identity and its secret are not configuration: two routines each holding a webhook
 #: trigger hold the same setting, whatever their ids and whatever their webhook tokens.
 _TRIGGER_IDENTITY = ("id", "token", "created")
 

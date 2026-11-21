@@ -115,10 +115,10 @@ def test_tags_on_library_elements():
         assert len(d["tags"]) >= 3, (d["slug"], d["tags"])
     assert set(rules["web-research"]["tags"]) >= {"web", "research"}
     perms = {d["slug"]: d for d in library_docs.list_docs(SEED / "permissions")}
-    # eighteen: what every routine does (memory, scripts, run history) needs no permission;
+    # seventeen: what every routine does (memory, scripts, run history) needs no permission;
     # a doc that could not act (background tasks, workflow generation) is gone
     assert set(perms) == {"util-authoring", "util-removal", "rule-authoring",
-                          "recipe-authoring", "routine-rebuild", "scheduling", "shell",
+                          "recipe-authoring", "scheduling", "shell",
                           "outbound-mail", "browser-sessions",
                           "desktop-sessions", "darknet", "usenet",
                           "notifications", "messaging-discord", "messaging-signal",

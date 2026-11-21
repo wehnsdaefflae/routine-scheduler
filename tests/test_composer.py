@@ -400,13 +400,12 @@ def test_shared_store_notes_reach_the_prompt_and_drain_once(make_routine, tmp_pa
     (inbox / "note-20260902-120000-aaaaaa.json").write_text(
         json.dumps({"from": "ingest", "ts": "2026-09-02T12:00:00+02:00",
                     "text": "staged the batch for you"}), encoding="utf-8")
-    kw = {"routines_home": ctx.server.routines_home, "slug": "steward"}
     # the digest builder is PURE: composing it leaves the note where it is
-    assert "NOTES FROM ROUTINES" not in state_digest(ctx.routine.dir, [], [], **kw)
+    assert "NOTES FROM ROUTINES" not in state_digest(ctx.routine.dir, [], [])
     assert list(inbox.glob("note-*.json"))
     # boot drains (`sharedstores.drain`) and hands the digest what it read — exactly once
     notes = drain(ctx.server.routines_home, "steward", [store])
-    digest = state_digest(ctx.routine.dir, [], [], store_notes=notes, **kw)
+    digest = state_digest(ctx.routine.dir, [], [], store_notes=notes)
     assert "NOTES FROM ROUTINES YOU SHARE A STORE WITH" in digest
     assert "staged the batch for you" in digest
     assert drain(ctx.server.routines_home, "steward", [store]) == []

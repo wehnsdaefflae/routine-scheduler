@@ -1,7 +1,6 @@
-"""workflows/generate.generate + workflows/suggest.suggest:
-the system-model completions are scripted — under test is everything AROUND the model
-(prompt assembly, lint gating + one repair round, slug uniquing, reply validation against
-the library, schema retries, and the no-endpoint fallbacks)."""
+"""workflows/generate.generate + the workflows/suggest suggesters: the system-model completions
+are scripted — under test is everything AROUND the model (prompt assembly, lint gating + one
+repair round, slug uniquing, schema retries, and the no-endpoint fallbacks)."""
 
 from __future__ import annotations
 
@@ -114,37 +113,19 @@ def test_generate_raises_when_lint_never_passes(server, monkeypatch):
     assert after == before                            # nothing landed in the library
 
 
-# -------------------------------------------------------------------- suggest()
+# -------------------------------------------------------------------- _ask_json()
+
+_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["slug", "confidence"],
+           "properties": {"slug": {"type": "string"}, "confidence": {"type": "number"}}}
 
 
-def test_suggest_filters_unknown_slugs(server, monkeypatch):
+def test_ask_json_retries_once_on_a_malformed_reply(server, monkeypatch):
     from rsched.workflows import suggest as sug_mod
 
-    ep = _SysEndpoint([{
-        "suggestions": [
-            {"slug": "general-task", "confidence": 0.4, "reason": "generic fit"},
-            {"slug": "ghost-flow", "confidence": 0.99, "reason": "hallucinated"},
-        ],
-        "none_fit": False,
-    }])
+    ep = _SysEndpoint(["not json at all", {"slug": "general-task", "confidence": 0.8}])
     _patch_system_model(monkeypatch, "rsched.workflows.suggest", ep)
-    result = sug_mod.suggest(server, "summarize my inbox daily")
-    assert [s["slug"] for s in result["suggestions"]] == ["general-task"]   # ghost dropped
-    assert result["none_fit"] is False
-    listing = ep.calls[0]["messages"][0]["content"]
-    assert "slug: general-task" in listing
-    assert "slug: converse" in listing                # meta workflows are listed like any other tag now (D15)
-
-
-def test_suggest_retries_once_on_a_malformed_reply(server, monkeypatch):
-    from rsched.workflows import suggest as sug_mod
-
-    ep = _SysEndpoint(["not json at all",
-                       {"suggestions": [{"slug": "general-task", "confidence": 0.8,
-                                         "reason": "fits"}], "none_fit": False}])
-    _patch_system_model(monkeypatch, "rsched.workflows.suggest", ep)
-    result = sug_mod.suggest(server, "task")
-    assert [s["slug"] for s in result["suggestions"]] == ["general-task"]
+    obj, why = sug_mod._ask_json(server, "pick one", _SCHEMA, purpose="test")
+    assert obj == {"slug": "general-task", "confidence": 0.8} and why == ""
     assert len(ep.calls) == 2
     retry_msgs = ep.calls[1]["messages"]
     assert retry_msgs[-1]["content"].startswith("Invalid:")
@@ -153,43 +134,28 @@ def test_suggest_retries_once_on_a_malformed_reply(server, monkeypatch):
 
 def test_a_natively_parsed_reply_is_held_to_the_schema_too(server, monkeypatch):
     """A provider's native schema mode (Anthropic tool use) hands back `parsed` without the
-    schema enforced; trusting it unchecked let a suggestion without `confidence` raise out of
-    suggest() — a 500 in the form a person is waiting on — instead of costing one retry."""
+    schema enforced; trusting it unchecked let a reply without a required field raise out of
+    a suggester — a 500 in the form a person is waiting on — instead of costing one retry."""
     from rsched.workflows import suggest as sug_mod
 
-    ep = _SysEndpoint([{"suggestions": [{"slug": "general-task"}], "none_fit": False},
-                       {"suggestions": [{"slug": "general-task", "confidence": 0.7,
-                                         "reason": "fits"}], "none_fit": False}])
+    ep = _SysEndpoint([{"slug": "general-task"}, {"slug": "general-task", "confidence": 0.7}])
     _patch_system_model(monkeypatch, "rsched.workflows.suggest", ep)
-    result = sug_mod.suggest(server, "task")
-    assert [s["slug"] for s in result["suggestions"]] == ["general-task"]
+    obj, _why = sug_mod._ask_json(server, "pick one", _SCHEMA, purpose="test")
+    assert obj == {"slug": "general-task", "confidence": 0.7}
     assert len(ep.calls) == 2
     retry = ep.calls[1]["messages"]
     assert retry[-2]["role"] == "assistant" and retry[-2]["content"]   # never an empty turn
     assert retry[-1]["content"].startswith("Invalid:")
 
 
-def test_suggest_falls_back_when_replies_stay_malformed(server, monkeypatch):
+def test_ask_json_says_malformed_when_replies_stay_malformed(server, monkeypatch):
     from rsched.workflows import suggest as sug_mod
 
     ep = _SysEndpoint(["nope", "still nope"])
     _patch_system_model(monkeypatch, "rsched.workflows.suggest", ep)
-    result = sug_mod.suggest(server, "task")
-    assert result["suggestions"] == [] and result["none_fit"] is True
-    assert "malformed" in result["new_workflow_hint"]
+    assert sug_mod._ask_json(server, "pick one", _SCHEMA, purpose="test") == (None, "malformed")
 
 
-def test_suggest_empty_library_short_circuits(tmp_path, monkeypatch):
-    from rsched.workflows import suggest as sug_mod
-
-    s = ServerConfig()
-    s.libraries_home = tmp_path / "empty-lib"
-    (s.libraries_home / "workflows").mkdir(parents=True)
-    ep = _SysEndpoint([])
-    _patch_system_model(monkeypatch, "rsched.workflows.suggest", ep)
-    result = sug_mod.suggest(s, "task")
-    assert result["none_fit"] is True and "no workflows" in result["new_workflow_hint"]
-    assert ep.calls == []                             # no model call without candidates
 # ---------------------------------------------------- generate_description()
 
 

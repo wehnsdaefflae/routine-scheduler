@@ -39,7 +39,7 @@ from collections.abc import Collection
 
 #: Who reads the UNADDRESSED stream, and therefore who an unaddressed row was given to. A row
 #: filed with no `target` goes to triage, and triage is this routine's (CLAUDE.md: "UNADDRESSED
-#: goes to the triage stream self-audit reads"; `priorities.py` routes such a row's ⚑ there).
+#: goes to the triage stream self-audit reads").
 TRIAGE_READER = "self-audit"
 
 #: A DISPOSITION VERB standing beside a report id: the one shape that distinguishes "closing

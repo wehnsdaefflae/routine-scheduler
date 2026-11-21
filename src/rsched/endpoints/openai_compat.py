@@ -1,10 +1,9 @@
-"""OpenAI-compatible chat-completions adapter — covers OpenRouter, Ollama, vLLM, OpenAI.
+"""OpenAI-compatible chat-completions adapter — covers OpenRouter, vLLM, OpenAI, gateways.
 
 API key: inline `api_key` in config, or (preferred for real providers) `key_env_file` +
 `key_var` pointing into ~/.credentials/. Schema enforcement via `response_format` in the
 endpoint's configured mode:
   json_schema  → {"type":"json_schema","json_schema":{name,schema,strict}} (OpenRouter, OpenAI)
-  json_object  → {"type":"json_object"} (guard validates)
   none         → nothing requested; the code-level validator + retry loop does all the work
 A provider/model that rejects the requested response_format (a 400 naming the field, or a
 generic 503 from a schema-incapable backend) is retried once without it; the schema guard
@@ -40,7 +39,7 @@ from .base import (
     resolve_api_key,
     with_retries,
 )
-from .media_types import read_media_b64, supports_media_type
+from .media_types import supports_media_type
 from .openai_media import render_media
 from .usage import reported_cost
 
@@ -86,8 +85,8 @@ def _strip_think(text: str) -> str:
 
 
 class OpenAICompatEndpoint:
-    """Adapter for every OpenAI-compatible chat API — OpenRouter, Featherless, vLLM,
-    Ollama, OpenAI itself. `extra_body` merges into each request (aggregator routing);
+    """Adapter for every OpenAI-compatible chat API — OpenRouter, Featherless, vLLM, an Otari
+    gateway, OpenAI itself. `extra_body` merges into each request (aggregator routing);
     rejected `response_format`/`reasoning` fields get one degraded retry.
     """
 
@@ -101,10 +100,6 @@ class OpenAICompatEndpoint:
         self.context_tokens = cfg.context_tokens
         self.temperature = cfg.temperature
         self.extra_body = dict(cfg.extra_body)
-        # ollama_native: use Ollama's native /api/chat `format` field for REAL constrained
-        # decoding to the schema (the OpenAI-compat response_format is not enforced by Ollama).
-        self.native = cfg.schema_mode == "ollama_native"
-        self.native_url = self.base_url.removesuffix("/v1") + "/api/chat"
 
     def supports_media(self, media_type: str, *, multimodal: bool, audio: bool,
                        video: bool) -> bool:
@@ -118,15 +113,13 @@ class OpenAICompatEndpoint:
                                    audio=audio and WIRE_AUDIO, video=video and WIRE_VIDEO)
 
     def _resolve_key(self) -> str:
-        # required=False: a keyless local backend (Ollama, vLLM) gets the "none" placeholder.
+        # required=False: a keyless local backend (vLLM) gets the "none" placeholder.
         return resolve_api_key(name=self.name, api_key=self.api_key, key_var=self.key_var,
                                key_env_file=self.key_env_file, required=False)
 
     def _response_format(self, schema: dict | None) -> dict | None:
         if schema is None or self.schema_mode == "none":
             return None
-        if self.schema_mode == "json_object":
-            return {"type": "json_object"}
         return {
             "type": "json_schema",
             "json_schema": {"name": "action", "schema": schema, "strict": True},
@@ -138,8 +131,6 @@ class OpenAICompatEndpoint:
                  cacheable: bool = True,
                  temperature: float | None = None) -> Completion:
         temp = temperature if temperature is not None else self.temperature  # model wins
-        if self.native and schema is not None:
-            return self._complete_native(messages, model, schema, max_tokens, timeout, temp)
         if any(m.get("media") for m in messages):  # only touched when an image rides a turn
             messages = render_media(messages)
         body: dict = {"model": model, "messages": messages, **self.extra_body}
@@ -200,48 +191,6 @@ class OpenAICompatEndpoint:
                 if alt.status_code == 200:
                     resp = alt
             return self._parse(resp)
-
-        return with_retries(call)
-
-    def _complete_native(self, messages, model, schema, max_tokens, timeout,
-                         temperature=None) -> Completion:
-        """Ollama native /api/chat with `format` = the JSON schema → constrained decoding."""
-        # num_ctx MUST be set: Ollama's default context is tiny and truncates silently. It is
-        # sized from the ENDPOINT's context_tokens (the only window this adapter is given), so
-        # set that on an Ollama endpoint to its largest served model.
-        options = {"num_ctx": max(8192, self.context_tokens)}
-        if temperature is not None:
-            options["temperature"] = temperature
-        if max_tokens:
-            options["num_predict"] = max_tokens
-        # Ollama's native chat takes images as a per-message base64 `images` list; the
-        # engine-side `media` key must never ride the request (it holds local paths).
-        native_msgs = []
-        for message in messages:
-            rendered = {"role": message["role"], "content": message.get("content", "")}
-            images = []
-            for item in message.get("media") or []:
-                try:
-                    images.append(item.get("b64") or read_media_b64(item["path"]))
-                except OSError as exc:
-                    rendered["content"] += (
-                        f"\n[Attachment unavailable: {item['path']}: {exc}. "
-                        "The earlier observation remains in the conversation.]")
-            if images:
-                rendered["images"] = images
-            native_msgs.append(rendered)
-        body = {"model": model, "messages": native_msgs, "format": schema, "stream": False,
-                "options": options}
-
-        def call() -> Completion:
-            resp = post_json(self.native_url, body, None, timeout, name=self.name)
-            raise_for_status(resp, self.name)
-            data = json_or_raise(resp, self.name)
-            text = (data.get("message") or {}).get("content", "") or ""
-            return Completion(text=text,
-                              usage={"in": int(data.get("prompt_eval_count") or 0),
-                                     "out": int(data.get("eval_count") or 0)},
-                              stop_reason=str(data.get("done_reason") or ""))
 
         return with_retries(call)
 

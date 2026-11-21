@@ -34,7 +34,7 @@ ghost. Refusing it at filing makes the three paths agree instead of letting the 
 loose one.
 
 This module is the gate for the two kinds that carry vocabulary. The other queue kinds
-(`library-drift`, `goal-reached`, `replace-routine`, `revise-routine`, `unowned-report`) carry
+(`library-drift`, `goal-reached`, `revise-routine`, `unowned-report`) carry
 report ids, line prose and slugs of routines that already exist — no fixed vocabulary to judge,
 so `problem` answers "" for them. They still go THROUGH the judge, because it sits in the
 writer: a kind that grows a vocabulary adds its judge here and every one of its writers is

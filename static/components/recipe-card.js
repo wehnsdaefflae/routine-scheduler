@@ -1,6 +1,6 @@
 // A run's own RECIPE REVISIONS, proposed at its finish (D200, engine/recipeproposal.py).
 //
-// Its own band and its own row for the same reason the swap and unowned cards have theirs: the
+// Its own band and its own row for the same reason the unowned card has its own: the
 // buttons are not the queued-creation pair. Nothing is CREATED here — the proposing run
 // already reasoned the change and could not write it (a scheduled run holds no write_recipe),
 // so "apply it" hands that run the capability back: the leg is resumed with its recipe writable

@@ -56,7 +56,6 @@ def test_routine_token_tier_reads_but_never_mutates_config(tmp_path, make_routin
         # config-mutating route classes: 403 with the config_patch pointer
         cases = [
             ("PATCH", "/api/routines/apir", {"description": "x"}),       # routine config
-            ("PUT", "/api/routines/apir/permissions", {"active": []}),   # permission layers
             ("POST", "/api/routines/apir/settings", {"changes": {}}),    # the one accept
             ("POST", "/api/lanes", {"name": "G"}),                       # lane store
             ("POST", "/api/questions/q-x/answer", {"text": "hi"}),       # decisions/grants
@@ -221,7 +220,7 @@ def test_routine_cards_and_detail(client):
     assert isinstance(detail["permissions"], list)   # hermetic test library → may be empty
     assert all("requires" in p and "active" in p for p in detail["permissions"])
     expected = {"actions", "utils", "confirm", "rule_confirm", "remind_confirm", "runs",
-                "reminders", "jobs", "config_confirm", "revise_confirm"}   # D198: the 5th dial
+                "reminders", "jobs", "config_confirm"}
     assert set(detail["capabilities"]["active"]) == expected
     # the actions a config may name — `detach` is gated but the loader refuses it in
     # `capabilities.actions` (grants.normalize_capabilities), so offering it put a choice on
@@ -1383,7 +1382,7 @@ def test_allow_forever_on_a_capability_entity_rides_the_cascade(client):
     assert "signal" not in raw["capabilities"]["utils"]           # sibling stays off
 
 
-def test_permissions_put_persists_remove_util_under_its_canonical_source(client):
+def test_permissions_patch_persists_remove_util_under_its_canonical_source(client):
     """R2 endpoint-level, two things at once."""
     c, tmp = client
     perms = tmp / "library" / "permissions"
@@ -1395,23 +1394,27 @@ def test_permissions_put_persists_remove_util_under_its_canonical_source(client)
     (perms / "util-removal.md").write_text(
         "---\ntags: [tool-use, utils, authoring]\nrequires:\n  actions: []\n---\n"
         "# permission: util removal — delete a util\nbody\n", encoding="utf-8")
-    r = c.put("/api/routines/apir/permissions",
-              json={"active": ["util-authoring", "util-removal"],
-                    "capabilities": {"actions": ["write_util", "remove_util"]}})
-    assert r.status_code == 200
-    assert "remove_util" in r.json()["capabilities"]["actions"]
-    raw = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
-    assert "remove_util" in raw["capabilities"]["actions"]     # persisted, not reverted
+    path = tmp / "routines" / "apir" / "routine.yaml"
+
+    def actions() -> list:
+        return yaml.safe_load(path.read_text())["capabilities"]["actions"]
+
+    r = c.patch("/api/routines/apir",
+                json={"permissions": ["util-authoring", "util-removal"],
+                      "capabilities": {"actions": ["write_util", "remove_util"]}})
+    assert r.status_code == 200, r.text
+    assert "remove_util" in actions()                          # persisted, not reverted
     # util-authoring ALONE no longer carries deletion — the 0.226.0 split, at the endpoint
-    r_split = c.put("/api/routines/apir/permissions",
-                    json={"active": ["util-authoring"],
-                          "capabilities": {"actions": ["write_util", "remove_util"]}})
+    r_split = c.patch("/api/routines/apir",
+                      json={"permissions": ["util-authoring"],
+                            "capabilities": {"actions": ["write_util", "remove_util"]}})
     assert r_split.status_code == 200
-    assert r_split.json()["capabilities"]["actions"] == ["write_util"]
-    r2 = c.put("/api/routines/apir/permissions",
-               json={"active": [], "capabilities": {"actions": ["write_util", "remove_util"]}})
+    assert actions() == ["write_util"]
+    r2 = c.patch("/api/routines/apir",
+                 json={"permissions": [],
+                       "capabilities": {"actions": ["write_util", "remove_util"]}})
     assert r2.status_code == 200
-    assert r2.json()["capabilities"]["actions"] == []          # no held doc → floored away
+    assert actions() == []                                     # no held doc → floored away
 
 
 def test_patch_routine_reports_every_applied_field(client):
@@ -1610,7 +1613,7 @@ def test_settings_endpoints_crud(client):
     assert eps["endpoints"][0]["name"] == "dummy"
     r = c.post("/api/settings/endpoints", json={
         "name": "vllm", "kind": "openai", "base_url": "http://10.0.0.5:8000/v1",
-        "schema_mode": "json_object", "context_tokens": 60000})
+        "schema_mode": "none", "context_tokens": 60000})
     assert r.status_code == 200
     raw = yaml.safe_load((tmp / "config.yaml").read_text())
     assert raw["endpoints"]["vllm"]["base_url"] == "http://10.0.0.5:8000/v1"
@@ -2325,34 +2328,6 @@ def test_items_page_reflects_answered_decision_after_consumption(client):
     assert c.get("/api/items").json()["answered_decisions"] == []
 
 
-def test_post_rules_binds_and_unbinds_general_rules(client):
-    """The user's post-creation rule switch: routine.yaml's `rules:` is the state, NOTHING is
-    copied into the routine dir or its recipe (the prompt names each held rule at boot), and an
-    unknown slug is a 400 rather than a silent skip (the picker offers only real ones, so an
-    unknown slug means a stale client).
-    """
-    c, tmp = client
-    rules_home = tmp / "library" / "rules"
-    rules_home.mkdir(parents=True, exist_ok=True)
-    (rules_home / "alpha.md").write_text(
-        "---\ntags: [a, b, c]\n---\n# rule: alpha — the first principle\nbody\n",
-        encoding="utf-8")
-    rdir = tmp / "routines" / "apir"
-    r = c.post("/api/routines/apir/rules", json={"add": ["alpha"], "remove": []})
-    assert r.status_code == 200, r.text
-    assert r.json()["added"] == ["alpha"] and "alpha" in r.json()["rules"]
-    assert not (rdir / "rules").exists()          # one copy only, and it is the library's
-    assert "alpha" not in (rdir / "main.md").read_text(encoding="utf-8")
-    assert c.get("/api/routines/apir").json()["rules"] == ["alpha"]
-    # re-binding is a no-op, not a duplicate or an error
-    assert c.post("/api/routines/apir/rules", json={"add": ["alpha"]}).json()["added"] == []
-    out = c.post("/api/routines/apir/rules", json={"remove": ["alpha"]})
-    assert out.json()["removed"] == ["alpha"]
-    assert c.get("/api/routines/apir").json()["rules"] == []
-    bad = c.post("/api/routines/apir/rules", json={"add": ["ghost"]})
-    assert bad.status_code == 400 and "ghost" in bad.text
-
-
 def test_patch_binds_rules_via_config_patch(client):
     """A config_patch that binds a rule (the Decisions page's `approve & apply` for a
     decision carrying `config_patch: {"rules": [...]}`) reaches routine.yaml through the
@@ -2433,46 +2408,6 @@ def test_a_raw_schedule_is_judged_before_it_is_written(client):
     assert ok.status_code == 200 and ok.json()["updated"] == ["schedule"]
     cfg = load_routine(rdir)[0]
     assert (cfg.cron, cfg.tz) == ("0 9 * * 2", "UTC")
-
-
-def test_put_permissions_cascades_capabilities(client):
-    """The two-layer PUT: activating a doc RAISES capabilities to cover its requires AND
-    FLOORS them back to the held docs (D8) — a gated action survives only as the means of a
-    held permission; the confirm level (user policy) is preserved. Round-trips into
-    routine.yaml."""
-    c, tmp = client
-    perms_home = tmp / "library" / "permissions"
-    perms_home.mkdir(parents=True, exist_ok=True)
-    (perms_home / "messaging-discord.md").write_text(
-        "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
-        "# permission: discord messaging\nbody\n", encoding="utf-8")
-    (perms_home / "scheduling.md").write_text(
-        "---\ntags: [a, b, c]\nrequires:\n  actions: [schedule_run]\n---\n"
-        "# permission: scheduling — one-shot runs\nbody\n", encoding="utf-8")
-    # ask for schedule_run WITHOUT holding the scheduling permission → floored away (D8)
-    r = c.put("/api/routines/apir/permissions",
-              json={"active": ["messaging-discord", "ghost"],
-                    "capabilities": {"actions": ["schedule_run"], "confirm": "creations"}})
-    assert r.status_code == 200
-    body = r.json()
-    assert body["active"] == ["messaging-discord"]           # unknown doc slugs dropped
-    assert body["capabilities"]["utils"] == ["discord"]  # activation cascade (raise)
-    assert body["capabilities"]["actions"] == []         # orphan action floored (no permission)
-    assert body["capabilities"]["confirm"] == "creations"  # user policy dial preserved
-    raw = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
-    assert raw["permissions"] == ["messaging-discord"]
-    assert raw["capabilities"] == body["capabilities"]
-    # holding the scheduling permission grants its action (the means of that permission)
-    r2 = c.put("/api/routines/apir/permissions",
-               json={"active": ["messaging-discord", "scheduling"],
-                     "capabilities": {"confirm": "creations"}})
-    assert r2.status_code == 200
-    caps2 = r2.json()["capabilities"]
-    assert caps2["actions"] == ["schedule_run"] and caps2["utils"] == ["discord"]
-    # junk capabilities from the client are a 422, not a silent drop
-    bad = c.put("/api/routines/apir/permissions",
-                json={"active": [], "capabilities": {"actions": "write_util"}})
-    assert bad.status_code == 422
 
 
 def test_patch_routine_applies_permissions_through_the_canonical_resolve(client):
@@ -2566,7 +2501,7 @@ def test_library_overview_carries_reminder_problems(client):
 
 def test_a_permissions_save_tells_a_live_run_and_the_scheduler(client, monkeypatch):
     """Seven web writers of routine.yaml each chose their own commit/rescan/signal steps, and
-    one of them told a live run nothing: `PUT /permissions` committed and stopped, so unticking
+    one of them told a live run nothing: a permissions save committed and stopped, so unticking
     a conduct doc mid-run finished under the old docs in silence — on a page where every other
     save reports `told_live_run`. One writer, four steps, no site choosing.
     """
@@ -2581,10 +2516,10 @@ def test_a_permissions_save_tells_a_live_run_and_the_scheduler(client, monkeypat
     rescans = []
     monkeypatch.setattr(c.app.state.scheduler, "rescan", lambda: rescans.append(1))
 
-    r = c.put("/api/routines/apir/permissions",
-              json={"active": ["scheduling"], "capabilities": {}})
+    r = c.patch("/api/routines/apir", json={"permissions": ["scheduling"], "capabilities": {}})
     assert r.status_code == 200, r.text
-    assert r.json()["active"] == ["scheduling"]
+    raw = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
+    assert raw["permissions"] == ["scheduling"]
     assert rescans, "the fire table must see the save now, not at the next periodic rescan"
     signal = read_json(run_dir / "control.json")["config_change"]
     assert set(signal["fields"]) == {"permissions", "capabilities"}

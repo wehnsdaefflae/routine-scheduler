@@ -185,7 +185,7 @@ DEFAULT_TURN_INTERVAL = 50
 TUNING_KEYS = ("deliberation", "ladder_turn_interval", "oversight_turns")
 # Endpoints are stateless HTTP transports; subscription authentication lives in the proxy.
 EndpointKind = Literal["openai", "anthropic"]
-SchemaMode = Literal["json_schema", "json_object", "ollama_native", "none"]
+SchemaMode = Literal["json_schema", "none"]
 ENDPOINT_KINDS = get_args(EndpointKind)
 SCHEMA_MODES = get_args(SchemaMode)
 # Kinds whose models are multimodal by construction, so a catalog model on an endpoint of this

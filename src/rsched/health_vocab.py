@@ -3,8 +3,8 @@
 `EVENTS` is the list every reader of `.control/health-events.jsonl` is keyed on: the audit
 recipe's evidence stage, the `health-events` util's `--event` filter, `readmodels/health_stream`'s
 folds. tests/test_health_events.py checks it against the real call sites in BOTH directions, so an
-event written and documented nowhere — `prompt_oversize_shrunk` and `trigger_capped` were both
-read by nobody for weeks that way — fails the suite instead.
+event written and documented nowhere — `prompt_oversize_shrunk` was read by nobody for weeks
+that way — fails the suite instead.
 
 It was the header enum of `health_events.py` until 2026-11-09, when that file reached the size
 bar and an event could no longer be added to it at all. A list in a docstring cannot be split; a
@@ -49,16 +49,6 @@ STANDING condition only the operator clears (a sign-in is his act): every fire w
 to the dead login is work that will not happen, and the row counts only while the record
 (`endpoints/endpoint_health`) still says so.
 
-deprecated_route: a request ARRIVED on an API path that has been renamed and is served only for
-compatibility (`web/api_hooks.py`: the old webhook spelling `/api/hooks/<slug>/<token>`, whose
-canonical path is `/api/webhooks/<slug>/<token>`). routine = the slug the call was for, run_id
-empty; carries `route` and `replacement`. It is NOT blocked work — the call was accepted and did
-everything it asked for — so it is deliberately absent from
-`readmodels/health_stream.BLOCKED_EVENTS`; what it answers is the only question a deprecation
-cannot be ended without: who is still calling the old path. Filed on ACCEPTED calls alone, past
-every rejection: a 404 probe or a wrong token is not a caller to migrate, and the hook route is
-unauthenticated, so recording rejections would let anyone fill this stream.
-
 ungated_write: a run holding `shell` ran a command whose SHAPE may have written, and no
 file-action gate saw it (D158's deliberate hole; `engine/shellwrite.py` holds the shapes).
 routine/run_id name the run, `turn` the first such turn, detail the command's first 200 chars.
@@ -99,9 +89,6 @@ signal 9 is the cgroup OOM killer, and the engine SURVIVES it: the run reads an 
 command and carries on, which is why five such kills on 2026-09-14 and 09-17 (anon-rss 1.86-2.05
 GB in /var/log/kern.log) left no trace in this stream at all. A run of them on one util is a util
 that does not stream what it reads.
-
-trigger_capped: a report trigger hit its daily cap; one event per day at the transition, because
-a capped trigger is a dark routine and dark must be visible (F276).
 
 prompt_oversize_shrunk: a composed prompt exceeded the model's window and the window guard shrank
 the run's local view to fit (engine/window.py). The turn survives — what it marks is a run whose
@@ -302,7 +289,6 @@ EVENTS: tuple[str, ...] = (
     "prompt_oversize_shrunk",
     "fire_refused",
     "wizard_build_degraded",
-    "trigger_capped",
     "model_window_corrected",
     "util_killed",
     "finish_gate_failed",
@@ -325,7 +311,6 @@ EVENTS: tuple[str, ...] = (
     "commit_failed",
     "git_lock_cleared",
     "backup_stale",
-    "deprecated_route",
     "obligation_overdue",
     "ungated_write",
     "boot_reaped",

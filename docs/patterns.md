@@ -33,12 +33,11 @@ settings:                         # every governed value (rsched/patterns/fields
 
 A pattern is **immutable**: it is created, never overwritten, and deleted only as a whole. A
 routine that should differ from its pattern differs in its own file (an OVERRIDE); a new kind
-of work is a new pattern. The library ships fourteen, each built on one abstract workflow:
+of work is a new pattern. The library ships twelve, each built on one abstract workflow:
 
 | pattern | workflow | for |
 |---|---|---|
 | `watcher` | `watch-and-report` | keeping an eye on sources and reporting what is new |
-| `radar` | `curate-and-act` | a board of listings to pick from, acted on after sign-off |
 | `project-steward` | `steward-a-project` | a project over weeks: backlog, obligations, steered through asks |
 | `personal-steward` | `steward-a-project` | a personal project steered through asks |
 | `mailbox-service` | `answer-a-mailbox` | classifying and answering one mailbox |
@@ -47,7 +46,6 @@ of work is a new pattern. The library ships fourteen, each built on one abstract
 | `instance-builder` | `maintain-a-codebase` | building the scheduler's own decided backlog |
 | `instance-auditor` | `audit-and-propose` | measuring one side of the instance, handing decisions on |
 | `library-curator` | `curate-a-library` | revising the shared library from how runs used it |
-| `model-trainer` | `train-a-model` | training a model over many runs on a shared GPU |
 | `queue-worker` | `drain-a-work-queue` | draining a queue of files or items through a worker |
 | `mirror-sync` | `sync-a-mirror` | keeping a copy in step with its source |
 | `one-job` | `do-one-job` | one dated piece of work, then done |
@@ -59,6 +57,9 @@ pattern to govern. It exists as a pattern because the recipe is the truth of wha
 run whose output BINDS another run must be instructed in what a dispatch is and what it may
 answer; `engine/ladder.py` SKIPS the rung outright when the pattern is absent from the library
 rather than letting an unknown slug degrade to the builtin fallback recipe.
+
+`curate-and-act` has none either: its `radar` pattern was removed, so a routine built on that
+workflow carries its settings as its own, read against no reference.
 
 That is about the RUNG's own workflow, not about being watched. A **watched** routine's pattern may
 carry the ladder's three settings like any other governed field — `ladder` (its on/off switch and
@@ -131,7 +132,7 @@ refused on the accept, taking every other kept change with it. A field in
 `validate.whole_field_checks()` answers for itself instead of that pair: `finish_line` and
 `triggers` are not patch fields at all — the accept routes them to `engine/finishline.py` and
 `api_hooks.reconciled_triggers` — so their own owners are the only judges that apply, and
-judging them by the patch model would refuse every value, including the empty ones all 14
+judging them by the patch model would refuse every value, including the empty ones all 12
 shipped patterns carry. The remaining 15 governable fields are offered on their shape alone,
 and `validate.NO_SEMANTIC_CHECK` names each one with the reason: four have no meaning to judge,
 while **11 carry a validator on the accept route the judge does not consult** — so a value the

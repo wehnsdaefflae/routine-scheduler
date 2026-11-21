@@ -78,7 +78,6 @@ def test_a_live_leg_sees_exactly_what_its_drain_would_consume(tmp_path):
 
     inbox.file_message(d, "talking to this run", via="web")
     assert inbox.has_pending_messages(d, vias=inbox.LIVE_MESSAGE_VIAS)
-    assert inbox.count_pending(d) == 2
 
 
 def test_a_resumed_leg_drains_the_one_shot_that_woke_it(tmp_path):
@@ -97,22 +96,19 @@ def test_a_resumed_leg_drains_the_one_shot_that_woke_it(tmp_path):
 
 
 def test_the_third_axis_is_what_an_unreadable_file_counts_as(tmp_path):
-    """The one difference two flags could not express. The trigger manager is fail-OPEN by
-    contract — anything it cannot read WAKES a run, because a spurious run costs a run and a
-    missed one costs silence — while every live-run predicate is fail-CLOSED for the reason
+    """The one difference two flags could not express. The run gate is fail-OPEN by contract —
+    anything it cannot read WAKES a run, because a spurious run costs a run and a missed one
+    costs silence — while every live-run predicate is fail-CLOSED for the reason
     above. Collapsing the five loops without this axis reintroduces the spin.
     """
     d = _routine(tmp_path)
     (d / "inbox" / "msg-corrupt.json").write_text("{not json", encoding="utf-8")
     assert not inbox.has_pending_messages(d)                        # fail-closed: the default
-    assert inbox.has_pending_messages(d, on_unparseable=True)       # fail-open: the trigger
-    assert inbox.count_pending(d, on_unparseable=True) == 1
+    assert inbox.has_pending_messages(d, on_unparseable=True)       # fail-open: the gate
 
 
 def test_a_closure_is_the_end_of_work_not_work(tmp_path):
-    """The report trigger's exemption: a reply that only CLOSES a thread must not buy a run.
-    It lived in exactly one of the five loops, so any other caller that started counting
-    closures would fire runs the trigger manager deliberately ignores.
+    """The run gate's exemption: a reply that only CLOSES a thread must not buy a run.
     """
     d = _routine(tmp_path)
     inbox.file_message(d, "R9 closed: nothing left to do", via="report", name="rep-R9",
@@ -121,7 +117,7 @@ def test_a_closure_is_the_end_of_work_not_work(tmp_path):
     assert not inbox.has_pending_messages(d, include_closures=False)      # …but it is not work
     inbox.file_message(d, "R10: please look at this", via="report", name="rep-R10",
                        extra={"report": "R10", "from": "sibling"})
-    assert inbox.count_pending(d, include_closures=False) == 1
+    assert inbox.has_pending_messages(d, include_closures=False)
 
 
 def test_an_answer_is_never_freight_for_anyone(tmp_path):
@@ -134,4 +130,3 @@ def test_an_answer_is_never_freight_for_anyone(tmp_path):
                                                  encoding="utf-8")
     assert not inbox.has_pending_messages(d)
     assert not inbox.has_pending_messages(d, on_unparseable=True)
-    assert inbox.count_pending(d) == 0

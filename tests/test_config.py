@@ -42,7 +42,7 @@ def test_deployed_config_keys_load_exactly(tmp_path):
         "endpoints": {
             "openrouter": {"kind": "openai", "base_url": "https://openrouter.ai/api/v1",
                            "api_key": "sk-or-xyz", "key_var": "OPENROUTER_KEY",
-                           "schema_mode": "json_object", "context_tokens": 180_000},
+                           "schema_mode": "none", "context_tokens": 180_000},
             "cc": {"kind": "anthropic"},
         },
         "models": {"ds": {"endpoint": "openrouter", "model": "deepseek/deepseek-chat",
@@ -58,7 +58,7 @@ def test_deployed_config_keys_load_exactly(tmp_path):
     ep = server.endpoints["openrouter"]
     assert ep.name == "openrouter" and ep.kind == "openai"
     assert ep.base_url == "https://openrouter.ai/api/v1" and ep.api_key == "sk-or-xyz"
-    assert ep.key_var == "OPENROUTER_KEY" and ep.schema_mode == "json_object"
+    assert ep.key_var == "OPENROUTER_KEY" and ep.schema_mode == "none"
     assert ep.context_tokens == 180_000
     assert server.endpoints["cc"].kind == "anthropic"
     mc = server.models["ds"]

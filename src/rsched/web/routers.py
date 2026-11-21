@@ -20,13 +20,11 @@ def include_api_routers(app: FastAPI, deps: list) -> None:
         api_audit,
         api_background,
         api_branches,
-        api_browser,
         api_changes,
         api_conversation_config,
         api_conversation_create,
         api_conversation_grants,
         api_conversation_playbooks,
-        api_conversation_secrets,
         api_conversations,
         api_credential_names,
         api_credential_screen,
@@ -54,12 +52,12 @@ def include_api_routers(app: FastAPI, deps: list) -> None:
         api_routine_edit,
         api_routine_files,
         api_routine_patch,
-        api_routine_secrets,
         api_routines,
         api_run_control,
         api_run_undo,
         api_runs,
         api_schedule,
+        api_scoped_secrets,
         api_search,
         api_settings,
         api_stats,
@@ -69,18 +67,16 @@ def include_api_routers(app: FastAPI, deps: list) -> None:
     )
 
     for module in (api_push, api_routines, api_jobs, api_routine_edit, api_routine_patch,
-                   api_routine_files, api_routine_secrets, api_settings, api_gate,
+                   api_routine_files, api_scoped_secrets, api_settings, api_gate,
                    api_conversation_create,   # before api_conversations: its
                    # /conversations/defaults must be matched before /{slug}
                    api_conversations,
                    api_conversation_config,
                    api_conversation_playbooks,
-                   api_conversation_secrets,   # D216 rank 1: the write surface the scoped
-                   # store always served for a conversation but no route could reach
                    api_conversation_grants,   # F783 + D216: a conversation's `grants:` rows —
                    # the deny tombstones, the grants it holds, and (part a) the shared-store
                    # exposure dial; only the routine page had any of the three
-                   api_background, api_branches, api_browser, api_desktops, api_runs,
+                   api_background, api_branches, api_desktops, api_runs,
                    api_run_control, api_run_undo,   # D269's ⤺ lives apart: undoing a FINISHED
                    # run's work is not steering a live one, and api_run_control is at its bar
                    api_refusal_flag,

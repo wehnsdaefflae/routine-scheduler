@@ -193,8 +193,8 @@ def test_a_home_holding_symlinks_is_carried_on_a_share_that_cannot_time_them(hom
 
 
 def test_a_host_without_key_files_is_backed_up(home, root):
-    """`~/.credentials` is the credential ladder's optional last rung — install.sh never creates
-    it — so its absence is a fresh install, not a broken one: the snapshot carries what the host
+    """`~/.credentials` is the credential ladder's optional last rung — nothing creates it — so
+    its absence is a fresh install, not a broken one: the snapshot carries what the host
     has and says what it skipped, exactly as the tarball does."""
     shutil.rmtree(home / ".credentials")
     proc = _backup(home, root, "2026-10-01")

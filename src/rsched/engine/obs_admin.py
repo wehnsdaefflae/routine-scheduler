@@ -118,9 +118,6 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
         if obs.get("error"):
             return (f"OBSERVATION (create_routine {slug!r} FAILED): {obs['error']}. Fix the "
                     "slug / workflow / instruction and try again.")
-        if obs.get("candidate"):                 # engine/candidate.py
-            return (f"OBSERVATION (create_routine: replacement candidate {slug!r} for "
-                    f"{obs.get('replaces')!r} CREATED at {obs.get('dir')}. {obs.get('next')})")
         if obs.get("draft"):
             # The preview step MUST NOT read as success (D92).
             state = "draft UPDATED — confirmation restarted" if obs.get("updated") \

@@ -19,6 +19,11 @@ flagged.
 
 ## Why it also reports accounting integrity (R3112)
 
+MIGRATION(expires=2027-01-15): this whole integrity half — `UNDERSTATEMENT_SLACK`,
+`_child_volume`, `_understated`, `_sanitized`, and the `mixed_accounting` / `integrity` keys —
+exists only for the usage rows written before 0.494.0, and is deleted once they have aged out of
+every window this reads.
+
 A per-run cost figure is only honest if every run was counted the same way. Until 0.494.0 two
 defects understated a run that spawned children: `history.prior_usage` rebuilt a resumed leg's
 cumulative base without summing `subrun_end`, so every child collected in an earlier leg

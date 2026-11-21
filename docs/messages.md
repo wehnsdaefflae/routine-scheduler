@@ -22,8 +22,7 @@ changes which thread answers for the problem, not whether the message this row a
 the recipient's inbox is still waiting to be drained.
 
 `answer-*` files (question answers) stay off this surface on purpose: they belong to the
-Decisions page's record, and rendering them as messages would fork that vocabulary. (They do
-wake a routine's report trigger like any inbox work — docs/triggers.md.)
+Decisions page's record, and rendering them as messages would fork that vocabulary.
 
 ## One writer, one stem
 

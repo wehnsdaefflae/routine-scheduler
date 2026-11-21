@@ -5,10 +5,9 @@ only what it was asked, over only the answers it was offered: a yes/no as P(yes)
 distribution over the declared options, a score as a probability-weighted position on declared
 levels. There is no text to parse, so no empty reply, prose refusal or malformed JSON.
 
-Two wire protocols, one adapter each, both normalised to the dataclasses below so nothing above
-this layer knows which one answered: `openai` (decisions_openai.py — OpenAI's Decisions API) and
-`systemone` (decisions_systemone.py — TypeSafe's Jev, direct or via a gateway). Whether a MODEL
-is sent images is its catalog `multimodal` flag.
+One wire protocol, `systemone` (decisions_systemone.py — TypeSafe's Jev, direct or via a
+gateway), normalised to the dataclasses below so nothing above this layer reads its wire
+shape. Whether a MODEL is sent images is its catalog `multimodal` flag.
 
 Transports, never a harness: one stateless request per call, no retries beyond the shared
 `with_retries`, recorded through the same instrumentation seam as every chat completion.
@@ -30,10 +29,9 @@ if TYPE_CHECKING:
 #: maps them onto its protocol's own (`predicate`/`noul`, `choice`, `score`).
 ANSWER_TYPES = ("yes_no", "choice", "score")
 #: Where a protocol is served when `base_url` is blank — each vendor's own API root.
-DEFAULT_BASE_URLS = {"openai": "https://api.openai.com/v1",
-                     "systemone": "https://api.typesafe.ai/v1"}
+DEFAULT_BASE_URLS = {"systemone": "https://api.typesafe.ai/v1"}
 #: Prefix announcing structured evidence as text, so no evidence field is refused as a raw JSON
-#: document. BOTH protocols send it (see `evidence_text`).
+#: document (see `evidence_text`).
 EVIDENCE_HEADER = "EVIDENCE (JSON):\n"
 
 
@@ -144,10 +142,9 @@ class DecisionRef:
 
 def make_decision_endpoint(cfg: DecisionEndpointConfig) -> DecisionEndpoint:
     """The adapter for one configured decision endpoint."""
-    from .decisions_openai import OpenAIDecisions
     from .decisions_systemone import SystemOneDecisions
 
-    adapters: dict[str, type] = {"openai": OpenAIDecisions, "systemone": SystemOneDecisions}
+    adapters: dict[str, type] = {"systemone": SystemOneDecisions}
     if cfg.protocol not in adapters:
         raise EndpointError(f"{cfg.name}: unknown decision protocol {cfg.protocol!r}")
     return adapters[cfg.protocol](cfg)

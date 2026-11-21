@@ -102,8 +102,8 @@ def _config_at(tmp_path, monkeypatch, text: str):
     return cfg
 
 
-def test_an_install_sh_config_never_keeps_the_examples_routine_token(tmp_path, monkeypatch):
-    """deploy/install.sh copies the example and generates only the PRIMARY token, so the
+def test_an_old_host_config_never_keeps_the_examples_routine_token(tmp_path, monkeypatch):
+    """The old host install script copied the example and generated only the PRIMARY token, so the
     routine tier's bearer was the example's `change-me-too` — a value published in the repo,
     which opens every GET outside the denied subtrees to anyone who read it. A known
     placeholder is no secret: boot replaces it, and the primary is left exactly as it was."""

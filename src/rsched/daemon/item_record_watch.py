@@ -19,8 +19,8 @@ import logging
 from .. import item_records
 from ..config import ServerConfig
 from ..health_events import log_health_event
+from ..item_records import SELF_AUDIT_SLUG
 from ..paths import read_json
-from ..priorities import SELF_AUDIT_SLUG
 
 log = logging.getLogger("rsched.daemon")
 

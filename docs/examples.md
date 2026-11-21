@@ -48,7 +48,7 @@ out only after your explicit go.
 
 | setting | pick | why |
 |---|---|---|
-| pattern | `radar` | ingest listings, verify, keep a board you pick from, act only after your sign-off |
+| workflow | `curate-and-act` | ingest listings, verify, keep a board you pick from, act only after your sign-off |
 | changes you accept | **outbound-mail** permission; approval *new utils only*; **ask_timeout_min 240**; weekdays 06:30 | the application goes out in your name, so sending is a decision you make once here; scrapers break at 6 a.m. and a revision auto-applies without waking you; a send-gate that waits longer than half a day is stale; the shortlist is ready with your coffee |
 | done when | every platform was read or recorded as unreadable; every new posting is scored; every pick has a draft | what one finished run leaves behind — the recipe's own `## Done when` |
 | finish line | none | it runs until you switch it off |
@@ -100,7 +100,7 @@ submitted only after your sign-off.
 
 | setting | pick | why |
 |---|---|---|
-| pattern | `radar` | a board of calls you pick from, a pipeline behind each pick that waits for your sign-off |
+| workflow | `curate-and-act` | a board of calls you pick from, a pipeline behind each pick that waits for your sign-off |
 | changes you accept | run history *all*; **80 turns · 60 min**; Mondays 07:00 | **full run history** is the point: "did we already see this program in March?", "what did the run that submitted X actually do?" — longitudinal questions the LEDGER alone can't answer; a weekly run may verify dozens of pages; deadlines are usually weekday-anchored |
 | finish line | none | new calls keep coming; each application's own deadline lives in its pipeline, not in the routine's end |
 

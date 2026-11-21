@@ -11,8 +11,6 @@ def _src_repo(tmp_path: Path) -> Path:
     (repo / "docs" / "endpoints.md").write_text(
         "# LLM endpoint setup\n\nAdd one in `Settings`.\n\n```yaml\nkind: openai\n```\n",
         encoding="utf-8")
-    (repo / "src" / "rsched").mkdir(parents=True)
-    (repo / "src" / "rsched" / "x.py").write_text("A = 1\n", encoding="utf-8")
     return repo
 
 
@@ -39,52 +37,20 @@ def test_render_guide_escapes_the_title_it_puts_in_the_head():
 def test_build_skip_and_force(tmp_path):
     repo = _src_repo(tmp_path)
     out = tmp_path / "out"
-    # scoped to one tiny module so the test stays fast; layout matches the real build
-    assert build_docs(repo, out, modules=("rsched.ids",)) is True
+    assert build_docs(repo, out) is True
     assert (out / "guides" / "endpoints.html").is_file()
-    assert (out / "api" / "rsched" / "ids.html").is_file()
     index = (out / "index.json").read_text(encoding="utf-8")
     assert '"endpoints"' in index and "LLM endpoint setup" in index
+    assert '"api"' not in index                       # no generated API reference any more
     # unchanged source → the stamp short-circuits; force rebuilds anyway
-    assert build_docs(repo, out, modules=("rsched.ids",)) is False
-    assert build_docs(repo, out, modules=("rsched.ids",), force=True) is True
-    # touching a doc input invalidates the stamp
-    py = repo / "src" / "rsched" / "x.py"
+    assert build_docs(repo, out) is False
+    assert build_docs(repo, out, force=True) is True
+    # touching a guide invalidates the stamp
+    md = repo / "docs" / "endpoints.md"
     import os
-    st = py.stat()
-    os.utime(py, (st.st_atime + 5, st.st_mtime + 5))
+    st = md.stat()
+    os.utime(md, (st.st_atime + 5, st.st_mtime + 5))
     assert source_stamp(repo) != (out / ".stamp").read_text(encoding="utf-8")
-
-
-def test_every_module_the_api_reference_documents_imports():
-    """pdoc imports every module it walked and did not exclude; one that cannot import fails the
-    whole Help-tab build, which is what the jail-side gate kit did on 0.369.0's first boot."""
-    import importlib
-    import pkgutil
-    import re
-
-    import rsched
-    from rsched.docs_build import API_EXCLUDE
-
-    skip = re.compile(API_EXCLUDE[1:])
-    walked = [m.name for m in pkgutil.walk_packages(rsched.__path__, "rsched.")]
-    assert any(skip.match(name) for name in walked)     # the exclusion still names a module
-    for name in walked:
-        if not skip.match(name):
-            importlib.import_module(name)
-
-
-def test_the_gate_kit_package_page_imports_no_jail_side_script():
-    """pdoc lists a package's submodules by importing each one; the jail-side kit loads only
-    after `run.py` has fixed the import path, so the package names its surface in `__all__`
-    and the page tries none of them (the order-dependent warnings on 0.369.1's boot)."""
-    import warnings
-
-    import pdoc.doc
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        assert pdoc.doc.Module.from_name("rsched.gatekit").submodules == []
 
 
 def test_ensure_docs_never_raises(tmp_path, monkeypatch):
@@ -92,7 +58,7 @@ def test_ensure_docs_never_raises(tmp_path, monkeypatch):
     import rsched.docs_build as db
 
     def boom(*a, **kw):
-        raise RuntimeError("pdoc exploded")
+        raise RuntimeError("the build exploded")
 
     monkeypatch.setenv("RSCHED_DOCS_DIR", str(tmp_path / "docs-out"))
     monkeypatch.delenv("RSCHED_SKIP_DOCS_BUILD", raising=False)   # conftest sets it suite-wide
@@ -102,7 +68,7 @@ def test_ensure_docs_never_raises(tmp_path, monkeypatch):
 
 def test_ensure_docs_honors_skip_env(tmp_path, monkeypatch):
     """RSCHED_SKIP_DOCS_BUILD short-circuits ensure_docs BEFORE build_docs - the knob the
-    whole test suite (and ops) relies on to keep TestClient(app) from paying a pdoc build."""
+    whole test suite (and ops) relies on to keep TestClient(app) from paying a docs build."""
     from rsched import docs_build
 
     calls = []

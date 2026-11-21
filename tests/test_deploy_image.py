@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -238,10 +237,6 @@ def test_the_probe_gives_a_boot_time_to_finish():
         assert float(test[test.index("--max-time") + 1]) < timeout
 
 
-INSTALL = REPO / "deploy" / "install.sh"
-UNIT = REPO / "deploy" / "routine-scheduler.service"
-
-
 def test_the_claude_cli_is_pinned_like_every_other_dependency():
     """`npm install -g <pkg>` with no version takes whatever was published that day, so two
     rebuilds of one commit ship different CLIs with nothing in the repository to say why — the
@@ -261,35 +256,3 @@ def test_the_claude_cli_is_pinned_like_every_other_dependency():
     pinned = re.search(r"^ARG CLAUDE_CODE_VERSION=(.+)$", dockerfile, re.MULTILINE)
     assert pinned, "CLAUDE_CODE_VERSION is not declared as an ARG with a default"
     assert re.fullmatch(r"[\d.]+", pinned.group(1).strip()), pinned.group(1)
-
-
-def test_the_installer_syncs_the_venv_the_service_actually_runs():
-    """The unit keeps the daemon's venv OUTSIDE the checkout (`UV_PROJECT_ENVIRONMENT`), so a bare
-    `uv sync` in the repo populates `<repo>/.venv` — a venv the service never opens — and then
-    prints "venv synced". A first install reported success and left the service to build its own
-    environment on first start; a sync after a dependency change updated the wrong one (SD2.6).
-    """
-    install = INSTALL.read_text(encoding="utf-8")
-    unit = UNIT.read_text(encoding="utf-8")
-    assert "UV_PROJECT_ENVIRONMENT" in unit, (
-        "the unit no longer pins the service's venv, so the installer cannot derive it")
-
-    syncs = [line for line in install.splitlines() if re.search(r'"\$\{UV\}" sync', line)]
-    assert syncs, "the installer no longer syncs a venv at all"
-    for line in syncs:
-        assert "UV_PROJECT_ENVIRONMENT" in line, (
-            f"this sync populates <repo>/.venv, which the service never opens: {line.strip()}")
-
-    assert "routine-scheduler.service" in install, (
-        "the installer does not read the unit, so the path is written twice and will drift")
-
-    # Run the installer's OWN derivation against the real unit. `%h` is systemd's home
-    # placeholder, not a shell's, so one left unexpanded yields a relative path and `uv` would
-    # create the venv under the checkout — the very bug this replaced, wearing a different hat.
-    derived = subprocess.run(
-        ["bash", "-c",
-         (f'HOME=/home/someone; sed -n "s/^Environment=UV_PROJECT_ENVIRONMENT=//p" {UNIT} '
-          '| tail -1 | sed "s|^%h|${HOME}|"')],
-        capture_output=True, text=True, check=True).stdout.strip()
-    assert derived.startswith("/home/someone/"), derived
-    assert "%h" not in derived, derived

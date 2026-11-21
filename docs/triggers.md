@@ -5,8 +5,7 @@ while it is set: docs/lanes-tags.md, D71), manually — or on an
 **external event**. A trigger is a routine.yaml
 config entry that lets the outside world start a run: today that means an authenticated
 **webhook** URL a third party POSTs to (CI finished, a form was submitted, a monitor
-alerted), or a **report** trigger that fires the routine when a report lands in its inbox;
-`imap` (mail arrival) and `watch_path` (file drop) are reserved trigger types in
+alerted); `imap` (mail arrival) and `watch_path` (file drop) are reserved trigger types in
 the same config shape, to be implemented as daemon-side watchers later. Event triggers are
 what let a radar-style routine stop polling on a schedule and burn tokens only when
 something actually happened.
@@ -25,10 +24,6 @@ triggers:
     token: "kJ8…32-url-safe-chars…Qw"   # server-generated URL secret — the hook's auth
     cooldown_s: 60           # min seconds between trigger-initiated fires (coalescing window)
     created: "2026-07-17T09:00:00+02:00"
-  - id: t-9c21d0aa          # report trigger: fire when a report/inbox message lands here
-    type: report
-    cooldown_s: 900          # generous by design — delivery bursts become ONE run
-    created: "2026-08-05T17:00:00+02:00"
   # reserved types — same envelope, own keys; nothing fires them yet:
   # - {id: t-…, type: imap, host: imap.example.org, mailbox: INBOX, cooldown_s: 300}
   # - {id: t-…, type: watch_path, path: ~/drop/incoming, glob: "*.csv", cooldown_s: 60}
@@ -44,8 +39,8 @@ kept verbatim and flagged as inert.
 Create one on the routine page (*Schedule & gate* → *more* → *Triggers* → *+ add webhook
 trigger*, then *accept changes*). The server generates the id and the URL token when the change is
 accepted; the row then shows the full hook URL with a copy button. A trigger keeps its id and its
-token for as long as its bounds stay the same. Changing a webhook's cooldown or daily cap replaces
-it with a new one under a NEW URL — the row says so before you accept.
+token for as long as its cooldown stays the same. Changing a webhook's cooldown replaces it with a
+new one under a NEW URL — the row says so before you accept.
 
 ```
 POST /api/webhooks/<slug>/<token>
@@ -57,12 +52,6 @@ curl -X POST "https://sched.example.org:8321/api/webhooks/arxiv-radar/kJ8…Qw" 
      -d '{"event": "new-feed-items", "count": 3}'
 → 202 {"ok": true}
 ```
-
-`POST /api/hooks/<slug>/<token>` is the **deprecated** spelling of the same route. Every URL
-already in a third party's hands keeps working, and nothing hands that spelling out any more —
-the row on the routine page shows the canonical path. Each accepted call on the old path files
-one `deprecated_route` health event naming the slug, so what is left to migrate is countable
-rather than guessed; a rejected call (unknown slug, wrong token, oversized body) files none.
 
 Any body (or none) is accepted up to 64 KiB and reaches the run **verbatim as an injected
 user message**, one message per event, headed by a provenance line
@@ -90,48 +79,14 @@ the payload.
   one — a hook URL pasted into a script or a publish payload (docs/architecture.md, Libraries &
   seeds).
 
-## The report trigger
+## A report waits for the next run
 
-An addressed report (`report` with `target`) is delivered into the target's `inbox/` and —
-by default — read on the target's NEXT SCHEDULED RUN: delivery never starts a run
-(docs/items.md). A **report trigger** is the target's own opt-in to be woken instead: when
-an unconsumed report/message file sits in the routine's inbox, the daemon fires ONE run
-(reason `trigger`), and everything that lands within `cooldown_s` (default **900 s** —
-generous on purpose, delivery bursts coalesce) is drained by that same run. The
-DELIVERING side still starts nothing and needs no capability — waking is entirely the
-receiving routine's configuration, so the "nothing seizes another routine's schedule"
-rule stands.
-
-**Why it is opt-in, and stays opt-in.** 0.329.0 gave every routine one, and the reversal
-came the same morning (0.330.0): a message is cheap and a run is a whole recipe, so "one run
-per message" is the wrong granularity — and routines can answer each other, so A's report
-wakes B, whose reply wakes A, each hop a full run, bounded only by the daily cap. Enabling it
-fleet-wide also fires every routine whose inbox already holds a message, at once. A report
-trigger is for the routine whose job IS its inbox (an inbound router), declared on purpose.
-
-Mechanics differ from the webhook only in where the event lives: there is no spool entry —
-the durable inbox message file IS the event, the daemon's watch is a cheap per-tick check
-of exactly the routines that declare the trigger, and nothing is consumed daemon-side (the
-fired run's own boot drain empties the inbox; a crash before the drain just means one more
-fire after the cooldown). The usual guards apply unchanged: never while the routine has an
-active/queued run, never while the daemon drains for a restart, never for a routine that is
-switched off or RETIRED, and at most one fire per cooldown window. One report trigger per routine (one
-inbox, one watcher); create it on the Triggers card — no URL, nothing external can reach
-it. Answer files (`answer-*.json`) never fire it — an answer waits, see below.
-
-The watch asks the ONE inbox predicate (`engine/inbox.has_pending_messages`), which every
-surface that wants to know whether something is waiting now shares. Its flags are exactly the
-three ways the question legitimately differs, and the report trigger uses two of them: it does
-not count closures (below), and it is **fail-OPEN** — anything unreadable or unrecognised
-WAKES, because a spurious run costs a run while a missed one costs silence. Every live-run
-predicate is fail-CLOSED for the opposite reason, and that axis is why the five hand-rolled
-copies could not simply be merged. The scan selects `msg-*.json`, the stem the ONE inbox writer
-produces (`engine/inbox.file_message`), and not "any file that is not `answer-*`":
-`paths.atomic_write` creates its temp file IN the target directory, so the broader filter also
-matched an in-flight `.msg-….json.XXXX.tmp` — unreadable, and unreadable wakes, so a race with
-any inbox write bought a whole run of the recipe. The Triggers card's `pending` number counts
-with the watch's own flags (`triggers.describe_triggers`), so the page never shows "0" over
-a fire.
+An addressed report (`report` with `target`) is delivered into the target's `inbox/` and read
+on the target's NEXT SCHEDULED RUN: delivery never starts a run (docs/items.md). 0.329.0 once
+gave every routine a trigger that fired on inbox freight, and the reversal came the same
+morning (0.330.0): a message is cheap and a run is a whole recipe, and routines answer each
+other, so A's report woke B, whose reply woke A, each hop a full run. The opt-in form that
+remained was removed later, with no routine using it.
 
 ## An answer waits for the next run — or for your click
 
@@ -168,32 +123,18 @@ These are the trigger analog of the schedule's overrun rule:
   draining) **waits in the spool**. N events while busy → **ONE fire** when the routine is
   free, and every coalesced event still lands as its own inbox message for that fire — no
   payload is lost, no run per event.
-- **Cooldown.** `cooldown_s` (default 60; **900** for a report trigger) is the minimum gap
+- **Cooldown.** `cooldown_s` (default 60) is the minimum gap
   between trigger-initiated fires; events inside the window coalesce into the next fire.
   When pending events span triggers with different cooldowns, the largest applies. It is
   set on the Triggers card like any other setting and lands with the page's one accept
   (`POST /api/routines/<slug>/settings`, guarded while a run is active like every multi-field
   config edit); the daemon reads the new window at the next rescan. `id`, `token` and `type`
   are the trigger's IDENTITY, never its configuration, so the accept matches a row to a saved
-  trigger by its bounds: a row whose cooldown or cap changed stands for a NEW trigger, and
-  accepting it replaces the old one — a webhook's URL with it, which the row says before you
-  accept. `0` means *no wait* — fire on every delivery. The accept refuses (`422`) a type it
-  cannot create (`imap`/`watch_path` are reserved), a bound that is not a whole number `≥ 0`,
-  and a second report trigger.
-- **Daily cap.** `max_fires_per_day` (report triggers: **24**; other types uncapped unless
-  set; `0` = uncapped) bounds the day's TOTAL trigger-initiated fires, which the cooldown
-  cannot: a cooldown limits the rate, so two routines answering each other would stay awake
-  forever at one run per window. The count is per trigger, keyed on the server's date, and
-  resets with it. Reaching the cap emits ONE `trigger_capped` health event for that day —
-  a capped trigger is a dark routine, and dark must be visible (F276) — and the waiting
-  inbox work is picked up by the next scheduled run, never dropped. Set beside the cooldown,
-  with the same accept.
-- **Closures never wake.** A report filed with `closes: true` is the terminal
-  acknowledgment of an exchange: it asks nothing, so it is delivered to the target's inbox
-  but does NOT fire its report trigger (the same exemption `answer-*` files have there). It
-  is read by the next run that happens anyway. Without this, every "done, no reply needed"
-  would buy the recipient a full run of its recipe — the amplification a cooldown cannot
-  see, since each closure is a genuinely new message.
+  trigger by its cooldown: a row whose cooldown changed stands for a NEW trigger, and
+  accepting it replaces the old one — its URL with it, which the row says before you
+  accept. `0` means *no wait* — fire on every event. The accept refuses (`422`) a type it
+  cannot create (`imap`/`watch_path` are reserved) and a cooldown that is not a whole
+  number `≥ 0`.
 - **Durability.** An accepted event survives restarts: it is either in the spool (fired at
   a later tick) or already injected into the routine's inbox (drained by the routine's
   next run, whoever starts it). Injection uses deterministic filenames, so a crash between
@@ -208,10 +149,7 @@ These are the trigger analog of the schedule's overrun rule:
   is back.
 
 The Triggers card shows the per-trigger fire ledger (last fired, delivered events, pending
-count), read from the daemon-maintained `state.json` next to the spool. A REPORT trigger has no
-spool, so its pending count is the inbox itself — counted through the same predicate, with the
-same closure exemption, so the number on the page cannot say "1 waiting" about freight the
-daemon will never fire on.
+count), read from the daemon-maintained `state.json` next to the spool.
 
 ## What the run sees
 

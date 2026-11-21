@@ -173,7 +173,7 @@ def resolve_api_key(*, name: str, api_key: str, key_var: str, key_env_file: str,
     central secrets store, then `key_var` inside `key_env_file`. A full miss raises
     auth-flagged when the endpoint requires a key (`required`, the anthropic case) or when
     an env file was explicitly configured; otherwise returns "none" — the placeholder
-    bearer keyless local backends (Ollama, vLLM) ignore.
+    bearer keyless local backends (vLLM) ignore.
     """
     if api_key:
         return api_key

@@ -1,6 +1,5 @@
-"""First-boot bootstrap for a fresh deploy, and the top-ups every boot runs. A host install runs
-deploy/install.sh, which seeds the library whole (`seed_libraries`); a container has no install
-step, so the daemon's boot (rsched.cli_daemon) does the equivalent: generate a config with fresh
+"""First-boot bootstrap for a fresh deploy, and the top-ups every boot runs. There is no install
+step, so the daemon's boot (rsched.cli_daemon) does it: generate a config with fresh
 tokens if none exists (a fresh deploy must never serve an OPEN API), create the library repo
 (utils_lib.ensure_library), then install every seed util and doc it lacks (`sync_seed_utils`,
 `sync_seed_library_docs`) — add-only, which is also how a seed added later reaches an existing
@@ -35,8 +34,8 @@ def ensure_config() -> bool:
     Returns True if it generated the whole config. Without this a fresh deploy has an empty
     token → auth is disabled → an open API on the LAN.
 
-    The placeholder case is a host install's: the old deploy/install.sh copied the example
-    and generated only the primary, so its routine tier answered to `change-me-too`; a config
+    The placeholder case is an old host install's: its install script copied the example and
+    generated only the primary, so its routine tier answered to `change-me-too`; a config
     hand-copied from the example kept `change-me` as the console's own bearer. Both are values
     anyone who read the repo knows. An explicitly EMPTY value is left alone — for the routine
     tier that is the documented way to switch it off (config/server.py).
@@ -137,10 +136,9 @@ SEED_DOC_KINDS = (("workflows", "*.py"), ("rules", "*.md"), ("permissions", "*.m
 
 
 def seed_libraries(home: Path) -> None:
-    """Populate an empty library repo from the built-in seeds + git-init it — what
-    deploy/install.sh calls, so a host install starts with the library whole: every
-    SEED_DOC_KINDS kind, the playbooks/ subfolders and utils/. The `gu` dispatcher is installed
-    by utils_lib.ensure_library on first use.
+    """Populate an empty library repo from the built-in seeds + git-init it, so an instance
+    starts with the library whole: every SEED_DOC_KINDS kind, the playbooks/ subfolders and
+    utils/. The `gu` dispatcher is installed by utils_lib.ensure_library on first use.
     """
     seed = repo_root() / "library-seed"
     home.mkdir(parents=True, exist_ok=True)

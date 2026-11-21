@@ -25,7 +25,8 @@ router = APIRouter(tags=["workflows"])
 def _home(request: Request):
     home = request.app.state.server.libraries_home
     if not home.is_dir():
-        raise HTTPException(503, f"workflow library not found at {home} — run deploy/install.sh")
+        raise HTTPException(503, f"workflow library not found at {home} — the daemon seeds "
+                                 "it at boot")
     return home
 
 

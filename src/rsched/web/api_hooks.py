@@ -11,14 +11,6 @@ slug / wrong token / a routine that may not fire (no existence oracle), a payloa
 a per-slug accept rate limit + a durable spool cap so a leaked URL can't fill the disk,
 the payload is never echoed back, and every rejection is logged (never the payload).
 
-`/api/hooks/<slug>/<token>` is the DEPRECATED spelling of the same route, served by the same
-handler so every URL a third party already holds keeps working. Two halves make a deprecation
-end rather than run forever: `triggers.hook_path` mints only the canonical path, so no new
-caller is ever handed the old one; and an ACCEPTED old-path call files one `deprecated_route`
-health event naming the slug, so the callers still to migrate are countable. Only ACCEPTED
-calls — a 404 probe or a wrong token is not a caller to migrate, and recording rejections
-would let anyone fill the stream through the one unauthenticated route.
-
 `hooks_router` is wired in app.py WITHOUT the auth dependency. The trigger list itself is a
 field of the settings page (0.369.0): added, re-bounded and removed in the draft and landed by
 its one accept (api_settings), which asks `reconciled_triggers` here what the new list is.
@@ -36,7 +28,6 @@ from typing import NoReturn
 from fastapi import APIRouter, HTTPException, Request
 
 from .. import registry, triggers
-from ..health_events import log_health_event
 from ..patterns import fields
 
 log = logging.getLogger("rsched.hooks")
@@ -105,14 +96,10 @@ def _rate_window(request: Request, slug: str) -> deque[float]:
 
 
 @hooks_router.post("/webhooks/{slug}/{token}", status_code=202)
-@hooks_router.post("/hooks/{slug}/{token}", status_code=202)   # deprecated spelling
 async def receive_hook(request: Request, slug: str, token: str) -> dict:
     """Record one webhook event. Accepts any body (stored as text, capped); replies
     202 {"ok": true} and NOTHING else — the payload is never echoed. The daemon picks
     the event up at its next tick (≤~5s) and fires/coalesces per docs/triggers.md.
-
-    Both spellings reach here; `/api/hooks/...` is the deprecated one and an ACCEPTED call
-    on it files a `deprecated_route` event (see the module docstring).
     """
     server = request.app.state.server
     client = request.client.host if request.client else "?"
@@ -148,15 +135,6 @@ async def receive_hook(request: Request, slug: str, token: str) -> dict:
                          payload=body.decode("utf-8", "replace"),
                          content_type=request.headers.get("content-type", ""),
                          client=client)
-    if request.url.path.startswith("/api/hooks/"):
-        # Accepted on the deprecated spelling: a caller to migrate, and the only way the
-        # count of them is knowable. Past every rejection on purpose — see the docstring.
-        log_health_event(server.routines_home, "deprecated_route", routine=slug, run_id="",
-                         detail=f"POST /api/hooks/<slug>/<token> is deprecated: the same "
-                                f"trigger is served at /api/webhooks/{slug}/<token>. Update "
-                                f"the caller (client {client}); the old path keeps working.",
-                         route="/api/hooks/{slug}/{token}",
-                         replacement="/api/webhooks/{slug}/{token}")
     return {"ok": True}
 
 
@@ -164,8 +142,8 @@ async def receive_hook(request: Request, slug: str, token: str) -> dict:
 
 #: What the Triggers card can CREATE. `imap` and `watch_path` are reserved shape with no
 #: watcher yet (rsched/triggers.py): kept when a file already names one, never minted here.
-CREATABLE_TRIGGERS = ("webhook", "report")
-_BOUNDS = ("cooldown_s", "max_fires_per_day")
+CREATABLE_TRIGGERS = ("webhook",)
+_BOUNDS = ("cooldown_s",)
 
 
 def reconciled_triggers(current: list[dict], target: object) -> list[dict]:
@@ -187,19 +165,14 @@ def reconciled_triggers(current: list[dict], target: object) -> list[dict]:
         if row in want:
             want.remove(row)
             kept.append(entry)
-    added = [_new_trigger(row) for row in want]
-    if any(t["type"] == "report" for t in added) \
-            and sum(t.get("type") == "report" for t in kept + added) > 1:
-        raise HTTPException(422, "triggers: one report trigger per routine — one inbox, one "
-                                 "watcher; change the bounds of the one it has instead")
-    return kept + added
+    return kept + [_new_trigger(row) for row in want]
 
 
 def _new_trigger(row: dict) -> dict:
     """The trigger a row the accepted list GAINS stands for: identity minted server-side (the
-    id and, for a webhook, the token that is the hook's only auth), configuration exactly as
-    the row carries it. `fields.canonical` spells both bounds out, and `0` is a value — no
-    wait, no cap — never an absence to fill with the type's default.
+    id and the token that is the hook's only auth), configuration exactly as the row carries
+    it. `fields.canonical` spells the cooldown out, and `0` is a value — no wait — never an
+    absence to fill with the default.
     """
     ttype = row.get("type")
     if ttype not in CREATABLE_TRIGGERS:
@@ -212,7 +185,6 @@ def _new_trigger(row: dict) -> dict:
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise HTTPException(422, f"triggers: {key} is a whole number, 0 or more "
                                      f"(got {value!r})")
-    entry = (triggers.new_report_trigger() if ttype == "report"
-             else triggers.new_webhook_trigger())
+    entry = triggers.new_webhook_trigger()
     entry.update({key: row[key] for key in _BOUNDS})
     return entry

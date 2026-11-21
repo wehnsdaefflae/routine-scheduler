@@ -1,7 +1,6 @@
 """Decision-model config: the transports and the catalog behind the `decide` action.
 
-A DECISION model (TypeSafe's Jev, OpenAI's Decisions API, the SemIf readout local-model-server
-serves on predator)
+A DECISION model (TypeSafe's Jev, the SemIf readout local-model-server serves on predator)
 takes evidence and typed questions and returns probabilities over the answers it was offered —
 never text. That is a different contract from a chat completion, so these are their own
 catalog beside `endpoints:`/`models:` rather than a third chat kind: nothing that resolves a chat
@@ -17,20 +16,19 @@ from pydantic import Field, model_validator
 
 from .base import BlankableStr, _Config
 
-#: The two wire protocols. `openai` is OpenAI's `POST {base}/decisions` (input + a questions
-#: LIST; text and inline images). `systemone` is TypeSafe's `POST {base}/systemone` (state + a
-#: questions MAP, plus an optional `images` list of data URLs) — Jev, served by TypeSafe itself,
-#: resold by OpenRouter and routed by an Otari gateway under the same path. Both are also what
+#: The wire protocol. `systemone` is TypeSafe's `POST {base}/systemone` (state + a questions MAP,
+#: plus an optional `images` list of data URLs) — Jev, served by TypeSafe itself, resold by
+#: OpenRouter and routed by an Otari gateway under the same path. It is also what
 #: github.com/wehnsdaefflae/local-model-server serves over a local vision model.
-DecisionProtocol = Literal["openai", "systemone"]
+DecisionProtocol = Literal["systemone"]
 DECISION_PROTOCOLS = get_args(DecisionProtocol)
-#: Whether a model is sent images when its own `multimodal` flag is unset. Both protocols CARRY
-#: them; the default says what the protocol's usual model reads. `systemone` is off because Jev
-#: is text-only by its own documentation — a vision model behind a gateway or local-model-server
-#: is switched on by its own flag.
-DECISION_MEDIA_DEFAULT = {"openai": True, "systemone": False}
+#: Whether a model is sent images when its own `multimodal` flag is unset. The protocol CARRIES
+#: them; the default says what its usual model reads — off, because Jev is text-only by its own
+#: documentation. A vision model behind a gateway or local-model-server is switched on by its own
+#: flag.
+DECISION_MEDIA_DEFAULT = {"systemone": False}
 #: The secrets-store variable a decision endpoint's key is read from when `key_var` is unset.
-DECISION_KEY_VAR_DEFAULTS = {"openai": "OPENAI_API_KEY", "systemone": "TYPESAFE_API_KEY"}
+DECISION_KEY_VAR_DEFAULTS = {"systemone": "TYPESAFE_API_KEY"}
 #: A whole request's ceiling. Generous because a local model on a CPU fallback decides a dozen
 #: photos in minutes, not seconds; a hosted one answers in well under one.
 DEFAULT_DECISION_TIMEOUT_S = 300
@@ -59,9 +57,9 @@ class DecisionModelConfig(_Config):
 
     name: str = ""          # filled from the `decision_models:` mapping key
     endpoint: str           # which configured decision endpoint serves it
-    model: str              # the provider's model id (gpt-6-luna, typesafe/jev-1.13, …)
-    # None = the protocol's default (DECISION_MEDIA_DEFAULT): on for `openai`, off for
-    # `systemone`, whose own model Jev reads no images.
+    model: str              # the provider's model id (typesafe/jev-1.13, …)
+    # None = the protocol's default (DECISION_MEDIA_DEFAULT): off for `systemone`, whose own
+    # model Jev reads no images.
     multimodal: bool | None = None
 
 

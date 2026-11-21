@@ -332,14 +332,6 @@ export async function render(view, query = {}) {
               await load();
             } catch (err) { toastError(err); }
           },
-          onPriority: item.type === "summary" ? null : async (on) => {
-            try {
-              await api(`/api/items/${item.id}/priority`, { method: "POST", body: { on } });
-              toast(on ? `${item.id} flagged ⚑ — floats here, and its owner's next run reads it first`
-                       : `${item.id} unflagged`);
-              await load();
-            } catch (err) { toastError(err); }
-          },
           onSave: item.type === "finding" ? async (text, q) => {
             const payload = { kind: "comment", target: item.id, text };
             try {

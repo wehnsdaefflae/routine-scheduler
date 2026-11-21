@@ -15,11 +15,12 @@ from .helpers import configure, start_conversation
 def _with_decision_models(ui) -> None:
     server = ui.server_cfg
     server.decision_endpoints = {
-        "predator": DecisionEndpointConfig(name="predator", protocol="openai",
+        "predator": DecisionEndpointConfig(name="predator", protocol="systemone",
                                            base_url="http://box:8790/v1"),
         "jev": DecisionEndpointConfig(name="jev", protocol="systemone")}
     server.decision_models = {
-        "vl8b": DecisionModelConfig(name="vl8b", endpoint="predator", model="qwen3-vl"),
+        "vl8b": DecisionModelConfig(name="vl8b", endpoint="predator", model="qwen3-vl",
+                                    multimodal=True),
         "jev": DecisionModelConfig(name="jev", endpoint="jev", model="jev-latest")}
     server.decision_model, server.decision_media_model = "jev", "vl8b"
 

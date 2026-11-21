@@ -7,14 +7,13 @@ place it does. Materializing goes through the SAME `workflows.scaffold` / `rsche
 calls a conversation's confirmed creation uses — one materializer, not a second path that can
 drift from it.
 
-Six kinds ride this queue. Two are creations (`create_routine`, `manage_lane`); one REVISES an
+Five kinds ride this queue. Two are creations (`create_routine`, `manage_lane`); one REVISES an
 existing routine's recipe (`revise-routine`, D198: the prose is handed to that routine, whose own
 next run makes the edit — engine/reviseroutine.py, and `api_recipe_revision.materialize_revise`
-beside D200's card, since both are recipe revisions and this file has no room); one is a SWAP
-(`replace-routine`: a replacement candidate the improver created and proved takes the old
-routine's place — engine/candidate.py, `_materialize_replace`); one is a DECISION with a choice
-(`unowned-report`: a report nobody has owned for a week, routed or closed by the operator —
-daemon/owed_watch.py, `_decide_unowned`, the only kind whose materialize takes a body). The fifth,
+beside D200's card, since both are recipe revisions and this file has no room); one is a DECISION
+with a choice (`unowned-report`: a report nobody has owned for a week, routed or closed by the
+operator — daemon/owed_watch.py, `_decide_unowned`, the only kind whose materialize takes a
+body). The fifth,
 `goal-reached`, is the opposite: a routine reporting that it is FINISHED. It is queued by
 `engine/goalreached.py` when its finish line is reached — by a run, by the calendar, or by the
 operator's own tick; by then the routine has already stopped running — that half is derived
@@ -34,7 +33,6 @@ from pydantic import BaseModel
 from .. import lanes, library_drift, pending, schedule
 from ..daemon import owed_watch
 from ..engine import finishline, reviseroutine
-from ..paths import read_yaml
 from .api_owed_obligation import decide as decide_obligation
 from .api_recipe_revision import materialize_revise, with_revise_state
 
@@ -216,50 +214,6 @@ def _materialize_goal_reached(request: Request, rec: dict) -> dict:
     return {"retired": slug, "updated": out.get("updated", [])}
 
 
-def _materialize_replace(request: Request, rec: dict) -> dict:
-    """The SWAP a replacement candidate was created for (engine/candidate.py) — one accept:
-    the candidate takes the old routine's place in its lane, its own cron and its grants (the
-    secrets a candidate never held), and the old routine is switched off. Every config write goes
-    through the ordinary PATCH writer; the lane through the lane store. The old routine is kept,
-    switched off, never deleted: its runs and its history stay readable.
-    """
-    from ..engine import candidate
-    from .api_routine_patch import RoutinePatch, patch_routine
-
-    server = request.app.state.server
-    home = server.routines_home
-    f = rec.get("fields") or {}
-    new, old = str(f.get("candidate") or ""), str(f.get("replaces") or "")
-    for slug in (new, old):
-        if not (home / slug / "routine.yaml").is_file():
-            raise HTTPException(409, f"{slug!r} no longer exists — discard this proposal")
-    old_raw = read_yaml(home / old / "routine.yaml", {})
-    sched = old_raw.get("schedule") if isinstance(old_raw.get("schedule"), dict) else {}
-    lane = lanes.lane_of(home, old)
-    if lane is not None:
-        members = [{**m, "slug": new} if m.get("slug") == old else m for m in lane["members"]]
-        lanes.update(home, lane["id"], members=members)
-    patch_routine(request, new, RoutinePatch.model_validate({
-        "enabled": True, "grants": old_raw.get("grants") or {},
-        **({"schedule": {"cron": sched["cron"], "tz": sched.get("tz") or schedule.server_tz()}}
-           if sched.get("cron") else {})}))
-    patch_routine(request, old, RoutinePatch(enabled=False))
-    candidate.forget(home, new)
-    return {"swapped": new, "retired": old, "lane": lane["id"] if lane else None}
-
-
-def _discard_replace(request: Request, rec: dict) -> None:
-    """Keep the old routine: the candidate is switched off and stops being a candidate."""
-    from ..engine import candidate
-    from .api_routine_patch import RoutinePatch, patch_routine
-
-    home = request.app.state.server.routines_home
-    new = str((rec.get("fields") or {}).get("candidate") or "")
-    if (home / new / "routine.yaml").is_file():
-        patch_routine(request, new, RoutinePatch(enabled=False))
-    candidate.forget(home, new)
-
-
 @router.post("/pending-creations/{pid}/materialize")
 def materialize(request: Request, pid: str, body: Choice | None = None) -> dict:
     """Build what the run proposed. The record is dropped only once the proposal has
@@ -279,8 +233,6 @@ def materialize(request: Request, pid: str, body: Choice | None = None) -> dict:
             out = _materialize_lane(server, fields)
         elif rec.get("kind") == "goal-reached":
             out = _materialize_goal_reached(request, rec)
-        elif rec.get("kind") == "replace-routine":
-            out = _materialize_replace(request, rec)
         elif rec.get("kind") == reviseroutine.KIND:
             out = materialize_revise(server, rec)
         elif rec.get("kind") == "unowned-report":
@@ -322,8 +274,6 @@ def discard(request: Request, pid: str, body: Discard) -> dict:
         # the record was all it did, which left the answer nowhere (F604). The gap is written
         # down as settled, so the next library commit does not re-ask a question he answered.
         settled = library_drift.settle(server.routines_home, rec, body.reason.strip())
-    if rec.get("kind") == "replace-routine":
-        _discard_replace(request, rec)
     if rec.get("kind") == "goal-reached":
         # Discarding a retirement means "not yet — keep going", so that has to change the finish
         # line, because retirement is DERIVED from it. Dropping the record alone would leave the

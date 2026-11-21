@@ -501,8 +501,8 @@ editor submits the field blank; an explicit `null` clears it) and refuses a save
 leave the endpoint with no rung resolving at all — but only when that save is what changed the
 credential, so a keyless local backend and an endpoint awaiting its key both still save.
 Two kinds:
-- **openai** — any OpenAI-compatible API (OpenRouter, vLLM, Ollama). Schema via json_schema / json_object
-  / ollama-native; degrades gracefully (retries without `response_format`/`reasoning` on a 400, and without
+- **openai** — any OpenAI-compatible API (OpenRouter, vLLM, an Otari gateway). Schema via
+  json_schema (or `none`); degrades gracefully (retries without `response_format`/`reasoning` on a 400, and without
   `response_format` on a 503 that hides a schema-incapable backend). Caching
   is the provider's implicit prefix caching; `cached_tokens` is surfaced from usage details.
 - **anthropic** — Messages API, direct or through a gateway (Otari, with CLIProxyAPI behind it for subscription
@@ -607,8 +607,8 @@ fails exactly as before; models without `fallbacks` behave exactly as before.
 **Decision models** are a separate catalog (`config/decisionconf.py`: `decision_endpoints`,
 `decision_models`, the `decision_model` / `decision_media_model` defaults) with a separate
 transport contract — evidence + typed questions in, probabilities out (`endpoints/decisions.py`,
-one adapter per wire protocol: `decisions_openai.py` for OpenAI's Decisions API and the predator
-server, `decisions_systemone.py` for TypeSafe's Jev, direct or through OpenRouter). No chat role
+one adapter for the one wire protocol: `decisions_systemone.py` for TypeSafe's Jev, direct, through
+OpenRouter or an Otari gateway, and the predator server). No chat role
 resolves into one and the `decide` action (`engine/decideaction.py`) reaches nothing else; an
 instance with none configured never shows a run the kind. A call is recorded through
 `instrument.observe_call`, so it shows in the activity dock like a completion, and its usage folds
@@ -673,11 +673,11 @@ merge). The exposure gate therefore subtracts a routine's own names before decid
 (`secretgate._own_secrets`), and CAPABILITIES lists the two sets apart so a run never spends a
 turn requesting what it already holds. Both scopes stay under the declared-only rule. Write
 surface: Settings → Secrets for the central store, the *Own secrets* section for the scoped
-one — on the routine page (`web/api_routine_secrets.py`) and, since D216 rank 1, in a
-conversation's capabilities panel (`web/api_conversation_secrets.py`); values write-only in
-both scopes, names only on the way out. A conversation's slug keys the scoped store exactly
-as a routine's does, so the engine always injected `secrets.d/<conversation-slug>.env` — the
-parity that was missing was the write surface, a parallel router rather than a widening of
+one — on the routine page and, since D216 rank 1, in a conversation's capabilities panel, one
+router for both (`web/api_scoped_secrets.py`); values write-only in both scopes, names only on
+the way out. A conversation's slug keys the scoped store exactly as a routine's does, so the
+engine always injected `secrets.d/<conversation-slug>.env` — the parity that was missing was the
+write surface, each home resolving its slug through its own registry rather than a widening of
 `routines_common._info` across homes. Scoped stores live under the CONFIG dir, never in the routine dir, which is
 `git add -A` autocommitted and auto-pushed; archiving a routine drops its store, so a
 credential never outlives its owner or is inherited by a slug's reuse.
@@ -750,10 +750,9 @@ and the capabilities digest's catalog listing):
   falling back to `main` when unset, D164), `connections:` (provider → account label — OAuth
   connection bindings, a resource like models; see OAuth connections above),
   `permissions:` (held CONDUCT docs) + `capabilities:` (the engine-enforced surface: `actions`,
-  `utils`, the approval dials `confirm` / `rule_confirm` / `remind_confirm` / `config_confirm` /
-  `revise_confirm` (the last two carry their own ladders — `rsched/configdial.py`,
-  `always | own_fields | never`, and `rsched/revisedial.py`, `always | invited`, which answers
-  for a recipe revision ANOTHER routine proposed for this one, D198) and the
+  `utils`, the approval dials `confirm` / `rule_confirm` / `remind_confirm` / `config_confirm`
+  (the last carries its own ladder — `rsched/configdial.py`, `always | own_fields | never`) and
+  the
   levels `runs` /
   `reminders` — both user-changeable only, side by side on the routine page with cascades between
   them; a child run picks its pattern from the catalog and never drafts one),
@@ -1619,7 +1618,7 @@ a caller who already knows a value in full can have its presence in a file confi
 and no shorter fragment ever matches, and no caller-supplied bytes are screened at all
 (`credneedles.py` builds the needle set from each store's OWNING module, `credscreen.py` does
 the rooted bounded scan, `web/api_credential_screen.py` serves it). `bootstrap.py` seeds on
-first boot; `deploy/install.sh` for host installs. Everything in the library is user-EDITABLE from
+first boot. Everything in the library is user-EDITABLE from
 the Library tab, and DELETABLE except permission docs (the capability layer's conduct surface) and
 the `converse` workflow (every conversation is materialized from it BY SLUG, so losing it
 breaks conversation creation) — both guards are server-side.
@@ -1656,7 +1655,7 @@ install gets the revision from the seed sync itself.)
   so `routine.state` offers only `phase`, the cross-run lifecycle value set at a milestone. The same
   vocabulary refuses a generated recipe that asks its run for bookkeeping and fails `rsched
   validate` over a live one. `workflows/lint.py` gates every change;
-  `suggest`/`generate` rank/draft via the `system_model`. Routine creation is initiated from a CONVERSATION ONLY (D58/D59) — there is no standalone new-routine
+  `generate` drafts via the `system_model`. Routine creation is initiated from a CONVERSATION ONLY (D58/D59) — there is no standalone new-routine
   wizard page. The conversation agent clarifies the task WITH the user in normal chat, then emits the **`create_routine`**
   action (`engine/create_routine.py`) — valid ONLY from a root conversation — which materializes the routine
   SYNCHRONOUSLY through the SAME `workflows.scaffold` path the retired wizard build once called (decompose the chosen
@@ -1767,7 +1766,7 @@ install gets the revision from the seed sync itself.)
   `requires:` — the capability keys a doc may presume, no approval dial among them): CONDUCT docs
   of the two-layer permission set. The routine's enforced surface is its own routine.yaml
   `capabilities:` — `actions`, `utils` (an entry is `name` or `name:verb`), the dials
-  `confirm` / `rule_confirm` / `remind_confirm` / `config_confirm` / `revise_confirm`, and the
+  `confirm` / `rule_confirm` / `remind_confirm` / `config_confirm`, and the
   levels `runs` /
   `reminders` (the full
   key list with each one's meaning is docs/rules-permissions.md, not restated here) —
@@ -1960,7 +1959,7 @@ install gets the revision from the seed sync itself.)
   health-events.jsonl (plus the blocked-fleet fold behind `GET /api/health/blocked`: the 21
   events that mean WORK THAT WAS DUE DID NOT HAPPEN — `postdeploy_failed`, `fire_refused`, `lane_fire_refused`,
   `fire_paused`, `lane_fire_paused`, `oneshot_skipped`, `lane_chain_stopped`, `lane_chain_member_skipped`, `scheduler_tick_error`,
-  `finish_gate_failed`, `trigger_capped`, `commit_failed`, `backup_stale`,
+  `finish_gate_failed`, `commit_failed`, `backup_stale`,
   `migration_expired`, `migration_due_soon`, `obligation_overdue`,
   `item_dropped_live`, `model_chain_exhausted`, `process_overhead_high`, `answer_undelivered`,
   `endpoint_needs_reauth` — one row per (event, subject) with a count and the newest
@@ -2359,17 +2358,14 @@ install gets the revision from the seed sync itself.)
     outcome and in the `stopping_update` event. The engine gets one intervention, the model keeps
     the last word, and the operator gets the audit trail.
 - **Event triggers fire through the same seam** (docs/triggers.md): the webhook route
-  (`web/api_hooks.py`, POST `/api/webhooks/<slug>/<token>`, with `/api/hooks/...` served as a
-  deprecated alias whose accepted calls file a `deprecated_route` event — the ONE
-  unauthenticated API route:
+  (`web/api_hooks.py`, POST `/api/webhooks/<slug>/<token>` — the ONE unauthenticated API route:
   constant-time token compare, generic 404, 64 KiB cap, rate limit + spool cap, rejections logged,
   payload never echoed) only RECORDS events durably in the `.control/triggers/<slug>/` spool
   (request-file idiom, like restart.request); the scheduler-ticked **`TriggerManager`**
   (`daemon/triggers.py`) turns them into fires — the trigger analog of overrun is QUEUE, not skip:
   N events while a run is active/queued/cooling coalesce into ONE fire, each event still landing as
   its own inbox message for that fire (deterministic filenames → exactly-once across crashes).
-  `cooldown_s` per trigger (default 60; 900 for a report trigger, `triggers.default_cooldown`)
-  bounds trigger-fire frequency, so a leaked URL can't burn
+  `cooldown_s` per trigger (default 60, `triggers.DEFAULT_COOLDOWN_S`) bounds trigger-fire frequency, so a leaked URL can't burn
   budget; `state.json` in the spool is the daemon-written fire ledger the Triggers card renders.
 - **API auth is two-tier (R94; operator decision 2026-08-05: ENFORCE — superseding D68's
   earlier "leave as-is")**: the PRIMARY bearer (`config.yaml token:`) is the human/web

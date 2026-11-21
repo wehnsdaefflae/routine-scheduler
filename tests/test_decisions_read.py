@@ -12,8 +12,8 @@ import shutil
 import yaml
 
 from conftest import make_test_server, mk_run
+from rsched.item_records import SELF_AUDIT_SLUG
 from rsched.paths import atomic_write_json
-from rsched.priorities import SELF_AUDIT_SLUG
 from rsched.readmodels import memo
 from rsched.web import decisions_ledger, decisions_read
 

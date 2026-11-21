@@ -71,7 +71,6 @@ export function modelPanels({ endpoints, models, systemModel, systemEffort, tool
   const SOURCE_HINT = {
     openrouter: "read from OpenRouter's own /models listing — leave blank to track it",
     nanogpt: "read from Nano-GPT's own model listing — leave blank to track it",
-    ollama: "read from this Ollama server's /api/show — leave blank to track it",
     openai: "read from the provider's /models listing — leave blank to track it",
     cliproxy: "read from CLIProxyAPI's model catalog for the subscription plan this gateway route signs in with — leave blank to track it",
     table: "Anthropic's own API; a built-in table supplies the window",
@@ -80,7 +79,7 @@ export function modelPanels({ endpoints, models, systemModel, systemEffort, tool
     config: "set by hand here, which overrides what the provider reports",
   };
   const sourceWord = (m) => ({ openrouter: "from openrouter", nanogpt: "from nano-gpt",
-    ollama: "from ollama", openai: "from the provider", table: "from the built-in table", cliproxy: "from the subscription plan",
+    openai: "from the provider", table: "from the built-in table", cliproxy: "from the subscription plan",
     endpoint: "endpoint fallback", floor: "engine fallback", config: "model override",
   })[m.window?.window_source] || "inherit";
 

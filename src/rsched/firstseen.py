@@ -8,7 +8,7 @@ every run, so that date moved to "today" on every run: an item's age could not b
 instead.
 
 So first sight is recorded HERE, where no rewrite reaches it: one small JSON map under
-`.control/`, beside the ⚑ flag store and for the same reasons (priorities.py) — NOT
+`.control/`, beside the item records and for the same reasons (item_records.py) — NOT
 report.json, which self-audit rewrites wholesale every run and which this repo may never
 write, and NOT reports.jsonl, the append-only ledger of what runs SAID rather than what the
 instance has seen.
@@ -45,7 +45,7 @@ SECOND-resolution: an item genuinely first seen inside the epoch's own second wo
 read as a floor it is not, and the distinction would rest on comparing near-equal strings.
 
 Dates are otherwise compared as ISO strings, as the rest of the tree does
-(`readmodels/change_fleet`, `priorities.owned_priority_items`): mixed UTC offsets make that an
+(`readmodels/change_fleet`): mixed UTC offsets make that an
 approximation of a few hours, immaterial to an age read in days.
 """
 
@@ -55,8 +55,8 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from .ids import now_iso
+from .item_records import ITEM_ID_RE
 from .paths import atomic_write_json, file_lock, read_json
-from .priorities import ITEM_ID_RE
 
 FIRST_SEEN_FILE = "item-first-seen.json"
 

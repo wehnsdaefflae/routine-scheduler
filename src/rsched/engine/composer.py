@@ -61,8 +61,7 @@ def _plan_text(routine_dir: Path) -> str:
         "rest, and TRIM it: a plan this long belongs in stages/<name>.md]")
 
 
-def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict], *,  # noqa: PLR0913 — the digest's ONE builder: every parameter past the first three is keyword-only and names one documented SECTION input (the same reason inbox_questions.file_question carries this). D200's `recipe_unlocked` is the 11th; grouping them into a context object would touch every caller of a function the whole engine composes through, for no reader's benefit
-                 routines_home: Path | None = None, slug: str = "",
+def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict], *,
                  held_rules: list[str] | None = None,
                  store_notes: list[dict] | None = None, goals: list[dict] | None = None,
                  conversation: bool = False, jobs_section: str = "",
@@ -70,12 +69,6 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
     from ..paths import read_json
 
     parts: list[str] = []
-    # The user's ⚑ flags on items THIS routine owns — first, so they are read before planning.
-    # Optional: a digest without routines_home context is simply unflagged.
-    if routines_home is not None and slug:
-        from ..priorities import digest_section
-        if prio := digest_section(routines_home, slug):
-            parts.append(prio)
     # Shared-store notes for this routine — drained by boot beforehand, so this stays pure and
     # a note is delivered exactly once.
     from ..sharedstores import digest_section as notes_section

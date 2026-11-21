@@ -31,7 +31,6 @@ from pathlib import Path
 from .. import registry, spool, triggers
 from ..config import ServerConfig
 from ..engine import inbox as inbox_mod
-from ..health_events import log_health_event
 from ..ids import now_iso
 from ..paths import read_json
 from .runner import Runner
@@ -52,78 +51,15 @@ class TriggerManager:
         self.guard = ItemGuard(self.home, "trigger manager")
 
     async def tick(self, catalog: dict[str, registry.RoutineInfo]) -> None:
-        """One pass over the spool + the report-trigger inbox watch. Never raises into
-        the scheduler loop, and one routine that raises never starves the rest (tickguard).
+        """One pass over the spool. Never raises into the scheduler loop, and one routine
+        that raises never starves the rest (tickguard).
         """
         try:
             for slug in triggers.slugs_with_events(self.home):
                 with self.guard.item(slug):
                     await self._service(slug, catalog.get(slug))
-            # report triggers have no spool — the durable inbox file IS the event, so
-            # the watch is a cheap glob on exactly the routines that DECLARE one
-            for slug, info in catalog.items():
-                with self.guard.item(f"{slug} (report trigger)"):
-                    await self._service_report(slug, info)
         except Exception:
             log.exception("trigger tick failed")
-
-    async def _service_report(self, slug: str, info: registry.RoutineInfo) -> None:
-        """Fire a routine whose inbox holds an unconsumed report/message, if it declares
-        a `report` trigger: one fire per cooldown window (everything that lands meanwhile
-        is drained by that one run — coalescing), never while a run is active/queued or
-        the daemon drains, never for a routine that is switched off or RETIRED (a finished
-        routine has no work its inbox can restart). Nothing is consumed here: the
-        fired run's own boot drain empties the inbox, and a crash before the drain just
-        means one more fire after the cooldown — the messages are durable either way.
-        """
-        trig = next((t for t in info.cfg.triggers if t.get("type") == "report"), None)
-        if trig is None or not info.fireable:
-            return
-        # The ONE inbox predicate, FAIL-OPEN (anything unreadable or unrecognised wakes — a
-        # message the daemon cannot classify must never be silently swallowed) and without
-        # CLOSURES (`closes` asks nothing; buying a run to read "no reply needed" is the
-        # amplification the cooldown cannot see). Answers never count: one waits for the
-        # next scheduled run or the operator's "answer & run now" (0.330.0 fired a run per
-        # answer and three routines started in one second). `triggers.describe_triggers`
-        # counts with the same flags, so the page shows exactly what this fires on.
-        if not inbox_mod.has_pending_messages(info.cfg.dir, include_closures=False,
-                                              on_unparseable=True):
-            return
-        if self.runner.draining or self.runner.is_active("routines", slug):
-            return
-        state = triggers.read_state(self.home, slug)
-        raw_per = state.get("triggers")
-        per: dict = raw_per if isinstance(raw_per, dict) else {}
-        tid = str(trig["id"])
-        # `.get(key, default)`, never `or`: a configured 0 means "no wait, fire on every
-        # delivery" and an `or` fallback silently turns that into the 15-minute default.
-        cooldown = int(trig.get("cooldown_s", triggers.DEFAULT_REPORT_COOLDOWN_S))
-        got = per.get(tid)
-        mine: dict = got if isinstance(got, dict) else {}
-        if self._cooling(mine, cooldown):
-            return
-        now = now_iso()
-        today = now[:10]
-        cap = int(trig.get("max_fires_per_day", triggers.DEFAULT_REPORT_MAX_FIRES_PER_DAY))
-        fires_today = int(mine.get("fires_today") or 0) if mine.get("day") == today else 0
-        if cap and fires_today >= cap:
-            # Silence would repeat F276's lesson: a capped trigger is a DARK routine, and
-            # dark must be visible. One event per trigger per day, at the transition.
-            if mine.get("capped_logged") != today:
-                log_health_event(self.home, "trigger_capped", routine=slug, run_id="",
-                                 detail=f"report trigger {tid} hit its {cap}/day cap — "
-                                        "inbox work waits for the next scheduled run")
-                per[tid] = {**mine, "capped_logged": today}
-                state.update(triggers=per)
-                triggers.write_state(self.home, slug, state)
-            return
-        rid = await self.runner.fire(info.cfg, reason="trigger")
-        per[tid] = {"last_fired": now, "events": int(mine.get("events") or 0) + 1,
-                    "day": today, "fires_today": fires_today + 1}
-        state.update(last_fired=now, fires=int(state.get("fires") or 0) + 1, triggers=per)
-        triggers.write_state(self.home, slug, state)
-        if rid:
-            log.info("report trigger fired routine=%s run=%s", slug, rid)
 
     async def _service(self, slug: str, info: registry.RoutineInfo | None) -> None:
         events = triggers.pending_events(self.home, slug)

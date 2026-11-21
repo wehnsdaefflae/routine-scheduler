@@ -64,8 +64,9 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
                                 "decided mid-run DOES reach this one, including `allow_forever` "
                                 "— it is recorded in the config AND folded into this run's "
                                 "overlay — while this config edit does not")),
-    "rules": (NEXT_RUN, ("prose already in the context cannot be unsaid; the /rules picker "
-                         "pushes an ADDED rule to a live run, a config patch does not")),
+    "rules": (NEXT_RUN, ("prose already in the context cannot be unsaid; a conversation's "
+                         "/rules picker pushes an ADDED rule to its live run, a config patch "
+                         "does not")),
     "fs_read_roots": (NEXT_RUN, ("the sandbox roots are computed at boot and passed to every "
                                  "util subprocess; an access-REQUEST decided mid-run does reach "
                                  "the run, a config edit does not")),

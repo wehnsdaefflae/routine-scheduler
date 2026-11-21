@@ -17,13 +17,13 @@ import { act, el, toast } from "/static/util.js";
 // Each kind needs a DIFFERENT credential — spelled out per endpoint so the subscription token
 // and metered API keys don't get confused (they land in different places).
 const KIND = {
-  openai: { title: "OpenAI-compatible API (OpenRouter, Featherless, vLLM, Ollama, …)", keyLabel: "API key",
+  openai: { title: "OpenAI-compatible API (OpenRouter, Featherless, vLLM, …)", keyLabel: "API key",
     subscription: false, hint: "Needs an API key — paste it below, or set its key_var in Secrets. Setup guide: Help → endpoints." },
   anthropic: { title: "Anthropic-compatible Messages API", keyLabel: "API or proxy client key",
     subscription: false, hint: "Direct Anthropic uses a metered API key. A subscription proxy uses its own client key; sign in through the proxy." },
 };
 const KINDS = ["openai", "anthropic"];
-const SCHEMA_MODES = ["json_schema", "json_object", "ollama_native", "none"];
+const SCHEMA_MODES = ["json_schema", "none"];
 
 // The endpoint's fallback context window, or nothing: a blank field is LEFT OUT of the save and
 // the server fills in its own default. Both forms used to send `|| 25000` — a second copy of the
@@ -99,7 +99,7 @@ export async function renderEndpoints(view) {
       line.append(el("span", {}, `process environment ${ks.var}`));
     } else if (ks.keyless_ok) {
       line.append(el("span", { class: "muted" },
-        `none — fine for keyless local backends (Ollama, vLLM); otherwise set ${ks.var || "a key"} in Secrets`));
+        `none — fine for keyless local backends (vLLM); otherwise set ${ks.var || "a key"} in Secrets`));
     } else {
       line.append(el("span", { style: "color:var(--err)" },
         `✗ missing — paste one below${ks.var ? ` or set ${ks.var} in Secrets` : ""}`));

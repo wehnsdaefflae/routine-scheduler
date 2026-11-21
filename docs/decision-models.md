@@ -3,8 +3,8 @@
 A **decision model** answers a typed question with **probabilities over the answers it was
 offered** — never text. Give it some evidence and a question; it returns P(yes) for a yes/no
 question, one probability per option for a choice, or a probability-weighted position on an
-ordered scale for a score. TypeSafe calls the family *System One* and its model **Jev**; OpenAI's
-**Decisions API** (`gpt-6-luna`) is the same idea; SemIf/OpenJev reads the same answer out of an
+ordered scale for a score. TypeSafe calls the family *System One* and its model **Jev**;
+SemIf/OpenJev reads the same answer out of an
 open model's logits, and that is what [local-model-server](https://github.com/wehnsdaefflae/local-model-server)
 runs on predator.
 
@@ -24,7 +24,7 @@ Decision models have their own catalog beside the LLM one, in Settings → **Dec
 ```yaml
 decision_endpoints:
   predator:            # local-model-server on the GPU box
-    protocol: openai
+    protocol: systemone
     base_url: http://192.168.0.246:8790/v1
     key_var: PREDATOR_DECISIONS_TOKEN
     timeout_s: 600     # a dozen photos on a CPU fallback takes minutes
@@ -36,20 +36,17 @@ decision_endpoints:
     protocol: systemone
     base_url: http://172.17.0.1:4000/api/v1
     key_var: OTARI_API_KEY
-  openai:
-    protocol: openai                 # base_url blank → https://api.openai.com/v1
 decision_models:
-  vl8b: {endpoint: predator, model: qwen3-vl-8b-instruct}
+  vl8b: {endpoint: predator, model: qwen3-vl-8b-instruct, multimodal: true}
   jev: {endpoint: openrouter-jev, model: typesafe/jev-1.13}
-  luna: {endpoint: openai, model: gpt-6-luna}
 decision_model: jev            # what a decide call uses when it names none
 decision_media_model: vl8b     # …and when it carries images (blank → decision_model)
 ```
 
-A decision model's `multimodal` defaults to its protocol's (`DECISION_MEDIA_DEFAULT`): on for
-`openai`, off for `systemone`. Both protocols CARRY images; the default only says what the
-protocol's usual model reads — Jev reads none — so a vision model served on `systemone` (through a
-gateway, llama-server or local-model-server) is switched on by its own `multimodal: true`. The
+A decision model's `multimodal` defaults to its protocol's (`DECISION_MEDIA_DEFAULT`): off for
+`systemone`. The protocol CARRIES images; the default only says what its usual model reads — Jev
+reads none — so a vision model served on it (through a gateway, llama-server or
+local-model-server) is switched on by its own `multimodal: true`. The
 loader reports a model bound to a missing endpoint, a default that is not in the catalog, and an
 image default that does not take images (`config/decisionconf.py`). Each model card has a **test** button: one yes/no question with
 an obvious answer, showing latency, P(yes) and usage.
@@ -85,18 +82,18 @@ model in a decision role, a decision model in a chat role, and a text-only model
 decision=<name>` overrides one for a single run. CAPABILITIES marks the defaults THIS routine
 gets, so a run reads its own picture.
 
-## The two protocols
+## The protocol
 
-Every provider speaks one of two wire shapes; one adapter each (`endpoints/decisions_*.py`)
-normalises both to the same answers.
+Every provider speaks one wire shape; its adapter (`endpoints/decisions_systemone.py`)
+normalises it to the engine's answers. OpenAI's Decisions API (`POST {base}/decisions`) had an
+adapter of its own until it was removed: no configured endpoint used it.
 
 | protocol | request | carries | served by |
 |---|---|---|---|
-| `openai` | `POST {base}/decisions` — `input` (text, or user messages of `input_text` + inline `input_image` data URLs) and a `questions` LIST (`predicate` / `choice` with `choices` / `score` with `levels`) | text **and images** | OpenAI (`gpt-6-luna`, public beta 2026-10, $0.10/Mtok input, output free) · local-model-server on predator |
 | `systemone` | `POST {base}/systemone` — `state` (string, object or array), a `questions` MAP (`noul` / `choice` with `criteria` map / `score` with `criteria` levels) and an optional `images` list of `data:image/…;base64,…` URLs (at most 16) | text; **images** where the server reads them | TypeSafe direct (`https://api.typesafe.ai/v1`, `jev-latest`, a TypeSafe key) · OpenRouter (`https://openrouter.ai/api/v1`, `typesafe/jev-1.13` or `~typesafe/jev-latest`, an OpenRouter key) · an Otari gateway (`{gateway}/api/v1`, its key, e.g. `openrouter:typesafe/jev-1.13`) · llama-server and local-model-server, which read the images |
 
 OpenRouter's `/api/alpha/decisions` takes the same Jev shape as `/api/v1/systemone`; the adapter
-uses the latter, which is the same path on both vendors. Both adapters go through the shared
+uses the latter, which is the same path on both vendors. The adapter goes through the shared
 transport helpers — retries on 408/409/429/5xx, the credential ladder (inline key → Secrets →
 env file), auth failures flagged for the UI — and every call is recorded like a chat completion,
 so it shows in the LLM activity dock while it runs. Usage folds into the run's budget; `cost` is
@@ -150,16 +147,14 @@ mmproj (Q8_0)**, read the SemIf way: the prompt is evaluated and the logits at t
 are softmaxed over only the declared answer letters, nothing generated — is served by its own
 repository, [local-model-server](https://github.com/wehnsdaefflae/local-model-server). It runs on
 `ubuntu-predator` as the systemd user unit `local-model-server.service` on port 8790, installed by
-that repository's `install.sh`, and serves the `openai` protocol (`/v1/decisions`) as well as
-`/v1/systemone` and `/v1/chat/completions`. Until 0.483.0 its code lived here as
+that repository's `install.sh`, and serves `/v1/systemone` as well as OpenAI's `/v1/decisions`
+shape and `/v1/chat/completions`. Until 0.483.0 its code lived here as
 `deploy/decision-server/`; how it loads, unloads, shares the GPU with training jobs and batches
 images is documented — and tested — there now.
 
-Configure it like any other decision endpoint: `protocol: openai` (or `systemone`, with
-`multimodal: true` on the model, since that protocol's default is off), `base_url:
-http://192.168.0.246:8790/v1`, and the bearer token the server's install wrote, stored in Secrets
-under the endpoint's `key_var`. Both adapters send a `multimodal` model its images, so the
-image decision model may sit on whichever wire the operator prefers.
+Configure it like any other decision endpoint: `protocol: systemone` with `multimodal: true` on
+the model (that protocol's default is off), `base_url: http://192.168.0.246:8790/v1`, and the
+bearer token the server's install wrote, stored in Secrets under the endpoint's `key_var`.
 
 Measured on predator, 2026-10-07 (RTX 3060 laptop, 6 GB): 12/12 correct on the ground-truth
 shapes (shape, colour, three-sides, edges), ~2.2 s for four questions over one small image,

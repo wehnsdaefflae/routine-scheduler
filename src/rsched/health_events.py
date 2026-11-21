@@ -9,7 +9,8 @@ and it is machine-checked: every event name emitted anywhere in `src/rsched` mus
 (tests/test_health_events.py walks the call sites). It lived in this docstring until 2026-11-09,
 when this file reached the size bar and the next event could not be documented anywhere. A reader
 keyed on the documented list — the audit recipe, the `health-events` util's filters — sees
-nothing of an event added without a line there: `trigger_capped` went unread for weeks that way.
+nothing of an event added without a line there: `prompt_oversize_shrunk` went unread for weeks
+that way.
 
 Two of these events report a STANDING CONDITION rather than an incident — `cost_trend_degraded`
 and `cache_read_degraded`, both read at RUN END — and a run end is not a run: a resumed run

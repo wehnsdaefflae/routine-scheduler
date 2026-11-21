@@ -86,8 +86,6 @@ def _sections(registry) -> dict[str, str]:
 @pytest.mark.parametrize(("mode", "carries"), [
     (None, True),              # the anthropic wire: always a tool's input_schema
     ("json_schema", True),     # strict response_format
-    ("ollama_native", True),   # Ollama's `format` — real constrained decoding
-    ("json_object", False),    # "any JSON": no schema is sent at all
     ("none", False),           # nothing requested
 ])
 def test_which_wires_carry_the_schema_prose(mode, carries):
@@ -135,7 +133,6 @@ class _Loop:
     ({"_schema_is_index": True}, "json_schema", False),   # the wire states it
     ({"_schema_is_index": True}, None, False),            # anthropic: a tool's input_schema
     ({"_schema_is_index": True}, "none", True),            # nothing states it
-    ({"_schema_is_index": True}, "json_object", True),     # no schema is sent
     ({"_schema_is_index": True, "_schema_off": True}, "json_schema", True),
     ({"_schema_is_index": True, "_shed_schema_turns": 1}, "json_schema", True),
     ({"_schema_is_index": False}, "none", False),          # the prompt already carries it

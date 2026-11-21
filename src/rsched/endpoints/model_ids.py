@@ -22,7 +22,7 @@ NOT_A_LISTING = "The endpoint answered, but not with a model listing."
 
 def _headers(ep) -> dict:
     """Both spellings of the credential an OpenAI- or Messages-shaped gateway accepts; empty
-    for a keyless local backend (Ollama, vLLM).
+    for a keyless local backend (vLLM).
     """
     try:
         key = resolve_api_key(name=ep.name, api_key=ep.api_key, key_var=ep.key_var,
@@ -69,6 +69,6 @@ def list_ids(ep) -> dict:
         return {"ok": False, "error": NOT_CONFIGURED}
     provider = catalogs.provider_of(ep)
     if provider in ("openrouter", "nanogpt"):
-        _limits, ids = catalogs.read(provider, ep, [])
+        _limits, ids = catalogs.read(provider, ep)
         return _answer(ids) if ids is not None else {"ok": False, "error": UNREACHABLE}
     return _from_gateway(ep)

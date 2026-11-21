@@ -131,8 +131,8 @@ Long form: `docs/contracts.md` § Core contracts.
   `notes/` is the lighter coordination channel, not a ledger
 - `create_routine` / `manage_lane` are conversation-INITIATED: without a user they queue a
   PROPOSAL (`.control/pending-creations/`), judged against the live vocabulary in the queue writer
-  (`pendingvocab.problem`). `replaces:` makes a replacement candidate; `revises: true` proposes
-  another routine's recipe revision (D198). No run writes `routine.yaml`
+  (`pendingvocab.problem`). `revises: true` proposes another routine's recipe revision (D198),
+  always as one operator card. No run writes `routine.yaml`
 - `ask_user` asks one or a batch; every record is `blocking` or `closing` (`engine/askclass.py`),
   orthogonal to `mode`; closing asks ride the finish. Access requests settle allow/deny ×
   now/forever; forever-decisions are written by the WEB, never the engine
@@ -167,7 +167,7 @@ Each is enforced somewhere — a test, the engine, or a past incident. Long form
   opens its sentence), deleted after convergence; `test_policy` warns 21 days ahead and fails
   after. A back-compat alias table declares an expiry too
 - **Documentation is swept, not patched**: CLAUDE.md, `docs/`, `static/views/help.js`, README and
-  docstrings (pdoc renders them on the Help tab)
+  docstrings
 - **Quality gates run on the FULL repo**: ruff, mypy, vulture (`tests/test_quality.py`) and the
   ≤350-line ratchet (`tests/test_file_size.py`; `--update` after a shrink, never to raise)
 - **A recipe says WHAT, never which tool**; **a contract names only the task**
@@ -255,7 +255,7 @@ revision, with a matching `## [x.y.z]` CHANGELOG.md header in the same commit (`
 ## Deploy
 
 Docker (`docker compose up -d`, every compose command bare from the checkout root — `.env` holds the
-file set and profiles) or `deploy/install.sh`. Every data home is a bind mount, written as
+file set and profiles). Every data home is a bind mount, written as
 `RSCHED_UID`; `deploy/state-paths.sh` is the one inventory `bundle.sh` and `backup.sh` read.
 **`docker compose up -d` never reloads code**: drop the restart sentinel
 `~/routines/.control/restart.request` (the daemon exits at the next quiet gap, never killing a

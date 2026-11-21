@@ -286,8 +286,8 @@ its length follows the homes' file count (~270k on the reference host) — 49 mi
 10-24. `daemon/backup_watch.ATTEMPT_BOUND_HOURS` must equal it (a test holds them together). The
 structural cure is rsync speaking to an rsync on the NAS over ssh, where a hard link is a local
 call there; that needs a key the host user may use on the NAS, which this host does not have.
-They are NOT installed by `deploy/install.sh`, deliberately: the backup root is host-specific,
-and a default install has nowhere correct to point. **Link them, never copy them.** The service
+They are NOT installed by anything in this repository, deliberately: the backup root is
+host-specific, and a default install has nowhere correct to point. **Link them, never copy them.** The service
 runs the checkout's `backup.sh`, so a script change reaches the next firing by itself — and a
 copied unit does not: the reference host's copy predated 0.374.3's `OnFailure=`, so the failure
 push below never existed there and six failed nights (2026-10-24 → 10-29) sent nothing. A
@@ -323,8 +323,7 @@ happened to read the journal.
 systemctl --user start rsched-backup-failed.service   # prove the push path once, on purpose
 ```
 
-Needs `loginctl enable-linger <user>` (which `install.sh` already does) or the timer only runs
-while someone is logged in. Point it elsewhere with a drop-in — `systemctl --user edit
+Needs `loginctl enable-linger <user>` or the timer only runs while someone is logged in. Point it elsewhere with a drop-in — `systemctl --user edit
 rsched-backup.service`, then `Environment=RSCHED_MIRROR=…` — rather than editing the tracked unit.
 
 ## 3. On the server (192.168.0.128)
@@ -338,6 +337,8 @@ sudo useradd -m -u 1000 mark 2>/dev/null || true               # match the bundl
 mkdir -p /home/mark && tar xzf ~/rsched-migration-*.tgz -C /home/mark
 cd /home/mark/git-repos/routine-scheduler
 docker compose up -d --build                                   # builds the image, starts on :8321
+# a library repo that predates its auto-push hook gets the one hook source by hand:
+install -m 0755 deploy/post-commit ~/.local/share/routine-scheduler-libraries/.git/hooks/post-commit
 ```
 
 Then browse to **http://192.168.0.128:8321** (token is in the migrated `config.yaml`). The

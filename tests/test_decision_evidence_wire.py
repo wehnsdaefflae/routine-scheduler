@@ -1,5 +1,5 @@
-"""What a decision protocol puts in its evidence field, for every shape of evidence — BOTH of
-them, because the refusal these tests pin is the gateway's and not one wire shape's.
+"""What a decision protocol puts in its evidence field, for every shape of evidence — the
+refusal these tests pin is the gateway's and not one wire shape's.
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ from rsched.endpoints.decisions import (
     evidence_text,
     make_decision_endpoint,
 )
-from rsched.endpoints.decisions_openai import OpenAIDecisions
 from rsched.endpoints.decisions_systemone import SystemOneDecisions
 
 PLAIN = [
@@ -74,25 +73,6 @@ def _questions() -> list[DecisionQuestion]:
                              options=[DecisionOption("a", "us"), DecisionOption("b", "them")])]
 
 
-def _adapter() -> OpenAIDecisions:
-    return OpenAIDecisions(DecisionEndpointConfig(name="probe", protocol="openai",
-                                                  base_url="http://example.invalid"))
-
-
-def test_the_request_body_carries_the_announced_evidence_as_input() -> None:
-    body = _adapter().body({"id": "R3368"}, [], _questions(), "gpt-6-luna")
-    assert isinstance(body["input"], str)
-    assert body["input"].startswith(EVIDENCE_HEADER)
-    assert [q["name"] for q in body["questions"]] == ["answer", "owner"]
-
-
-def test_a_text_only_body_sends_the_string_form_and_no_image_parts() -> None:
-    """The dict branch must not turn a text call into the multimodal list form: that shape is
-    for images, and sending it without any would change the request for every text caller."""
-    body = _adapter().body({"id": "R3368"}, [], _questions(), "gpt-6-luna")
-    assert isinstance(body["input"], str), "a text-only call stays in the string form"
-
-
 def _systemone() -> SystemOneDecisions:
     return SystemOneDecisions(DecisionEndpointConfig(name="probe", protocol="systemone",
                                                      base_url="http://example.invalid"))
@@ -108,10 +88,10 @@ def test_systemone_announces_its_state_rather_than_sending_a_raw_object() -> Non
 
 
 def test_every_protocol_announces_structured_evidence() -> None:
-    """A pin on ONE adapter cannot speak for the other: 0.535.2 announced in `openai` alone and
-    fixed nothing live, because no model on this instance speaks it. Driven off the adapter
-    table, so a protocol added later is held to the same rule."""
-    fields = {"openai": "input", "systemone": "state"}
+    """A pin on ONE adapter cannot speak for another: 0.535.2 announced in a protocol no model on
+    this instance spoke and fixed nothing live. Driven off the adapter table, so a protocol
+    added later is held to the same rule."""
+    fields = {"systemone": "state"}
     assert set(fields) == set(DEFAULT_BASE_URLS), "a new protocol needs its field named here"
     for protocol, field in fields.items():
         cfg = DecisionEndpointConfig(name="probe", protocol=protocol,

@@ -155,7 +155,7 @@ def test_a_stamp_is_never_moved_by_a_later_pass(tmp_path):
 
 
 def test_only_item_ids_reach_the_store(tmp_path):
-    """`priorities.ITEM_ID_RE` is the one definition of an item id, and this store uses it:
+    """`item_records.ITEM_ID_RE` is the one definition of an item id, and this store uses it:
     anything else is filtered out rather than stored as a junk key. A run SUMMARY's id is a
     RUN id (`<slug>:<ts>`) by design, and the serve path passes the whole index — so dropping
     a non-item id silently is the correct behaviour here, not a refusal."""

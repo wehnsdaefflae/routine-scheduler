@@ -162,9 +162,7 @@ changed field updates the draft instead. Tell the user it exists and that its pa
 specific to it as changes awaiting their accept. This is the ONLY way a routine is created. \
 WITHOUT a user in the loop (a scheduled run) the same call QUEUES a proposal on the Decisions \
 page instead — one call, then carry on; your next run learns from your inbox whether the user \
-approved it. With `replaces: <slug>` (the routine-rebuild permission) it creates a REPLACEMENT \
-CANDIDATE at once instead, and files the one swap decision: then write the candidate's recipe \
-and prove it beside the old routine."""),
+approved it."""),
     (("manage_lane",), """- manage_lane: manage routine LANES (ordered sets that fire \
 back-to-back on one clock) from THIS conversation. The chain fires ONCE, every member in \
 order; a routine belongs to at most one lane. A flow with an inbound and an outbound end \

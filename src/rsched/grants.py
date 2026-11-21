@@ -29,7 +29,6 @@ demand):
       rule_confirm: always | creations | never  # write_rule approval level
       remind_confirm: always | creations | never  # GLOBAL consequence-reminder approval
       config_confirm: always | own_fields | never  # its OWN config-patch autonomy (D191)
-      revise_confirm: always | invited  # who may revise ITS recipe (D198, rsched/revisedial.py)
       runs: last | all                 # previous-run read depth — a SETTING, no doc needed
       reminders: none | local | global # consequence-reminder stores — a SETTING too
       jobs: off | on                  # the routine keeps JOBS (rsched/jobs.py) — a SETTING
@@ -58,7 +57,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import configdial, jobs_compat, revisedial
+from . import configdial, jobs_compat
 from .engine.actionschema import KINDS
 from .ids import is_slug
 from .jobs import LEVELS as JOB_LEVELS
@@ -72,12 +71,11 @@ from .reminders import LEVELS as REMINDER_LEVELS
 # gated but no permission grants it: it is STRUCTURAL, added to a root conversation's policy
 # at setup (engine/loopsetup.build_base_policy) and to nothing else.
 GATED_KINDS = ("write_util", "revise_util", "remove_util", "write_rule", "write_recipe",
-               "detach", "schedule_run", "shell", "rebuild_routine")
+               "detach", "schedule_run", "shell")
 # `write_recipe` is a capability TOKEN too: the model emits write_file / edit_file and the
 # engine decides from the PATH whether it is this routine's recipe (grantpolicy.is_recipe_path).
 # Before 0.261.0 it unlocked as a SIDE EFFECT of a write root covering the routine's own dir; now
-# it is a switch thrown on purpose. So is `rebuild_routine`: create_routine with `replaces`
-# writes a NEW routine's config (engine/candidate.py) only for a routine holding it.
+# it is a switch thrown on purpose.
 # `revise_util` is a CAPABILITY token, NOT an action kind: the model always emits
 # kind=write_util, and the engine decides create-vs-revise from whether the target slug
 # already exists in the library (see GrantPolicy.deny). Keeping it out of the action schema
@@ -93,7 +91,7 @@ CAPABILITY_ACTIONS = tuple(k for k in GATED_KINDS if k != "detach")
 _DEFAULT_KIND_SOURCE = {"write_util": "util-authoring", "revise_util": "util-authoring",
                         "write_recipe": "recipe-authoring", "remove_util": "util-removal",
                         "write_rule": "rule-authoring", "schedule_run": "scheduling",
-                        "shell": "shell", "rebuild_routine": "routine-rebuild"}
+                        "shell": "shell"}
 # The approval ladders, least → most permissive. `confirm` (write_util), `rule_confirm`
 # (write_rule) and `remind_confirm` (a GLOBAL consequence reminder) share one: "always" (user
 # approves create AND revise), "creations" (revisions autonomous once the selftest passes; NEW
@@ -101,10 +99,10 @@ _DEFAULT_KIND_SOURCE = {"write_util": "util-authoring", "revise_util": "util-aut
 # next run and a global reminder starts HOLDING actions in routines that never asked for it, so
 # collapsing them would make a never-confirm util policy silently authorize the others.
 CONFIRM_LEVELS = ("always", "creations", "never")
-# Dial → the ladder IT accepts. `config_confirm` (D191, `configdial`) and `revise_confirm`
-# (D198, `revisedial`) each carry their OWN ladder, not a create-vs-revise rung.
+# Dial → the ladder IT accepts. `config_confirm` (D191, `configdial`) carries its OWN ladder,
+# not a create-vs-revise rung.
 APPROVAL_DIALS = {**dict.fromkeys(("confirm", "rule_confirm", "remind_confirm"), CONFIRM_LEVELS),
-                  configdial.DIAL: configdial.LEVELS, revisedial.DIAL: revisedial.LEVELS}
+                  configdial.DIAL: configdial.LEVELS}
 # runs: access to previous runs. `last` is every routine's floor (D96); `all` is the setting a
 # longitudinal routine (self-audit, rules-review) is given. `none` exists for CHILD runs only,
 # which read their brief rather than the archive (loopsetup).

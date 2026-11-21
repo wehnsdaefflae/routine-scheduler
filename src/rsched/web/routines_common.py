@@ -200,7 +200,7 @@ def write_routine_config(request: Request, info: registry.RoutineInfo, raw: dict
     half of it reaches it. Returns whether a live run was told, which the caller reports as
     `told_live_run`.
 
-    Before this, `PUT /permissions` committed and did neither of the last two — so unticking
+    Before this, a permissions save committed and did neither of the last two — so unticking
     a conduct doc mid-run finished under the old docs in silence, on a page where every other
     save says `told_live_run`. `fields` is the applied-field list (R102). `values` carries
     what the LIVE-classified half of those fields now holds (`configflow.CLASSIFICATION`); it

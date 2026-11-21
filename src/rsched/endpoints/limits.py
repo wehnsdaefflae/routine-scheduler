@@ -177,7 +177,7 @@ class _Refresh:
     def endpoint(self, ep_name: str, ep, model_ids: list[str]) -> None:
         provider = catalogs.provider_of(ep)
         try:
-            table, served = catalogs.read(provider, ep, model_ids)
+            table, served = catalogs.read(provider, ep)
         except Exception as exc:
             log.warning("limits: %s discovery failed: %s", ep_name, exc)
             table, served = {}, None

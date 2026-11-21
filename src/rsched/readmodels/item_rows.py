@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from ..priorities import SELF_AUDIT_SLUG
+from ..item_records import SELF_AUDIT_SLUG
 from .item_reports import refs
 
 #: The status vocabulary. `unknown` is the absence of a recorded status, not a state an

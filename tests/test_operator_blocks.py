@@ -44,9 +44,9 @@ def test_the_loud_run_measurements_are_not_operator_blocks():
 
 def test_what_clears_itself_is_not_his_to_clear():
     """Each of these names its own clearing in its own vocabulary line: the next fire, the
-    next tick, the daily cap reset, the cooldown lapsing, a later commit, a routine's own run.
+    next tick, the cooldown lapsing, a later commit, a routine's own run.
     """
-    for name in ("fire_refused", "scheduler_tick_error", "trigger_capped",
+    for name in ("fire_refused", "scheduler_tick_error",
                  "model_chain_exhausted", "commit_failed", "obligation_overdue",
                  "item_dropped_live", "migration_expired"):
         assert not operator_blocks.is_operator_block(name), name
