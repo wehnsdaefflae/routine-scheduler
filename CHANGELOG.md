@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.570.0] — 2026-11-21
+
+### Fixed
+- **An operator answer to a report-born question now reaches the reports ledger — routed or
+  not.** `web/api_questions._relay_report_answer` told the report's TARGET what was decided
+  (F621) and told the ledger nothing, returning early when there was no target at all. So an
+  UNROUTED report — one waiting in triage for a routine to pick it up — kept reading as
+  undecided work, and the one fact that decides its disposition reached no reader of reports.
+  Measured: R3630 was answered "Both" on 2026-11-20 at 11:58 and
+  `gu rsched reports --triage --status open` still listed it as unanswered the next day,
+  whereupon the triaging run forwarded it offering three options the operator had already
+  chosen between (corrected in R3639 the same run). The answer is now a ledger `answered`
+  event, deliberately NOT terminal (`reportproj.TERMINAL_EVENTS`): a decided report is not a
+  disposed-of one — unrouted work still needs an owner, routed work still needs building — so
+  the row stays on the open front and now says what was decided. The relay moved to the new
+  `web/report_answers`, which also brought `api_questions.py` from 392 lines to 373 and
+  tightened its size-ratchet ceiling.
+
 ## [0.569.0] — 2026-11-21
 
 ### Fixed
