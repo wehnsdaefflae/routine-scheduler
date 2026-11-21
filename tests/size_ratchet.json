@@ -32,7 +32,7 @@
     "static/views/library.js": 564,
     "static/views/messages.js": 363,
     "static/views/questions.js": 448,
-    "static/views/run.js": 583,
+    "static/views/run.js": 578,
     "tests/conftest.py": 616,
     "tests/test_actions.py": 376,
     "tests/test_api.py": 2889,

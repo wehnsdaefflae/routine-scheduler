@@ -15,6 +15,7 @@ from .. import registry
 from ..engine.transcript import read_events
 from ..ids import is_slug, parse_run_id
 from ..paths import read_json
+from ..readmodels import attention as attention_rm
 from ..readmodels import ladder as ladder_rm
 from ..registry import TERMINAL_STATES
 from .streams import serve, traced_run_stream
@@ -128,6 +129,13 @@ def run_detail(request: Request, run_id: str) -> dict:
     # ladder fired is the one that most needs saying so: a reader otherwise sees turns spent and
     # a redirected worker with nothing naming the supervisor that did it.
     ladder = ladder_rm.ladder_state(run_dir, turn=info.turn or 0)
+    # D289: the seven classes of thing that might need the operator's intervention, in HIS
+    # order (a)…(g) — the labelled block the run page leads its finish banner with. Folded
+    # through the many-runs read model so this route and the routine cards share one stream
+    # read and one memo; an empty list renders no block at all, so a run with nothing for him
+    # reads exactly as before (`readmodels/attention.py`).
+    attention = attention_rm.attention_for_runs(server.routines_home, [run_dir]).get(
+        str(run_dir), [])
     return {"run_id": info.run_id, "routine": slug, "ts": info.ts, "state": info.state,
             "turn": info.turn, "usage": info.usage, "elapsed_s": info.elapsed_s,
             "question": info.question, "model": model, "deliberation": deliberation or "",
@@ -135,7 +143,7 @@ def run_detail(request: Request, run_id: str) -> dict:
             "home": home, "accounting": accounting if isinstance(accounting, list) else [],
             "brief": brief or "", "goals": goals if isinstance(goals, list) else [],
             "prompt_segments": segments if isinstance(segments, dict) else {},
-            "ladder": ladder}
+            "ladder": ladder, "attention": attention}
 
 
 @router.get("/runs/{run_id}/transcript")
