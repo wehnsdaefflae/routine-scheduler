@@ -195,6 +195,7 @@ ignore = [
 "src/rsched/cli_runctl.py" = ["T201"]  # the same surface: abort and drain report to the operator
 "src/rsched/cli_validate.py" = ["T201"]  # the same surface: validate's findings ARE its output
 "src/rsched/cli_postdeploy.py" = ["T201"]  # the same surface: the post-deploy checklist IS its output
+"src/rsched/cli_census.py" = ["T201"]  # the same surface: the census IS its output
 # The browser sidecar's auth proxy runs INSIDE the chrome image, which has no rsched install
 # and no logging config — stderr is its only output surface, and it is executed as a script.
 "deploy/browser-auth-proxy.py" = ["T201", "INP001"]

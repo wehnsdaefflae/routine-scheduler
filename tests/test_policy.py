@@ -1,5 +1,6 @@
 """Machine-checked repo policies — conventions that broke silently once are tests now."""
 
+import ast
 import itertools
 import re
 import warnings
@@ -234,3 +235,36 @@ def test_designs_md_holds_orders_never_open_questions():
     asked = [h for h in re.findall(r"^## (.+)$", text, flags=re.MULTILINE)
              if re.match(r"(?i)(decide|question|open question|undecided)\b", h)]
     assert not asked, f"open questions parked in docs/designs.md (ask them as D rows): {asked}"
+
+
+#: The writing standard (CLAUDE.md Standards): the bounds a narrating author outgrows first.
+CHANGELOG_ENTRY_MAX, CHANGELOG_BOUNDED_FROM, CLAUDE_MD_MAX = 40, (0, 574, 0), 300
+
+
+def test_test_docstrings_are_one_paragraph():
+    """A test docstring says what is pinned and why in one paragraph; the story is the commit's."""
+    found = []
+    for path in sorted((REPO / "tests").rglob("test_*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        nodes = [tree, *(n for n in ast.walk(tree)
+                         if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+                         and n.name.startswith("test_"))]
+        found += [f"{path.relative_to(REPO)}::{getattr(n, 'name', '<module>')}" for n in nodes
+                  if "\n\n" in (ast.get_docstring(n) or "").strip()]
+    assert not found, f"multi-paragraph test docstrings: {found}"
+
+
+def test_changelog_entries_stay_short():
+    """Every release entry from 0.574.0 on is at most 40 lines under its header."""
+    changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+    entries = re.split(r"^## \[(\d+)\.(\d+)\.(\d+)\][^\n]*$", changelog, flags=re.MULTILINE)[1:]
+    long_ = [f"{'.'.join(v)}: {n} lines" for *v, body in itertools.batched(entries, 4)
+             if tuple(map(int, v)) >= CHANGELOG_BOUNDED_FROM
+             and (n := len(body.strip("\n").splitlines())) > CHANGELOG_ENTRY_MAX]
+    assert not long_, f"CHANGELOG entries over {CHANGELOG_ENTRY_MAX} lines: {long_}"
+
+
+def test_claude_md_stays_the_working_tier():
+    """CLAUDE.md holds one line per contract; the long form is docs/contracts.md."""
+    lines = len((REPO / "CLAUDE.md").read_text(encoding="utf-8").splitlines())
+    assert lines <= CLAUDE_MD_MAX, f"CLAUDE.md is {lines} lines (max {CLAUDE_MD_MAX})"

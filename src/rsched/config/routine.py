@@ -272,6 +272,11 @@ class RoutineConfig(_Config):
 
 
 SCHEDULE_KEYS = frozenset({"cron", "tz"})
+#: Every top-level routine.yaml key: an aliased field loads from its CONTAINER key
+#: (schedule.cron, workflow.library_slug, playbook.slug, retention.keep_runs).
+TOP_KEYS = frozenset((set(RoutineConfig.model_fields) - {
+    "cron", "tz", "workflow_slug", "workflow_commit", "playbook_slug", "keep_runs"})
+    | {"schedule", "workflow", "playbook", "retention"})
 _RETIRED_SCHEDULE_KEYS = {
     "disabled": "a routine is switched off by the top-level `enabled: false`",
     "catchup": "catch-up was removed (D237): a missed fire is skipped, whatever the cause",
@@ -320,15 +325,9 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     if not isinstance(raw.get("schedule") or {}, dict):
         problems.append("schedule: expected a mapping")
 
-    # aliased fields load from their CONTAINER key (schedule.cron, workflow.library_slug,
-    # playbook.slug). Any other top-level key is a typo whose real field silently reverted to
-    # defaults (a misspelled `permisions:` = a permission reset with zero problems reported).
-    aliased = {"cron", "tz", "workflow_slug", "workflow_commit",
-               "playbook_slug", "keep_runs"}
-    known = (set(RoutineConfig.model_fields) - aliased) | {"schedule", "workflow",
-                                                           "playbook", "retention"}
+    # Any other top-level key is a typo whose real field silently reverted to its default.
     problems.extend(f"{key}: unknown routine.yaml key — check the spelling (ignored)"
-                    for key in sorted(set(raw) - known))
+                    for key in sorted(set(raw) - TOP_KEYS))
     # The same check one level down: `schedule:` holds exactly the two keys its aliased fields
     # read. A stray one is read by nothing, and a RETIRED one says what replaced it (D237).
     schedule_raw = raw.get("schedule")

@@ -1053,6 +1053,20 @@ answered for the moment it was first computed until the next append. Stamps are 
 instants, never as text — `now_iso` writes the host's local time with its offset, so a string
 compare against a UTC cutoff moved the window's edge by that offset.
 
+## Disuse: `rsched census`
+
+Every measurement above asks whether a feature works; none asks whether anything USES it.
+`rsched census [--days 60] [--json]` (`src/rsched/cli_census.py`, read-only) reads the retained
+transcripts of every routine and conversation, every `routine.yaml` and the health stream, and
+reports per name a count and the number of distinct routines or conversations: action kinds
+landed, side fields used, top-level config keys, `capabilities` values, health events written.
+Each known vocabulary — `actionschema.KINDS`, `actions.SIDE_FIELDS`, `config.routine.TOP_KEYS`,
+`health_vocab.EVENTS` — also gets its explicit **never used** list for the window.
+
+Run it before adding to a feature: building onto something nothing exercises is how unused
+machinery accretes. A feature at zero for 60 days is a removal candidate for the operator to
+decide — the census reports it, it never removes anything.
+
 ## Who reads the flags
 
 A routine's development view (the health banner and the one-click revert, with the production

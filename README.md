@@ -256,7 +256,8 @@ required, so the child can never adopt a config nobody pointed it at, plus `--mo
 trial's run), `validate`,
 `lint`, `suggest`, `scaffold`, `abort`, `drain` and `postdeploy` (the two that BRACKET a deploy),
 and `reports --wrongly-settled` (read the report ledger: the rows a non-owner disposed of before
-D182 closed that gate — a READ, so no row re-opens).
+D182 closed that gate — a READ, so no row re-opens) and `census` (what the instance uses and
+never uses of its action kinds, side fields, config keys and health events — read-only).
 
 ## Development
 
@@ -274,6 +275,9 @@ adds live endpoint smoke tests). Quality gates are strict and enforced:
   `tests/size_ratchet.json`) may only shrink. After splitting one, `python
   tests/test_file_size.py --update` lowers the ceilings — it refuses to raise one, so the
   baseline can only ever get stricter.
+- `uv run pytest tests/test_prose_history.py` — the same ratchet over HISTORY in `src/` prose
+  (dates, run ids, version narration in docstrings and comments; `tests/prose_history.json`):
+  history belongs in the commit message and CHANGELOG, so a file's count may only go down.
 - `uv run pre-commit install` once — both gates then run on every commit.
 - `uv run pytest --cov` — coverage report (branch coverage on; `fail_under` is a ratchet
   nothing runs today — re-measure it before wiring any gate to the number).
