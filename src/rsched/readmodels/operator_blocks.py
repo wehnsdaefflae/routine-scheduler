@@ -27,6 +27,8 @@ IN — nothing inside the system can clear these:
     membership is corrected, and lane membership is his.
   - `answer_undelivered` — an answer he gave that no run will ever read. Only he can hand it
     to a run or settle it (the Decisions page's deliver / settle).
+  - `endpoint_needs_reauth` — a subscription login behind the model gateway is dead. Signing it
+    back in is a consent page in HIS browser; no run, watcher or retry can do it.
 
 A row counts ONLY WHILE ITS CONDITION STILL HOLDS (2026-11-09): `annotate` asks a
 `still_holds(event, subject)` reader (`web/operator_conditions`) and a row whose condition is
@@ -81,6 +83,9 @@ OPERATOR_CLEARABLE: dict[str, str] = {
                                  "every fire of that chain skips it — correct the membership",
     "answer_undelivered": "you answered a decision that no run will ever read — deliver it or "
                           "settle it on the Decisions page",
+    "endpoint_needs_reauth": "a subscription login is dead and every run routed to it fails at "
+                             "turn 0 — sign it back in on Settings → Endpoints (the proxy "
+                             "management card's re-authenticate)",
 }
 
 #: event -> what is true once its condition is over, for a `resolved` row's line on the panel.
@@ -91,6 +96,7 @@ RESOLVED: dict[str, str] = {
                         "(D237)",
     "lane_chain_member_skipped": "no lane names that slug any more, or it is a routine again",
     "answer_undelivered": "the answer has been read by a run, or settled",
+    "endpoint_needs_reauth": "no subscription login behind the gateway reads dead any more",
     "obligation_overdue": "the routine holds no obligation past the overdue line any more — "
                           "met, dropped, or now waiting on someone named",
     "process_overhead_high": "its runs under the current recipe read under the fleet bar",

@@ -52,9 +52,10 @@ DELETE_FIELD = {
 }
 STALE_AFTER_FIELD = {
     "type": "string",
-    "description": "memory_write: OPTIONAL — the date (YYYY-MM-DD) after which this note should "
-                   "not be trusted unchecked (a price, a roster, a page's shape). Past it the "
-                   "digest lists it under its own heading instead of among the notes to consult",
+    "description": "memory_write: set it when the note states what will date (a price, a "
+                   "deadline, a version, someone's availability) — the date (YYYY-MM-DD) after "
+                   "which it is not to be trusted unchecked. Past it the digest lists it under "
+                   "its own heading, not among the notes to consult",
 }
 VERIFIED_FIELD = {
     "type": "object", "additionalProperties": False,

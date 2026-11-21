@@ -383,41 +383,38 @@ ACTION_SCHEMA: dict = {
                      "description": "ask_user: the question, self-contained (simple Markdown "
                                     "renders in the UI) · decide: what to decide, phrased as "
                                     "the question the options answer"},
-        # shared by two kinds: one property cannot carry two enums (childfields)
-        "mode": MODE_FIELD_SHARED,
+        "mode": MODE_FIELD_SHARED,   # two kinds' enums cannot share one property (childfields)
         "options": {
             "type": "array", "items": {"type": "string"}, "maxItems": 26,
             "description": "ask_user: optional pick-one choices (at most 5) · decide: the "
                            "answers to choose between, or a score's levels LOWEST first — "
                            "each 'value: what it means' (the value is what the answer names) · "
                            "report: OPTIONAL — the choices that make this report a DECISION "
-                           "FOR THE USER as well as work for its target (at most 5). Naming "
-                           "them puts the report on his Decisions page as an open question "
-                           "from YOU, counted on your routine card, and his answer lands in "
-                           "YOUR inbox for your next run — use it when you are blocked on a "
-                           "call only he can make, instead of parking the question in a "
-                           "report nobody sees",
+                           "FOR THE USER as well as work for its target (at most 5): an open "
+                           "question from YOU on his Decisions page, answered into YOUR inbox "
+                           "for your next run",
         },
         "default": {
             "type": "string",
-            "description": "ask_user: what you will DO without an answer — a blocking question "
-                           "that times out continues on this stated default; shown to the user "
-                           "with the question",
+            "description": "ask_user: what you will DO without an answer — a timed-out "
+                           "blocking question continues on it; shown to the user with the "
+                           "question",
         },
         "config_patch": {
             "type": "object",
             "description": "ask_user: OPTIONAL — a proposed CONFIG change the user can one-click "
-                           "apply from the Decisions page (a run can never edit its own "
-                           'config): {"budgets": {"max_turns": 100}} or {"schedule": '
-                           '{"friendly": {"frequency": "hourly", "minute": 0}}} — the PATCH '
-                           "/routines body, for a schedule / budget / model / permission / "
-                           "fs-roots change the run cannot make itself. For ANOTHER routine: "
+                           'apply from the Decisions page: {"budgets": {"max_turns": 100}} or '
+                           '{"schedule": {"friendly": {"frequency": "hourly", "minute": 0}}} — '
+                           "the PATCH /routines body, for a schedule / budget / model / "
+                           "permission / fs-roots change the run cannot make itself. For ANOTHER "
+                           "routine: "
                            '{"routine": "suedlink-wlf", "budgets": {"max_turns": 120}} — the '
                            "apply patches that routine, not you, and an uninstalled slug is "
                            'refused this turn. For the INSTANCE: {"server": {"decision_model": '
                            '"jev"}} — its own field list; the catalogs and auth fields are not.',
         },
         "blocks_work": schema_questions.BLOCKS_WORK_FIELD,   # D212: the record's CLASS claim
+        "proof": schema_questions.PROOF_FIELD,               # D220: what shows it landed
         "request": {
             "type": "string",
             "description": "ask_user: OPTIONAL — a typed ACCESS REQUEST, one grant-entity id "

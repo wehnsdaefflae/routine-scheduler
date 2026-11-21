@@ -21,6 +21,7 @@ from pathlib import Path
 from ..ids import question_id
 from . import (
     askback,
+    askproof,
     askprose,
     autoask,
     availability,
@@ -185,6 +186,9 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
         qtype, subject = "request", " ".join(sorted(req_ids))
     question, default = askprose.normalize_plain(qtype, question, default)
     blocks = bool(action.get("blocks_work"))   # D212: the run's own CLASS claim (askclass)
+    # D220: per option, what shows its answer landed — shape checked by askfields already
+    proof = action.get("proof") if isinstance(action.get("proof"), dict) else None
+    proof_note = {"proof_note": note} if (note := askproof.note(proof)) else {}
     if ctx.depth > 0:
         # a child has no page of its own, so the record names who is asking
         question = f"[child task #{ctx.sub_n} {ctx.sub_label!r}] {question}"
@@ -201,7 +205,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
         """
         inbox.file_question(qdir, qid, question, options, ctx.run_ts, qtype=qtype,
                             default=default, config_patch=cpatch, config_target=ctarget,
-                            request=req_ids, batch=batch, blocks_work=blocks)
+                            request=req_ids, batch=batch, blocks_work=blocks, proof=proof)
         if churn:
             ctx.asks_deferred += 1
 
@@ -214,7 +218,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
             return {"kind": "ask_user", "qid": qid, "mode": mode, **taken}
         leave_open()
         askback.supersede(loop, qdir, (qtype, subject))
-        return {"kind": "ask_user", "qid": qid, "mode": mode,
+        return {"kind": "ask_user", "qid": qid, "mode": mode, **proof_note,
                 **({"request": req_ids} if req_ids else {}),
                 **({"config_not_applied": why} if why else {})}
 
@@ -226,7 +230,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
     inbox.file_question(qdir, qid, question, options, ctx.run_ts,
                         mode="blocking", qtype=qtype, default=default, expires=expires,
                         config_patch=cpatch, config_target=ctarget,
-                        request=req_ids, batch=batch, blocks_work=blocks)
+                        request=req_ids, batch=batch, blocks_work=blocks, proof=proof)
     askback.supersede(loop, qdir, (qtype, subject))
     ctx.write_status("waiting_user",
                      question={"qid": qid, "question": question, "options": options,
@@ -249,7 +253,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
         # timeout: on the stated default, the record staying open as deferred.
         leave_open()
         return {"kind": "ask_user", "qid": qid, "mode": mode, "deferred_by_user": True,
-                **({"default": default} if default else {})}
+                **proof_note, **({"default": default} if default else {})}
     if answer:
         source = answer.get("source", "web")
         ctx.transcript.event("answer", {"qid": qid, "text": answer["text"], "source": source,
@@ -276,9 +280,9 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
                     "request": req_ids, "decision": decision,
                     "result": requests.observation_text(req_ids, decision)}
         return {"kind": "ask_user", "qid": qid, "mode": mode, "answered": True,
-                "answer": answer["text"], "source": source}
+                "answer": answer["text"], "source": source, **proof_note}
     # timeout: continue WITHOUT the decision — on the stated default when there is one.
     # The record stays open (now deferred) so a late answer still reaches a future run.
     leave_open()
-    return {"kind": "ask_user", "qid": qid, "mode": mode, "timed_out": True,
+    return {"kind": "ask_user", "qid": qid, "mode": mode, "timed_out": True, **proof_note,
             "timeout_min": timeout_min, **({"default": default} if default else {})}

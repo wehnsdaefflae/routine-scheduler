@@ -270,47 +270,53 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
             return f"OBSERVATION (llm subcall FAILED): {err}"
         return f"OBSERVATION (llm reply):\n{obs['reply']}"
     if kind == "ask_user":
-        if err := obs.get("error"):
-            # REFUSED before any record was filed: nothing is pending, nobody was asked.
-            return (f"OBSERVATION (ask_user REFUSED — no question was filed): {err}")
-        if obs.get("batch"):
-            # D212: ONE action, N decision records; "blocking" is a recorded class, not a wait.
-            return (f"OBSERVATION (ask_user): {obs['count']} questions filed as one batch "
-                    f"({obs['batch']}), {obs.get('blocking') or 0} marked blocking. They are "
-                    "on the user's Decisions page together; answers reach a future run. "
-                    f"Continue.{obs.get('refused_note') or ''}")
-        if obs.get("decision"):
-            # an access request settled by one of the typed decisions — the result
-            # line already teaches scope (this run vs forever) and the way forward
-            return f"OBSERVATION (ask_user — access request decided): {obs['result']}"
-        if obs.get("answered"):
-            via = f" (via {obs['source']})" if obs.get("source", "web") != "web" else ""
-            return f"OBSERVATION (ask_user): the user answered{via}:\n{obs['answer']}"
-        if obs.get("deferred_by_user"):
-            tail = (f"Proceed on your stated default: {obs['default']}"
-                    if obs.get("default") else "Continue and plan around it")
-            return (f"OBSERVATION (ask_user): the user DEFERRED this question to a future run — "
-                    f"it stays open as deferred ({obs['qid']}). {tail}; their answer, if any, "
-                    "reaches a future run.")
-        if obs.get("timed_out"):
-            tail = (f"Proceed on your stated default: {obs['default']}"
-                    if obs.get("default") else "Continue and plan around it")
-            return (f"OBSERVATION (ask_user): no answer within {obs.get('timeout_min')}m — "
-                    f"question stays open as deferred ({obs['qid']}). {tail}; a late answer "
-                    "reaches a future run.")
-        if obs.get("dialog") and obs.get("request"):
-            # An ask-back on an ACCESS REQUEST: the same request again re-submits it (the
-            # subject is its entity ids), and its question prose is where the answer goes.
-            ids = ", ".join(obs["request"])
-            return ("OBSERVATION (ask_user — access request): " + dialog_reply(
-                obs, "request", f"ask again with ask_user and the same request ({ids}), its "
-                "question answering them", "Nothing is granted until they decide."))
-        if obs.get("dialog"):
-            # The console's "ask back": the user replied to a BLOCKING question without
-            # deciding it, and their words must reach the model.
-            return "OBSERVATION (ask_user): " + dialog_reply(
-                obs, "question", "ask again with ask_user (the original question, or a sharper "
-                "version)")
-        return (f"OBSERVATION (ask_user): question filed as deferred ({obs['qid']}). The user will "
-                "see it in the UI; the answer, if any, reaches a future run. Continue.")
+        # D220: a filed proof says what will check it (engine/askproof.note)
+        return _ask_user(obs) + ("" if obs.get("error") else obs.get("proof_note") or "")
     return None
+
+
+def _ask_user(obs: dict) -> str:  # noqa: PLR0911 — one distinct string per ask outcome (prompt surface)
+    """The ask_user observation, one wording per way an ask can end."""
+    if err := obs.get("error"):
+        # REFUSED before any record was filed: nothing is pending, nobody was asked.
+        return (f"OBSERVATION (ask_user REFUSED — no question was filed): {err}")
+    if obs.get("batch"):
+        # D212: ONE action, N decision records; "blocking" is a recorded class, not a wait.
+        return (f"OBSERVATION (ask_user): {obs['count']} questions filed as one batch "
+                f"({obs['batch']}), {obs.get('blocking') or 0} marked blocking. They are "
+                "on the user's Decisions page together; answers reach a future run. "
+                f"Continue.{obs.get('refused_note') or ''}")
+    if obs.get("decision"):
+        # an access request settled by one of the typed decisions — the result
+        # line already teaches scope (this run vs forever) and the way forward
+        return f"OBSERVATION (ask_user — access request decided): {obs['result']}"
+    if obs.get("answered"):
+        via = f" (via {obs['source']})" if obs.get("source", "web") != "web" else ""
+        return f"OBSERVATION (ask_user): the user answered{via}:\n{obs['answer']}"
+    if obs.get("deferred_by_user"):
+        tail = (f"Proceed on your stated default: {obs['default']}"
+                if obs.get("default") else "Continue and plan around it")
+        return (f"OBSERVATION (ask_user): the user DEFERRED this question to a future run — "
+                f"it stays open as deferred ({obs['qid']}). {tail}; their answer, if any, "
+                "reaches a future run.")
+    if obs.get("timed_out"):
+        tail = (f"Proceed on your stated default: {obs['default']}"
+                if obs.get("default") else "Continue and plan around it")
+        return (f"OBSERVATION (ask_user): no answer within {obs.get('timeout_min')}m — "
+                f"question stays open as deferred ({obs['qid']}). {tail}; a late answer "
+                "reaches a future run.")
+    if obs.get("dialog") and obs.get("request"):
+        # An ask-back on an ACCESS REQUEST: the same request again re-submits it (the
+        # subject is its entity ids), and its question prose is where the answer goes.
+        ids = ", ".join(obs["request"])
+        return ("OBSERVATION (ask_user — access request): " + dialog_reply(
+            obs, "request", f"ask again with ask_user and the same request ({ids}), its "
+            "question answering them", "Nothing is granted until they decide."))
+    if obs.get("dialog"):
+        # The console's "ask back": the user replied to a BLOCKING question without
+        # deciding it, and their words must reach the model.
+        return "OBSERVATION (ask_user): " + dialog_reply(
+            obs, "question", "ask again with ask_user (the original question, or a sharper "
+            "version)")
+    return (f"OBSERVATION (ask_user): question filed as deferred ({obs['qid']}). The user will "
+            "see it in the UI; the answer, if any, reaches a future run. Continue.")

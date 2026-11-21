@@ -25,7 +25,7 @@ reached no surface a person clicks.
 magnitude, so "what is the fleet not doing" is answered by a fetch instead of by ssh.
 
 The magnitude is in TWO UNITS, which is why `readmodels/blocked_kinds` exists (R3418). Most of
-these events are INCIDENTS and a row's count is how many facts it is. Six are STANDING
+these events are INCIDENTS and a row's count is how many facts it is. Seven are STANDING
 CONDITIONS whose writers latch privately to one row a day while one fact holds, so counting
 those rows measures how long the daemon was up rather than how bad the condition is: a
 nineteen-night backup gap read as `count: 19` beside `fire_refused: 19`, nineteen distinct
@@ -127,6 +127,11 @@ BLOCKED_EVENTS: dict[str, str] = {
     # An ANSWER the operator gave that no run will ever read — the reader it was given to never
     # comes (2026-11-09: two sat seven weeks). Due work in the plainest sense: he decided, and
     # nothing acts on it.
+    # C5 (2026-11-21): a dead subscription login behind the gateway — every fire whose model
+    # routes to it fails at turn 0, so the work is owed and will not happen until he signs in.
+    "endpoint_needs_reauth": "a subscription login behind the model gateway is DEAD — every "
+                             "account of it is unavailable with no retry expected, so each run "
+                             "whose model routes to it fails at turn 0 (daemon/endpoint_watch)",
     "answer_undelivered": "you answered a decision and NO run will ever read the answer — "
                           "deliver it or settle it on the Decisions page "
                           "(readmodels/answer_pickup)",

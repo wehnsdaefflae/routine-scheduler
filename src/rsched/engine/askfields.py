@@ -1,9 +1,9 @@
 """The `ask_user` action's GRAMMAR — one question, or a batch of them (D212).
 
 Its own module because `engine/actions.py` may only shrink. An `ask_user` carries EITHER one
-question (`question` + its `options` / `default` / `request` / `config_patch` / `blocks_work`)
-OR a `questions` list, each entry carrying those fields for itself — never both, or the applier
-would have to pick one silently.
+question (`question` + its `options` / `default` / `request` / `config_patch` / `blocks_work` /
+`proof`) OR a `questions` list, each entry carrying those fields for itself — never both, or the
+applier would have to pick one silently. A `proof` is checked by `engine/askproof.py`.
 
 The `questions` item schema is shared with `decide` (the schema is flat), so decide's `name` and
 `answer_type` are refused HERE by name rather than silently ignored.
@@ -14,13 +14,15 @@ nothing for several; `blocks_work` marks the questions that stop the work instea
 
 from __future__ import annotations
 
+from . import askproof
+
 #: ask_user's pick-one list, per question. The shared schema field allows decide's longer
 #: lists, so this cap is held here rather than by the schema.
 ASK_OPTIONS_MAX = 5
 #: Questions one action may ask at once — the schema's `maxItems`, restated where enforced.
 ASK_QUESTIONS_MAX = 16
 #: The single-question fields a batch moves INTO each question.
-_PER_QUESTION = ("options", "default", "request", "config_patch", "blocks_work")
+_PER_QUESTION = ("options", "default", "request", "config_patch", "blocks_work", "proof")
 #: `questions` entries' fields, and the two that belong to `decide` alone.
 _ITEM_FIELDS = frozenset({"question", *_PER_QUESTION})
 _DECIDE_ONLY = ("name", "answer_type")
@@ -43,6 +45,8 @@ def _item_problems(spec: object, where: str) -> list[str]:
                         "is a question to rephrase, not a menu")
     if (patch := spec.get("config_patch")) is not None and not isinstance(patch, dict):
         problems.append(f"{where}: 'config_patch' is the PATCH body as an object")
+    problems += askproof.problems(spec.get("proof"), options, where=where,
+                                  has_patch=isinstance(spec.get("config_patch"), dict))
     if stray := [f for f in _DECIDE_ONLY if f in spec]:
         problems.append(f"{where}: {stray} belong to kind=decide, not to a question you are "
                         "asking the user — drop them")
@@ -64,7 +68,9 @@ def field_problems(obj: dict) -> list[str]:
         if len(obj.get("options") or []) > ASK_OPTIONS_MAX:
             problems.append(f"kind=ask_user: at most {ASK_OPTIONS_MAX} 'options' — a longer "
                             "list is a question to rephrase, not a menu")
-        return problems
+        return problems + askproof.problems(
+            obj.get("proof"), obj.get("options"), where="kind=ask_user",
+            has_patch=isinstance(obj.get("config_patch"), dict))
     problems = []
     if single:
         problems.append("kind=ask_user takes 'question' (one question) or 'questions' "

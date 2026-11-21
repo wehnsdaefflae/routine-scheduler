@@ -89,7 +89,7 @@ _OWN_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "wait": ((), ("n", "all", "timeout_s")),
     # D212: `question` OR a `questions` batch; askfields.field_problems demands one
     "ask_user": ((), ("question", "questions", "mode", "options", "default", "config_patch",
-                      "request", "blocks_work")),
+                      "request", "blocks_work", "proof")),
     # `options` also files the report as a decision on the operator's Decisions page (F621)
     "report": (("title",), ("detail", "target", "answers", "closes", "supersedes", "settles",
                             "options")),

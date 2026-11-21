@@ -15,6 +15,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
 
+from ..readmodels import cost_regressions
 from ..readmodels.health_reads import DEFAULT_LIMIT, MAX_LIMIT, recent_events
 from ..readmodels.health_stream import DEFAULT_WINDOW_DAYS, MAX_WINDOW_DAYS, blocked_fleet
 from ..readmodels.operator_blocks import annotate
@@ -90,3 +91,18 @@ def wrong_turns(request: Request,
     which is what an engine, schema or prompt fix is aimed at.
     """
     return fold_wrong_turns(request.app.state.server, days=days)
+
+
+@router.get("/health/cost-regressions")
+def cost_regressions_read(
+        request: Request,
+        days: Annotated[int, Query(ge=1, le=cost_regressions.MAX_WINDOW_DAYS)] = (
+            cost_regressions.DEFAULT_WINDOW_DAYS),
+) -> dict:
+    """The latest `cost_trend_degraded` finding per subject in the last `days`
+    (`readmodels/cost_regressions`), for the Stats page's Cost regressions panel: `rows` newest
+    first, each with its attribution (`scope`, the fleet numbers, the detail) and the `slug`
+    whose development view holds the per-run cost profile. Not blocked work — a regression is
+    how the fleet is changing, which is why it is not on `/health/blocked`.
+    """
+    return cost_regressions.regressions(request.app.state.server, days=days)

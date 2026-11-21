@@ -152,12 +152,18 @@ proxy keeps as the account's last word even while later requests succeed.
 The terminal fallback — the proxy's own `--claude-login` with its callback port tunnelled over
 SSH — belongs to the gateway repo now, since the container it runs in is that stack's.
 
-`daemon/endpoint_watch.py` watches the same binding: every ten minutes it reads the account list
-and records `ok`, `cooling`, `needs_reauth` or `unknown` per endpoint in
-`.control/endpoint-health.json`, filing `endpoint_needs_reauth` once a day while a login is dead
-([endpoints](endpoints.md#noticing-a-dead-credential-before-a-run-spends-a-turn)). It watches
-`cliproxy-mgmt` alone — the Otari endpoints carry no management binding — so a dead login is named
-on that card rather than on the endpoints whose calls it would fail.
+`daemon/endpoint_watch.py` watches the same logins, found where this file says they are: each
+gateway's `plans:` names the CLIProxyAPI logins Otari routes to, and each plan group belongs to one
+login provider (`claude`, `antigravity`, `codex-plus` → `codex`). Every ten minutes it reads the
+proxy's account list ONCE through `cliproxy-mgmt` (a read-only GET) and records `ok`, `cooling`,
+`needs_reauth` or `unknown` per LOGIN — `otari/claude`, `otari/antigravity`, `otari/codex` — in
+`.control/endpoint-health.json`, filing `endpoint_needs_reauth` once a day while one is dead
+([endpoints](endpoints.md#noticing-a-dead-credential-before-a-run-spends-a-turn)). That row stands
+on the Stats page's **Blocked work** panel, counted on the rail's badge as a block only you can
+clear, until the next pass reads the login alive again. Judged per login, one dead subscription
+is flagged even while the others serve — the account list as a whole would read "2 of 3
+available" and say nothing. No management endpoint, or more than one, records every login
+`unknown` with that reason.
 
 ## Decisions through the gateway
 

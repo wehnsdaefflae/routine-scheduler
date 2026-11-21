@@ -10,6 +10,7 @@ import { GROUPS, METRICS, RANGES, chartNode, colorMap, hideTip } from "/static/c
 import { el, emptyState, fmtDur, fmtInt, fmtNum, fmtUsd, skeleton, storage } from "/static/util.js";
 import { blockedSection } from "/static/views/stats-blocked.js";
 import { wrongTurnsSection } from "/static/views/stats-wrongturns.js";
+import { costRegressionsSection } from "/static/views/stats-costregress.js";
 import { cacheGapSection } from "/static/views/stats-cachegap.js";
 import { NBSP, compressionSection, foldRows, monthlySection, routineHref, statSection }
   from "/static/views/stats-parts.js";
@@ -334,6 +335,8 @@ export async function render(view) {
     parts.push(await blockedSection());
     // ---- turns that came back well-formed and wrong, by cause (not blocked work) --------
     parts.push(await wrongTurnsSection());
+    // ---- the latest cost-trend finding per routine, with whose it is (decision #9) ----------
+    parts.push(await costRegressionsSection());
 
     parts.push(el("div", { class: "stat-foot" },
       `generated ${agg.generated || ""} · source: each run's status.json (no cache)`));

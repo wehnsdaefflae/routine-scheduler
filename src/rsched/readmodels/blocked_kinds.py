@@ -31,6 +31,8 @@ WHAT MAKES AN EVENT STANDING is its writer's latch, not how bad it sounds:
     (or conversation) per day while the item stays unmet.
   - `process_overhead_high` — `engine/overhead_alarm.LATCH_HOURS` = 24, read back off the
     stream so a restart remembers it.
+  - `endpoint_needs_reauth` — `daemon/endpoint_watch.REFILE_AFTER`, one row a day per login,
+    latched in its record so a restart remembers it.
 
 And what deliberately is NOT, though it looks it: `trigger_capped` is "one event per day AT
 THE TRANSITION" (F276) — a cap re-earned by real trigger traffic is a new fact each time;
@@ -64,6 +66,7 @@ STANDING_EVENTS: frozenset[str] = frozenset({
     "obligation_overdue",
     "answer_undelivered",
     "process_overhead_high",
+    "endpoint_needs_reauth",
 })
 
 
