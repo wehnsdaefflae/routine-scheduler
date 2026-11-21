@@ -101,36 +101,43 @@ def test_the_run_detail_route_reads_the_memoized_config(api_client, make_routine
 # --------------------------------------------------------------------------- the warmer
 
 
-def _fast(monkeypatch) -> None:
+def _fast(monkeypatch, *, settle: float = 0.3) -> None:
     monkeypatch.setattr(readmodel_warm, "_QUIET_S", 0.02)
     monkeypatch.setattr(readmodel_warm, "_MAX_COALESCE_S", 0.3)
+    monkeypatch.setattr(readmodel_warm, "BOOT_SETTLE_S", settle)
 
 
-def _count_warms(monkeypatch, *, boom: bool = False) -> list[bool]:
-    """Stand in for both computes; records whether each pass ran on the event loop."""
+def _record_steps(monkeypatch, *, boom: bool = False) -> list[str]:
+    """Stand in for both computes; records each step as `<model>@<loop|thread>`, in order."""
     from rsched.readmodels import change_effects
     from rsched.web import decisions_read
 
-    passes: list[bool] = []
+    steps: list[str] = []
+
+    def where() -> str:
+        return "loop" if threading.current_thread() is threading.main_thread() else "thread"
 
     def effects(_home):
-        passes.append(threading.current_thread() is threading.main_thread())
+        steps.append(f"effects@{where()}")
         if boom:
             raise OSError("the usage stream went away")
         return {"routines": {}}
 
+    def decisions(_server):
+        steps.append(f"decisions@{where()}")
+        return []
+
     monkeypatch.setattr(change_effects, "changes", effects)
-    monkeypatch.setattr(decisions_read, "open_decisions", lambda _server: [])
-    return passes
+    monkeypatch.setattr(decisions_read, "open_decisions", decisions)
+    return steps
 
 
-async def _listen(bus: EventBus) -> asyncio.Task:
+async def _listen(bus: EventBus, ready: asyncio.Event | None = None) -> asyncio.Task:
     from types import SimpleNamespace
 
     task = asyncio.create_task(readmodel_warm.bus_listener(
-        SimpleNamespace(routines_home=Path("/nonexistent")), bus))
-    for _ in range(50):                 # the boot pass runs before the first event is read
-        await asyncio.sleep(0.01)
+        SimpleNamespace(routines_home=Path("/nonexistent")), bus, ready))
+    await asyncio.sleep(0.05)
     return task
 
 
@@ -140,39 +147,98 @@ async def _stop(task: asyncio.Task) -> None:
         await task
 
 
-async def test_one_pass_at_boot_then_one_per_burst_off_the_loop(monkeypatch):
-    _fast(monkeypatch)
-    passes = _count_warms(monkeypatch)
+async def test_the_boot_pass_waits_for_the_scheduler_and_warms_decisions_first(monkeypatch):
+    """2026-11-21: run at once, the boot pass competed with the scheduler's boot scans and
+    every reconnecting tab, and `/api/questions` took 25-29 s. It waits for the boot now, warms
+    the catalog every tab is waiting on, and leaves the fleet-wide fold until the burst is over.
+    """
+    _fast(monkeypatch, settle=0.3)
+    steps = _record_steps(monkeypatch)
+    ready = asyncio.Event()
+    task = await _listen(EventBus(), ready)
+    try:
+        await asyncio.sleep(0.2)
+        assert steps == [], "the boot pass ran before the scheduler's boot finished"
+        ready.set()
+        await asyncio.sleep(0.15)
+        assert steps == ["decisions@thread"]                     # the fold is still settling
+        await asyncio.sleep(0.4)
+        assert steps == ["decisions@thread", "effects@thread"]
+    finally:
+        await _stop(task)
+
+
+async def test_a_boot_that_never_finishes_does_not_hold_the_warmer_forever(monkeypatch):
+    _fast(monkeypatch, settle=0.05)
+    monkeypatch.setattr(readmodel_warm, "BOOT_WAIT_MAX_S", 0.1)
+    steps = _record_steps(monkeypatch)
+    task = await _listen(EventBus(), asyncio.Event())            # never set
+    try:
+        await asyncio.sleep(0.5)
+        assert steps == ["decisions@thread", "effects@thread"]
+    finally:
+        await _stop(task)
+
+
+async def test_a_burst_is_one_pass_decisions_first(monkeypatch):
+    _fast(monkeypatch, settle=0.0)
+    steps = _record_steps(monkeypatch)
     bus = EventBus()
     task = await _listen(bus)
     try:
-        assert passes == [False]                                  # the boot pass
+        await asyncio.sleep(0.1)
+        assert steps == ["decisions@thread", "effects@thread"]   # the boot pass, both halves
         for i in range(20):
             bus.publish({"event": "run_finished", "routine": "r", "run_id": f"r:{i}"})
         await asyncio.sleep(0.4)
-        assert passes == [False, False]                           # twenty events, one pass
+        assert steps[2:] == ["decisions@thread", "effects@thread"]   # twenty events, one pass
         bus.publish({"event": "question_answered"})
         await asyncio.sleep(0.4)
-        assert passes == [False, False, False]
+        assert steps[4:] == ["decisions@thread", "effects@thread"]
+    finally:
+        await _stop(task)
+
+
+async def test_events_inside_the_settle_window_warm_decisions_only(monkeypatch):
+    _fast(monkeypatch, settle=0.6)
+    steps = _record_steps(monkeypatch)
+    bus = EventBus()
+    task = await _listen(bus)
+    try:
+        bus.publish({"event": "run_finished"})
+        await asyncio.sleep(0.25)
+        assert steps == ["decisions@thread", "decisions@thread"]
+        await asyncio.sleep(0.6)
+        assert steps[-1] == "effects@thread"                       # the fold, by the clock
     finally:
         await _stop(task)
 
 
 async def test_model_calls_wake_nothing_and_a_raise_kills_nothing(monkeypatch):
-    _fast(monkeypatch)
-    passes = _count_warms(monkeypatch, boom=True)
+    _fast(monkeypatch, settle=0.0)
+    steps = _record_steps(monkeypatch, boom=True)
     bus = EventBus()
     task = await _listen(bus)
     try:
+        await asyncio.sleep(0.1)
+        booted = len(steps)
         for event in ("llm_task", "llm_process"):
             bus.publish({"event": event})
         await asyncio.sleep(0.3)
-        assert len(passes) == 1                                   # only the boot pass
+        assert len(steps) == booted
         bus.publish({"event": "run_finished"})
         await asyncio.sleep(0.4)
-        assert len(passes) == 2 and not task.done()               # raised, still listening
+        assert len(steps) == booted + 2 and not task.done()        # raised, still listening
     finally:
         await _stop(task)
+
+
+async def test_the_scheduler_says_when_its_boot_is_done(tmp_path):
+    with authed_client(make_test_server(tmp_path)) as c:
+        sched = Scheduler(c.app.state.server, FakeRunner(), EventBus())
+        assert not sched.booted.is_set()
+        await sched._boot()
+        assert sched.booted.is_set()
 
 
 def test_an_app_without_the_scheduler_starts_no_warmer(tmp_path, monkeypatch):

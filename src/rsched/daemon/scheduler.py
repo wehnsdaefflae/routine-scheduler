@@ -102,11 +102,11 @@ class Scheduler:
         # A pending restart waits for a quiet gap instead of blocking new runs (restart.py): the
         # monotonic stamp of when runner.active last emptied, or None while a run is active.
         self._idle_since: float | None = None
-        # The one in-flight task per off-tick refresh (`_off_tick`), so a box or a provider that
-        # answers slowly (or not at all) can never stack one attempt per tick on the loop's
-        # shared executor — and a running task always has an owner, never a dangling reference.
+        # One in-flight task per off-tick refresh (`_off_tick`): a slow box or provider can never
+        # stack an attempt per tick on the loop's executor, and a running task always has an owner.
         self._off_tick_tasks: dict[str, asyncio.Task[None]] = {}
         self.started = now_iso()   # process birth — a restart is visible as a changed value
+        self.booted = asyncio.Event()   # set once `_boot` is done (web/readmodel_warm.py waits)
 
     def rescan(self) -> None:
         self.catalog = registry.scan(self.server)
@@ -185,9 +185,8 @@ class Scheduler:
 
     async def _boot(self) -> None:
         """Everything that happens once, before the first tick: the catalog, the orphans the
-        previous process left, the detached tasks it was delivering. Every step that can raise
-        is guarded (`_log_loop_failure`) — the loop must start regardless. Nothing missed while
-        the daemon was down is made up (D237).
+        previous process left, the detached tasks it was delivering — then `booted`. Every step
+        that can raise is guarded (`_log_loop_failure`); nothing missed is made up (D237).
         """
         try:   # every home warmed in threads first: the reap below scans them ON the loop
             await asyncio.to_thread(self.rescan)
@@ -213,6 +212,7 @@ class Scheduler:
                 await asyncio.to_thread(self.rescan)
             except Exception as exc:
                 self._log_loop_failure("boot rescan", exc)
+        self.booted.set()
 
     async def run_forever(self) -> None:
         await self._boot()
