@@ -73,7 +73,7 @@
     "tests/test_view_image.py": 595,
     "tests/ui/conftest.py": 419,
     "tests/ui/test_changes.py": 409,
-    "tests/ui/test_flows.py": 2124,
+    "tests/ui/test_flows.py": 2119,
     "tests/ui/test_routine_page.py": 489,
     "tests/ui/test_surface_fix.py": 755
   }

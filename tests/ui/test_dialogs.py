@@ -6,6 +6,8 @@ import re
 
 from playwright.sync_api import expect
 
+from .helpers import picker_ready
+
 RUN = "20260715-150000"
 
 
@@ -76,6 +78,7 @@ def test_a_folder_row_is_reached_and_opened_by_keyboard(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/conversations")
     ui_page.get_by_role("button", name="+ add directory…").first.click()
     dlg = ui_page.get_by_role("dialog", name=re.compile("folder"))
+    picker_ready(dlg)
     dlg.locator("input.code").fill(str(ui.tmp / "pick"))
     ui_page.keyboard.press("Enter")
     folder = dlg.get_by_role("button", name=re.compile("inner"))

@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.584.0] — 2026-11-21
+
+### Fixed
+- **A slow request's self-sample names every request in flight with it.** The watcher pointed
+  only the requests already over the floor at its snapshot, and its cooldown takes no second
+  one — so a request that crossed a tick later, listed in the snapshot as waiting, kept no
+  pointer to it on its slow row. Every request in flight at the snapshot is pointed at it now,
+  and the pointers are set BEFORE the file is written (a request finishing in between lost its
+  name), taken back if the write fails.
+- **The browser and fast suites no longer flake.** Every test that needed a rerun in a gate log
+  was repeated with the rerun shield stripped; the ones that failed all acted before the state
+  they needed existed. The folder picker's tests typed a path while its opening listing was in
+  flight (a `fill` landing mid-write-back appended the path to the daemon's home); the run-view
+  layout test measured across a re-layout after a hash-only navigation; the auto-apply drain
+  tests started the app's own drain loop beside the drain under test; the self-sample pools
+  test read anyio's limiter from a bare thread and passed only after an earlier test captured
+  one on a loop.
+
 ## [0.583.0] — 2026-11-21
 
 ### Changed

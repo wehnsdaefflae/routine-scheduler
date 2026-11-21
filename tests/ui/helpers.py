@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
+from playwright.sync_api import expect
 
 from rsched import lanes
 from rsched.paths import append_jsonl, atomic_write_json
@@ -17,6 +18,20 @@ def unfold(page) -> None:
     page.wait_for_selector(".rgroup-head")
     page.evaluate("() => { for (const d of document.querySelectorAll("
                   "'details.rgroup, details.rmore')) d.open = true; }")
+
+
+def picker_ready(picker):
+    """Wait for a directory picker's OPENING listing to land before typing a path into it;
+    returns the picker's listing.
+
+    That listing writes the folder it shows into the path field when the field still holds
+    what it held when the listing began (dirpicker.js). A `fill` selects the field, then
+    inserts — and a listing landing between the two finds the field unchanged, writes the
+    daemon's home, and the typed path is appended to it.
+    """
+    listing = picker.locator(".dirpicker-list")
+    expect(listing.locator(":scope > div:not(.muted)")).to_be_visible()     # its rows, or its error
+    return listing
 
 
 def open_section(ui, page, section: str):

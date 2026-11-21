@@ -7,6 +7,7 @@ import re
 from playwright.sync_api import expect
 
 from .conftest import until
+from .helpers import picker_ready
 
 
 def _hold_the_first_listing(page):
@@ -85,6 +86,7 @@ def test_the_picker_still_fills_the_field_when_it_navigates_itself(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/conversations")
     ui_page.get_by_role("button", name="+ add directory…").first.click()
     dlg = ui_page.get_by_role("dialog", name=re.compile("folder"))
+    picker_ready(dlg)
     dlg.locator("input.code").fill(str(ui.tmp / "outer"))
     ui_page.keyboard.press("Enter")
     expect(dlg.locator("input.code")).to_have_value(re.compile(r"/outer$"))

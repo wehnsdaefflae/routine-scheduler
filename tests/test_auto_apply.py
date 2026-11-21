@@ -107,24 +107,18 @@ def test_the_server_surface_is_not_a_routines_dial(make_routine, scripted):
 # ---- the web half: the drain applies through the one writer -------------------------------
 
 def _app_for(d):
-    """A hermetic app over this routine's home — the drain's one dependency is app.state."""
-    from fastapi.testclient import TestClient
-
+    """A hermetic app over this routine's home — the drain's one dependency is app.state, which
+    `create_app` fills. Its lifespan is not started: that starts the app's own drain loop, a
+    second writer racing the drain under test for the same spool."""
     from rsched.web.app import create_app
 
-    client = TestClient(create_app(server_for(d), with_scheduler=False))
-    client.__enter__()
-    return client, client.app
+    return create_app(server_for(d), with_scheduler=False)
 
 
 def test_the_drain_applies_the_queued_patch_and_clears_the_spool(make_routine, scripted):
     d, _status, _ = _run_with(make_routine, scripted, OWN,
                               [_ask({"budgets": {"max_turns": 600}})])
-    client, app = _app_for(d)
-    try:
-        rows = autoapply_drain.drain_all(app)
-    finally:
-        client.__exit__(None, None, None)
+    rows = autoapply_drain.drain_all(_app_for(d))
     assert rows and rows[0]["ok"], rows
     assert rows[0]["updated"] == ["budgets"]
     saved = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
@@ -142,11 +136,7 @@ def test_a_dial_turned_down_after_the_ask_stops_the_apply_and_files_the_card(
     raw["capabilities"]["config_confirm"] = "always"
     (d / "routine.yaml").write_text(yaml.safe_dump(raw), encoding="utf-8")
 
-    client, app = _app_for(d)
-    try:
-        rows = autoapply_drain.drain_all(app)
-    finally:
-        client.__exit__(None, None, None)
+    rows = autoapply_drain.drain_all(_app_for(d))
     assert rows and not rows[0]["ok"] and "always" in rows[0]["refused"], rows
     saved = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
     assert (saved.get("budgets") or {}).get("max_turns") != 600

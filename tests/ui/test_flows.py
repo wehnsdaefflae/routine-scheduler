@@ -12,7 +12,7 @@ import yaml
 from playwright.sync_api import expect
 
 from .conftest import until
-from .helpers import confirm_modal, start_conversation, unfold, visible_toast
+from .helpers import confirm_modal, picker_ready, start_conversation, unfold, visible_toast
 
 # ---- 1. Decisions answer flow ------------------------------------------------------------
 
@@ -407,8 +407,8 @@ def test_run_view_message_modes(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/run/uir:20260715-110000")
     # F237: no mode <select> — a live run's input injects (shown by its placeholder), a
     # terminal run's input continues the run; the destination is implied by run state.
-    assert ui_page.locator('select[title="where this message goes"]').count() == 0
     ui_page.locator('textarea[placeholder="inject a message into the run…"]').fill("mid-run note")
+    assert ui_page.locator('select[title="where this message goes"]').count() == 0
     # attachments ride a run message too (F202): picking a file shows a chip; the send
     # stores it under the routine's attachments/ and the inbox message records the rel
     ui_page.locator('input[type="file"]').set_input_files(
@@ -427,30 +427,23 @@ def test_run_view_message_modes(ui, ui_page):
 
     ui.seed_run("uir", "20260715-120000", "finished", summary="done")
     ui_page.goto(f"{ui.url}/#/run/uir:20260715-120000")
-    # F237: a terminal run's input ALWAYS continues this run, so the vestigial single-option
-    # mode <select> is gone entirely — the composer is just the input + send. (F233 had
-    # already removed the "queue for next run" option, leaving a dead disabled dropdown.)
+    # A hash-only goto returns before the new view mounts: wait for THIS run's composer, whose
+    # placeholder is set once the view reads the run as terminal.
+    composer_input = ui_page.locator('div.composer textarea[placeholder$="(continues this run)"]')
+    expect(composer_input).to_have_count(1)
+    # F237: a terminal run's input ALWAYS continues this run — no mode <select> at all.
     assert ui_page.locator('select[title="where this message goes"]').count() == 0
-    # F238: on a narrow screen the message input takes its OWN full-width line and the
-    # send button wraps BENEATH it — not squished inline beside the controls. This asserts
-    # the real layout (not just the class): the earlier count-only check passed even while an
-    # inline flex:1 on the input silently beat the ≤860px stylesheet rule and kept it inline.
-    composer_input = ui_page.locator("div.composer textarea[data-persist='run-msg']")
-    assert composer_input.count() == 1
+    # F238: on a narrow screen the input takes its OWN full-width line and send wraps BENEATH
+    # it — the real layout, since an inline flex:1 once beat the ≤860px rule and kept it
+    # inline. One snapshot of the three boxes, never measured across a re-layout.
     ui_page.set_viewport_size({"width": 400, "height": 900})
-    row = ui_page.locator("div.composer")
-    send = ui_page.locator("div.composer").get_by_role("button", name="send", exact=True)
-    rbox = row.bounding_box()
-    ibox = composer_input.bounding_box()
-    sbox = send.bounding_box()
-    # the input spans (near) the full composer width — its own line, not sharing it
-    assert ibox["width"] >= rbox["width"] * 0.9, (
-        f"composer input not full-width on narrow screen: input {ibox['width']}px "
-        f"of row {rbox['width']}px")
-    # …and the send button sits on a line BELOW the input (wrapped), not beside it
-    assert sbox["y"] >= ibox["y"] + ibox["height"] - 1, (
-        f"send button did not wrap below the input: input bottom {ibox['y'] + ibox['height']}, "
-        f"button top {sbox['y']}")
+    box = ui_page.locator("div.composer").evaluate("""(row) => {
+        const at = (n) => n.getBoundingClientRect(), input = at(row.querySelector('textarea'));
+        const send = [...row.querySelectorAll('button')].find((b) => b.textContent === 'send');
+        return {row: at(row).width, input: input.width, bottom: input.bottom, send: at(send).top};
+    }""")
+    assert box["input"] >= box["row"] * 0.9, f"composer input not full-width: {box}"
+    assert box["send"] >= box["bottom"] - 1, f"send button did not wrap below the input: {box}"
     ui_page.set_viewport_size({"width": 1280, "height": 900})   # restore for the rest
     ui_page.locator('textarea[placeholder^="message…"]').fill("continue please")
     ui_page.get_by_role("button", name="send", exact=True).click()
@@ -2017,6 +2010,7 @@ def test_new_conversation_composer_folder_access(ui, ui_page):
     add.click()
     dlg = ui_page.locator(".modal-overlay")
     expect(dlg).to_be_visible()
+    picker_ready(dlg)
     dlg.locator("input").fill(str(data_dir))
     dlg.locator("input").press("Enter")               # jump to the typed path
     # the jump is async — the empty-dir hint proves the picker LANDED there (selecting
@@ -2056,6 +2050,7 @@ def test_conversation_header_folder_access_edit(ui, ui_page):
     add.click()
     dlg = ui_page.locator(".modal-overlay")
     expect(dlg).to_be_visible()
+    picker_ready(dlg)
     dlg.locator("input").fill(str(extra))
     dlg.locator("input").press("Enter")               # jump to the typed path
     expect(dlg.locator(".dirpicker-list")).to_contain_text("empty directory")

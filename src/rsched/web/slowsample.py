@@ -41,7 +41,8 @@ anyio token (so it cannot deepen the shortage it is measuring) and no pool threa
 WHAT BOUNDS IT, since it fires on a request that is already in trouble:
 - ONE sample per stall, not one per victim: `cooldown_s` (30 s) gates the whole watcher, so the
   fleet-wide shape above — dozens of endpoints crossing the threshold inside one second — leaves
-  one snapshot, not forty. Every request stalled at that moment points AT that one snapshot.
+  one snapshot, not forty. Every request in flight at that moment points AT that one
+  snapshot — one crossing the threshold a tick later, inside the cooldown, is in it too.
 - A bounded ring on disk (`SAMPLE_KEEP` files, oldest pruned on write), like the `slow_requests`
   deque it sits beside, so a daemon stalling all night cannot fill the disk.
 - A bounded reading: `api_debug.FRAMES_PER_THREAD` (12) frames per thread, and the concurrent
@@ -195,28 +196,48 @@ class SlowWatch:
         The trigger named in the file is the OLDEST request still waiting: in the measured shape
         the pile-up is simultaneous, so the one that has waited longest is the one whose wait the
         snapshot is most likely to explain.
-        """
-        row = min(due.values(), key=lambda r: r["started"])
-        name = self._write(now, row, live)
-        if not name:
-            return
-        with self._lock:
-            for t in due:
-                if t in self._live:          # one that finished mid-walk has its own row already
-                    self._named[t] = name
-        log.warning("slow self-sample %s: %s %s still in flight after %.1fs",
-                    name, row["method"], row["path"], now - row["started"])
 
-    def _write(self, now: float, row: dict, live: dict[int, dict]) -> str:
-        """The snapshot file, or "" when there is nowhere to put it."""
+        The requests are pointed at the snapshot BEFORE it is written: the file is what a reader
+        waits on, and a request finishing between the write and the pointing would lose the name
+        its slow-request row exists to carry. A failed write takes the pointers back.
+        """
         server = getattr(self.app.state, "server", None)
         home = getattr(server, "routines_home", None)
         if home is None:
-            return ""
+            return
+        row = min(due.values(), key=lambda r: r["started"])
+        body = self._body(now, row, live)
+        d = Path(home) / ".control" / SAMPLES_DIR
+        # Zero-padded, because `_prune` keeps the newest by SORTED NAME: unpadded, a storm of
+        # ten stalls inside one second would sort `-10` before `-2` and prune the wrong file.
+        name = f"{time.strftime('%Y%m%d-%H%M%S')}-{next(self._samples):03d}.json"
+        with self._lock:
+            # every request still in flight, not only the ones already over the floor: the
+            # snapshot lists them all as waiting, and the cooldown takes no second one for a
+            # request that crosses a tick later. One that finished mid-walk has its own row.
+            pointed = [t for t in live if t in self._live and t not in self._named]
+            for t in pointed:
+                self._named[t] = name
+        try:
+            atomic_write_json(d / name, body)
+        except OSError as exc:
+            # A dead sample store must not be silent, and must not fail the request either.
+            log.warning("slow self-sample write failed (%s): %s", d / name, exc)
+            with self._lock:
+                for t in pointed:
+                    if self._named.get(t) == name:
+                        del self._named[t]
+            return
+        self._prune(d)
+        log.warning("slow self-sample %s: %s %s still in flight after %.1fs",
+                    name, row["method"], row["path"], now - row["started"])
+
+    def _body(self, now: float, row: dict, live: dict[int, dict]) -> dict:
+        """The snapshot: the trigger, every request waiting, and both thread pools."""
         waiting = sorted(({"method": r["method"], "path": r["path"],
                            "elapsed_s": round(now - r["started"], 2)} for r in live.values()),
                          key=lambda r: -float(r["elapsed_s"]))[:SLOW_KEEP]
-        body = {"ts": now_iso(),
+        return {"ts": now_iso(),
                 "why": "a request crossed the slow threshold and was STILL in flight",
                 "trigger": {"method": row["method"], "path": row["path"],
                             "elapsed_s": round(now - row["started"], 2)},
@@ -226,18 +247,6 @@ class SlowWatch:
                 # BOTH pools plus the stream gate, from the reader `/api/debug/threads` serves:
                 # the anyio limiter alone is the pool every `asyncio.to_thread` never touches.
                 "report": api_debug.thread_report(self.app.state)}
-        d = Path(home) / ".control" / SAMPLES_DIR
-        # Zero-padded, because `_prune` keeps the newest by SORTED NAME: unpadded, a storm of
-        # ten stalls inside one second would sort `-10` before `-2` and prune the wrong file.
-        name = f"{time.strftime('%Y%m%d-%H%M%S')}-{next(self._samples):03d}.json"
-        try:
-            atomic_write_json(d / name, body)
-        except OSError as exc:
-            # A dead sample store must not be silent, and must not fail the request either.
-            log.warning("slow self-sample write failed (%s): %s", d / name, exc)
-            return ""
-        self._prune(d)
-        return name
 
     def _prune(self, d: Path) -> None:
         """Keep the newest `keep` snapshots. The names sort chronologically by construction."""

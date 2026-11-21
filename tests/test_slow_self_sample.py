@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import threading
@@ -52,9 +53,15 @@ def watched(tmp_path):
 
 
 def test_the_snapshot_names_the_trigger_both_pools_and_the_stacks(watched):
-    """The reading the item exists for: who held the pool while the request waited."""
+    """The reading the item exists for: who held the pool while the request waited. Armed ON
+    an event loop, as the middleware arms it — only there can anyio's limiter be read; from a
+    bare thread the snapshot would hold whatever limiter an earlier test left behind."""
     app, server = watched
-    token = app.state.slow_watch.arm("GET", "/api/health/blocked")
+
+    async def armed() -> int:
+        return app.state.slow_watch.arm("GET", "/api/health/blocked")
+
+    token = asyncio.run(armed())
     try:
         files = _wait_for_sample(server)
         assert files, "no self-sample was written while a request was over the threshold"
@@ -200,6 +207,55 @@ def test_a_watch_with_nowhere_to_write_records_nothing_and_raises_nothing(tmp_pa
     token = watch.arm("GET", "/api/questions")
     time.sleep(0.1)
     assert watch.disarm(token) == ""      # no snapshot, no exception
+
+
+def _held_watch(tmp_path):
+    """Two requests in flight on a watch whose own thread will never take a snapshot (its
+    cooldown has just started), so the test takes the one snapshot itself, synchronously."""
+    app = FastAPI()
+    app.state.server = tmp_server(tmp_path)
+    app.state.slow_request_s = 0.0
+    watch = SlowWatch(app, tick_s=0.01, cooldown_s=3600.0, idle_ticks=4)
+    watch._last = time.monotonic()
+    tokens = [watch.arm("GET", p) for p in ("/api/desktops", "/api/questions")]
+    live = dict(watch._live)
+    return watch, tokens, live
+
+
+def test_the_victims_are_pointed_before_the_snapshot_appears(tmp_path, monkeypatch):
+    """The file is what a reader waits on: a request finishing between the write and the
+    pointing would lose the one name its slow-request row carries."""
+    watch, tokens, live = _held_watch(tmp_path)
+    at_write: list[dict] = []
+    real = slowsample.atomic_write_json
+    monkeypatch.setattr(slowsample, "atomic_write_json",
+                        lambda path, body: (at_write.append(dict(watch._named)),
+                                            real(path, body)))
+    watch._take(time.monotonic(), live, live)
+    assert set(at_write[0]) == set(tokens), at_write
+    names = {watch.disarm(t) for t in tokens}
+    assert names == {_samples(watch.app.state.server)[0].name}
+
+
+def test_a_request_not_yet_over_the_floor_points_at_the_snapshot_it_is_listed_in(tmp_path):
+    """The snapshot lists every request in flight, and the cooldown takes no second one for a
+    request that crosses the floor a tick later — so that one points at this snapshot too."""
+    watch, tokens, live = _held_watch(tmp_path)
+    first = {tokens[0]: live[tokens[0]]}               # only the first is over the floor
+    watch._take(time.monotonic(), first, live)
+    name = _samples(watch.app.state.server)[0].name
+    assert [watch.disarm(t) for t in tokens] == [name, name]
+
+
+def test_a_snapshot_that_could_not_be_written_takes_its_pointers_back(tmp_path, monkeypatch):
+    watch, tokens, live = _held_watch(tmp_path)
+
+    def refuse(path, body):
+        raise OSError(30, "Read-only file system")
+
+    monkeypatch.setattr(slowsample, "atomic_write_json", refuse)
+    watch._take(time.monotonic(), live, live)
+    assert [watch.disarm(t) for t in tokens] == ["", ""]
 
 
 # ---- end to end, through the real app and its middleware ---------------------------------

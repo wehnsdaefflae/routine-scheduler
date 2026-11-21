@@ -12,7 +12,7 @@ from playwright.sync_api import expect
 from rsched import reports
 
 from .conftest import until
-from .helpers import unfold, visible_toast
+from .helpers import picker_ready, unfold, visible_toast
 
 
 def test_messages_inbox_compose_edit_withdraw(ui, ui_page):
@@ -218,7 +218,7 @@ def test_fs_root_directory_picker(ui, ui_page):
 
     roots.locator("button:has-text('add directory')").first.click()
     picker = ui_page.locator(".dirpicker")
-    expect(picker).to_be_visible(timeout=5_000)
+    picker_ready(picker)
     # jump to the fixture home and descend into its routines/ dir, then select it
     picker.locator("input.code").fill(str(ui.tmp))
     picker.get_by_role("button", name="go", exact=True).click()
@@ -246,7 +246,7 @@ def test_the_folder_picker_keeps_its_height_whatever_the_folder_holds(ui, ui_pag
     unfold(ui_page)
     ui_page.locator("#sec-fs-roots + .panel button:has-text('add directory')").first.click()
     picker = ui_page.locator(".dirpicker")
-    listing = picker.locator(".dirpicker-list")
+    listing = picker_ready(picker)
     heights = []
     for folder, rows in (("few", 1), ("many", 41)):
         picker.locator("input.code").fill(str(ui.tmp / folder))
