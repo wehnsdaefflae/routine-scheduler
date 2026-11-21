@@ -24,11 +24,19 @@ routine revised more often than every third run is never judged.
 ONE SOURCE per value. The usage stream is the only thing read: a run whose row carries no
 `overhead` (its transcript was never measured — older than the record and gone before the
 one-shot backfill, `migrate_overhead.py`) is UNMEASURED and left out of the window, never
-recomputed here from a transcript and never read as zero. Four readers ask it — the setup
+recomputed here from a transcript and never read as zero. Five readers ask it — the setup
 surface's `recipe:overhead` row, `rsched validate` through that row, the run-end alarm
-(`engine/overhead_alarm.py`) and the boot digest's FINISH block — and the surface rides
-bus-event paths, so the stream fold is memoized on its stat fingerprint and the recipe version
-on the routine repo's HEAD and reflog (`readmodels/memo`).
+(`engine/overhead_alarm.py`), the boot digest's FINISH block and the blocked-work badge's
+"does it still hold?" (`web/operator_conditions`, once per `process_overhead_high` row) — and
+the surface rides bus-event paths, so the stream fold is memoized on its stat fingerprint and the
+recipe version on the routine repo's HEAD and reflog (`readmodels/memo`).
+
+The fold is the WHOLE FLEET's measured history and every reading wants one routine's slice of
+it, so it is memoized SHARED (`memo.memoized_shared`): the cached value itself is handed out and
+`reading` only filters it into fresh dicts, never writing into it. Through `memo.memoized` every
+hit deep-copied all of it — 907 runs over 35 routines, 2.6-4.1 ms each on 2026-11-21, once per
+badge row per request, under the GIL — and `/api/health/blocked`'s slow-samples caught the request
+thread inside that copy. Anything that reads `_measured` through the memo must keep it read-only.
 """
 
 from __future__ import annotations
@@ -109,7 +117,9 @@ def reading(routines_home: Path, slug: str, routine_dir: Path | None = None) -> 
     """
     home = Path(routines_home)
     path = stream_path(home)
-    measured = memo.memoized(f"overhead-measured:{path}", [path], lambda: _measured(home))
+    # SHARED, not copied: see the module docstring — read-only below this line
+    measured = memo.memoized_shared(f"overhead-measured:{path}", [path],
+                                    lambda: _measured(home))
     commit = current_recipe(routine_dir or home / slug)
     of_recipe = [r for r in measured.get(slug, []) if r["recipe_commit"] == commit]
     # A run too SHORT to be evidence is set aside, not counted as healthy and not recomputed:

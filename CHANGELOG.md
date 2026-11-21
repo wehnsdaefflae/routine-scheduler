@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.574.0] — 2026-11-21
+
+### Fixed
+- **The overhead reading no longer deep-copies the fleet's whole run history on every call.**
+  `readmodels/overhead_reading.reading` wants one routine's slice of a fold over every measured
+  run in the fleet — 907 runs over 35 routines on 2026-11-21 — and `/api/health/blocked` asks it
+  once per `process_overhead_high` row to decide whether that row still holds. The fold was
+  memoized through `memo.memoized`, which hands every caller a DEEP COPY: 2.6-4.1 ms of copying
+  under the GIL per row per request (five rows today), growing with every measured run, and one
+  of the route's slow-samples caught the request thread inside `copy._deepcopy_dict` there. The
+  fold is now `memo.memoized_shared` — the cached value itself, read-only by contract — and
+  `reading` only filters it into fresh dicts, so a caller still owns what it gets back. The
+  setup surface, the run-end overhead alarm and the boot digest read through the same function
+  and get the same saving. Tests pin both halves: a warm reading copies nothing, and no reading
+  writes into the shared fold.
+
 ## [0.573.0] — 2026-11-21
 
 ### Fixed
