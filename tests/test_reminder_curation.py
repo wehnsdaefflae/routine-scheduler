@@ -3,7 +3,7 @@
 import yaml
 
 from conftest import finish, util, write_file
-from helpers import prompt_text, server_for, set_capabilities
+from helpers import prompt_text, seed_local_reminders, server_for, set_capabilities
 from rsched import remind_dead
 from rsched import reminders as store
 from rsched.engine.runtime import run_routine
@@ -38,7 +38,7 @@ def _holder(tmp_path, slug, rows, *, enabled=True):
     (d / "state").mkdir(parents=True, exist_ok=True)
     d.joinpath("routine.yaml").write_text(
         yaml.safe_dump({"name": slug, "slug": slug, "enabled": enabled}), encoding="utf-8")
-    store.save_local(d, rows, {})
+    seed_local_reminders(d, rows, {})
     return d
 
 
@@ -101,7 +101,7 @@ def test_the_holders_own_later_write_carries_the_annotation(tmp_path):
     remind_dead.annotate(holder, "rem-20260921-024619-1", by=CURATOR, reason="disproved",
                          at="2026-11-02")
     kept, gstats = store.load_local(holder)
-    store.save_local(holder, [*kept, _row("rem-new", "^util:other")], gstats)
+    seed_local_reminders(holder, [*kept, _row("rem-new", "^util:other")], gstats)
     assert "rem-20260921-024619-1" in remind_dead.read_dead(holder)
     home = tmp_path / "lib" / "reminders"
     assert [r.id for r in store.active(holder, home, "local", run_id="r:1")] == ["rem-new"]
@@ -266,8 +266,8 @@ def test_a_dead_row_does_not_hold_the_holders_own_action(make_routine, scripted)
     """Not matched, not held, not tallied — in the holder's own run, which is where it fired."""
     b = make_routine(slug="holder")
     set_capabilities(b, reminders="local")
-    store.save_local(b, [_row("rem-20260921-024619-1", "^util:danger", {"fires": 22,
-                                                                        "could_not": 8})], {})
+    seed_local_reminders(b, [_row("rem-20260921-024619-1", "^util:danger", {"fires": 22,
+                                                                            "could_not": 8})], {})
     remind_dead.annotate(b, "rem-20260921-024619-1", by=CURATOR, reason="disproved",
                          at="2026-11-02")
     scripted([util("danger"), finish()])

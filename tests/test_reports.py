@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from helpers import bare_routine
+from helpers import bare_routine, seed_reports
 from rsched import jobs
 from rsched.engine.actions import (
     ALWAYS_KINDS,
@@ -623,11 +623,8 @@ def test_discard_undelivered_report_clears_an_orphan(tmp_path):
     bare_routine(home, "routine-improver")
 
     # an orphan: a targeted row with NO inbox delivery, exactly as an operator batch leaves it
-    path = reports_path(home)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps({"id": "R1", "ts": "2026-09-04T10:00:00+02:00", "routine": "operator",
-                             "target": "routine-improver", "title": "batch-appended orphan"}) + "\n")
+    seed_reports(home, [{"id": "R1", "ts": "2026-09-04T10:00:00+02:00", "routine": "operator",
+                         "target": "routine-improver", "title": "batch-appended orphan"}])
     assert [o["id"] for o in find_undelivered(_rows(home), home)] == ["R1"]
 
     row = discard_undelivered_report(home, "R1")

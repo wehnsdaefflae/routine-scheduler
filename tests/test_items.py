@@ -9,6 +9,7 @@ import json
 
 import pytest
 
+from helpers import seed_reports
 from rsched import priorities
 from rsched.readmodels import item_counts, memo
 from rsched.readmodels import items as items_model
@@ -70,10 +71,8 @@ def audit_home(tmp_path):
     (audit / "changelog.jsonl").write_text(CHANGELOG, encoding="utf-8")
     (audit / "decisions-answered.json").write_text(
         json.dumps({"D3": "2026-07-25T09:00:00+00:00"}), encoding="utf-8")
-    control = home / ".control"
-    control.mkdir(parents=True)
-    (control / "reports.jsonl").write_text(
-        "".join(json.dumps(b) + "\n" for b in BUGS), encoding="utf-8")
+    (home / ".control").mkdir(parents=True)
+    seed_reports(home, BUGS)
     return home
 
 
@@ -193,12 +192,17 @@ def test_counts_cover_every_type_and_status(audit_home):
     assert sum(counted["status"].values()) == len(result["items"])
 
 
-def test_a_hand_trimmed_fold_stamp_reads_as_no_fold_rather_than_a_500(audit_home):
+def test_a_hand_trimmed_fold_stamp_reads_as_no_fold_rather_than_a_500(audit_home, monkeypatch):
     """A report row can carry a `superseded` that is not the `{ts, by, to}` the ledger fold
     writes (a hand-trimmed or hand-batched ledger). Three sites already read the stamp through
     `event_stamp`; the carrier walk read it inline, so ONE such row made `/api/items` raise.
     Every site now agrees: it is not a fold, the row is its own thread, and a row folded into
-    it reads its status."""
+    it reads its status. The hook stream cannot carry such a stamp, so the rows are handed to
+    the read model directly — folded from the hand-written file, as they once were served."""
+    from rsched.paths import read_jsonl
+    from rsched.reports import fold_rows
+
+    monkeypatch.setattr(items_model, "read_reports", lambda path: fold_rows(read_jsonl(path)))
     with (audit_home / ".control" / "reports.jsonl").open("a", encoding="utf-8") as fh:
         for row in ({"id": "R3", "ts": "2026-07-26T00:00:00+00:00", "routine": "x",
                      "run_id": "x:1", "title": "trimmed", "target": "owner", "superseded": "R1"},
@@ -218,10 +222,9 @@ def test_an_id_past_four_digits_is_still_an_id(audit_home):
     """`reports.next_id` mints `R<highest+1>` with no ceiling and the ledger is past R2000. The
     id patterns capped the number at four digits, and `\\b` cannot close before a fifth, so from
     R10000 on an id in prose matched NOTHING: no reflink, no changelog link."""
-    with (audit_home / ".control" / "reports.jsonl").open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps({"id": "R12345", "ts": "2026-07-26T00:00:00+00:00",
-                             "routine": "x", "run_id": "x:1", "title": "five digits",
-                             "detail": "follows up R10001 and F12345"}) + "\n")
+    seed_reports(audit_home, [{"id": "R12345", "ts": "2026-07-26T00:00:00+00:00",
+                               "routine": "x", "run_id": "x:1", "title": "five digits",
+                               "detail": "follows up R10001 and F12345"}])
     with (audit_home / "self-audit" / "audit" / "changelog.jsonl").open(
             "a", encoding="utf-8") as fh:
         fh.write(json.dumps({"ts": "2026-07-27T10:00:00+00:00", "commit": "eeee5555",
@@ -241,9 +244,8 @@ def test_items_are_ordered_newest_origin_first(audit_home):
 def test_build_is_memoized_until_a_source_changes(audit_home):
     first = items_model.build(audit_home / "self-audit", audit_home)
     assert len(items_model.build(audit_home / "self-audit", audit_home)["items"]) == len(first["items"])
-    with (audit_home / ".control" / "reports.jsonl").open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps({"id": "R3", "ts": "2026-07-26T00:00:00+00:00",
-                             "routine": "x", "run_id": "x:1", "title": "new", "detail": ""}) + "\n")
+    seed_reports(audit_home, [{"id": "R3", "ts": "2026-07-26T00:00:00+00:00",
+                               "routine": "x", "run_id": "x:1", "title": "new", "detail": ""}])
     assert len(items_model.build(audit_home / "self-audit", audit_home)["items"]) == len(first["items"]) + 1
 
 
@@ -278,8 +280,7 @@ def test_api_items_merges_filters_and_carries_the_header(api_client):
     (audit / "report.json").write_text(json.dumps(REPORT), encoding="utf-8")
     (audit / "changelog.jsonl").write_text(CHANGELOG, encoding="utf-8")
     (routines / ".control").mkdir(parents=True, exist_ok=True)
-    (routines / ".control" / "reports.jsonl").write_text(
-        "".join(json.dumps(b) + "\n" for b in BUGS), encoding="utf-8")
+    seed_reports(routines, BUGS)
     memo.reset()
 
     data = c.get("/api/items").json()
@@ -311,8 +312,7 @@ def test_api_items_filters_by_the_routine_a_report_is_addressed_to(api_client):
             {"id": "R3", "ts": "2026-07-21T08:00:00+02:00", "routine": "config-optimizer",
              "run_id": "config-optimizer:20260721-080000", "title": "addressed to the hub",
              "detail": "", "target": "steward-hub-maintainer"}]
-    (routines / ".control" / "reports.jsonl").write_text(
-        "".join(json.dumps(b) + "\n" for b in bugs), encoding="utf-8")
+    seed_reports(routines, bugs)
     memo.reset()
 
     only = c.get("/api/items?target=steward-hub-maintainer").json()
@@ -340,8 +340,7 @@ def test_api_items_does_not_reparse_the_changelog_on_a_warm_request(api_client, 
     (audit / "report.json").write_text(json.dumps(REPORT), encoding="utf-8")
     (audit / "changelog.jsonl").write_text(CHANGELOG, encoding="utf-8")
     (routines / ".control").mkdir(parents=True, exist_ok=True)
-    (routines / ".control" / "reports.jsonl").write_text(
-        "".join(json.dumps(b) + "\n" for b in BUGS), encoding="utf-8")
+    seed_reports(routines, BUGS)
     memo.reset()
 
     calls = {"n": 0}
@@ -408,10 +407,9 @@ def test_filter_items_accepts_a_comma_status_list(audit_home):
 def test_owner_resolution_and_digest_section(audit_home):
     priorities.set_priority(audit_home, "R1", True)   # untargeted triage row → self-audit
     priorities.set_priority(audit_home, "F1", True)   # findings live in self-audit's report
-    with (audit_home / ".control" / "reports.jsonl").open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps({"id": "R3", "ts": "2026-08-05T10:00:00+02:00",
-                             "routine": "self-audit", "run_id": "self-audit:x",
-                             "title": "fix the tool", "target": "global-utils-review"}) + "\n")
+    seed_reports(audit_home, [{"id": "R3", "ts": "2026-08-05T10:00:00+02:00",
+                               "routine": "self-audit", "run_id": "self-audit:x",
+                               "title": "fix the tool", "target": "global-utils-review"}])
     priorities.set_priority(audit_home, "R3", True)   # targeted → the target owns it
     sa = priorities.digest_section(audit_home, "self-audit")
     assert "R1" in sa and "F1" in sa and "R3" not in sa
@@ -426,13 +424,12 @@ def test_a_flagged_row_that_was_folded_belongs_to_the_carriers_target(audit_home
     (`to`, readmodels/item_reports) and this resolver must agree (D75). Read as untargeted,
     the flag kept landing in self-audit's digest, putting the routed row back in front of
     triage: the re-routing F492's fold exists to stop."""
-    with (audit_home / ".control" / "reports.jsonl").open("a", encoding="utf-8") as fh:
-        for row in ({"id": "R3", "ts": "2026-08-05T10:00:00+02:00", "routine": "self-audit",
-                     "run_id": "self-audit:x", "title": "carrier", "target": "global-utils-review",
-                     "supersedes": ["R1"]},
-                    {"id": "R1", "event": "superseded", "ts": "2026-08-05T10:00:00+02:00",
-                     "by": "R3", "to": "global-utils-review"}):
-            fh.write(json.dumps(row) + "\n")
+    seed_reports(audit_home, [
+        {"id": "R3", "ts": "2026-08-05T10:00:00+02:00", "routine": "self-audit",
+         "run_id": "self-audit:x", "title": "carrier", "target": "global-utils-review",
+         "supersedes": ["R1"]},
+        {"id": "R1", "event": "superseded", "ts": "2026-08-05T10:00:00+02:00",
+         "by": "R3", "to": "global-utils-review"}])
     priorities.set_priority(audit_home, "R1", True)
     card = _by_id(items_model.build(audit_home / "self-audit", audit_home))["R1"]
     assert card["to"] == "global-utils-review"

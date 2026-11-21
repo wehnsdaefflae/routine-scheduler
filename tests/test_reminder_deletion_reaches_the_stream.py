@@ -15,8 +15,8 @@ FIRST_ID = f"rem-{TS}-1"
 
 
 def test_deleting_your_own_reminder_leaves_the_derived_view_empty(make_routine, scripted):
-    """The property the cutover needs, end to end: add, then delete, then compare the two
-    stores — the comparator must report NOTHING, because the deletion is on the stream too.
+    """The property the cutover needs, end to end: add, then delete — and the stream, which
+    is what the read serves, no longer names the reminder.
     """
     d = make_routine(slug="deleter")
     set_capabilities(d, reminders="local")
@@ -31,9 +31,9 @@ def test_deleting_your_own_reminder_leaves_the_derived_view_empty(make_routine, 
 
     assert f"{FIRST_ID} deleted (local)" in prompt_text(ep)
     assert store.load_local(d)[0] == [], "the local store still holds the deleted reminder"
-    assert reminderproj.drift(d.parent, d) == {}, (
-        "the stream and the store disagree after a deletion — a stream-served read would "
-        "re-raise a reminder this routine deleted")
+    assert FIRST_ID not in reminderproj.definitions(d.parent, routine="deleter"), (
+        "the deletion did not reach the stream — the stream-served read would re-raise a "
+        "reminder this routine deleted")
     assert status == "ok"
 
 
@@ -83,8 +83,8 @@ def test_the_consoles_delete_reaches_the_stream_too(api_client, make_routine):
         "ok": True, "remaining": 1}
 
     assert [r.id for r in store.load_local(d)[0]] == [kept.id]
-    assert reminderproj.drift(d.parent, d) == {}, (
-        "the console's delete did not reach the hook stream — a stream-served read would "
+    assert sorted(reminderproj.definitions(d.parent, routine="consoledel")) == [kept.id], (
+        "the console's delete did not reach the hook stream — the stream-served read would "
         "re-raise a reminder the user deleted")
     rows = [h for h in hookstore.read_hooks(d.parent)
             if h.source == "reminder" and h.id == doomed.id]
@@ -219,4 +219,3 @@ def test_only_a_local_deletion_is_mirrored_as_this_routines_own(make_routine):
     assert loop.reminders == []
     assert [h for h in hookstore.read_hooks(d.parent) if h.source == "reminder"] == [], (
         "a GLOBAL reminder's deletion was recorded as this routine's own local hook")
-    assert reminderproj.drift(d.parent, d) == {}

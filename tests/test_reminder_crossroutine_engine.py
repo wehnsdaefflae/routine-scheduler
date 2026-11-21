@@ -3,7 +3,7 @@
 import pytest
 
 from conftest import finish, util, write_file
-from helpers import prompt_text, server_for, set_capabilities
+from helpers import prompt_text, seed_local_reminders, server_for, set_capabilities
 from rsched import reminders as store
 from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
@@ -42,8 +42,8 @@ def test_the_target_meets_a_foreign_hook_as_foreign_and_is_offered_the_dispositi
         make_routine, scripted):
     b = make_routine(slug="receiver2")
     set_capabilities(b, reminders="local")
-    store.save_local(b, [_rem(rid="rem-fo", regex="^util:danger", owner="setter",
-                              desc="setter says this wipes the shared store")], {})
+    seed_local_reminders(b, [_rem(rid="rem-fo", regex="^util:danger", owner="setter",
+                                  desc="setter says this wipes the shared store")], {})
     ep = scripted([util("danger"), write_file("state/x.txt", content="x"), finish()])
     status, run_dir = run_routine(b, server_for(b), run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
@@ -62,8 +62,8 @@ def test_the_targets_remove_disposition_deletes_the_hook_and_is_remembered(
         make_routine, scripted):
     b = make_routine(slug="receiver3")
     set_capabilities(b, reminders="local")
-    store.save_local(b, [_rem(rid="rem-fo", regex="^util:danger", owner="setter",
-                              desc="setter says this wipes the shared store")], {})
+    seed_local_reminders(b, [_rem(rid="rem-fo", regex="^util:danger", owner="setter",
+                                  desc="setter says this wipes the shared store")], {})
     ep = scripted([util("danger"),
                    {**write_file("state/x.txt", content="x"),
                     "remind_feedback": {"id": "rem-fo", "label": "could_not",
@@ -83,8 +83,8 @@ def test_the_owner_cannot_set_a_pattern_the_target_removed(make_routine, scripte
     a = make_routine(slug="setter4")
     set_capabilities(a, reminders="local")
     (b / "state").mkdir(parents=True, exist_ok=True)
-    store.save_local(b, [], {}, [{"owner": "setter4", "regex": "^shell: git push",
-                                  "kind": "action"}])
+    seed_local_reminders(b, [], {}, [{"owner": "setter4", "regex": "^shell: git push",
+                                      "kind": "action"}])
     ep = scripted([{**write_file("state/x.txt", content="x"),
                     "remind": {"op": "add", "target": "receiver4", "regex": "^shell: git push",
                                "description": "again"}},
@@ -100,8 +100,8 @@ def test_a_muted_foreign_hook_survives_the_run_in_the_store(make_routine, script
     """Mute is \"not this run\": the definition must still be there for its owner to see."""
     b = make_routine(slug="receiver5")
     set_capabilities(b, reminders="local")
-    store.save_local(b, [_rem(rid="rem-fo", regex="^util:danger", owner="setter",
-                              desc="setter's caution")], {})
+    seed_local_reminders(b, [_rem(rid="rem-fo", regex="^util:danger", owner="setter",
+                                  desc="setter's caution")], {})
     scripted([util("danger"),
               {**write_file("state/x.txt", content="x"),
                "remind_feedback": {"id": "rem-fo", "label": "could_not", "disposition": "mute"}},
@@ -120,7 +120,7 @@ def test_a_muted_foreign_hook_survives_the_run_in_the_store(make_routine, script
 def test_a_disposition_on_your_own_reminder_is_refused(make_routine, scripted):
     b = make_routine(slug="receiver6")
     set_capabilities(b, reminders="local")
-    store.save_local(b, [_rem(rid="rem-own", regex="^util:danger", desc="my own caution")], {})
+    seed_local_reminders(b, [_rem(rid="rem-own", regex="^util:danger", desc="my own caution")], {})
     ep = scripted([util("danger"),
                    {**write_file("state/x.txt", content="x"),
                     "remind_feedback": {"id": "rem-own", "label": "would_have",

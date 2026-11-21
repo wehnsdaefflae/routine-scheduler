@@ -8,6 +8,7 @@ import json
 
 import pytest
 
+from helpers import seed_reports
 from rsched import firstseen
 from rsched.readmodels import memo
 
@@ -45,9 +46,7 @@ def seeded(api_client):
     audit.mkdir(parents=True)
     (audit / "report.json").write_text(json.dumps(REPORT), encoding="utf-8")
     (audit / "changelog.jsonl").write_text(CHANGELOG, encoding="utf-8")
-    control = home / ".control"
-    control.mkdir(parents=True, exist_ok=True)
-    (control / "reports.jsonl").write_text(json.dumps(BUG) + "\n", encoding="utf-8")
+    seed_reports(home, [BUG])
     memo.reset()
     return c, home
 

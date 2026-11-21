@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 from conftest import finish, util, write_file
-from helpers import prompt_text, reminder, server_for, set_capabilities
+from helpers import prompt_text, reminder, seed_local_reminders, server_for, set_capabilities
 from rsched import assists as lib
 from rsched.assists import normalize_assists
 from rsched.engine.assist_predicates import PREDICATES
@@ -529,7 +529,6 @@ def test_the_two_sources_do_not_cannibalise_each_others_hold(make_routine, scrip
     only hold on the same action and the rule's caution would never be seen. The ledger
     carries the SOURCE, so each layer gets its own budget — but the model is still stopped
     ONCE per action, with precedence deciding which caution it hears first."""
-    from rsched import reminders as rem_store
 
     d = make_routine(slug="assistr")
     server = server_for(d)
@@ -540,7 +539,7 @@ def test_the_two_sources_do_not_cannibalise_each_others_hold(make_routine, scrip
     (repo / ".git").mkdir(parents=True)
     target = repo / "src.py"
     target.write_text("x", encoding="utf-8")
-    rem_store.save_local(d, [reminder(rid="rem-c", regex=r"^write_file path=", desc="mine first")],
+    seed_local_reminders(d, [reminder(rid="rem-c", regex=r"^write_file path=", desc="mine first")],
                          {})
     scripted([write_file(str(target), content="y"),        # held by the REMINDER (precedence)
                    write_file(str(target), content="y"),   # held by the RULE, not skipped
@@ -666,21 +665,17 @@ def test_the_new_predicates_read_the_signals_the_engine_already_keeps(tmp_path):
 
     # D131: the receiving half of problem-routing. `ctx.reports_open` is engine bookkeeping —
     # the drain fills it, the report handler empties it as each `answers` lands — and the
-    # ledger is asked whether anything ELSE closed the thread since (R2086).
-    from rsched import reports
+    # reports are asked whether anything ELSE closed the thread since (R2086).
+    from helpers import seed_reports
 
     owes = PREDICATES["unclosed-delivered-report"].check
     loop.ctx.server = SimpleNamespace(routines_home=tmp_path)
-    ledger = reports.reports_path(tmp_path)
-    ledger.parent.mkdir(parents=True, exist_ok=True)
-    ledger.write_text(json.dumps({"id": "R42", "routine": "a", "target": "b"}) + "\n",
-                      encoding="utf-8")
+    seed_reports(tmp_path, [{"id": "R42", "routine": "a", "target": "b"}])
     loop.ctx.reports_open = []
     assert owes(Situation(loop=loop)) is False
     loop.ctx.reports_open = ["R42"]
     assert owes(Situation(loop=loop)) is True
-    with ledger.open("a", encoding="utf-8") as fh:        # settled by someone else
-        fh.write(json.dumps({"id": "R43", "routine": "c", "settles": ["R42"]}) + "\n")
+    seed_reports(tmp_path, [{"id": "R43", "routine": "c", "settles": ["R42"]}])  # settled elsewhere
     assert owes(Situation(loop=loop)) is False
 
 # --- the library surface --------------------------------------------------------------------

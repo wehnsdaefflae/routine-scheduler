@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from conftest import mk_run
-from helpers import tmp_server
+from helpers import seed_reports, tmp_server
 from rsched.readmodels import summaries
 
 TS = "20260905-090000"
@@ -108,7 +108,6 @@ def test_a_flagged_item_leads_the_page_ahead_of_every_summary(api_client, make_r
     """⚑ is the user's "work this first" and outranks recency (readmodels/items). The page
     prepended every run summary to the maintenance index, so the flagged item sat below one
     summary per routine — the float undone by the merge."""
-    import json
 
     from rsched import priorities
 
@@ -121,8 +120,7 @@ def test_a_flagged_item_leads_the_page_ahead_of_every_summary(api_client, make_r
              "run_id": "talker:20260719-190013", "title": "a flagged bug", "detail": ""},
             {"id": "R2", "ts": "2026-07-20T08:00:00+02:00", "routine": "talker",
              "run_id": "talker:20260720-080000", "title": "an ordinary bug", "detail": ""}]
-    (home / ".control" / "reports.jsonl").write_text(
-        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    seed_reports(home, rows)
     priorities.set_priority(home, "R1", True)
 
     ids = [i["id"] for i in c.get("/api/items").json()["items"]]

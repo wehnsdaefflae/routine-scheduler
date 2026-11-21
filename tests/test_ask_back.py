@@ -7,7 +7,7 @@ import json
 import pytest
 
 from conftest import WORKFLOW_MD, finish, util, write_file
-from helpers import server_for, set_capabilities
+from helpers import seed_local_reminders, server_for, set_capabilities
 from rsched import reminders as store
 from rsched import utils_lib, utils_run
 from rsched.engine.interact import _held_not_settled
@@ -212,9 +212,9 @@ def test_a_re_submission_on_a_finish_goes_through(make_routine, scripted):
     recipe = WORKFLOW_MD + "\n## Done when\n\n- d1 — the curated caution is filed\n"
     d = make_routine(slug="finishop", workflow_md=recipe)
     set_capabilities(d, reminders="global", remind_confirm="always")
-    store.save_local(d, [Reminder(id="rem-d", regex="^util:danger", scope="local",
-                                  description="it wipes the workdir", created_run="r:1",
-                                  stats=store.blank_stats())], {})
+    seed_local_reminders(d, [Reminder(id="rem-d", regex="^util:danger", scope="local",
+                                      description="it wipes the workdir", created_run="r:1",
+                                      stats=store.blank_stats())], {})
     _reply(d, 2)                                     # the finish on turn 2 carries the op
     _reply(d, 3, "approve", ask_back=False)
     first = {**finish(status="partial", summary="caution proposed"), "remind": REMIND,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from conftest import finish, util, write_file
-from helpers import server_for, set_capabilities
+from helpers import seed_local_reminders, server_for, set_capabilities
 from rsched import reminders as remstore
 from rsched import reports
 from rsched.engine.runtime import run_routine
@@ -162,7 +162,7 @@ def test_a_disposition_is_recorded_on_the_stream(make_routine, scripted):
     foreign = remstore.Reminder(id="rem-fo", regex="^util:danger", description="setter's",
                                 scope="local", kind="action", owner="setter",
                                 created_run="setter:1", stats=remstore.blank_stats())
-    remstore.save_local(d, [foreign], {})
+    seed_local_reminders(d, [foreign], {})
     scripted([util("danger"),
               {**write_file("state/x.txt", content="x"),
                "remind_feedback": {"id": "rem-fo", "label": "could_not",
@@ -181,8 +181,7 @@ def test_a_disposition_is_recorded_on_the_stream(make_routine, scripted):
 def test_the_reminder_store_is_derivable_from_the_stream(make_routine, scripted):
     """The reminder half of "make one the source and DERIVE the other". The definitions a run
     would hold are computed from the hook stream and compared against the store it actually
-    read — `drift` empty is the claim, and a non-empty answer would NAME the hook that was
-    written without going through the write path.
+    read — the same ids on both sides is the claim.
     """
     d = make_routine(slug="remr")
     set_capabilities(d, reminders="local")
@@ -203,7 +202,7 @@ def test_the_reminder_store_is_derivable_from_the_stream(make_routine, scripted)
     assert sorted(v["regex"] for v in derived.values()) == ["^util:fs-ops mv ", "exit 137"]
     assert {v["kind"] for v in derived.values()} == {"action", "result"}
     assert all(v["created_run"] for v in derived.values())
-    assert reminderproj.drift(d.parent, d) == {}
+    assert sorted(derived) == sorted(r.id for r in remstore.load_local(d)[0])
 
 
 def test_a_removed_hook_leaves_the_derived_view(make_routine, scripted):
@@ -217,7 +216,7 @@ def test_a_removed_hook_leaves_the_derived_view(make_routine, scripted):
     foreign = remstore.Reminder(id="rem-go", regex="^util:danger", description="setter's",
                                 scope="local", kind="action", owner="setter",
                                 created_run="setter:1", stats=remstore.blank_stats())
-    remstore.save_local(d, [foreign], {})
+    seed_local_reminders(d, [foreign], {})
     scripted([util("danger"),
               {**write_file("state/x.txt", content="x"),
                "remind_feedback": {"id": "rem-go", "label": "could_not",

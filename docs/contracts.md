@@ -221,8 +221,8 @@ entry for what you are about to touch.
   consequence reminder and a mid-run injection are three settings, in the one store
   `.control/hooks.jsonl`. A REPORT is written there FIRST and its `reports.jsonl` row is the
   projection (`rsched/hooks/reportproj`) — and since step 9 the stream is also what every report
-  surface READS (`rsched/hooks/reportread`, behind `reports.read_reports`; the ledger is served
-  only when it names a report the stream lacks, and the shortfall is filed). The reminder and
+  surface READS (`rsched/hooks/reportread`, behind `reports.read_reports` — the stream is the
+  only read source; the ledger is still written for readers outside the engine). The reminder and
   injection paths still mirror theirs through `engine/hookmirror`. Two rules bound the mechanism: the run
   tree is the only addressing scheme, and `hold_before_action` is the only delivery moment that
   can change what runs. `read_file` batches

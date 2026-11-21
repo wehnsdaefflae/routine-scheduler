@@ -316,7 +316,8 @@ def delete_local_reminder(request: Request, slug: str, rid: str) -> dict:
     "the console deleted this", and `reminderproj` subtracts on `remove` whatever the origin.
     Best-effort (`append` swallows `OSError`) and AFTER the real write, like every mirror call:
     the deletion the user asked for must not fail because its bookkeeping did. A write that
-    does fail leaves exactly the drift `reminderproj.drift` exists to report.
+    does fail leaves the stream still naming the reminder, so the next read serves it again
+    (`hooks/reminderread`) — the one cost of best-effort here.
     """
     from .. import reminders
     from ..hooks import store as hookstore

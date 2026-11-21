@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 
+from helpers import seed_reports
 from rsched.readmodels import item_counts, memo
 from rsched.readmodels import items as items_model
 
@@ -101,8 +102,7 @@ def test_api_items_counts_a_report_to_a_deleted_routine_as_unroutable(api_client
             {"id": "R2", "ts": "2026-10-16T07:06:46+02:00", "routine": "steward-hub-maintainer",
              "run_id": "steward-hub-maintainer:1", "title": "nobody can drain this", "detail": "",
              "target": "deleted-radar"}]
-    (routines / ".control" / "reports.jsonl").write_text(
-        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    seed_reports(routines, rows)
     memo.reset()
 
     active = c.get("/api/items").json()["counts"]["active"]
@@ -181,8 +181,7 @@ def test_api_items_carries_the_owner_split_and_filters_by_it(api_client, make_ro
     rows = [{"id": "R1", "ts": "2026-10-17T08:00:00+02:00", "routine": "self-audit",
              "run_id": "self-audit:1", "title": "for the radar", "detail": "",
              "target": "grants-radar"}]
-    (routines / ".control" / "reports.jsonl").write_text(
-        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    seed_reports(routines, rows)
     memo.reset()
 
     data = c.get("/api/items").json()
