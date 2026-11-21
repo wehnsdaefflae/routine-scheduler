@@ -31,13 +31,10 @@ from pathlib import Path
 
 import pytest
 
-from rsched.hooks import from_record
 from rsched.hooks import store as hookstore
-from rsched.hooks.reportproj import rows_for, stream_rows
+from rsched.hooks.reportproj import stream_rows
 from rsched.hooks.reportread import folded, sources
-from rsched.migrate_mirror_hooks import repaired_records, unambiguous
 from rsched.paths import read_jsonl
-from rsched.report_disposal import Disposal
 from rsched.reports import file_report, fold_rows, read_reports, reports_path
 
 LIVE = Path("/home/mark/routines")
@@ -77,68 +74,6 @@ def test_the_live_stream_carries_every_live_report_in_the_ledgers_order():
     ledger = fold_rows(read_jsonl(reports_path(LIVE)))
     stream = fold_rows(stream_rows(LIVE))
     assert [r["id"] for r in stream] == [r["id"] for r in ledger], "the ids or their order"
-
-
-@pytest.mark.skipif(not (LIVE / ".control" / "hooks.jsonl").is_file(),
-                    reason="no live stream on this host")
-def test_the_live_repair_leaves_the_two_stores_agreeing():
-    """Running the repair over the live stores leaves the folds equal.
-
-    Pure function, no write: the migration's shape is testable against production bytes because
-    `repaired_records` takes the rows and returns the rows. After the boot migration has run
-    this asserts the stable state (nothing left to change); before it, it asserts the repair is
-    sufficient. Either way the post-condition is the same, which is the only claim worth
-    pinning here.
-    """
-    rows = list(read_jsonl(reports_path(LIVE)))
-    stream = list(read_jsonl(hookstore.hooks_path(LIVE)))
-    repaired = repaired_records(rows, stream)
-    assert len(repaired) == len(stream), "the repair must not add or drop a record"
-    report_rows = [rows_for(h) for r in repaired if (h := from_record(r)).source == "report"]
-    assert fold_rows(report_rows) == fold_rows(rows)
-
-
-def test_the_repair_recomputes_a_mirror_era_hook_and_touches_nothing_else(tmp_path):
-    """A hook missing its disposal is rewritten; a correct one and a non-report one are not.
-
-    This is the mirror-era shape exactly: step 2's mirror wrote `title`/`detail`/`target` and
-    dropped `answers`/`closes`, so `report_threads._is_open` read a settled report as open.
-    """
-    home = _home(tmp_path)
-    good = file_report(home, routine="a", run_id="a:1", title="t1", detail="d", target="b")
-    assert good is not None, "the first filing was refused"
-    closing = file_report(home, routine="b", run_id="b:1", title="t2", detail="d", target="a",
-                          disposal=Disposal(answers=good[1], closes=True))
-    assert closing is not None, "the closing filing was refused"
-    # impoverish the closing report's hook the way step 2's mirror did
-    poor = []
-    for rec in read_jsonl(hookstore.hooks_path(home)):
-        hook = from_record(rec)
-        if hook.id == closing[1] and not hook.payload.get("event"):
-            rec = {**rec, "payload": {"title": "t2", "detail": "d"}}
-        poor.append(rec)
-    ledger = list(read_jsonl(reports_path(home)))
-    assert fold_rows([rows_for(from_record(r)) for r in poor]) != fold_rows(ledger), \
-        "the impoverished stream must disagree, or this test proves nothing"
-    repaired = repaired_records(ledger, poor)
-    assert fold_rows([rows_for(from_record(r)) for r in repaired]) == fold_rows(ledger)
-    assert sum(1 for a, r in zip(poor, repaired, strict=True) if a != r) == 1, \
-        "exactly the impoverished record may be rewritten"
-
-
-def test_the_repair_refuses_to_guess_where_one_key_names_two_rows():
-    """A duplicated `(id, event)` key is excluded, not resolved.
-
-    The live ledger carries two (`R999`/`R1000`, a doubled August delivery). Which of two rows
-    a record belongs to is not a question a migration may answer by picking one.
-    """
-    rows = [{"id": "R1", "event": "delivered", "ts": "t1", "run_id": "x:1"},
-            {"id": "R1", "event": "delivered", "ts": "t2", "run_id": "x:2"},
-            {"id": "R2", "ts": "t3", "routine": "a", "run_id": "a:1", "title": "t",
-             "detail": "d"}]
-    keys = unambiguous(rows)
-    assert ("R1", "delivered") not in keys
-    assert ("R2", "") in keys
 
 
 def test_a_read_finding_no_report_rows_serves_the_ledger_and_says_so(tmp_path, monkeypatch):

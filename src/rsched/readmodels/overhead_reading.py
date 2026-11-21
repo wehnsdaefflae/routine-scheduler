@@ -22,8 +22,7 @@ bar, the routine is over whatever its recipe history (`persistent`, 2026-11-19) 
 routine revised more often than every third run is never judged.
 
 ONE SOURCE per value. The usage stream is the only thing read: a run whose row carries no
-`overhead` (its transcript was never measured — older than the record and gone before the
-one-shot backfill, `migrate_overhead.py`) is UNMEASURED and left out of the window, never
+`overhead` (its transcript was never measured) is UNMEASURED and left out of the window, never
 recomputed here from a transcript and never read as zero. Four readers ask it — the setup
 surface's `recipe:overhead` row, `rsched validate` through that row, the run-end alarm
 (`engine/overhead_alarm.py`) and the boot digest's FINISH block — and the surface rides

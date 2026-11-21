@@ -16,11 +16,9 @@ label — and deliberately not to a vocabulary of its own: the read model, the c
 and the prune check all read one set of names (`reminders.STAT_FIELDS`), and a second spelling
 of `could_not` would mean every reader learning both.
 
-Lenient on READ, strict on WRITE. The legacy int is read as `{"fires": n}` and a value a hand
-edit broke as zeros, because this rides the routine page's health payload and a routine whose
-store is old or hand-broken is a routine with nothing to show, not a broken page — the
-one-shot migration (`migrate_assist_stats.py`) converts the file at the next daemon boot, and
-the page may well be read before it. Every write leaves every field present.
+Lenient on READ, strict on WRITE. A value a hand edit broke reads as zeros, because this rides
+the routine page's health payload and a hand-broken store is a routine with nothing to show, not
+a broken page. Every write leaves every field present.
 """
 
 from __future__ import annotations
@@ -40,22 +38,17 @@ def blank() -> dict:
 def normalize(raw: object) -> dict:
     """One key's stored value as a full tally — whatever is actually on disk.
 
-    Three shapes reach this: the stat mapping a live engine writes, the INT the file carried
-    before D239 (the fire count, kept as `fires`), and whatever a hand edit left (zeros rather
-    than an exception — `int("lots")` used to raise and take the whole health payload down).
+    Anything but the stat mapping a live engine writes — a hand edit — reads as zeros rather
+    than an exception (`int("lots")` used to take the whole health payload down).
     """
     stats = blank()
-    if isinstance(raw, dict):
-        for field in STAT_FIELDS:
-            try:
-                stats[field] = int(raw.get(field) or 0)
-            except (TypeError, ValueError):
-                stats[field] = 0
+    if not isinstance(raw, dict):
         return stats
-    try:
-        stats["fires"] = int(raw or 0)  # type: ignore[call-overload]
-    except (TypeError, ValueError):
-        stats["fires"] = 0
+    for field in STAT_FIELDS:
+        try:
+            stats[field] = int(raw.get(field) or 0)
+        except (TypeError, ValueError):
+            stats[field] = 0
     return stats
 
 

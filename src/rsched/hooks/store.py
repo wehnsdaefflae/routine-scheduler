@@ -15,10 +15,9 @@ have readers OUTSIDE this engine — self-audit's scripts fold the report ledger
 store carries the per-routine fire tallies that are the evidence tuning a pattern — so a hard
 cutover would invalidate the operator's own counts on the day it shipped. Reports show what the
 cutover actually takes, and it is less than the campaign's plan assumed: the read seam was
-already in one place, so NO caller changed. What took the work was the history — the pre-stream
-backfill (`migrate_report_hooks`) and then a repair, because 8 rows filed on 2026-10-19, in the
-window between the mirror and the source, had hooks carrying no disposal at all
-(`migrate_mirror_hooks`): six settled exchanges would have read as OPEN the day the read moved.
+already in one place, so NO caller changed. What took the work was the history — a pre-stream
+backfill and then a repair of 8 mirror-era hooks carrying no disposal, without which six settled
+exchanges would have read as OPEN the day the read moved.
 **The lesson for the reminders cutover: the seam is cheap, the history is not.** Measure the two
 stores' folds against each other BEFORE repointing anything, and repair rather than work around.
 

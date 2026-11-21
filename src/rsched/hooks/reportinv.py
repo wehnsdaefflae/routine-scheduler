@@ -174,9 +174,7 @@ def _compare(routines_home: Path, decided: list[str], projection: list[str], *, 
               f"{sorted(decided) or 'none'}, the ledger says {sorted(projection) or 'none'}. "
               "The STREAM's answer was used — it is what every report surface reads since "
               "D152 step 9. Either a row reached reports.jsonl without going through the hook "
-              "(hooks/reportproj is the one writer), or a mirror-era hook is missing its "
-              "disposal (migrate_mirror_hooks), or the pre-stream backfill is incomplete "
-              "(migrate_report_hooks)")
+              "(hooks/reportproj is the one writer), or the stream lost a row")
     log_health_event(routines_home, "hook_stream_diverged", routine=routine, run_id="",
                      detail=detail, stream=len(decided), ledger=len(projection))
     log.warning("report-hooks: %s", detail)

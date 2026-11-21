@@ -18,8 +18,8 @@ give the ledger, row for row and key for key. Measured on the live instance the 
 shipped: 5,334 hooks against 5,334 ledger rows, folding to 2,868 reports on both sides, equal as
 LISTS — same rows, same order, same key order inside each row. That took one repair first: 8
 rows filed on 2026-10-19, in the window between the mirror (step 2) and the source (step 4),
-whose hooks never carried their disposal (`migrate_mirror_hooks` — without it a read served from
-the stream would have silently re-opened six settled exchanges).
+whose hooks never carried their disposal (without that repair a read served from the stream
+would have silently re-opened six settled exchanges).
 
 **What the ledger file is FOR, now that nothing here reads it.** Three things, all of them
 outside this engine: the operator reads it by eye, `self-audit`'s own scripts fold it, and it is
@@ -160,9 +160,8 @@ def _fell_short(routines_home: Path, missing: list[str], *, served: int,
                       f"{', '.join(missing[:12])}")
               + ". Since D152 step 9 the stream is what every report surface reads and the "
                 "ledger is its projection, so this is a shortfall in the stream, not in the "
-                "read. Either the stream was lost (restore it, or rebuild it from the ledger "
-                "through migrate_report_hooks), or a row reached the ledger without going "
-                "through the one writer (hooks/reportproj)")
+                "read. Either the stream was lost (restore it from a backup), or a row reached "
+                "the ledger without going through the one writer (hooks/reportproj)")
     try:
         log_health_event(
             routines_home, "hook_stream_unreadable" if gone else "hook_stream_diverged",

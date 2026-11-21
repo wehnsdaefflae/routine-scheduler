@@ -22,7 +22,7 @@ from pathlib import Path
 
 from . import libgit
 from .ids import is_slug
-from .paths import atomic_write
+from .paths import atomic_write, repo_root
 from .utils_header import parse_header
 
 log = logging.getLogger("rsched.utils_lib")
@@ -36,67 +36,12 @@ USAGE_ERROR_EXIT = 2
 # cap only stops a runaway printer from ballooning engine memory.
 OUTPUT_CAP = 1_000_000
 
-DISPATCHER = '''#!/usr/bin/env python3
-"""gu — run a global util: `gu <name> [args...]`, or `gu list`. Utils call each other
-through this dispatcher (this directory is on PATH when a util runs)."""
-import os, re, sys, shutil
-
-HOME = os.path.dirname(os.path.abspath(__file__))
-UTILS = os.path.join(HOME, "utils")
-
-
-def _summary(name):
-    # one unreadable or oddly-written util must not take the whole listing down with it:
-    # a whitespace-only first docstring line has no line [0], and bytes that are not UTF-8
-    # raise a ValueError, not an OSError
-    main_py = os.path.join(UTILS, name, "main.py")
-    try:
-        with open(main_py, encoding="utf-8") as fh:
-            src = fh.read()
-    except (OSError, ValueError):
-        return ""
-    m = re.search(r'"""(.+?)(?:\\n|""")', src, re.DOTALL)
-    lines = m.group(1).strip().splitlines() if m else []
-    return lines[0] if lines else ""
-
-
-def main():
-    args = sys.argv[1:]
-    if not args or args[0] in ("list", "-h", "--help"):
-        # only real utils: skips __pycache__, removal residue, stray files, and a candidate
-        # being selftested out of the live path (`staging--`, rsched.utils_lib.STAGING_PREFIX)
-        names = sorted(d for d in os.listdir(UTILS)
-                       if os.path.isfile(os.path.join(UTILS, d, "main.py"))
-                       and not d.startswith("staging--")) \\
-            if os.path.isdir(UTILS) else []
-        for n in names:
-            print(f"{n} — {_summary(n)}")
-        if not names:
-            print("(no utils yet)")
-        return 0
-    name, rest = args[0], args[1:]
-    main_py = os.path.join(UTILS, name, "main.py")
-    if not os.path.isfile(main_py):
-        print(f"gu: no util named {name!r} (see 'gu list')", file=sys.stderr)
-        return 2
-    if not shutil.which("uv"):
-        print("gu: 'uv' is required to run utils", file=sys.stderr)
-        return 2
-    os.execvp("uv", ["uv", "run", "--script", main_py, *rest])
-    return 2
-
-
-if __name__ == "__main__":
-    sys.exit(main())
-'''
-
-
 GITIGNORE = "__pycache__/\n*.pyc\n"
 
 #: Dir-name prefix RESERVED for a util candidate being selftested out of the live path
 #: (utils_stage). A staged candidate is a real util under a throwaway slug so its siblings,
 #: declarations and jail are the real ones — and it is hidden from every discovery surface
-#: (`list_utils` here, the `gu` dispatcher above) so no caller can meet it in the catalog, and
+#: (`list_utils` here, the `gu` dispatcher) so no caller can meet it in the catalog, and
 #: so a candidate's `fs:` declaration cannot subtract a private store from the utils of a
 #: concurrently running routine (sandbox.private_store_paths reads `list_utils`). Reserved
 #: means reserved: `write_util` refuses the prefix as a util NAME (engine/authoring.py, the
@@ -150,14 +95,12 @@ def ensure_library(home: Path, *, remote: str = "") -> None:
 
 
 def _install_dispatcher(home: Path) -> None:
-    """Install our minimal `gu` dispatcher + push hook — but NEVER overwrite an existing one.
-    When the library root already carries its own richer `gu`, we leave its dispatcher and
-    hook untouched and just use them. That richer dispatcher is tracked as `util-seed/gu`
-    (D225); `migrate_dispatcher_seed` carries it onto a library still holding this stub.
+    """Install the tracked `gu` dispatcher (`util-seed/gu`, D225) + push hook — but NEVER
+    overwrite an existing one: a library root carrying its own `gu` keeps it.
     """
     gu = home / "gu"
     if not gu.exists():
-        gu.write_text(DISPATCHER, encoding="utf-8")
+        shutil.copyfile(repo_root() / "util-seed" / "gu", gu)
         gu.chmod(0o755)  # the dispatcher is a shared executable by design
     libgit.install_push_hook(home)
 
