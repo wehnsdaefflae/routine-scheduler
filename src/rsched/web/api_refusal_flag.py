@@ -29,13 +29,13 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
-from ..config import RoutineConfig, load_routine
+from ..config import RoutineConfig
 from ..conversations import attachment_rels
 from ..engine import inbox
 from ..engine.rewind import reply_opening, rewind_transcript
 from ..engine.transcript import read_events
 from ..paths import atomic_write_yaml, read_json, read_yaml
-from ..registry import TERMINAL_STATES
+from ..registry import TERMINAL_STATES, load_config
 from .api_runs import _run_dir, run_state
 from .config_fields import validate_models
 from .routines_common import merge_control
@@ -99,7 +99,7 @@ def _plan(request: Request, run_id: str, turn: int, ts: str, pick: str) -> _Plan
     if run_state(run_dir) not in TERMINAL_STATES:
         raise HTTPException(409, "this conversation is mid-reply — flag a reply once the "
                                  "reply has finished")
-    cfg, _ = load_routine(run_dir.parent.parent)
+    cfg, _ = load_config(run_dir.parent.parent)
     if cfg is None:
         raise HTTPException(404, f"conversation {run_dir.parent.parent.name!r} not found")
     events, _ = read_events(run_dir / "transcript.jsonl", 0)

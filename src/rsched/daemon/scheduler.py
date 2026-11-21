@@ -1,12 +1,10 @@
 """The cron scheduler: derives its fire table live from the routine catalog.
 
-Every tick (5s) it checks due fires; every registry_rescan_s it rescans ~/routines (so edits to
-routine.yaml — schedule changes, enable/disable — take effect without restarts). There is NO
-catch-up (D237, operator 2026-11-05): a fire missed for any reason — a pause, a restart, a crash —
-is skipped, and boot computes the NEXT future fire. A fire that finds its routine still
-running is skipped and logged (`overrun_skipped`, inside Runner.fire). Event triggers ride the
-same tick: spooled webhook events become coalesced fires — the trigger analog of the overrun
-rule is that events QUEUE instead of being skipped (daemon/triggers.py, docs/triggers.md).
+Every tick (5s) it checks due fires; every registry_rescan_s it rescans ~/routines IN A THREAD
+(edits to routine.yaml take effect without restarts; a cold scan resolves roots on network shares,
+seconds of it at boot, which on the loop held every request — 2026-11-21). NO catch-up (D237): a
+fire missed for any reason is skipped. A fire finding its routine running is skipped and logged
+(`overrun_skipped`); spooled webhook events become coalesced fires that QUEUE (triggers.py).
 """
 
 from __future__ import annotations
@@ -191,8 +189,10 @@ class Scheduler:
         is guarded (`_log_loop_failure`) — the loop must start regardless. Nothing missed while
         the daemon was down is made up (D237).
         """
-        try:
-            self.rescan()
+        try:   # every home warmed in threads first: the reap below scans them ON the loop
+            await asyncio.to_thread(self.rescan)
+            for home in (self.server.conversations_home, self.server.background_home):
+                await asyncio.to_thread(registry.scan, self.server, home)
         except Exception as exc:
             self._log_loop_failure("boot rescan", exc)
         fixed, resumable = 0, list[tuple]()
@@ -210,7 +210,7 @@ class Scheduler:
         self._refresh_machine_queues()
         if fixed:
             try:
-                self.rescan()
+                await asyncio.to_thread(self.rescan)
             except Exception as exc:
                 self._log_loop_failure("boot rescan", exc)
 
@@ -225,7 +225,7 @@ class Scheduler:
             # Guarded like the boot above (_log_loop_failure). CancelledError is a
             # BaseException and still propagates.
             try:
-                self._tick_once(loop)
+                await self._tick_once(loop)
                 now = _now()
                 # global pause (D34): skip our own fires, but keep ADVANCING the fire
                 # table — a skipped fire is gone, never made up (D237).
@@ -375,14 +375,14 @@ class Scheduler:
 
         self._off_tick("model-limits", go)
 
-    def _tick_once(self, loop) -> None:
+    async def _tick_once(self, loop) -> None:
         """The tick preamble: restart state machine, then a due registry rescan. Raises
         _TickSkip when the restart machine says to fire nothing this tick.
         """
         if self._maybe_restart():
             raise _TickSkip
         if loop.time() - self._last_scan >= self.server.registry_rescan_s:
-            self.rescan()
+            await asyncio.to_thread(self.rescan)
             self._last_scan = loop.time()
 
     def _maybe_restart(self) -> bool:

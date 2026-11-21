@@ -85,10 +85,16 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
         # regenerate the Help tab's guides when the docs changed — in a
         # thread, and ensure_docs never raises, so startup is never blocked on it
         docs_task = asyncio.create_task(asyncio.to_thread(ensure_docs, server.source_repo))
-        task = None
+        task = warm_task = None
         if with_scheduler and not os.environ.get("RSCHED_NO_SCHEDULER"):
             task = asyncio.create_task(app.state.scheduler.run_forever())
             _observe(task, "scheduler")
+            # the two read models a cold miss made slow (4.4 s, 1.1 s), recomputed in a thread
+            # after the run events that move them, and once now (web/readmodel_warm.py)
+            from . import readmodel_warm
+
+            warm_task = asyncio.create_task(readmodel_warm.bus_listener(server, bus))
+            _observe(warm_task, "read-model warm")
         # Web Push sender: idles until a browser subscribes, then pushes new decisions
         from . import push as push_mod
 
@@ -171,7 +177,7 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
         await _stop(search_task)
         app.state.search.shutdown()
         for running in (docs_task, push_task, utilstats_task, apply_task, held_task,
-                        postdeploy_task, task):
+                        postdeploy_task, warm_task, task):
             await _stop(running)
         # F896's row stats use a separate bounded pool, never the stream/handler threads.
         # Requests have drained; cancel queued checks without awaiting a stuck network stat.

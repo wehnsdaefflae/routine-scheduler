@@ -316,7 +316,9 @@ assist or a challenge — the fleet's challenged claims went from 0.03 a run to 
 
 `readmodels/change_keys.py` reads each run's behaviour key (recipe, config, model, `model_id`,
 effort, deliberation, a rule's text) and `readmodels/change_effects.py` finds the
-CHANGES: boundaries between consecutive runs whose keys differ. The up to five runs before and
+CHANGES (a fleet-wide fold, recomputed by the daemon in a thread after every burst of run
+events — `web/readmodel_warm.py` — so a routine page's development line finds it warm instead
+of paying for it): boundaries between consecutive runs whose keys differ. The up to five runs before and
 after, each side only runs of one key, are judged signal by signal, each dimension
 `better`/`worse`/`mixed`/`same`, and the change gets one verdict — `improved`, `regressed`,
 `mixed`, `no effect`, `measuring` (the newest change, still collecting runs) or `too few runs`

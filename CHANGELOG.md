@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.577.0] — 2026-11-21
+
+### Fixed
+- **Cold read work leaves the event loop and the request path.** With the backup stamp and the
+  files card fixed, the console's remaining slow routes answered in 3-100 ms when timed alone on
+  a quiet box (`/api/questions` 40 ms, `/api/status` 40, `/api/conversations` 60,
+  `/api/schedule/week` 52), so their slow rows were their COLD costs and the stalls those caused
+  elsewhere. Timed cold in a fresh interpreter against the live store:
+  - `registry.scan` took **3.3 s** for the routines home and 2.1 s for conversations, 2.9 s of it
+    `load_routine` resolving fs roots on the NAS share (0.4-1.4 s per root, to report one that
+    links into a credential store). The scheduler ran it ON THE EVENT LOOP — at boot for all three
+    homes, and every `registry_rescan_s` — so a cold scan held every request and every fire. It
+    now runs in a thread at boot (each home warmed before the loop-side orphan reap reads it) and
+    on every periodic rescan.
+  - Four request paths re-loaded `routine.yaml` from scratch on every call, paying those NAS
+    resolutions each time: `servable.granted_roots` (the files card, twice per poll, and
+    `/file`), `/api/runs/{id}`, `/api/changes/{slug}/outcome` and the refusal-flag helper. They
+    now read the registry's memo, public as `registry.load_config` (re-read only when
+    `routine.yaml`, `tuning.yaml` or `main.md` changes; the roots the loader reports are the
+    config's own, so nothing a guard decides is cached).
+  - `change_effects.changes` took **4.4 s** cold — a fleet-wide fold the routine page's one
+    development line (`/api/changes/{slug}/summary`) computed in full to report one routine
+    (4.3 s for a 131-byte answer on the first page open after a run) — and the Decisions catalog
+    **1.1 s**. The daemon now recomputes both in a thread after every burst of run or question
+    events, and once at boot (`web/readmodel_warm.py`, shaped like the util-stats watcher), so a
+    request finds them warm. A request still computes on a miss; this only moves the usual miss.
+  `/manifest.webmanifest` (a static file, 3 ms) and the four routes above needed no change of
+  their own: alone they are fast, and 80-100% of their slow rows had other work in flight.
+
 ## [0.576.0] — 2026-11-21
 
 ### Fixed
