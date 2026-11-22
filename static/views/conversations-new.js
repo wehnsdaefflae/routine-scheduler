@@ -15,6 +15,7 @@ import { filePicker } from "/static/components/filepicker.js";
 import { rootsEditor } from "/static/components/fsroots.js";
 import { connectionsCard } from "/static/components/connections.js";
 import { abilitiesPanel } from "/static/components/abilities.js";
+import { playbookPicker } from "/static/components/playbook-picker.js";
 import { rulePicker } from "/static/components/rulepicker.js";
 import { settingsSection } from "/static/components/settings-section.js";
 import { forgetField } from "/static/formpersist.js";
@@ -35,21 +36,20 @@ export function mountComposerOnly(main) {
   if (prefill) { text.value = prefill; prefill = ""; }
   // Playbook picker (the use-instruction analog): a picked playbook's brief seeds the
   // conversation; the first-message box then just SPECIALIZES it, and may be left empty.
-  const pbSel = el("select", { "data-nopersist": "" },
-    el("option", { value: "" }, "no playbook · start fresh"));
-  const pbHint = el("div", { class: "faint small" });
-  let pbList = [];
-  api("/api/playbooks").then((r) => {
-    pbList = r.playbooks || [];
-    pbList.forEach((p) => pbSel.append(el("option", { value: p.slug }, p.title || p.slug)));
-  }).catch(() => { /* library unreachable — picker stays empty, plain conversation still works */ });
-  pbSel.onchange = () => {
-    const p = pbList.find((x) => x.slug === pbSel.value);
-    pbHint.textContent = p ? `▸ ${p.when || ""}${p.axis ? `  ·  varies: ${p.axis}` : ""}` : "";
+  //
+  // D307: a LIST OF CARDS above the message box, not a `<select>` under it — each playbook's
+  // `when`, axis and tags are readable before anything is clicked, so somebody who does not
+  // know playbooks exist can still see what they are for. The selection is the same value the
+  // `<select>` held and is posted as the same `playbook` field; the empty-library case mounts
+  // nothing at all (components/playbook-picker.js).
+  const pbSel = playbookPicker(() => {
     text.placeholder = pbSel.value
       ? "Optional — anything specific for this run? The playbook is the brief…"
       : "What should the agent do? The first message becomes the conversation's task…";
-  };
+  });
+  api("/api/playbooks").then((r) => {
+    pbSel.render(r.playbooks || []);
+  }).catch(() => { /* library unreachable — no list, plain conversation still works */ });
   const workdir = el("input", { type: "text", placeholder: "~/path/to/project (optional)",
     style: "width:100%;max-width:420px" });
   // Pre-start budgets: per-REPLY ceilings + a cumulative cap over the WHOLE conversation
@@ -276,10 +276,10 @@ export function mountComposerOnly(main) {
       el("h1", {}, "New conversation"))),
     // the primary action: the first message, an optional playbook, and start
     el("div", { class: "panel conv-new" },
+      // the playbooks first, where a person looks before writing: picking one makes the
+      // message box optional, which is what its placeholder then says
+      pbSel.node,
       text,
-      el("div", { class: "row mt", style: "gap:8px;align-items:center;flex-wrap:wrap" },
-        el("span", { class: "faint small" }, "playbook"), pbSel),
-      pbHint,
       el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" }, picker, admin.node, send)),
     setup);
   text.focus();

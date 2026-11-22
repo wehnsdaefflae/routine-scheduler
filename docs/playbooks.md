@@ -22,7 +22,7 @@ way it worked last time" (reuse) and "that was right — remember how to do it" 
 
 | Move | Where | What happens |
 |---|---|---|
-| **Reuse** | Playbook picker on the *new conversation* form | The playbook's brief seeds the conversation; your first message just *specializes* it (and can be left empty). |
+| **Reuse** | The playbook **list** above the message box on the *new conversation* screen — one card per playbook, its *when*, its axis and its tags readable without a click | The playbook's brief seeds the conversation; your first message just *specializes* it (and can be left empty). |
 | **Capture** | **Save as playbook** button in a conversation | The system model reads the conversation — your intent plus the procedure that satisfied it — and writes a new, generalized playbook to the library. |
 | **Refine** | **Update playbook** button (only when the conversation was started from a playbook) | The same distillation, but folded back into the playbook you started from — so it absorbs the corrections you made this time. |
 
@@ -32,8 +32,11 @@ gate — you edit or roll back afterwards (every save is a git commit).
 ## Reuse: start a conversation from a playbook
 
 1. Open **Conversations → + new**.
-2. Pick a playbook from the **playbook** dropdown. Its one-line *when* and its *generalization
-   axis* (what varies) show beneath the picker so you can confirm it fits.
+2. The library's playbooks are listed as **cards** above the message box, in the library's
+   order — each showing its title, its one-line *when*, its *generalization axis* (what varies)
+   and its tags, so you can see what is there before clicking anything. Click a card to pick it;
+   the picked card says so, and **start fresh instead** undoes it. With no playbooks in the
+   library there is no list.
 3. Optionally type a first message to **specialize** it — the topic, the file, the specific ask.
    You can leave it empty; the playbook's brief is enough, and the agent will ask you for any
    parameters it needs.

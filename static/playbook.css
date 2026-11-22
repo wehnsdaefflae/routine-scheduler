@@ -1,0 +1,110 @@
+/* The new-conversation screen's PLAYBOOK CARDS (components/playbook-picker.js, D307): the
+   library's playbooks readable before they are picked, where the `<select>` used to be.
+
+   Its own file for rail.css's reason, stated in index.html: base.css and views.css are both
+   over the repo's 350-line house bar and held at their ratchet ceilings, so an addition belongs
+   in a new stylesheet exactly as it belongs in a new module (CLAUDE.md Standards,
+   tests/test_file_size.py). Loaded last, so a card rule wins a specificity tie.
+
+   Colour here is a token and nothing else, and type comes from the three type tokens — the
+   console's own rule (tests/test_stylesheet_tokens.py). Selectors are plain rather than folded
+   into `:is()`: the class contract reads a stylesheet's selectors to decide which mounted class
+   is styled (tests/class_survey.py), and it strips a functional pseudo-class whole. */
+
+/* The block as a whole, above the message box. */
+.pb-pick { margin-bottom: var(--s3); }
+
+/* Its caption — the invitation the `<select>`'s bare "playbook" label never was. Not an `h2`,
+   whose rule draws the page-section line. */
+.pb-pick-head {
+  margin-bottom: var(--s2);
+  font-size: var(--t-s);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* The cards, in the library's order: a grid that keeps each card readable rather than a row
+   that squeezes them, so the `when` line wraps instead of being clipped. */
+.pb-pick-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--s2);
+}
+
+/* One card and its undo control. The slot exists because "start fresh instead" belongs UNDER
+   the card it undoes, not beside the send button where it would read as a second action. */
+.pb-slot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  align-items: flex-start;
+}
+
+/* A card is a <button> — the keyboard reaches it with no handler of ours — so every button
+   look it inherits has to be undone deliberately: left-aligned text, a column of lines, and
+   the plate it sits on rather than a filled control. */
+.pb-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  width: 100%;
+  padding: var(--s2) var(--s3);
+  text-align: left;
+  font-family: inherit;
+  font-size: var(--t-m);
+  color: var(--ink);
+  background: var(--plate-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--r2);
+  cursor: pointer;
+  transition: border-color 120ms var(--ease), background 120ms var(--ease);
+}
+
+.pb-card:hover { background: var(--hover); }
+
+.pb-card:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+/* SELECTED, in the console's own affirmative colour: the card is the live choice, and the
+   placeholder in the message box has changed to say the playbook is the brief. Compound with
+   `.pb-card` so the rule is reachable exactly where the class is mounted. */
+.pb-card.pb-on {
+  background: var(--signal-dim);
+  border-color: var(--signal);
+}
+
+.pb-card-title {
+  font-size: var(--t-l);
+  font-weight: 600;
+}
+
+/* The one-line `when` — the whole reason a card beats an option. */
+.pb-card-when { color: var(--ink-2); }
+
+/* The axis ("varies: …"): what one use of this playbook changes. Quieter than the `when`,
+   because it is read second. */
+.pb-card-axis {
+  font-size: var(--t-s);
+  color: var(--ink-3);
+}
+
+.pb-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+.pb-tag {
+  padding: 1px var(--s1);
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+  background: var(--plate-3);
+  border-radius: var(--r1);
+}
+
+/* The undo. A ghost button already, so this only pulls it under its card. */
+.pb-fresh { margin-left: var(--s1); }
