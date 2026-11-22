@@ -2709,6 +2709,26 @@ live-stream ceiling derived from it depend on the host). `io_pool.queued` is the
 those jobs waiting for a thread: non-zero means QUEUED, not slow. The live streams never reach the timing:
 they are WebSockets, which an http middleware does not see.
 
+Since F906 the slow row also says WHERE the seconds went, which the self-sample cannot: a stack
+sample names the frame a worker was in, and the question left open was how the WHOLE wait was
+spent. `web/reqphases.py` adds two pure-ASGI layers that bracket every other middleware —
+`PhaseInner` added first (so it is innermost, stamping where the chain bottoms out) and
+`PhaseOuter` added last (so it is outermost, stamping the moment the ASGI server handed the
+scope over, and wrapping `send` so the first and last response bytes are stamped too). Their
+differences are three spans no single layer can measure: `pre_ms` (loop scheduling, the
+thread-pool handoff and every middleware above the application), `app_ms` (routing, dependencies
+and the handler body) and `send_ms` (serialization, compression and the write), with
+`first_byte_ms` separating a slow encode from a slow write. The row carries all four plus
+`dominant` — `pre`, `app` or `send` — because three numbers in a log line get averaged by a
+reader into whatever they already believed. Pure ASGI rather than `BaseHTTPMiddleware` for two
+reasons: only a raw `send` wrapper sees the response events at all, and a single layer cannot
+measure the time taken to REACH itself. Both layers fail open — a stamp that cannot be written
+leaves the phases absent and the response untouched — and neither reads a header, a cookie or a
+query string, so the telemetry stays credential-free. What made it necessary: `/api/health/blocked`
+records a 2,780 ms median over 834 server samples (2,550 ms over the 395 where it was the only
+request in flight) while its whole server-side pipeline measures about 30 ms warm in process
+against the live stream, so the wait is in neither the fold nor the handler.
+
 Since F871 the daemon does not wait to be asked. When a request crosses the threshold and is
 STILL in flight, `web/slowsample.py` takes that same reading — `api_debug.thread_report`, both
 pools and every stack — from its own OS thread and writes it under
