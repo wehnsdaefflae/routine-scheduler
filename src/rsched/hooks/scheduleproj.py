@@ -29,15 +29,14 @@ This module closes that, in the same shape `reportproj.py` uses and for the same
   already a health event with that name, and the daemon's own ledger counts `fires` — so a
   reader folding the stream and a reader folding the spool reach the same four facts.
 
-**The reader side is exercised by tests, not yet by a page — stated so nobody assumes
-otherwise.** `fires_at` and `due_before` are what make the stream answer *what will fire later*
-for the INSTANCE, which is the thing no store could do across mechanisms. No console surface
-calls them yet, and that is a deliberate non-decision rather than an oversight: `/api/schedule`'s
-week strip already enumerates one-shots PER ROUTINE from the spool, so serving a second view of
-the same facts would duplicate rather than add, and choosing where an instance-wide "what is
-about to happen" belongs is a design question no decision of the operator's covers. The campaign's
-own staging is "wrap first, replace last"; this is the wrap, and the reader is written and pinned
-so the replace step has something to build on.
+**The reader side now has a page, and WHERE it reads from is the load-bearing part.**
+`fires_at` and `due_before` are what make the stream answer *what will fire later* for the
+INSTANCE, which is the thing no store could do across mechanisms; `readmodels/hook_activity.py`
+folds them onto the Routines page (`GET /api/hook-activity`). That reader folds the LIFECYCLE
+away FIRST and orders what is left: `due_before` over raw rows would list every one-shot that
+ever fired as overdue, because an ending is a later row about the same id and never a change to
+the arming one. `/api/schedule/week` still enumerates one-shots PER ROUTINE from the spool — the
+instance-wide reading is a second question, not a second view of the same facts.
 
 **What this does NOT do, deliberately.** It does not make the daemon fire from the stream. The
 spool is consumed on fire and that consumption is the non-repeating guarantee (no routine.yaml

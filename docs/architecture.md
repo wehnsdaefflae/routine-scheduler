@@ -1278,6 +1278,18 @@ and the capabilities digest's catalog listing):
   best-effort and can never stop a one-shot being armed. What it adds is the answer to "what
   will fire LATER", which no store could give across mechanisms — `scheduleproj.request_of_hook`
   is the exact inverse, so the projection is testable rather than asserted.
+  The stream's own two readings are finally SERVED: `readmodels/hook_activity.py` folds it once
+  (memoized on its stat fingerprint) into `next_fires` — the one-shots still armed, soonest
+  first, each with its target routine, instant, reason and who armed it — and `deliveries` — the
+  injection and run-tree rows, newest first, with the channel rendered in words
+  (`engine/channels.user_authored` deciding person from machine) and a run-tree row's
+  `disposition: open` read as "not delivered — the write failed", which is the only record of
+  that failure anywhere. `GET /api/hook-activity` serves both to the Routines page's hook-activity
+  panel (`static/components/hook-activity.js`), operator-only like the other fleet reads. The
+  PENDING fold comes first and `due_before` orders what is left: over raw rows it would list
+  every fired one-shot as overdue, since an ending is a later row and not a change to the arming
+  one — and a pending row whose instant has passed is shown as such, never dropped, because it is
+  a one-shot the daemon has not consumed yet.
   The FOURTH source is the one the store was built for: a RUN-TREE hook (`engine/runtree.py`,
   F695), which is the `report` action with `target: "parent"` or `"child:<label>"` and has no
   store of its own — delivered on the `hook` channel at the addressee's next turn boundary, with

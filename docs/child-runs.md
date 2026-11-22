@@ -189,7 +189,12 @@ further boundary. The freight arrives on the `hook` channel (`engine/channels.VI
 person answers the wrong party. It gets no `R<n>`: an item is owed an answer by a ROUTINE, and
 both of these runs are gone in minutes, so the row would sit open forever. What it does get is
 a row in `.control/hooks.jsonl` like every other hook, with `addressee` = `parent` or
-`child:<label>`.
+`child:<label>`. That row is READ: the Routines page's hook-activity panel
+(`readmodels/hook_activity.py`, `GET /api/hook-activity`) lists the last day's run-tree hooks
+beside the mid-run injections, saying which end spoke — "parent run", or the child's own label. A
+hook whose inbox write FAILED is recorded `disposition: open` and reads there as *"not delivered
+— the write failed"*; since the hook carries no `R<n>`, that panel is the only place a lost
+hand-back is visible at all.
 
 **Asking the user.** A child never blocks a run on a person (`interact.handle_ask` forces
 `mode: deferred` at depth > 0 — a child has no speaking turn with the user), so its question

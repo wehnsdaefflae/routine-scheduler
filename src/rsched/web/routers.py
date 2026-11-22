@@ -34,6 +34,7 @@ def include_api_routers(app: FastAPI, deps: list) -> None:
         api_fs,
         api_gate,
         api_health,
+        api_hook_activity,
         api_hooks,
         api_items,
         api_jobs,
@@ -81,6 +82,8 @@ def include_api_routers(app: FastAPI, deps: list) -> None:
                    # run's work is not steering a live one, and api_run_control is at its bar
                    api_refusal_flag,
                    api_schedule, api_stats, api_changes, api_health, api_finishline,
+                   api_hook_activity,   # the hook stream's two readings: what fires next, and
+                   # who spoke into which run — operator-only, like the other fleet reads
                    api_credential_names,
                    api_credential_screen,   # D296: the VALUE-level counterpart of the names
                    # route — the comparison the export's sandbox cannot make for itself

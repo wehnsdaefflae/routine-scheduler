@@ -1,0 +1,89 @@
+/* The Routines page's HOOK ACTIVITY panel (components/hook-activity.js): what fires next, and
+   who spoke into which run.
+
+   Its own file for rail.css's reason, stated in index.html: base.css and views.css are both over
+   the repo's 350-line house bar and held at their ratchet ceilings, so an addition belongs in a
+   new stylesheet exactly as it belongs in a new module (CLAUDE.md Standards,
+   tests/test_file_size.py). Loaded last, so a panel rule wins a specificity tie.
+
+   Colour here is a token and nothing else, and type comes from the three type tokens — the
+   console's own rule (tests/test_stylesheet_tokens.py). Selectors are plain rather than folded
+   into `:is()`: the class contract reads a stylesheet's selectors to decide which mounted class
+   is styled (tests/class_survey.py), and it strips a functional pseudo-class whole. */
+
+.hookact-panel > summary { font-weight: 600; }
+
+/* The two readings' captions. Not `h2`, whose rule draws the page-section line. */
+.hookact-head {
+  margin: var(--s2) 0 var(--s1);
+  font-size: var(--t-s);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* The two lists. Each holds its own rows and says nothing about them, so the only thing they
+   carry is the gap that keeps the two readings apart. */
+.hookact-fires { margin-bottom: var(--s2); }
+.hookact-spoken { margin-bottom: var(--s2); }
+
+/* ZERO IS A READING: an instance with nothing armed and nobody speaking says so, because an
+   absent panel and a quiet one are indistinguishable and only one of them reassures. A line of
+   this panel's own rather than the page-level `.empty` block, which the Routines page already
+   uses for "nothing matches this filter" (components/hook-activity.js says why). */
+.hookact-quiet {
+  padding: 3px 0;
+  color: var(--ink-3);
+  font-size: var(--t-s);
+}
+
+/* One line per hook — the stamp in a fixed column, so the rows read as a column of moments,
+   then what the row is about. It WRAPS rather than clipping: the freight's first line is the
+   row's whole point, and a row that hides it answers nothing. */
+.hookact-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+  padding: 3px 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--t-m);
+}
+
+.hookact-row:last-child { border-bottom: 0; }
+
+/* The two row KINDS carry no appearance of their own: a pending one-shot and something spoken
+   into a run are the same shape of line, each under its own caption. They are named so the
+   browser suite can select one list's rows, and so a rule can reach one later. */
+.hookact-fire { min-width: 0; }
+.hookact-delivery { min-width: 0; }
+
+.hookact-when {
+  flex: 0 0 auto;
+  min-width: 102px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--t-s);
+}
+
+/* WHO spoke, in the server's own words. A MACHINE channel is quiet; a person at a console is
+   not — `engine/channels.user_authored` decides which, and the panel never re-derives it. */
+.hookact-who {
+  flex: 0 0 auto;
+  color: var(--ink-3);
+  font-size: var(--t-s);
+}
+
+.hookact-who.hookact-person {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* A pending one-shot whose instant has passed: the daemon has not consumed it yet. SIGNAL — the
+   machine at work, about to fire late; nothing here waits on a person. */
+.hookact-overdue { color: var(--signal); }
+
+/* A run-tree hook whose inbox write FAILED. The stream is the only record of it anywhere, which
+   is why this is the one loud thing on the panel. */
+.hookact-undelivered { color: var(--summons); }

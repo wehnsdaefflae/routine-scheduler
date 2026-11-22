@@ -205,6 +205,10 @@ Each is enforced somewhere — a test, the engine, or a past incident. Long form
   last run writes the next fire's checks (`state/next-gate.json`) under floors it cannot move
 - **An inbox message's `via` is its delivery POLICY**: a closed set, one writer
   (`inbox.file_message`), plus `answerfile.write` for answers — no third writer
+- **A hook's LIFECYCLE is a later row, never an edit** — so a reader folds the stream FIRST and
+  orders what is left (`readmodels/hook_activity.py`): `scheduleproj.due_before` over raw rows
+  lists every fired one-shot as overdue, and `disposition: open` on a run-tree row is a FAILED
+  write, not an open thread
 - **A console view acts only while mounted, and only on its newest read**
 - **A live refresh on a bus event fetches only what that event can change**; one reader per
   endpoint (`static/questions-store.js`); read models on event paths are memoized single-flight
