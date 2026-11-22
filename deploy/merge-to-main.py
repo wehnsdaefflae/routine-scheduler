@@ -95,6 +95,26 @@ def git(repo: Path, *args: str, check: bool = True) -> str:
     return proc.stdout.strip()
 
 
+def main_worktree(start: Path) -> Path:
+    """The repository's MAIN checkout, whatever directory this was invoked from.
+
+    This is not a convenience. The script lives in `deploy/`, so a candidate's worktree holds a
+    copy of it, and that copy is the one a run naturally calls — which made `parents[1]` resolve
+    to the WORKTREE and gave three wrong answers at once on 2026-11-22: the next version was read
+    from the candidate's own CHANGELOG (so the number it had just written became the number it
+    was renumbered ABOVE, 0.588.0 → 0.589.0), the gate evidence was looked for under a path only
+    the main checkout has, and `merge --ff-only` would have run in a worktree that already has
+    the candidate branch checked out, i.e. merged nothing while reporting success.
+
+    `--git-common-dir` is the one directory every worktree of a repository shares, so its parent
+    is the main checkout by construction rather than by where anybody happened to stand.
+    """
+    common = git(start, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if not common:
+        raise MergeRefused(f"{start} is not inside a git repository")
+    return Path(common).parent
+
+
 def newest_version(changelog: str) -> tuple[int, int, int]:
     """The newest release in a CHANGELOG, as a tuple. Refuses a file with no release header."""
     found = HEADER.search(changelog)
@@ -112,6 +132,16 @@ def next_version(main_changelog: str) -> str:
     """
     major, minor, _patch = newest_version(main_changelog)
     return f"{major}.{minor + 1}.0"
+
+
+def main_changelog(repo: Path) -> str:
+    """`main`'s OWN CHANGELOG, read out of the ref rather than off any working tree.
+
+    Reading `repo / "CHANGELOG.md"` was wrong even once `repo` is the main checkout: that file
+    is whatever is checked out there, which a session mid-release has already edited. The ref is
+    the only thing that says what main has SHIPPED, which is the question `next_version` asks.
+    """
+    return git(repo, "show", "main:CHANGELOG.md")
 
 
 def renumber(changelog: str, init_py: str, version: str, today: str) -> tuple[str, str]:
@@ -206,7 +236,7 @@ def plan(repo: Path, tree: Path, branch: str) -> dict:
     gained = [f for f in git(repo, "diff", "--name-only", f"{base}..main").splitlines() if f]
     mine = {f for f in git(repo, "diff", "--name-only", f"{base}..{branch}").splitlines() if f}
     delta = classify([f for f in gained if f not in mine])
-    version = next_version((repo / "CHANGELOG.md").read_text(encoding="utf-8"))
+    version = next_version(main_changelog(repo))
     return {"repo": str(repo), "tree": str(tree), "branch": branch, "base": base,
             "main": git(repo, "rev-parse", "main"), "branch_head": git(repo, "rev-parse", branch),
             "delta": {"kind": delta.kind, "files": delta.files, "modules": delta.modules,
@@ -216,7 +246,20 @@ def plan(repo: Path, tree: Path, branch: str) -> dict:
 
 def merge(repo: Path, tree: Path, branch: str, stamp: str, *, dry_run: bool = False) -> dict:
     """Rebase, renumber, fast-forward, push and read `origin` back — under the lease."""
+    if tree.resolve() == repo.resolve():
+        raise MergeRefused(
+            f"the candidate tree and the main checkout are the same directory ({repo}): the "
+            "rebase would rewrite main's own checkout and the fast-forward would merge a branch "
+            "into the tree that already has it checked out — moving nothing while the push "
+            "reports success. Build in a worktree (.audit-wt/<item>) and name it with --tree")
+    # The stamp is read BEFORE anything asks git a question: it is the cheapest refusal and the
+    # most common one, and a caller who named a stamp that does not exist should be told that
+    # rather than something about the checkout it also got wrong.
     verdict = gate_verdict(repo, stamp, tree)
+    on = git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    if on != "main":
+        raise MergeRefused(f"the main checkout has {on} checked out, not main: the fast-forward "
+                           "would land on the wrong branch")
     ahead = plan(repo, tree, branch)
     delta = classify(ahead["delta"]["files"])
     head_at = float(git(repo, "show", "-s", "--format=%ct", branch) or 0)
@@ -228,7 +271,9 @@ def merge(repo: Path, tree: Path, branch: str, stamp: str, *, dry_run: bool = Fa
     held = lease()
     try:
         git(tree, "rebase", "main")
-        version = next_version((repo / "CHANGELOG.md").read_text(encoding="utf-8"))
+        # Re-read under the lease: main can have moved between `plan` above and the lease below,
+        # and the number that matters is the one true at the instant of the merge.
+        version = next_version(main_changelog(repo))
         changelog, init = (tree / "CHANGELOG.md"), (tree / "src/rsched/__init__.py")
         today = time.strftime("%Y-%m-%d")
         new_log, new_init = renumber(changelog.read_text(encoding="utf-8"),
@@ -263,21 +308,26 @@ def main(argv: list[str] | None = None) -> int:
     """The CLI. `plan` reads; `merge` writes; both print JSON when asked to."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("verb", choices=("plan", "merge"))
-    parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[1])
-    parser.add_argument("--tree", type=Path, help="the candidate's worktree (default: --repo)")
+    parser.add_argument("--repo", type=Path, default=None,
+                        help="the MAIN checkout (default: derived from git's own common dir, so "
+                             "running this from inside a candidate's worktree still merges into "
+                             "the main checkout rather than into that worktree)")
+    parser.add_argument("--tree", type=Path, help="the candidate's worktree (default: the "
+                                                  "directory this was invoked from)")
     parser.add_argument("--branch", required=True)
     parser.add_argument("--gate-stamp", help="the green stamp covering the merged bytes")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
-    tree = args.tree or args.repo
     try:
+        tree = (args.tree or Path.cwd()).resolve()
+        repo = (args.repo or main_worktree(tree)).resolve()
         if args.verb == "plan":
-            out = plan(args.repo, tree, args.branch)
+            out = plan(repo, tree, args.branch)
         else:
             if not args.gate_stamp:
                 parser.error("merge needs --gate-stamp: the lease is for green candidates only")
-            out = merge(args.repo, tree, args.branch, args.gate_stamp, dry_run=args.dry_run)
+            out = merge(repo, tree, args.branch, args.gate_stamp, dry_run=args.dry_run)
     except MergeRefused as refused:
         print(f"merge-to-main: {refused}", file=sys.stderr)
         return 1

@@ -192,3 +192,74 @@ def test_a_refusal_prints_its_reason_and_exits_one_rather_than_raising(tmp_path)
     assert proc.returncode == 1
     assert "merge-to-main:" in proc.stderr
     assert "nosuch" in proc.stderr
+
+
+# ---- WHICH checkout is the main one -------------------------------------------------------
+#
+# The first real use of this script, 0.588.0's own release, answered 0.589.0 when main had
+# shipped 0.587.0. The script lives in `deploy/`, so the candidate's worktree holds a copy, that
+# copy is what a run calls, and `parents[1]` therefore resolved to the WORKTREE: the next version
+# came from the candidate's own CHANGELOG (the number it had just written), the gate evidence was
+# looked for under a path only the main checkout has, and the fast-forward would have run in a
+# tree that already had the candidate branch checked out — merging nothing while reporting
+# success. These hold the resolution from both ends.
+
+def _repo_with_worktree(tmp_path: Path) -> tuple[Path, Path]:
+    """A real repository with a `main` branch and one worktree on a branch of its own."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run = lambda *args, cwd=repo: subprocess.run(  # noqa: E731 — one local shorthand
+        ["git", "-C", str(cwd), *args], capture_output=True, text=True, check=True, timeout=60)
+    run("init", "--quiet", "--initial-branch=main")
+    run("config", "user.email", "t@t")
+    run("config", "user.name", "t")
+    (repo / "CHANGELOG.md").write_text(_changelog("0.587.0", "0.586.0"), encoding="utf-8")
+    (repo / "src").mkdir()
+    (repo / "src/rsched").mkdir()
+    (repo / "src/rsched/__init__.py").write_text('__version__ = "0.587.0"\n', encoding="utf-8")
+    run("add", "-A")
+    run("commit", "--quiet", "-m", "main at 0.587.0")
+    tree = repo / ".audit-wt" / "cand"
+    run("worktree", "add", "--quiet", "-b", "audit/cand", str(tree))
+    return repo, tree
+
+
+def test_the_main_checkout_is_found_from_inside_a_worktree_not_assumed_to_be_the_cwd(tmp_path):
+    repo, tree = _repo_with_worktree(tmp_path)
+    assert merge_to_main.main_worktree(tree).resolve() == repo.resolve()
+    assert merge_to_main.main_worktree(repo).resolve() == repo.resolve()
+
+
+def test_the_next_version_comes_from_mains_ref_even_when_the_candidate_renumbered_itself(tmp_path):
+    """The whole point: a candidate that wrote 0.588.0 into its own CHANGELOG must still be
+    numbered against what MAIN shipped (0.587.0), not against its own file."""
+    repo, tree = _repo_with_worktree(tmp_path)
+    (tree / "CHANGELOG.md").write_text(_changelog("0.588.0", "0.587.0"), encoding="utf-8")
+    assert merge_to_main.next_version(merge_to_main.main_changelog(repo)) == "0.588.0"
+    assert merge_to_main.next_version(merge_to_main.main_changelog(tree)) == "0.588.0"
+
+
+def test_a_dirty_main_checkout_does_not_change_the_number_either(tmp_path):
+    """`main`'s CHANGELOG is read out of the REF: a session mid-release has already edited the
+    file in the main checkout, and that edit is not something main has shipped."""
+    repo, _tree = _repo_with_worktree(tmp_path)
+    (repo / "CHANGELOG.md").write_text(_changelog("0.599.0", "0.587.0"), encoding="utf-8")
+    assert merge_to_main.next_version(merge_to_main.main_changelog(repo)) == "0.588.0"
+
+
+def test_merging_into_the_tree_that_holds_the_candidate_is_refused(tmp_path):
+    repo, _tree = _repo_with_worktree(tmp_path)
+    _evidence(repo, "111", {"verdict": "green", "root": str(repo)})
+    with pytest.raises(merge_to_main.MergeRefused, match="same directory"):
+        merge_to_main.merge(repo, repo, "audit/cand", "111")
+
+
+def test_a_main_checkout_on_another_branch_is_refused(tmp_path):
+    """A fast-forward lands on whatever HEAD is: a main checkout parked on another branch would
+    take the candidate there instead, and the push would report success."""
+    repo, tree = _repo_with_worktree(tmp_path)
+    _evidence(repo, "111", {"verdict": "green", "root": str(tree)})
+    subprocess.run(["git", "-C", str(repo), "checkout", "--quiet", "-b", "parked"],
+                   capture_output=True, text=True, check=True, timeout=60)
+    with pytest.raises(merge_to_main.MergeRefused, match="not main"):
+        merge_to_main.merge(repo, tree, "audit/cand", "111")

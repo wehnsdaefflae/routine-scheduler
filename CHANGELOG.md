@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.589.0] — 2026-11-22
+
+### Added
+- **The engine image carries a hypervisor** (D309, the operator's answer (a)). `Dockerfile`
+  installs the pinned cloud-hypervisor v53.0 static binary and `ch-remote` from the project's
+  own GitHub release, verified against the same sha256 pair `deploy/Dockerfile.desktop` already
+  uses — one hypervisor across the deployment, bumped in both files together. D170 phase 1 (per-
+  call micro-VMs in place of the Landlock jail) has to be MEASURED in the container runs
+  actually execute in, and that image shipped none, so the measurement had nowhere to run.
+  `/dev/kvm` has reached the service since 0.571.0; this is the other half. The install ends in
+  `cloud-hypervisor --version`, so a truncated or wrong-platform binary fails the BUILD rather
+  than the first micro-VM call inside a run. It does NOT provide a bootable guest: a kernel and
+  a root filesystem are phase 1's own work. **A daemon restart does not deliver this** — the
+  image needs `docker compose build rsched && up -d`, which the operator has said he will run.
+- `tests/test_deploy_image.py` holds the hypervisor pin and its checksums EQUAL across every
+  image that installs it, holds a downloaded hypervisor to being checksum-verified and (engine
+  image) actually run, and records — as a passing test that reds when somebody closes it — that
+  `deploy/Dockerfile.desktop` verifies its download and never runs it. D309 authorized the
+  engine image only, so the gap is written where the next reader of these pins will see it.
+
+### Fixed
+- **The merge step resolved the wrong checkout** (D303, shipped one release ago, caught on its
+  first real use). The script lives in `deploy/`, so a candidate's worktree holds a copy and
+  that copy is what a run calls — `parents[1]` therefore resolved to the WORKTREE, which gave
+  three wrong answers at once: the next version was read from the candidate's own CHANGELOG (so
+  0.588.0's own release was offered 0.589.0 while main had shipped 0.587.0), the gate evidence
+  was looked for under a path only the main checkout has, and `merge --ff-only` would have run
+  in a tree that already had the candidate branch checked out — merging nothing while the push
+  reported success. `main_worktree` now derives the main checkout from `git rev-parse
+  --git-common-dir`, the one directory every worktree shares, and main's shipped version is read
+  from `main:CHANGELOG.md` out of the ref rather than off any working tree (a session
+  mid-release has already edited that file, and its edit is not something main has shipped).
+  Two refusals make the rest impossible: a candidate tree that IS the main checkout, and a main
+  checkout parked on another branch. 0.588.0 was therefore landed by hand, not by its own step.
+
 ## [0.588.0] — 2026-11-22
 
 ### Added
