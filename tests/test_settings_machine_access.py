@@ -48,7 +48,7 @@ def test_install_logs_in_as_the_account_the_mode_needs(client, monkeypatch):
     fed the password. No password, no login."""
     seen = []
     monkeypatch.setattr("rsched.machine_bootstrap.run_with_password",
-                        lambda host, port, hk, user, pw, cmd, *, sudo: seen.append((user, sudo, cmd)) or {"ok": True})
+                        lambda *a, sudo: seen.append((a[3], sudo, a[5])) or {"ok": True})
     client.post("/api/settings/machines/box/key")
     url = "/api/settings/machines/box/install"
     assert client.post(url, json={"mode": "account", "password": ""}).status_code == 400
