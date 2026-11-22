@@ -30,8 +30,8 @@ sandboxed:
   did not send). Instance-wide config in `config.yaml`. **No secret lives here**: `key_var` names
   a Secrets-store key holding the private key (PEM); `host_key` is the server's PUBLIC host key.
 - **The Secrets store** holds the actual private key under the `key_var` name (e.g.
-  `GPUBOX_SSH_KEY`). Use an UNENCRYPTED key for a supported type (ed25519 / ecdsa / rsa). Set it on
-  Settings → Secrets like any other secret.
+  `GPUBOX_SSH_KEY`). The setup wizard generates it there itself (`<NAME>_SSH_KEY`); set by hand on
+  Settings → Secrets, it must be an UNENCRYPTED key of a supported type (ed25519 / ecdsa / rsa).
 - **`machines.py`** — `machines_for_routine(names, catalog)` resolves a routine's bindings +
   the Secrets store into the two env vars the `remote` util receives:
   - `RSCHED_MACHINES` — non-secret connection metadata (host/user/port/host_key/workdir/…).
@@ -45,30 +45,53 @@ sandboxed:
   with forever-bindings.
 - **The `remote` util** (`util-seed/utils/remote`) — the ONLY thing that opens an SSH
   connection. Host keys are PINNED (a mismatch, or an unscanned machine, refuses to connect).
-- **`web/settings/machines.py`** — the Settings CRUD + `scan-host` + `test`. The routine page's
+- **`web/settings/machines.py`** — the Settings CRUD + `scan-host` + `test`; the setup wizard's
+  `key` / `install-command` / `install` are `web/settings/machine_access.py`. The routine page's
   Machines card binds catalog machines to the routine (`api_routines` PATCH `machines`).
   Conversations bind identically (D102): the conversation header mounts the same card
   (`api_conversations` PATCH `machines`), and a running reply can ask in-flow with a
   `machine:<name>` access request — one click injects `RSCHED_MACHINES` from the next turn.
 
-## Setting one up (a GPU box)
+## Setting one up: the wizard
 
-1. **Prepare the host.** On the remote machine, create a dedicated **unprivileged** user for the
-   util to log in as — never an admin/sudo account (a `remote exec` runs with that account's full
-   rights; the sandbox protects the daemon host, not the target). The helper
-   `deploy/setup-remote-agent-user.sh` does this the hardened way — see
-   [Creating the restricted remote user](#creating-the-restricted-remote-user) below.
-2. **Settings → Secrets**: set the PRIVATE key as a secret, e.g. `GPUBOX_SSH_KEY` (paste the whole
-   unencrypted PEM).
-3. **Settings → Machines → add**: name (`gpu-box`), host, user, port, `key_var` = `GPUBOX_SSH_KEY`,
-   an optional **`share`** (a remote dir to mount, e.g. `/srv/shared`), an optional workdir, a
-   description (shown to the model), tags, and **exclusive** for a box that runs one job at a time
-   (see [Exclusive compute](#exclusive-compute-one-job-at-a-time-in-turns)). Click **scan host
-   key** to read and pin the server's host key, review it, then save. Click **test** to confirm
-   reachability. A save replaces the machine's whole entry, which is why **edit** opens the same
-   form prefilled — exclusive included.
-4. **Bind it**: on a routine's page, *Limits & reach* → *more* → *Machines* → check `gpu-box` →
-   *accept changes*. The binding is the whole grant: the `remote` util acts on bound machines only.
+**Settings → Machines → + set up a machine** walks the whole setup; the daemon does every step
+it can, and nothing is copied by hand but (at most) one line:
+
+1. **Where.** A name (what routines bind), the host and port. *check host* scans the box's host
+   key and pins it.
+2. **Which account.** A new **restricted** user (recommended — the hardened setup below, with an
+   optional admin co-owner) or an **existing account**. Picking an existing account warns that a
+   run acts with its full rights: an admin (sudo, or the docker group) can change anything on the
+   box, including the scheduler itself when it runs there. *more options* holds the description,
+   workdir (default: the user's home), share and **exclusive**. *Save & create login key* saves
+   the machine and has the daemon generate an ed25519 key: the private half goes straight into
+   Secrets as `<NAME>_SSH_KEY` and becomes the machine's `key_var`; only the fingerprint is shown.
+   A machine whose `key_var` secret already holds a readable key REUSES it (another machine may
+   share that secret) — the wizard never rotates a key.
+3. **Put the key on the box**, one of two ways:
+   - **Do it for me** — type a password once. Restricted user: an admin account's password; the
+     daemon logs in as that admin and runs `deploy/setup-remote-agent-user.sh` under `sudo -S`.
+     Existing account: that account's own password; the key is appended to its
+     `~/.ssh/authorized_keys`. The login uses the system `ssh` with the PINNED host key checked
+     strictly (a mismatch sends no password) and the password reaching ssh only through an askpass
+     helper's environment — never argv, disk or a log (`machine_bootstrap.py`). It is used for
+     that one login and kept nowhere. A box that allows key login only refuses it.
+   - **Or paste one line** — the same install as a single command (*copy*), to run on the box as
+     the named account (restricted user: an admin; sudo asks at the terminal). The setup script
+     travels base64 inside the line, so the box needs nothing but bash and sudo. After a copy the
+     wizard re-tests every few seconds for three minutes, while it stays open.
+4. **Test.** The ordinary *test* — the exact pinned, keyed path a run connects by. Then bind the
+   machine on a routine's page: *Limits & reach* → *more* → *Machines* → tick it → *accept
+   changes*. The binding is the whole grant: the `remote` util acts on bound machines only.
+
+Every installed key carries `no-agent-forwarding,no-X11-forwarding,no-port-forwarding` — a run
+needs exec and SFTP, never forwarding. An existing row's **set up access** opens the same wizard
+at step 3 (to put a machine's key back on a reinstalled box, say). **add or edit by hand** is the
+raw form over every catalog field — `key_var` naming a secret you set yourself on Settings →
+Secrets (an UNENCRYPTED ed25519 / ecdsa / rsa key), *scan host key*, and `exclusive` among them.
+The routes are `web/settings/machine_access.py` (`key`, `install-command`, `install`) beside the
+catalog's own in `web/settings/machines.py`; the key and the two install lines are built in
+`machine_access.py`.
 
 ## Creating the restricted remote user
 
@@ -89,13 +112,17 @@ login the util can use for anything — including GPU work — without handing i
   ordinary unprivileged user. This is least-privilege via ownership/groups, deliberately **not** a
   chroot — a chroot would make a working CUDA stack impractical.
 
+The wizard runs it for you (step 3 above). By hand:
+
 ```bash
 # on the remote host, with the util's PUBLIC key in agent.pub beside the script:
 AGENT_COOWNER=<admin-user> sudo -E bash deploy/setup-remote-agent-user.sh
 ```
 
-Then map it into the catalog (steps 2–4 above): store the matching **private** key on
-Settings → Secrets, and set the machine's `user`, `key_var`, and `workdir` (= the agent's home).
+then store the matching **private** key on Settings → Secrets, and set the machine's `user`,
+`key_var`, and `workdir` (= the agent's home) in *add or edit by hand*. Re-running the script
+with another key APPENDS it: two catalog machines may log in as the same user, each with its own
+key.
 The pinned **host key is per-host**, so switching the login user from an admin account to the
 restricted one needs no host-key re-scan.
 

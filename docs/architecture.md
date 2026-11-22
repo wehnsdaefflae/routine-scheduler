@@ -729,7 +729,10 @@ connect (paramiko `RejectPolicy` — no TOFU in a headless run). Pieces:
   the image + `/dev/fuse` + `CAP_SYS_ADMIN` + apparmor:unconfined in compose (inert without a share).
 - **`web/settings/machines.py`** — Settings → Machines CRUD + `scan-host` + `test` (the last two
   run the real `remote` util server-side with `base_policy`, so what Settings proves is what a run
-  gets); routine-page binding via `api_routines` PATCH `machines` (catalog-validated). `STRIP_VARS`
+  gets); the setup WIZARD's routes are `web/settings/machine_access.py` — `key` (the daemon
+  generates the login key into Secrets, `machine_access.py`), `install-command` (the one line to
+  paste) and `install` (that line over a one-time password login with the pinned host key,
+  `machine_bootstrap.py`, system `ssh` + askpass); routine-page binding via `api_routines` PATCH `machines` (catalog-validated). `STRIP_VARS`
   now also scrubs `SSH_AUTH_SOCK`/`SSH_AGENT_PID` so a forwarded agent can't bypass the binding;
   `~/.ssh` stays sandbox-invisible (keys come from Secrets, not disk). The operator helper
   `deploy/setup-remote-agent-user.sh` provisions a hardened login on the remote host (no sudo,

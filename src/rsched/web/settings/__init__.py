@@ -13,6 +13,7 @@ from . import (
     endpoint_probe,
     endpoints,
     github,
+    machine_access,
     machines,
     oauth,
     oauth_scopes,
@@ -27,6 +28,6 @@ from . import (
 
 router = APIRouter(tags=["settings"])
 for _mod in (endpoints, endpoint_probe, decisions, source, github, oauth, oauth_scopes,
-             machines, secrets,
+             machines, machine_access, secrets,
              server, serverpatch, restart, pause, system_models):
     router.include_router(_mod.router)

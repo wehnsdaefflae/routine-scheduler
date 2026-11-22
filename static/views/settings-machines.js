@@ -6,16 +6,25 @@ import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { act, el, toast } from "/static/util.js";
 import { panelSection, savedToast } from "/static/views/settings-common.js";
+import { machineWizard } from "/static/views/settings-machine-wizard.js";
 
 export function renderMachines(view) {
   // -- remote machines (SSH catalog) ----------------------------------------------
   return panelSection(view, "/api/settings/machines", ["60%", "85%"], (machBox, d, reload) => {
     machBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:6px" },
-      "SSH hosts a routine can act on (a GPU box, a build server). Add one here, set its private ",
-      "key as the ", el("code", {}, "key_var"), " secret in ",
-      el("a", { href: "#/settings?section=secrets" }, "Secrets"),
-      ", scan its host key, then bind it on a routine's page. The host key is PINNED — a run ",
-      "refuses to connect on a mismatch."));
+      "SSH hosts a routine can act on (a GPU box, a build server). “Set up a machine” walks ",
+      "through it: the scheduler pins the host key, creates the login key, puts it on the box ",
+      "and tests the connection. Then bind the machine on a routine's page."));
+
+    // The wizard: one at a time, opened for a new machine or for an existing row's access.
+    const wizSlot = el("div");
+    const openWizard = (machine = null) => {
+      wizSlot.replaceChildren(machineWizard({ machine, onDone: reload,
+        onCancel: () => wizSlot.replaceChildren() }));
+      wizSlot.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    const wizBtn = el("button", { class: "btn primary", "data-mach-wizard-open": "" }, "+ set up a machine");
+    wizBtn.onclick = () => openWizard();
 
     // Existing machines — status + test/edit/delete.
     if (!d.machines.length)
@@ -34,6 +43,9 @@ export function renderMachines(view) {
           } catch (err) { testOut.style.color = "var(--err)"; testOut.textContent = `✗ ${err.message}`; }
           testBtn.disabled = false;
         };
+        const accessBtn = el("button", { class: "btn small", title: "create or reuse its login key and put it on the box" },
+          "set up access");
+        accessBtn.onclick = () => openWizard(m);
         const editBtn = el("button", { class: "btn small" }, "edit");
         editBtn.onclick = () => fillForm(m);
         const delBtn = el("button", { class: "btn small danger" }, "delete");
@@ -54,7 +66,7 @@ export function renderMachines(view) {
             m.exclusive ? el("div", { class: "muted small" }, "exclusive · submitted jobs queue, one at a time") : null),
           el("td", { class: "muted small mono" }, `${m.user}@${m.host}:${m.port}`),
           el("td", { class: "small" }, flags.length ? flags : el("span", { style: "color:var(--ok)" }, "✓ ready")),
-          el("td", {}, el("div", { class: "row" }, testBtn, editBtn, delBtn), testOut));
+          el("td", {}, el("div", { class: "row" }, testBtn, accessBtn, editBtn, delBtn), testOut));
       })))));
 
     // Add / edit form. PUT upserts by name; editing a row prefills it.
@@ -112,7 +124,7 @@ export function renderMachines(view) {
     // open at rest — a screen of form on every visit to Settings for something done once per
     // box. `edit` opens it prefilled, so nothing is harder to reach than it was.
     const form = el("details", { class: "panel mt", "data-add": "machine" },
-      el("summary", {}, "+ add machine"),
+      el("summary", {}, "add or edit by hand"),
       el("div", { class: "row mt", style: "flex-wrap:wrap;gap:6px" }, nameIn, hostIn, userIn, portIn),
       el("div", { class: "row mt", style: "flex-wrap:wrap;gap:6px" }, keyVarIn, wdIn, tagsIn),
       // R474: the two keys confused a first-time user — per-field teaching lines, not just
@@ -137,6 +149,6 @@ export function renderMachines(view) {
           "you normally never type here. Your login key does NOT go in this box (see ",
           el("code", {}, "KEY_VAR"), " above).")),
       el("div", { class: "row mt" }, saveBtn));
-    machBox.append(form);
+    machBox.append(el("div", { class: "row mt" }, wizBtn), wizSlot, form);
   });
 }

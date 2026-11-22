@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.591.0] — 2026-11-22
+
+### Added
+- **Settings → Machines has a setup WIZARD** (operator request in conversation, no finding: setting
+  up a machine meant generating a key in a terminal, appending it on the box, pasting the private
+  half into Secrets and deleting temp files — five manual steps). *+ set up a machine* walks host →
+  account → key on the box → test, and the daemon does every step it can: it pins the host key,
+  generates an ed25519 login key straight into Secrets (`<NAME>_SSH_KEY`, never shown — only its
+  fingerprint), and installs it either over a ONE-TIME PASSWORD login (`machine_bootstrap.py`:
+  system `ssh` with the pinned host key checked strictly and the password passed through an askpass
+  helper's environment, never argv or disk; `sudo -S` for the restricted-user setup) or as ONE
+  copyable line, after which the wizard re-tests every few seconds until the key lands. Both shapes
+  are built in `machine_access.py`: an existing account's line is idempotent; the restricted-user
+  line carries `deploy/setup-remote-agent-user.sh` inline as base64, so the box needs only bash and
+  sudo. Every installed key turns forwarding off. Choosing an existing account warns that an admin
+  account acts with full rights. Each catalog row gains *set up access* (the wizard from the key
+  step, reusing an existing readable key, never rotating one); the raw form stays as *add or edit
+  by hand*. Routes: `web/settings/machine_access.py` (`key`, `install-command`, `install`).
+
+### Changed
+- **`setup-remote-agent-user.sh` appends a key instead of replacing the file**, so two catalog
+  machines can log in as the same restricted user with keys of their own; it also runs when piped
+  to `bash -c` (no `BASH_SOURCE`), which is how the wizard ships it.
+
 ## [0.590.0] — 2026-11-22
 
 ### Changed

@@ -37,7 +37,7 @@ AGENT_HOME="${AGENT_HOME:-/home/$AGENT_USER}"
 AGENT_COOWNER="${AGENT_COOWNER:-}"                       # admin to co-own (optional)
 SSH_AK_DIR="/etc/ssh/authorized_keys"
 SSHD_CONF="/etc/ssh/sshd_config"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" && pwd)"   # :-. when piped to bash -c
 MARKER="rsched remote-agent ($AGENT_USER)"
 
 # public key: env var wins, else a file `agent.pub` beside the script
@@ -85,7 +85,9 @@ fi
 # 4) root-owned authorized_keys (StrictModes-immune for a group-writable home)
 say "ssh key: $SSH_AK_DIR/$AGENT_USER (root-owned; agent can't edit it)"
 install -d -o root -g root -m 755 "$SSH_AK_DIR"
-printf '%s\n' "$AGENT_PUBKEY" > "$SSH_AK_DIR/$AGENT_USER"
+# appended, never overwritten: two catalog machines may log in as this user with keys of their own
+touch "$SSH_AK_DIR/$AGENT_USER"
+grep -qxF "$AGENT_PUBKEY" "$SSH_AK_DIR/$AGENT_USER" || printf '%s\n' "$AGENT_PUBKEY" >> "$SSH_AK_DIR/$AGENT_USER"
 chown root:root "$SSH_AK_DIR/$AGENT_USER"; chmod 644 "$SSH_AK_DIR/$AGENT_USER"
 
 # 5) sshd: scope the key file + light hardening to this user ----------------
