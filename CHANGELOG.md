@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.590.0] — 2026-11-22
+
+### Changed
+- **A branch's hand-back lands as a CARD, not as the operator's own words** (D306 points 3 and
+  5, the first increment of his 2026-11-21 code-review order). `branches.hand_back` filed an
+  inbox message with `via="branch"` and the chat's `user_injection` case ignored `via`, so a
+  parent conversation rendered its branch's result as if the person had typed it. New
+  `static/components/handback-card.js` renders it as "branch “<name>” handed back" — linking the
+  branch, showing the summary, and offering each landed file under `artifacts/from-branch-<slug>/`
+  as a chip that opens the artifacts panel. It is ONE renderer keyed on `via`, with `background`
+  in the same table, because the detach order reuses this shape; `daemon/detached_delivery` files
+  the identical record. **The paths ride the record, never the prose**: `extra={"handback": …}`
+  is carried by `engine/inbox._drain_locked` and by both `user_injection` writers
+  (`engine/control`, `engine/boot`), the way the order specified. `artifacts.js` gained
+  `openPath` because the file route needs the console's auth header, so a card link cannot be a
+  plain anchor.
+- **The conversation lineage read is paid only when there IS a lineage.** `branchControls` called
+  `GET /conversations/{slug}/lineage` on every conversation view, and that route reads every
+  conversation's `routine.yaml` to find children. The list row now carries the conversation's own
+  `parent`, `branches.familyOf` derives parent-and-children from rows already loaded, and the
+  fetch happens only when a family holds — with a signature memo so the list's 20 s reload cannot
+  turn one read into a poll.
+
+### Fixed
+- **`RoutineConfig` dropped a conversation's `parent` and `lineage` keys.** The model is
+  `extra="ignore"` and neither field was declared, so the keys a fork writes into `routine.yaml`
+  never reached the catalog — `_parent_record` had to re-read the file itself. Both are now
+  declared (following the `owner` precedent) and are therefore in `TOP_KEYS`, so neither reads as
+  an unknown key. Paying for it line-neutrally moved the two run-gate models to
+  `config/rungate.py`, re-exported under the names callers already import.
+
 ## [0.589.0] — 2026-11-22
 
 ### Added
