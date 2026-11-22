@@ -451,12 +451,20 @@ increment and reads this". Two further gaps are in the module as it stands:
   the reason in the commit. `docs/prompt-anatomy.md` and `tests/test_prompt_anatomy.py` move with
   it.
 
-**First increment.** `attention_for_runs` with the one-pass stream fold and its memo, `attention`
-on `GET /api/runs/{run_id}`, and `attention-block.js` mounted on the run page's finish banner —
-with a fast test of the fold (one stream read for N runs, rows identical to `classify_run`) and a
-browser test (a run with a met goal, a partial finish and a pending ask shows the block above
-the summary in (a)…(e) order; a run with none shows no block). The routine cards, the Decisions
-rows and the `finish.attention` field are the next three commits, in that order.
+**First increment — SHIPPED in 0.587.0.** `attention_for_runs` with the one-pass stream fold and
+its memo, `attention` on `GET /api/runs/{run_id}`, and `attention-block.js` at the head of the
+run page's narrative column, with the fold's fast tests (one stream read for N runs, rows
+identical to `classify_run`) and the browser test (a run with a met goal, a partial finish and a
+pending ask shows the block above the summary; a run with none shows no block at all). It cost a
+sixth stylesheet and moved `waitingLabel` into its own module, because `views.css` and `run.js`
+were both at their ceilings.
+
+**What remains, in this order.** The routine cards (`last_run.attention` on `/api/routines`, the
+compact label+text form on each card), the Decisions rows (the asking run's rows in each
+record's context), and the `finish.attention` field — whose schema text costs always-on prompt
+budget and must be paid for by cutting the same number of characters elsewhere, or by re-locking
+`tests/prompt_budget.json` by hand with the reason in the commit. This entry stays until those
+three have shipped.
 
 ---
 
