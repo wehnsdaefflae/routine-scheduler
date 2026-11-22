@@ -38,6 +38,7 @@ ALLOWLIST: dict[str, frozenset[str]] = {
         "delib",             # tests/ui/test_flows.py:598
         "fit-table",         # tests/ui/test_changes.py:193
         "gate-cell",         # tests/ui/test_gate_history.py:61
+        "handback-card",     # tests/ui/test_handback_card.py — the card wears `ev subrun`
         "held-accept",       # components/held-accept.js:12
         "hist",              # tests/ui/test_flows.py:259 (`.file-row.hist`)
         "ladder-set",        # tests/ui/test_ladder_settings.py:51

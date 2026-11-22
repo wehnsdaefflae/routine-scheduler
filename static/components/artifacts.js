@@ -230,6 +230,18 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
   let pokeTimer = null;
   return {
     refresh,
+    /** Open ONE artifact BY PATH — for a link outside the panel (a hand-back card's landed
+     * files, components/handback-card.js). The row may not be listed yet: the files land in
+     * the parent's artifacts/ in the same moment the message does, so a path this panel has
+     * not seen refreshes once and opens on the second look rather than failing silently.
+     */
+    async openPath(path) {
+      const find = () => items.find((i) => i.path === path);
+      if (!find()) await refresh();
+      const item = find();
+      if (item) open(item);
+      else toast(`${path} is not in this conversation's artifacts`, 4000, { error: true });
+    },
     // F891: the chat fires one onArtifact per deliverable write observation, and opening a
     // view REPLAYS the whole transcript — so a conversation with ~70 artifact writes in its
     // history sent 70 identical list fetches in 9.6 s, each ~4 s, climbing to 13 s as they

@@ -74,6 +74,12 @@ def drain_messages(routine_dir: Path, consumed_dir: Path,
     keep it out of the prompt's user-message channel: a report is not something the user said,
     and rendering it as though it were invites the run to answer the wrong party.
 
+    A HAND-BACK — a branch's (`rsched/branches.hand_back`) or a detached task's
+    (`daemon/detached_delivery`) — also carries `handback` ({slug, name, paths}): the child's
+    identity and the files that landed in this routine's `artifacts/`. It rides the injection
+    event so the chat can render the delivery as a CARD with real file links instead of
+    re-reading the paths out of the message's prose.
+
     A message the operator RE-SENT by flagging a conversation reply as a refusal
     (web/api_refusal_flag) carries `refusal_flag` — what the engine records, as the `refusal`
     event of the `operator` seam, when it delivers the message (control.inject_user_message).
@@ -105,6 +111,8 @@ def _drain_locked(inbox: Path, consumed_dir: Path, vias: tuple[str, ...] | None)
             out.append({"text": str(obj["text"]), "via": str(obj.get("via") or ""),
                         "attachments": [str(a) for a in (obj.get("attachments") or [])],
                         **({"command": True} if obj.get("command") else {}),
+                        **({"handback": dict(obj["handback"])}
+                           if isinstance(obj.get("handback"), dict) else {}),
                         **({"refusal_flag": dict(obj["refusal_flag"])}
                            if isinstance(obj.get("refusal_flag"), dict) else {}),
                         **({"report": str(obj["report"]),

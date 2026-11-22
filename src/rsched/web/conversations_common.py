@@ -93,9 +93,17 @@ def _snippet(info: registry.RoutineInfo) -> str:
 
 
 def _item(info: registry.RoutineInfo) -> dict:
+    """One conversation as a list row. It carries `parent` — the slug this conversation was
+    forked FROM, "" for the overwhelming majority that are nobody's branch — because the list
+    is the ONE read every conversation view already makes: with it the view derives its own
+    family (a parent from its own row, branches from any row naming it) and asks the
+    `/lineage` route, which reads every conversation's routine.yaml, only when there is one.
+    """
     last = info.last_run
+    parent = info.cfg.parent if isinstance(info.cfg.parent, dict) else {}
     return {
         "slug": info.slug,
+        "parent": str(parent.get("slug") or ""),
         "title": info.cfg.name,
         "tags": info.cfg.tags,
         "state": last.state if last else "new",

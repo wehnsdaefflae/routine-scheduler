@@ -78,8 +78,14 @@ async def deliver_one(taskid: str, info: registry.RoutineInfo, state: str) -> No
     # msg FIRST, delivered.json SECOND, both without an await between → a consumer (a later
     # resume) can never see the msg before the marker; a crash in the tiny gap re-delivers
     # the same deterministic filename, so still exactly one pending message.
+    # `handback`: the same record a branch's hand-back files (rsched/branches.hand_back) — the
+    # owner's chat renders both as ONE hand-back card keyed on `via`, off these facts rather
+    # than off the prose.
     inbox.file_message(owner_dir, delivery_text(info, state, taskid, paths),
-                       via="background", name=f"bg-{taskid}")
+                       via="background", name=f"bg-{taskid}",
+                       extra={"handback": {"slug": taskid,
+                                           "name": info.cfg.name or taskid,
+                                           "paths": list(paths)}})
     atomic_write_json(task_dir / "delivered.json",
                       {"ts": now_iso(), "state": state, "owner": owner.get("slug")})
     log.info("detached delivered task=%s state=%s owner=%s artifacts=%d",

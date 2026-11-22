@@ -62,10 +62,28 @@ export async function rewindTo(slug, runId, turn, { isLive } = {}) {
   } catch (err) { toastError(err); return null; }
 }
 
+/** ONE conversation's branch family, read off the conversation LIST rows the view already
+ * holds: `{ parent, branches }` — its own row's `parent` slug (web/conversations_common._item)
+ * and how many rows name it as theirs. The whole point of deriving it here is that the answer
+ * costs no request: `/lineage` reads every conversation's routine.yaml.
+ */
+export function familyOf(items, slug) {
+  return { parent: (items || []).find((i) => i.slug === slug)?.parent || "",
+           branches: (items || []).filter((i) => i.parent === slug).length };
+}
+
 // Hand-back button (only on a conversation that HAS a parent) plus a lineage line. Forking is
 // now a per-message control on the reply itself (R1006), not a header button (D113). Returns
-// { node, refresh } — refresh re-reads the lineage after a fork.
-export function branchControls(slug) {
+// { node, refresh } — refresh re-reads the lineage after a fork, or after the conversation list
+// loaded and told us this thread has a family at all.
+//
+// `family()` answers THIS conversation's family off the list rows the view already has
+// ({ parent: <slug or "">, branches: <count> }) — its own row carries `parent`, and a branch is
+// any row naming this slug as its parent. The `/lineage` route reads EVERY conversation's
+// routine.yaml to find children, and it was called on mount for every conversation view: paid
+// in full by the overwhelming majority, which have neither a parent nor a branch. With no
+// `family` reader the fetch is unconditional, which is what a caller holding no list gets.
+export function branchControls(slug, { family } = {}) {
   const lineage = el("span", { class: "faint small" });
   const backBtn = el("button", { class: "btn small", hidden: true,
     title: "hand this branch's result back to the conversation it was forked from" },
@@ -95,8 +113,26 @@ export function branchControls(slug) {
     backBtn.hidden = !d.parent;
   };
 
-  const refresh = () => api(`/api/conversations/${slug}/lineage`)
-    .then(renderLineage).catch(() => {});
+  // The signature of the family we last READ for, so the list's own 20 s reload (and every
+  // run event that reloads it) cannot turn one lineage read into a poll: the route is asked
+  // again only when the family actually CHANGED — a fork, a vanished parent.
+  let read = null;
+  const refresh = () => {
+    const fam = family?.();
+    if (fam) {
+      const sig = `${fam.parent || ""}:${fam.branches || 0}`;
+      if (!fam.parent && !fam.branches) {
+        // No family: the route has nothing to tell us, so it is never called. The line stays
+        // empty and the hand-back button stays hidden, which is what it renders for a
+        // conversation with no parent anyway.
+        read = sig;
+        return Promise.resolve();
+      }
+      if (sig === read) return Promise.resolve();
+      read = sig;
+    }
+    return api(`/api/conversations/${slug}/lineage`).then(renderLineage).catch(() => {});
+  };
 
   backBtn.onclick = async () => {
     const summary = await promptDialog(
