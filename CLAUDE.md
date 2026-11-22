@@ -91,6 +91,12 @@ about to touch, not all of them.
   — see `rsched --help`. `validate` checks every routine's config, recipe prose and SETUP SURFACE
   (a `blocks` row or a recipe contract defect fails it). `drain` (before) and `postdeploy` (after)
   BRACKET A DEPLOY. `engine-run` is internal
+- `deploy/merge-to-main.py plan|merge --branch audit/<x> [--tree <wt>] --gate-stamp <s>` — the ONE
+  merge path to `main`, for every writer (self-audit, the builder, a session). The MERGE assigns
+  the version (next minor above main's newest CHANGELOG header), one merger at a time behind
+  `/tmp/rsched-merge.lock` (never the gate lock), and the re-gate owed after a rebase is
+  CLASSIFIED from the delta — prose / leaf test modules / anything else — into the merge commit's
+  trailer. `plan` reads and writes nothing
 - `uv run rsched census [--days 60] [--json]` — what the instance uses and NEVER uses (action kinds,
   side fields, config keys, capabilities, health events); read it before adding to a feature
 - The test floors (`production_guard`, `render_guard`, double conformance, size ratchet, prompt
