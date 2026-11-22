@@ -19,6 +19,7 @@ from ..config import ServerConfig
 from ..daemon.events import EventBus
 from ..endpoints.instrument import set_sink
 from ..llm_tasks import DaemonSink, TaskCenter
+from .reqphases import PhaseInner, PhaseOuter
 from .security_headers import SecurityHeaders
 
 log = logging.getLogger("rsched.web.appwiring")
@@ -238,6 +239,16 @@ def _add_middlewares(app: FastAPI) -> None:
 
     Gzip is added AFTER `SecurityHeaders` here, so it sits inside it and compresses a response
     that already carries the policy; it rewrites `Content-Length` itself when it does compress.
+
+    `PhaseInner` / `PhaseOuter` (`reqphases.py`) BRACKET everything else, and that is the whole
+    point of them: the span they measure is the time taken to REACH the measuring code, which
+    one layer cannot see. `PhaseInner` is added FIRST so it ends up innermost — its stamp is
+    where the chain bottoms out — and `PhaseOuter` LAST so its stamp is the moment the ASGI
+    server handed the scope over. Both are pure ASGI rather than `BaseHTTPMiddleware`, because
+    only a raw `send` wrapper can see the first and last response bytes, which is what
+    distinguishes a slow encode from a slow write. Neither can raise (F906).
     """
+    app.add_middleware(PhaseInner)
     app.add_middleware(SecurityHeaders)
     app.add_middleware(GZipMiddleware, minimum_size=1024)
+    app.add_middleware(PhaseOuter)

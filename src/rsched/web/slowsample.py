@@ -74,7 +74,7 @@ from fastapi import FastAPI
 
 from ..ids import now_iso
 from ..paths import atomic_write_json
-from . import api_debug, api_traces
+from . import api_debug, api_traces, reqphases
 
 log = logging.getLogger("rsched.web")
 
@@ -313,9 +313,19 @@ def install(app: FastAPI) -> None:
             took = time.monotonic() - started
             sample = disarm(app.state, token)
             if took >= app.state.slow_request_s:
+                # WHERE the seconds went, not just how many (F906): the two pure-ASGI layers in
+                # `reqphases.py` bracket this one, so `pre_ms` is the queueing before anything of
+                # ours ran and `send_ms` is the work after the handler returned — the distinction
+                # the self-sample cannot make, because it names a frame rather than a span.
+                phases = reqphases.phases_of(request.scope) or {}
                 entry = {"method": request.method, "path": str(request.url.path),
                          "ts": now_iso(), "seconds": round(took, 2),
-                         "in_flight": app.state.in_flight, "sample": sample}
+                         "in_flight": app.state.in_flight, "sample": sample,
+                         **phases, "dominant": reqphases.dominant(phases)}
                 api_traces.record_slow_request(app.state, entry)
-                log.warning("slow request: %s %s took %.1fs (in_flight=%d)",
-                            request.method, request.url.path, took, app.state.in_flight)
+                log.warning(
+                    "slow request: %s %s took %.1fs (in_flight=%d, pre=%sms app=%sms "
+                    "send=%sms, mostly %s)",
+                    request.method, request.url.path, took, app.state.in_flight,
+                    phases.get("pre_ms", "?"), phases.get("app_ms", "?"),
+                    phases.get("send_ms", "?"), entry["dominant"] or "unattributed")
