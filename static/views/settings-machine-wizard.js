@@ -1,199 +1,220 @@
-// Settings -> Machines setup WIZARD: host -> login account -> key on the box -> test.
-// The daemon does every step it can (scans the host key, generates the login key and stores it
-// in Secrets, installs it over a one-time password login, tests); the one thing it cannot do
-// without a password - reach the box - is offered as a single copyable line instead.
+// Settings -> Machines setup WIZARD: a dialog that shows ONE short step at a time.
+//   1 Machine  - host (and the name routines bind); Next scans and pins its host key
+//   2 Account  - a new restricted user, or an existing account; Next saves the machine
+//   3 Key      - the daemon generates the login key into Secrets; type a password once and it
+//                installs the key, or paste one line on the box
+//   4 Done     - the connection a run makes, tested
 // Backend: web/settings/machine_access.py (key / install-command / install) beside the catalog
-// routes in web/settings/machines.py (save / scan / test). Opened for a NEW machine (all four
-// steps) or for an existing row's "set up access" (the last two).
+// routes in web/settings/machines.py (save / scan / test). A row's "set up access" opens it
+// at step 3.
 
 import { api } from "/static/api.js";
+import { openModal } from "/static/components/dialog.js";
 import { act, el, toast } from "/static/util.js";
 
 const POLL_MS = 5000, POLL_FOR_MS = 180000;   // after a copy: re-test until the key lands
+const TITLES = ["Machine", "Login account", "Install the key", "Done"];
 
 const enc = encodeURIComponent;
-const inp = (ph, w, extra = {}) => el("input", { type: "text", placeholder: ph, style: `width:${w}`, ...extra });
-const say = (node, ok, text) => { node.style.color = ok == null ? "" : ok ? "var(--ok)" : "var(--err)"; node.textContent = text; };
-const step = (key, title, ...body) => el("div", { class: "field mt", "data-wiz-step": key },
-  el("strong", {}, title), ...body);
+const input = (ph, value = "", extra = {}) => el("input", { type: "text", placeholder: ph, value, style: "width:100%", ...extra });
+const nameFrom = (host) => host.toLowerCase().split(".")[0].replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
 
-/** The wizard panel. `machine` set = an existing catalog row (skip to the key); `onDone`
- *  re-reads the section; `onCancel` closes the panel. */
-export function machineWizard({ machine = null, onDone, onCancel }) {
-  const box = el("div", { class: "panel mt", "data-mach-wizard": machine ? machine.name : "" });
+/** Open the wizard. `machine` set = an existing catalog row (start at the key step); `onDone`
+ *  runs after the dialog closes on a finished setup. */
+export function openMachineWizard({ machine = null, onDone }) {
   const st = { name: machine?.name || "", host: machine?.host || "", port: machine?.port || 22,
-    user: machine?.user || "agent", hostKey: machine?.host_key || "", coowner: "",
-    mode: machine ? "account" : "agent" };   // a catalog row's user most likely exists already
-  let polling = false;                        // one re-test loop at a time (see check)
-  const cancel = el("button", { class: "btn small" }, "close");
-  cancel.onclick = () => onCancel();
-  box.append(el("div", { class: "row" }, el("strong", {},
-    machine ? `Set up access to ${machine.name}` : "Set up a machine"), cancel));
-  if (!machine) hostStep();
-  else keyStep().catch((err) => box.append(el("div", { class: "small", style: "color:var(--err)" }, `✗ ${err.message}`)));
-  return box;
+    user: machine?.user || "agent", mode: machine ? "account" : "agent", admin: "",
+    keyNote: "", finished: false };
+  let polling = false;                          // one re-test loop at a time (see check)
+  const heading = el("strong", {});
+  const progress = el("div", { class: "muted small" });
+  const body = el("div", { class: "mt" });
+  const fill = (...nodes) => body.replaceChildren(...nodes.filter(Boolean));   // skips absent lines
+  const msg = el("div", { class: "small mt", style: "min-height:1.4em", "data-wiz-out": "" });
+  const back = el("button", { class: "btn" }, "back");
+  const next = el("button", { class: "btn primary", "data-wiz-next": "" }, "next");
+  const xBtn = el("button", { class: "btn small", title: "close" }, "✕");
+  const panel = el("div", { class: "panel", style: "width:520px", "data-mach-wizard": machine?.name || "" },
+    el("div", { class: "row", style: "justify-content:space-between" }, heading, xBtn), progress,
+    body, msg, el("div", { class: "row mt", style: "justify-content:space-between" }, back, next));
+  const close = openModal(panel, { label: heading, onCancel: () => finish() });
+  xBtn.onclick = () => finish();
+  show(machine ? 2 : 0);
 
-  // 1 - where is it: name, host, port -> the box's pinned identity
+  function finish() { polling = false; close(); if (st.finished) onDone(); }
+  function say(ok, text) {
+    msg.style.color = ok == null ? "" : ok ? "var(--ok)" : "var(--err)";
+    msg.textContent = text;
+  }
+
+  // One step on screen: its fields in `body`, its action on `next`.
+  function show(i, note = "") {
+    heading.textContent = machine ? `Set up access to ${machine.name}` : "Set up a machine";
+    progress.textContent = `Step ${i + 1} of 4 · ${TITLES[i]}`;
+    body.setAttribute("data-wiz-step", ["host", "account", "install", "done"][i]);
+    say(note ? true : null, note);
+    back.style.visibility = i === 1 || (i === 2 && !machine) ? "" : "hidden";
+    back.onclick = () => { polling = false; show(i - 1); };
+    next.style.display = "";
+    [hostStep, accountStep, keyStep, doneStep][i]();
+  }
+
   function hostStep() {
-    const nameIn = inp("name (gpu-box)", "140px"), hostIn = inp("host / IP", "160px");
-    const portIn = el("input", { type: "number", value: "22", style: "width:70px" });
-    const out = el("div", { class: "small mono" });
-    const btn = el("button", { class: "btn primary" }, "check host");
-    btn.onclick = () => act(btn, async () => {
-      st.name = nameIn.value.trim(); st.host = hostIn.value.trim(); st.port = parseInt(portIn.value, 10) || 22;
-      if (!st.name || !st.host) { toast("name and host are required"); return; }
-      say(out, null, "reading the host key…");
+    const hostIn = input("host name or IP, e.g. 192.168.0.50", st.host);
+    const nameIn = input("name", st.name);
+    const portIn = el("input", { type: "number", value: String(st.port), style: "width:90px" });
+    let named = !!st.name;                     // follow the host until the name is typed
+    hostIn.oninput = () => { if (!named) nameIn.value = nameFrom(hostIn.value); };
+    nameIn.oninput = () => { named = true; };
+    fill(
+      el("label", { class: "field" }, el("span", {}, "Which machine?"), hostIn),
+      el("div", { class: "row", style: "gap:8px" },
+        el("label", { class: "field", style: "flex:1" }, el("span", {}, "Name routines use"), nameIn),
+        el("label", { class: "field" }, el("span", {}, "SSH port"), portIn)));
+    hostIn.focus();
+    next.textContent = "next";
+    next.onclick = () => act(next, async () => {
+      st.host = hostIn.value.trim(); st.name = nameIn.value.trim(); st.port = parseInt(portIn.value, 10) || 22;
+      if (!st.host || !st.name) { say(false, "enter the machine and a name"); return; }
+      say(null, `looking for ${st.host}…`);
       const r = await api("/api/settings/machines/scan", { method: "POST", body: { host: st.host, port: st.port } });
-      if (!r.ok) { say(out, false, `✗ ${r.error}`); return; }
+      if (!r.ok) { say(false, `✗ ${r.error}`); return; }
       st.hostKey = r.host_key;
-      say(out, true, `✓ ${r.host_key.split(/\s+/).slice(0, 2).join(" ").slice(0, 60)}…`);
-      btn.remove(); [nameIn, hostIn, portIn].forEach((i) => (i.disabled = true));
-      accountStep();
+      show(1, `✓ found ${st.host} — its identity is pinned`);
     });
-    box.append(step("host", "1 · Where is the machine?",
-      el("div", { class: "row mt", style: "flex-wrap:wrap;gap:6px" }, nameIn, hostIn, portIn, btn),
-      el("div", { class: "muted small" }, "The name is what routines bind. Checking reads the box's ",
-        "identity key and pins it: a run refuses to connect if it ever changes."), out));
   }
 
-  // 2 - which account the scheduler logs in as; saving creates the login key
   function accountStep() {
-    const agentRb = el("input", { type: "radio", name: "wiz-mode", checked: true, "data-wiz-mode": "agent" });
-    const acctRb = el("input", { type: "radio", name: "wiz-mode", "data-wiz-mode": "account" });
-    const agentUser = inp("agent", "110px", { value: "agent" });
-    const coIn = inp("your admin account (optional)", "220px");
-    const acctUser = inp("existing account", "140px");
-    const warn = el("div", { class: "small", style: "color:var(--warn);display:none" },
-      "Runs act with this account's FULL rights on the box. An admin account (sudo, or the ",
-      "docker group) can change anything there — including the scheduler itself if it runs on ",
-      "this box. Prefer a restricted user unless a routine truly needs this one.");
-    acctRb.onchange = agentRb.onchange = () => { warn.style.display = acctRb.checked ? "" : "none"; };
-    const descIn = inp("one-line description, shown to the model", "320px");
-    const wdIn = inp("workdir (default: the user's home)", "240px");
-    const shareIn = inp("share to mount, e.g. /srv/shared", "240px");
-    const exclIn = el("input", { type: "checkbox" });
-    const out = el("div", { class: "small mono" });
-    const btn = el("button", { class: "btn primary" }, "save & create login key");
-    btn.onclick = () => act(btn, async () => {
-      st.mode = acctRb.checked ? "account" : "agent";
-      st.user = (st.mode === "agent" ? agentUser.value : acctUser.value).trim();
-      st.coowner = st.mode === "agent" ? coIn.value.trim() : "";
-      if (!st.user) { toast("enter the account name"); return; }
-      const home = `/home/${st.user}`;
-      const body = { name: st.name, host: st.host, port: st.port, user: st.user, host_key: st.hostKey,
-        description: descIn.value.trim(), workdir: wdIn.value.trim() || home, share: shareIn.value.trim(),
-        exclusive: exclIn.checked, tags: [] };
-      const r = await api(`/api/settings/machines/${enc(st.name)}`, { method: "PUT", body });
+    const userIn = input("account name", st.mode === "agent" ? st.user : "");
+    const warn = el("div", { class: "small mt", style: "color:var(--warn)" },
+      "Routines will act with this account's full rights. An admin account (sudo or docker) can ",
+      "change anything on the box — including the scheduler, if it runs there.");
+    const sync = () => { warn.style.display = st.mode === "account" ? "" : "none"; };
+    const choice = (mode, title, detail) => {
+      const rb = el("input", { type: "radio", name: "wiz-mode", "data-wiz-mode": mode, checked: st.mode === mode });
+      rb.onchange = () => { st.mode = mode; userIn.value = mode === "agent" ? "agent" : ""; sync(); userIn.focus(); };
+      return el("label", { class: "row mt", style: "gap:8px;align-items:flex-start" }, rb,
+        el("span", {}, el("strong", {}, title), el("div", { class: "muted small" }, detail)));
+    };
+    fill(el("div", {}, "Which account should the scheduler log in as?"),
+      choice("agent", "A new restricted user (recommended)", "No sudo, key-only, its own home. Created for you."),
+      choice("account", "An account that already exists", "e.g. your own user."),
+      el("label", { class: "field mt" }, el("span", {}, "Account name"), userIn), warn);
+    sync();
+    next.textContent = "next";
+    next.onclick = () => act(next, async () => {
+      st.user = userIn.value.trim();
+      if (!st.user) { say(false, "enter the account name"); return; }
+      const spec = { name: st.name, host: st.host, port: st.port, user: st.user,
+        host_key: st.hostKey, workdir: `/home/${st.user}` };
+      const r = await api(`/api/settings/machines/${enc(st.name)}`, { method: "PUT", body: spec });
       if (r.problems?.length) toast(r.problems.join("; "), 6000, { error: true });
-      btn.remove(); box.querySelectorAll('[data-wiz-step="account"] input').forEach((i) => (i.disabled = true));
-      await keyStep();
+      show(2);
     });
-    box.append(step("account", "2 · Which account does the scheduler log in as?",
-      el("label", { class: "row mt", style: "gap:8px" }, agentRb, el("span", {}, "a new ",
-        el("strong", {}, "restricted"), " user (recommended) — no sudo, key-only, its own home")),
-      el("div", { class: "row", style: "gap:6px;margin-left:24px" }, agentUser, coIn),
-      el("div", { class: "muted small", style: "margin-left:24px" },
-        "The co-owner joins the user's group and keeps full access to everything it makes."),
-      el("label", { class: "row mt", style: "gap:8px" }, acctRb, el("span", {}, "an existing account"), acctUser),
-      warn,
-      el("details", { class: "mt" }, el("summary", { class: "small" }, "more options"),
-        el("div", { class: "row mt", style: "flex-wrap:wrap;gap:6px" }, descIn, wdIn, shareIn),
-        el("label", { class: "row mt", style: "gap:8px" }, exclIn, el("span", { class: "small" },
-          "exclusive — submitted jobs queue and run one at a time (a GPU box)"))),
-      el("div", { class: "row mt" }, btn), out));
   }
 
-  // 3 - put the public key on the box: by password, or one pasted line
   async function keyStep() {
-    const k = await api(`/api/settings/machines/${enc(st.name)}/key`, { method: "POST" });
-    const head = el("div", { class: "muted small" }, k.generated
-      ? `A login key was created and stored as the secret ${k.key_var} — you never handle it. `
-      : `Using the login key already stored as ${k.key_var}. `,
-      el("span", { class: "mono" }, k.fingerprint));
-    const modeSel = el("select", { "data-wiz-install-mode": "" },
-      el("option", { value: "agent" }, `create ${st.user} as a restricted user (needs an admin's sudo)`),
-      el("option", { value: "account" }, `${st.user} already exists — add the key to it`));
-    modeSel.value = st.mode;
-    const coIn = inp("co-owner admin (optional)", "200px", { value: st.coowner });
-    const loginIn = inp("admin account", "140px");
-    const pwIn = el("input", { type: "password", placeholder: "password", autocomplete: "new-password", style: "width:180px" });
-    const pwLabel = el("span", { class: "small" });
-    const out = el("div", { class: "small mono", "data-wiz-out": "" });
-    const cmdBox = el("textarea", { class: "code", rows: "4", readonly: true, style: "width:100%;min-height:0", "data-wiz-command": "" });
-    const runAs = el("span", { class: "small" });
-    const sync = async () => {
-      st.mode = modeSel.value; st.coowner = coIn.value.trim();
-      const agent = st.mode === "agent";
-      loginIn.style.display = coIn.style.display = agent ? "" : "none";
-      pwLabel.textContent = agent ? `an admin account on ${st.host} that can sudo, and its password:`
-                                  : `${st.user}'s password on ${st.host}:`;
-      const q = `mode=${enc(st.mode)}&coowner=${enc(st.coowner)}`;
-      try {
-        const c = await api(`/api/settings/machines/${enc(st.name)}/install-command?${q}`);
-        cmdBox.value = c.command; runAs.textContent = `Run this on ${c.host}, ${c.run_as}:`;
-      } catch (err) { cmdBox.value = ""; runAs.textContent = `✗ ${err.message}`; }
-    };
-    modeSel.onchange = sync; coIn.onchange = sync;
-
-    const installBtn = el("button", { class: "btn primary" }, "install key");
-    installBtn.onclick = () => act(installBtn, async () => {
-      if (!pwIn.value) { toast("enter the password"); return; }
-      say(out, null, "logging in and installing…");
-      const r = await api(`/api/settings/machines/${enc(st.name)}/install`, { method: "POST",
-        body: { mode: st.mode, password: pwIn.value, login_user: loginIn.value.trim(), coowner: st.coowner } });
-      pwIn.value = "";
-      if (!r.ok) { say(out, false, `✗ ${r.error}`); return; }
-      say(out, true, "✓ installed — testing the new key…");
-      await check(out, false);
-    });
-    const copyBtn = el("button", { class: "btn small" }, "copy");
-    copyBtn.onclick = async () => {
-      try { await navigator.clipboard.writeText(cmdBox.value); toast("copied — paste it on the box"); }
-      catch { cmdBox.select(); toast("clipboard blocked — command selected, press Ctrl-C"); }
-      check(out, true);
-    };
-    const checkBtn = el("button", { class: "btn small" }, "check now");
-    checkBtn.onclick = () => act(checkBtn, () => check(out, false));
-
-    box.append(step("install", `3 · Put the key on ${st.host}`, head,
-      el("div", { class: "row mt", style: "flex-wrap:wrap;gap:6px" }, modeSel, coIn),
-      el("div", { class: "mt" }, el("strong", { class: "small" }, "Do it for me"), " ", pwLabel),
-      el("div", { class: "row", style: "flex-wrap:wrap;gap:6px" }, loginIn, pwIn, installBtn),
-      el("div", { class: "muted small" }, "Used for this one login and kept nowhere. A box that ",
-        "allows key login only refuses it — paste the line below instead."),
-      el("div", { class: "mt" }, el("strong", { class: "small" }, "Or paste one line"), " ", runAs),
-      cmdBox, el("div", { class: "row" }, copyBtn, checkBtn,
-        el("span", { class: "muted small", style: "align-self:center" },
-          "after a copy, the connection is re-checked every few seconds")),
-      out));
-    await sync();
+    fill(el("div", { class: "muted small" }, "creating the login key…"));
+    next.style.display = "none";
+    let k;
+    try { k = await api(`/api/settings/machines/${enc(st.name)}/key`, { method: "POST" }); }
+    catch (err) { say(false, `✗ ${err.message}`); return; }
+    st.keyNote = k.generated ? `A login key was created and saved as the secret ${k.key_var}.`
+                             : `Using the login key saved as ${k.key_var}.`;
+    passwordView();
   }
 
-  // 4 - the exact connection a run makes; `poll` keeps trying while the operator pastes
-  async function check(out, poll) {
+  // Default: type a password once, the daemon does the rest.
+  function passwordView() {
+    const agent = st.mode === "agent";
+    const adminIn = input("admin account, e.g. mark", st.admin);
+    const pwIn = el("input", { type: "password", placeholder: "password", autocomplete: "new-password", style: "width:100%" });
+    const pasteLink = el("a", { href: "#", "data-wiz-paste": "" }, "I'd rather paste a command on the machine");
+    pasteLink.onclick = (e) => { e.preventDefault(); say(null, ""); pasteView(); };
+    fill(el("div", { class: "muted small" }, st.keyNote),
+      el("div", { class: "mt" }, agent
+        ? `To create ${st.user} on ${st.host}, log in once as an admin who can sudo:`
+        : `Log in once as ${st.user} on ${st.host}:`),
+      agent ? el("label", { class: "field mt" }, el("span", {}, "Admin account"), adminIn) : null,
+      el("label", { class: agent ? "field" : "field mt" }, el("span", {}, "Password"), pwIn),
+      el("div", { class: "muted small" }, "Used for this one login, then forgotten."),
+      el("div", { class: "mt small" }, pasteLink),
+      machine ? modeToggle(passwordView) : null);
+    (agent ? adminIn : pwIn).focus();
+    next.style.display = ""; next.textContent = "install key";
+    next.onclick = () => act(next, async () => {
+      st.admin = adminIn.value.trim();
+      if (agent && !st.admin) { say(false, "enter the admin account"); return; }
+      if (!pwIn.value) { say(false, "enter the password"); return; }
+      say(null, "logging in and installing…");
+      const r = await api(`/api/settings/machines/${enc(st.name)}/install`, { method: "POST",
+        body: { mode: st.mode, password: pwIn.value, login_user: st.admin, coowner: agent ? st.admin : "" } });
+      pwIn.value = "";
+      if (!r.ok) { say(false, `✗ ${r.error}`); return; }
+      say(null, "installed — testing the connection…");
+      await check(false);
+    });
+  }
+
+  // Fallback: one line to paste on the box, then the wizard re-tests until it lands.
+  async function pasteView() {
+    const cmdBox = el("textarea", { class: "code", rows: "3", readonly: true, style: "width:100%;min-height:0", "data-wiz-command": "" });
+    const runAs = el("div", { class: "mt" });
+    const pwLink = el("a", { href: "#" }, "use a password instead");
+    pwLink.onclick = (e) => { e.preventDefault(); polling = false; say(null, ""); passwordView(); };
+    fill(el("div", { class: "muted small" }, st.keyNote), runAs, cmdBox,
+      el("div", { class: "muted small" }, "One long line — “copy command” takes all of it."),
+      el("div", { class: "mt small" }, pwLink), machine ? modeToggle(pasteView) : null);
+    next.style.display = ""; next.textContent = "copy command";
+    next.onclick = async () => {
+      try { await navigator.clipboard.writeText(cmdBox.value); } catch { cmdBox.select(); }
+      say(null, "copied — paste it on the machine; this window notices when it is done…");
+      check(true);
+    };
+    try {
+      const c = await api(`/api/settings/machines/${enc(st.name)}/install-command?mode=${enc(st.mode)}`);
+      cmdBox.value = c.command;
+      runAs.textContent = `Open a terminal on ${c.host}, ${c.run_as}, and paste this:`;
+    } catch (err) { say(false, `✗ ${err.message}`); }
+  }
+
+  // A catalog row may not know whether its user exists yet: one line to switch.
+  function modeToggle(redraw) {
+    const a = el("a", { href: "#", "data-wiz-mode-toggle": "" }, st.mode === "account"
+      ? `${st.user} doesn't exist yet? create it as a restricted user`
+      : `${st.user} already exists? add the key to it instead`);
+    a.onclick = (e) => { e.preventDefault(); st.mode = st.mode === "account" ? "agent" : "account"; redraw(); };
+    return el("div", { class: "small mt" }, a);
+  }
+
+  // The exact connection a run makes; `poll` keeps trying while the operator pastes.
+  async function check(poll) {
     if (poll && polling) return;
     polling = poll;
     const until = Date.now() + POLL_FOR_MS;
     for (;;) {
-      if (!box.isConnected) return;            // the wizard was closed: nothing left to report
+      if (!panel.isConnected) return;          // the dialog was closed: nothing left to report
       const r = await api(`/api/settings/machines/${enc(st.name)}/test`, { method: "POST" })
         .catch((err) => ({ ok: false, error: err.message }));
-      if (r.ok) { polling = false; say(out, true, "✓ connected with the new key"); done(); return; }
-      if (!poll || Date.now() > until) {
-        polling = false; say(out, false, `✗ not reachable with the key yet: ${r.error}`); return;
+      if (!panel.isConnected) return;
+      if (r.ok) { polling = false; show(3); return; }
+      if (!poll || !polling || Date.now() > until) {
+        if (!poll || Date.now() > until) say(false, `✗ not reachable with the key yet: ${r.error}`);
+        polling = false; return;
       }
-      say(out, null, "waiting for the key to land on the box…");
       await new Promise((res) => setTimeout(res, POLL_MS));
     }
   }
 
-  function done() {
-    if (box.querySelector('[data-wiz-step="done"]')) return;
-    const fin = el("button", { class: "btn primary" }, "done");
-    fin.onclick = () => onDone();
-    box.append(step("done", `✓ ${st.user}@${st.host} answers with the new key`,
-      el("div", { class: "muted small" }, "Last step: on a routine's page, Limits & reach → more → ",
-        `Machines, tick ${st.name} and accept. Only bound routines can reach it.`),
-      el("div", { class: "row mt" }, fin)));
+  function doneStep() {
+    st.finished = true;
+    fill(
+      el("div", { style: "color:var(--ok)" }, `✓ Connected as ${st.user}@${st.host}`),
+      el("div", { class: "mt" }, `To let a routine use ${st.name}: open the routine → `,
+        "Limits & reach → more → Machines, tick it and accept."));
+    back.style.visibility = "hidden";
+    next.textContent = "done";
+    next.onclick = () => finish();
+    next.focus();
   }
 }

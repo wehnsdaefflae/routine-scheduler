@@ -54,39 +54,42 @@ sandboxed:
 
 ## Setting one up: the wizard
 
-**Settings → Machines → + set up a machine** walks the whole setup; the daemon does every step
-it can, and nothing is copied by hand but (at most) one line:
+**Settings → Machines → + set up a machine** opens a dialog that shows ONE short step at a time
+(*Step n of 4*, back / next); the daemon does every step it can, and nothing is copied by hand
+but, at most, one line:
 
-1. **Where.** A name (what routines bind), the host and port. *check host* scans the box's host
-   key and pins it.
-2. **Which account.** A new **restricted** user (recommended — the hardened setup below, with an
-   optional admin co-owner) or an **existing account**. Picking an existing account warns that a
-   run acts with its full rights: an admin (sudo, or the docker group) can change anything on the
-   box, including the scheduler itself when it runs there. *more options* holds the description,
-   workdir (default: the user's home), share and **exclusive**. *Save & create login key* saves
-   the machine and has the daemon generate an ed25519 key: the private half goes straight into
-   Secrets as `<NAME>_SSH_KEY` and becomes the machine's `key_var`; only the fingerprint is shown.
-   A machine whose `key_var` secret already holds a readable key REUSES it (another machine may
-   share that secret) — the wizard never rotates a key.
-3. **Put the key on the box**, one of two ways:
-   - **Do it for me** — type a password once. Restricted user: an admin account's password; the
-     daemon logs in as that admin and runs `deploy/setup-remote-agent-user.sh` under `sudo -S`.
-     Existing account: that account's own password; the key is appended to its
-     `~/.ssh/authorized_keys`. The login uses the system `ssh` with the PINNED host key checked
-     strictly (a mismatch sends no password) and the password reaching ssh only through an askpass
-     helper's environment — never argv, disk or a log (`machine_bootstrap.py`). It is used for
-     that one login and kept nowhere. A box that allows key login only refuses it.
-   - **Or paste one line** — the same install as a single command (*copy*), to run on the box as
-     the named account (restricted user: an admin; sudo asks at the terminal). The setup script
-     travels base64 inside the line, so the box needs nothing but bash and sudo. After a copy the
-     wizard re-tests every few seconds for three minutes, while it stays open.
-4. **Test.** The ordinary *test* — the exact pinned, keyed path a run connects by. Then bind the
-   machine on a routine's page: *Limits & reach* → *more* → *Machines* → tick it → *accept
-   changes*. The binding is the whole grant: the `remote` util acts on bound machines only.
+1. **Machine.** The host (the name routines bind follows it until you type one) and the SSH
+   port. *Next* scans the box's host key and pins it.
+2. **Login account.** A new **restricted** user (recommended — the hardened setup below) or an
+   **account that already exists**, which warns that a run acts with its full rights: an admin
+   (sudo, or the docker group) can change anything on the box, including the scheduler itself
+   when it runs there. *Next* saves the machine (workdir: that user's home).
+3. **Install the key.** The daemon generates an ed25519 login key straight into Secrets as
+   `<NAME>_SSH_KEY`, the machine's `key_var` (a `key_var` already holding a readable key is
+   REUSED — another machine may share that secret; the wizard never rotates a key). Then:
+   - **by password** (the default) — restricted user: an admin account and its password; the
+     daemon logs in as that admin and runs `deploy/setup-remote-agent-user.sh` under `sudo -S`,
+     with the admin as co-owner. Existing account: that account's own password; the key is
+     appended to its `~/.ssh/authorized_keys`. The login uses the system `ssh` with the PINNED
+     host key checked strictly (a mismatch sends no password) and the password reaching ssh only
+     through an askpass helper's environment — never argv, disk or a log
+     (`machine_bootstrap.py`). It is used for that one login and kept nowhere. A box that allows
+     key login only refuses it.
+   - **or one pasted line** — *I'd rather paste a command*: the same install as a single
+     command, run on the box as the named account (restricted user: an admin; sudo asks at the
+     terminal). The setup script travels base64 inside the line, so the box needs nothing but
+     bash and sudo. After *copy command* the dialog re-tests every few seconds for three
+     minutes, while it stays open.
+4. **Done.** The ordinary *test* has passed — the exact pinned, keyed path a run connects by.
+   Bind the machine on a routine's page: *Limits & reach* → *more* → *Machines* → tick it →
+   *accept changes*. The binding is the whole grant: the `remote` util acts on bound machines
+   only.
 
-Every installed key carries `no-agent-forwarding,no-X11-forwarding,no-port-forwarding` — a run
+The description, share and **exclusive** are not wizard questions: set them afterwards with the
+row's **edit**. Every installed key carries `no-agent-forwarding,no-X11-forwarding,no-port-forwarding` — a run
 needs exec and SFTP, never forwarding. An existing row's **set up access** opens the same wizard
-at step 3 (to put a machine's key back on a reinstalled box, say). **add or edit by hand** is the
+at step 3 (to put a machine's key back on a reinstalled box, say), with a link to switch between
+"the user exists" and "create it as a restricted user". **add or edit by hand** is the
 raw form over every catalog field — `key_var` naming a secret you set yourself on Settings →
 Secrets (an UNENCRYPTED ed25519 / ecdsa / rsa key), *scan host key*, and `exclusive` among them.
 The routes are `web/settings/machine_access.py` (`key`, `install-command`, `install`) beside the

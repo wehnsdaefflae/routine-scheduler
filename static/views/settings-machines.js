@@ -6,7 +6,7 @@ import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { act, el, toast } from "/static/util.js";
 import { panelSection, savedToast } from "/static/views/settings-common.js";
-import { machineWizard } from "/static/views/settings-machine-wizard.js";
+import { openMachineWizard } from "/static/views/settings-machine-wizard.js";
 
 export function renderMachines(view) {
   // -- remote machines (SSH catalog) ----------------------------------------------
@@ -16,13 +16,8 @@ export function renderMachines(view) {
       "through it: the scheduler pins the host key, creates the login key, puts it on the box ",
       "and tests the connection. Then bind the machine on a routine's page."));
 
-    // The wizard: one at a time, opened for a new machine or for an existing row's access.
-    const wizSlot = el("div");
-    const openWizard = (machine = null) => {
-      wizSlot.replaceChildren(machineWizard({ machine, onDone: reload,
-        onCancel: () => wizSlot.replaceChildren() }));
-      wizSlot.scrollIntoView({ behavior: "smooth", block: "start" });
-    };
+    // The wizard is a dialog, one step at a time: for a new machine, or an existing row's key.
+    const openWizard = (machine = null) => openMachineWizard({ machine, onDone: reload });
     const wizBtn = el("button", { class: "btn primary", "data-mach-wizard-open": "" }, "+ set up a machine");
     wizBtn.onclick = () => openWizard();
 
@@ -149,6 +144,6 @@ export function renderMachines(view) {
           "you normally never type here. Your login key does NOT go in this box (see ",
           el("code", {}, "KEY_VAR"), " above).")),
       el("div", { class: "row mt" }, saveBtn));
-    machBox.append(el("div", { class: "row mt" }, wizBtn), wizSlot, form);
+    machBox.append(el("div", { class: "row mt" }, wizBtn), form);
   });
 }
