@@ -46,10 +46,14 @@ BEHAVIOUR = frozenset({"models", "efforts", "connections", "machines", "grants",
 #: What does not change what a run DOES: identity, WHEN it runs, retention, `improve`, and what
 #: the fingerprint measures separately (`deliberation`, `rules` by text, `tuning` as recipe).
 #: `outcome` measures a run and changes nothing it may do.
+#: `parent` and `lineage` are a conversation's PROVENANCE — which conversation it was forked
+#: from and at which turn. Like `slug` and `owner` they say where it came from, never what a run
+#: of it may do, so a fork does not read as a behaviour change of its parent or of itself.
 NOT_BEHAVIOUR = frozenset({"slug", "dir", "name", "description", "tags", "kind",
                            "owner", "workflow_slug", "workflow_commit", "playbook_slug",
                            "pattern", "enabled", "cron", "tz", "triggers", "run_gate",
-                           "keep_runs", "improve", "deliberation", "rules", "tuning", "outcome"})
+                           "keep_runs", "improve", "deliberation", "rules", "tuning", "outcome",
+                           "parent", "lineage"})
 
 
 def short_hash(text: str) -> str:
