@@ -29,8 +29,22 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..hooks import reportproj
-from ..paths import append_jsonl, file_lock
+from ..paths import append_jsonl, file_lock, read_jsonl
 from ..reports import reports_path
+
+
+def _already_recorded(routines_home: Path, report_id: str, text: str) -> bool:
+    """`_same_answer_recorded` for the relay's second half, failing OPEN.
+
+    Telling the target twice is a cost; NOT telling it because the ledger could not be read is
+    a lost decision, so an unreadable ledger reads as "not recorded" and the answer goes out.
+    """
+    if not report_id or not text:
+        return False
+    try:
+        return _same_answer_recorded(reports_path(routines_home), report_id, text)
+    except OSError:
+        return False
 
 #: What the answer's text is cut to in the ledger row. The full answer lives in the question's
 #: own record; this is the handle a triager reads, and a ledger row is not a transcript.
@@ -50,11 +64,33 @@ def record(routines_home: Path, report_id: str, answer: str, *, routine: str = "
     path = reports_path(routines_home)
     try:
         with file_lock(path.with_suffix(".lock")):
+            if _same_answer_recorded(path, report_id, text):
+                return False
             append_jsonl(path, reportproj.event(routines_home, report_id=report_id,
                                                 event="answered", by=text, to=routine))
     except OSError:
         return False
     return True
+
+
+def _same_answer_recorded(path: Path, report_id: str, text: str) -> bool:
+    """Is THIS answer to THIS report already the ledger's latest word on it?
+
+    The answer route serves a record until a RUN consumes it, so the same question can be
+    answered more than once — a second click on a slow page, a reload that re-posts — and every
+    post relays. One report's answer is one fact, so an identical repeat must add no row: a
+    reader counting rows would otherwise read two decisions where the operator made one, and
+    the duplicate pairs on this ledger cost a triage pass turns to tell apart from a revision.
+
+    Only the LATEST `answered` row is compared, under the append's own lock: a genuine
+    CORRECTION (he answers again with different words) is a new fact and is appended, and so is
+    an answer that returns to an earlier wording after one in between.
+    """
+    latest = ""
+    for row in read_jsonl(path):
+        if row.get("event") == "answered" and str(row.get("id") or "") == report_id:
+            latest = str(row.get("by") or "")
+    return latest == text
 
 
 def relay(server, match: dict, text: str) -> None:
@@ -70,8 +106,10 @@ def relay(server, match: dict, text: str) -> None:
     if not report_id:
         return
     target = str(match.get("report_target") or "")
+    repeat = _already_recorded(server.routines_home, report_id,
+                               " ".join(str(text or "").split())[:ANSWER_MAX])
     record(server.routines_home, report_id, text, routine=target)
-    if not target:
+    if not target or repeat:
         return
     target_dir = server.routines_home / target
     if not (target_dir / "routine.yaml").is_file():

@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.586.0] — 2026-11-22
+
+### Fixed
+- **One answer to a report is one ledger row, and the target is told once.** The answer route
+  serves a question's record until a RUN consumes it, so the same question can be answered more
+  than once — a second click, a reload that re-posts — and every post relayed. Both report-born
+  answers this ledger has ever carried were therefore recorded twice: R3650 two seconds apart
+  and R3657 eight, identical text, while each question's own record held a single answer. A
+  triage pass reading `.control/reports.jsonl` saw two decisions where the operator made one
+  and had to tell a duplicate from a revision by hand. `web/report_answers.record` now compares
+  the incoming answer with the ledger's LATEST word on that report under the append's own lock
+  and writes nothing when they match, and `relay` skips the target's inbox message for such a
+  repeat — the stem-keyed idempotency there only held while the message was still queued, so
+  after the target's run had drained it a repeat delivered the same decision again. A genuine
+  CORRECTION is a new fact and still goes out, including one that returns to an earlier
+  wording, and an unreadable ledger fails OPEN: telling the target twice is a cost, losing his
+  decision is not.
+
 ## [0.585.0] — 2026-11-22
 
 ### Fixed
