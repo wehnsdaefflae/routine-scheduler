@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.588.0] — 2026-11-22
+
+### Added
+- **One merge path to `main`, where the MERGE assigns the version** (D303). The gate lock
+  serializes the test runs and nothing serialized the merges, so whoever went green second
+  found main moved: on 2026-11-21 sixteen releases landed in one day and one builder release was
+  overtaken four times, renumbered twice and re-gated three times, none of the overtaking
+  commits touching a file of its own. `deploy/merge-to-main.py` (stdlib only, so the gate
+  script, a routine's close-out and a person at a terminal can all run it) rebases, renumbers
+  the candidate's top CHANGELOG header and `__version__` to the next minor above main's own
+  newest header, ff-merges, pushes and reads `origin` back by commit AND version — one merger at
+  a time behind `/tmp/rsched-merge.lock`, deliberately not the gate lock, so a candidate under
+  test never blocks one ready to land. The re-gate owed after a rebase is CLASSIFIED rather than
+  judged: prose owes nothing, leaf test modules owe themselves plus the quality stage, and
+  anything that reaches every test (`src/`, `static/`, a conftest, a shared helper, the config)
+  owes a full re-gate — with the class and the covering stamp written into the merge commit's
+  trailer. A stamp is accepted only when its own result says green over THIS tree.
+- **The hook stream answers its two questions on a page** (D305, first increment).
+  `.control/hooks.jsonl` was written for every one-shot, injection and run-tree hook and no
+  surface read any of it. `readmodels/hook_activity.py` folds the stream ONCE (memoized on its
+  stat fingerprint): `next_fires` lists the still-pending one-shots soonest first — the PENDING
+  fold first and the ordering second, because a hook's lifecycle is a later row and over raw rows
+  every fired one-shot reads as overdue — and `deliveries` lists who spoke into which run,
+  newest first with the stream's own position breaking a same-second tie. `GET /api/hook-activity`
+  serves both to the operator's token, and the Routines page shows them under the week strip; a
+  run-tree row whose write failed reads as undelivered.
+- **A slow request now says WHERE its seconds went** (F906). `/api/health/blocked` records a
+  2,780 ms median over 834 samples while its whole server pipeline measures ~30 ms warm, so the
+  wait was in neither the handler nor the read model. `web/reqphases.py` adds two pure-ASGI
+  layers that bracket every middleware and split one request into `pre_ms` (loop scheduling, the
+  pool handoff, everything above the app), `app_ms` and `send_ms`, with `first_byte_ms`
+  separating a slow encode from a slow write. The slow row, the log line and the DURABLE trace
+  row carry all four plus which span dominates. Both layers fail open and read no header, cookie
+  or query string. This is the attribution; the causal fix follows the rows it produces.
+
 ## [0.587.0] — 2026-11-22
 
 ### Added

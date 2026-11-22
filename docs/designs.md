@@ -67,12 +67,20 @@ Interactive sessions use the same entry point. A writer that bypasses it is what
 exists to stop, so the post-commit hook warns when `main` advances without the merge step's
 trailer line.
 
-**First increment.** The merge step as ONE script in `deploy/` (stdlib only, so self-audit's
-`candidate_gate` and the builder's close-out can call it, and a session can run it by hand):
-rebase, renumber, classify, then ff, push and read back under the lease. Tests for the
-renumbering and the three delta classes. One line in CLAUDE.md's Commands, and the builder's
-and self-audit's recipes switch their merge step to it. The hook warning is the second
-increment.
+**First increment — SHIPPED in 0.588.0** as `deploy/merge-to-main.py` (stdlib only, so
+self-audit's `candidate_gate`, the builder's close-out and a session at a terminal can all run
+it): `plan` reads, `merge` rebases, renumbers from main's own newest CHANGELOG header, commits
+that renumbering with the gate stamp and the delta class in its trailer, then ff-merges, pushes
+and reads `origin` back by commit AND version — under `/tmp/rsched-merge.lock`, which is NOT the
+gate lock. `classify` partitions the delta into prose / leaf test modules / anything that
+reaches every test, and `gate_verdict` accepts a stamp only when its own result says green over
+that tree. Tests for the renumbering, the three delta classes, the lease's green-only rule and
+the CLI's refusals; one line in CLAUDE.md's Commands; `docs/testing.md` narrates it.
+
+**What remains.** (1) The two routines' recipes switch their merge step to it: `self-audit` owns
+its own recipe and is told by report. (2) The post-commit hook's WARNING when `main` advances
+without the merge step's trailer line, which is what makes the queue bind a writer who bypasses
+it. This entry stays until both have landed.
 
 ---
 
@@ -522,12 +530,21 @@ anywhere in the console:
   the request file is the non-repeating guarantee, and `scheduleproj`'s docstring is right that a
   fold is strictly worse for that.
 
-**First increment.** `readmodels/hook_activity.py` with both folds and tests built from real
-row shapes (an armed-then-fired one-shot is NOT in `next_fires`; an armed-then-cancelled one is
-not; an armed one past its instant IS; an injection's `via` is carried verbatim; a run-tree row
-with `disposition: open` reads as undelivered), the route, and the panel with a browser test.
-The `/api/schedule/week` switch and its divergence filing are the second commit, after a week of
-the parity check running in report-only mode shows zero divergences on this instance.
+**First increment — SHIPPED in 0.588.0.** `readmodels/hook_activity.py` with both folds and
+tests built from the REAL writers' row shapes, `GET /api/hook-activity` (on
+`ROUTINE_TOKEN_DENIED_READS`: the deliveries list carries the first line of everything typed
+into every run), and the panel under the Routines page's week strip with a browser test. Two
+things the build had to decide that this entry did not settle, both recorded in the code: a
+run-tree row's `run_id` is the ORIGIN (its `addressee` — `parent`, `child:<label>` — names no
+run) while an injection's is the ADDRESSEE; and "newest first" needs an explicit tie-break
+because `ids.now_iso` writes to the SECOND, so `deliveries` breaks ties on the stream's own
+position.
+
+**What remains — and a gap in this entry.** The `/api/schedule/week` switch to `next_fires` and
+its `hook_stream_diverged` filing are the second commit, staged here behind "a week of the
+parity check running in report-only mode". **That parity check does not exist**, and no
+increment above builds it: whoever takes the second commit builds the report-only check first,
+runs it for a week, and only then switches the read. This entry stays until that has happened.
 
 ---
 
