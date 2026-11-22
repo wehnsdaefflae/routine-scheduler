@@ -9,13 +9,10 @@ from typing import cast
 import yaml
 from pydantic import (
     AliasPath,
-    BaseModel,
-    ConfigDict,
     Field,
     ValidationError,
     ValidationInfo,
     field_validator,
-    model_validator,
 )
 
 from ..ids import is_slug
@@ -37,49 +34,11 @@ from .base import (
 )
 from .outcome import OutcomeConfig
 from .routine_scrub import scrub_bindings
+
+# The gate models live in `config/rungate.py`, re-exported under the names callers import
+from .rungate import RunGateConfig
+from .rungate import RunGatePatch as RunGatePatch  # noqa: PLC0414 — a re-export, not a rename
 from .tuning import load_tuning
-
-
-class RunGateConfig(BaseModel):
-    """Explicit, strict opt-in to pre-engine automatic admission: whether a scheduled fire
-    first asks its CHECKS if there is work (docs/run-gates.md). `checks` is the vocabulary in
-    `rsched/gatekit/`; the `script` kind is the routine's own `scripts/admit.py`.
-    """
-
-    model_config = ConfigDict(extra="forbid", strict=True)
-    enabled: bool = False
-    timeout_s: int = Field(default=30, ge=1, le=300)
-    checks: list[dict] = Field(default_factory=list)
-    run_written: bool = True   # a run's state/next-gate.json may replace `checks` (gatecompose)
-
-    @field_validator("checks")
-    @classmethod
-    def _known_checks(cls, v: list[dict]) -> list[dict]:
-        from ..gatekit import validate
-
-        if problems := validate(v):
-            raise ValueError("; ".join(problems))
-        return v
-
-    @model_validator(mode="after")
-    def _enabled_needs_a_check(self) -> RunGateConfig:
-        # An enabled gate with nothing to ask would have to invent an answer; either one is a
-        # lie — "skip" silently loses every fire, "run" is no gate at all.
-        if self.enabled and not self.checks:
-            raise ValueError("an enabled gate needs at least one check")
-        return self
-
-
-class RunGatePatch(BaseModel):
-    """A PARTIAL run gate for the PATCH edge: each field optional, the merge validated whole
-    by `RunGateConfig` (web/patch_merge.apply_run_gate).
-    """
-
-    model_config = ConfigDict(extra="forbid", strict=True)
-    enabled: bool | None = None
-    timeout_s: int | None = Field(default=None, ge=1, le=300)
-    checks: list[dict] | None = None
-    run_written: bool | None = None
 
 
 class RoutineConfig(_Config):
@@ -112,6 +71,14 @@ class RoutineConfig(_Config):
     # Detached background tasks only: the spawning conversation ({slug, dir}) DetachedManager
     # delivers the result back to. None elsewhere (declared, so extra="ignore" keeps it).
     owner: dict | None = None
+    # Branch conversations only: the conversation this one was forked FROM ({slug, turn,
+    # forked}), written by `branches.fork_conversation`. Declared for the same reason `owner`
+    # is — extra="ignore" drops an undeclared key, so the catalog could not see it and every
+    # conversation view had to ask `/lineage` to learn whether it had a family at all.
+    parent: dict | None = None
+    # Branch conversations only: the WHOLE fork chain, oldest first ([{slug, turn}, …]).
+    # Declared for the same reason as `parent`: written by the fork, read back from the file.
+    lineage: list | None = None
     description: BlankableStr = ""  # one-line human summary shown in the UI (always present)
     kind: BlankableStr = ""  # what this dir IS when not a routine: "conversation"
     # Role → catalog model NAME (main/tool_call/uncensored/supervisor — the last resolving

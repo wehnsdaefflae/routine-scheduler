@@ -114,6 +114,8 @@ def inject_user_message(loop, m: dict) -> None:
         **({"via": str(m["via"])} if m.get("via") else {}),
         **({"source": str(m["source"])} if m.get("source") else {}),
         **({"report": True} if m.get("report") else {}),
+        # a hand-back's facts (which child, which files) — the chat renders them as a card
+        **({"handback": m["handback"]} if isinstance(m.get("handback"), dict) else {}),
         **({"attachments": m["attachments"]} if m.get("attachments") else {})})
     if inbox.user_authored(str(m.get("via") or "")):
         # `user_replies` is "has the user spoken"; machine deliveries are told apart by CHANNEL.

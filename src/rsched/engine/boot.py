@@ -195,6 +195,9 @@ def boot(loop) -> None:
                 ctx.transcript.event("user_injection", {
                     "text": m["text"], "boot": True,
                     **({"via": str(m["via"])} if m.get("via") else {}),
+                    # a hand-back's facts, for the chat's hand-back card (engine/inbox.py)
+                    **({"handback": m["handback"]}
+                       if isinstance(m.get("handback"), dict) else {}),
                     **({"report": True} if m.get("report") else {})})
         kickoff = {"role": "user", "content": kickoff_message(ctx) + loop.util_reminder}
         attach_first_message_media(loop, kickoff)  # conversation: images the user attached

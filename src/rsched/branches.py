@@ -210,6 +210,12 @@ def hand_back(server: ServerConfig, *, branch_dir: Path, slug: str, summary: str
         follow_on="This is a hand-back, not a merge: the branch's conversation stays its own. "
                   "Take what is useful from the summary and the files, and tell me what you "
                   "make of it.")
-    inbox.file_message(parent_dir, text, via="branch", name=f"branch-{slug}-{run_ts()}")
+    # `handback` carries the FACTS of the delivery — which branch, under what name, and the
+    # paths `collect_handback` just returned — beside the prose, because the parent's chat
+    # renders this as a hand-back CARD (static/components/handback-card.js) and a renderer that
+    # had to find the file names inside the message would be parsing a sentence for data the
+    # sender already had.
+    inbox.file_message(parent_dir, text, via="branch", name=f"branch-{slug}-{run_ts()}",
+                       extra={"handback": {"slug": slug, "name": name, "paths": list(paths)}})
     log.info("branch: %s handed back to %s (%d artefacts)", slug, parent_slug, len(paths))
     return {"parent": parent_slug, "copied": len(paths), "message": text}

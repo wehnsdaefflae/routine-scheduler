@@ -7,6 +7,8 @@
 //                       transcript.js: deferred → full form, blocking → one-click strip)
 //   loadSub(n, off)   — subrun expansion inside the work fold
 //   isLive()          — live-run predicate for subrun polling · slug — this conversation's routine, so a reminder id in a side field links to its row (F591)
+//   openArtifact(path) — open ONE landed file in the artifacts panel: a hand-back card's file
+//                       links (components/handback-card.js), which cannot be plain anchors
 //   onArtifact(path)  — a write/edit landed in a deliverable dir — artifacts/, reports/ or
 //                       output/, the panel's own rows (artifacts.js isDeliverable) — so
 //                       the panel refreshes while the reply is still working
@@ -28,8 +30,10 @@ import { attachmentRow, revokeBlobs } from "/static/components/obs-attachments.j
 import { copyBtn } from "/static/components/row-tools.js";
 import { answerForm } from "/static/components/answerform.js";
 import { isDeliverable } from "/static/components/artifacts.js";
+import { commandResult } from "/static/components/command-result.js";
+import { handbackCard, isHandback } from "/static/components/handback-card.js";
 import { md, mdInline } from "/static/md.js";
-import { el, fmtTime, fmtTokens, fullOutput, compressionInfo } from "/static/util.js";
+import { el, fmtTime, fmtTokens } from "/static/util.js";
 
 const NEW_TOPIC = /^\s*\[new-topic\]\s*(.*)$/;
 const ATTACH_BLOCK = /\n?\n?\[attached files[^\]]*\]\n((?:- .*\n?)+)/;
@@ -220,37 +224,6 @@ export function createChat(container, opts = {}) {
     return node;
   }
 
-  // One visible block per executed user command — compact per-kind rendering of the
-  // observation payload (the transcript keeps the full record).
-  function commandResult(p) {
-    let body;
-    if (p.error) body = `✕ ${p.error}`;
-    else if (p.kind === "util") {
-      body = (p.stdout || "(no stdout)") + (p.stderr ? `\n[stderr]\n${p.stderr}` : "")
-        + fullOutput(p.full_output) + compressionInfo(p.compression);
-      if (p.listing != null) body = p.listing;
-      if (p.source != null) body = p.source;
-    } else if (p.kind === "read_file") {
-      body = p.files
-        ? p.files.map((f) => `--- ${f.path}\n${f.error || f.content || ""}`).join("\n\n")
-        : (p.content ?? "");
-    } else if (p.kind === "view_image") {
-      // The THUMBNAIL for an image the run looked at lives in the transcript renderer's own
-      // observation branch (components/transcript.js, F559) — that is what draws a
-      // conversation's observations. THIS branch renders a USER-TYPED command's result, where
-      // the paths and any vision description are the whole answer.
-      body = (p.files || []).map((f) => f.error ? `${f.path}: ${f.error}`
-        : f.text ? `${f.path}:\n${f.text}` : f.path).join("\n\n");
-    } else if (p.kind === "write_file") body = `wrote ${p.bytes} bytes to ${p.path}`;
-    else if (p.kind === "edit_file") body = `replaced ${p.replacements} occurrence(s) in ${p.path}`;
-    else if (p.kind === "llm") body = p.reply || "";
-    else if (p.kind === "memory_read") body = p.missing ? `no note ${p.name}` : (p.content || "");
-    else if (p.kind === "memory_write") body = `note ${p.name}.md ${p.deleted ? "deleted" : p.created ? "created" : "revised"}`;
-    else body = JSON.stringify(p, null, 1);
-    return el("div", { class: `ev cmd-result${p.error ? " err" : ""}` },
-      el("pre", {}, String(body)));
-  }
-
   const qforms = new Map();   // qid -> answerForm (inline), settled by the answer event
   function settleQuestion(qid, note) {
     const f = qforms.get(qid);
@@ -302,7 +275,12 @@ export function createChat(container, opts = {}) {
         case "header":
           return;
         case "user_injection":
-          if (p.source === "engine") {
+          // A hand-back is a CHILD's result, not the person speaking: a branch's or a detached
+          // task's delivery arrives on its own `via` and renders as a card (handback-card.js).
+          if (isHandback(p.via)) {
+            closeFold("ok");
+            root.append(handbackCard(p, { openArtifact: opts.openArtifact }));
+          } else if (p.source === "engine") {
             closeFold("ok");
             root.append(el("div", { class: "ev system" }, `— ${p.text} —`));
           } else if (p.command) {

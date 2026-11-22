@@ -16,7 +16,7 @@ import { questionPanel } from "/static/components/answerform.js";
 import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { forgetField } from "/static/formpersist.js";
-import { forkAt, rewindTo } from "/static/components/branches.js";
+import { familyOf, forkAt, rewindTo } from "/static/components/branches.js";
 import { flagRefusal } from "/static/components/refusalflag.js";
 import { playbookRow } from "/static/components/playbook-row.js";
 import { createChat, typedBody, userEcho } from "/static/components/chat.js";
@@ -194,10 +194,9 @@ export async function render(view, slug, _query = {}) {
   // ---- the center pane ------------------------------------------------------------------------
   const unmount = () => { for (const fn of cleanup.splice(0)) { try { fn(); } catch { /* gone */ } } };
 
+  await loadList();   // FIRST: its rows are the head's branch family (D306 pt 5, familyOf)
   if (!slug) mountComposerOnly(main);
   else await mountConversation();
-
-  loadList();
   const listTimer = setInterval(loadList, 20000);
   const onBus = (e) => {
     const ev = e.detail || {};
@@ -237,7 +236,8 @@ export async function render(view, slug, _query = {}) {
     const stateChip = chip(detail.state, detail.state);
     const head = el("div", { class: "conv-head" });
     renderHead(head, detail, stateChip,
-               { slug, isLive: () => !TERMINAL.has(curState), onListChanged: loadList });
+               { slug, isLive: () => !TERMINAL.has(curState), onListChanged: loadList,
+                 family: () => familyOf(items, slug) });   // pt 5: no /lineage with no family
     const chatBox = el("div", { class: "conv-chat" });
     // the echo box sits AFTER the chat so the pending bubble always renders below the
     // transcript history, which streams in asynchronously (F295)
@@ -331,7 +331,7 @@ export async function render(view, slug, _query = {}) {
       answer: (qid, text, decision) => api(`/api/questions/${qid}/answer`, { method: "POST", body: decision ? { decision } : { text } }),
       loadSub: (n, o) => api(`/api/runs/${detail.run_id}/transcript?sub=${n}&offset=${o}`),
       isLive: () => !TERMINAL.has(curState), slug,   // F591: a reminder id links to its row
-      onArtifact: () => artifacts.poke(),   // F891: coalesce the replay's write-per-event storm
+      onArtifact: () => artifacts.poke(), openArtifact: (p) => artifacts.openPath(p),   // F891: coalesce the replay's write-per-event storm; a hand-back card's file links open the panel
       onFork: (_title, lastUserText) => {
         prefillComposer(lastUserText);
         navigate("#/conversations");
