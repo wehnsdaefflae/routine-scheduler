@@ -116,6 +116,25 @@ CLAUDE.md's Commands section is the short form.
   required field (`GrantPolicy`, 20 fields) matches any namespace at all. Its floors are on the
   scan's MACHINERY (`MIN_SCOPED`, `MIN_NAMESPACE_SITES`), not on its hits — zero hits is the
   healthy state, so a floor on hits would be a floor on the defect.
+- `deploy/merge-to-main.py` — the ONE merge path a green candidate takes to `main`, because the
+  gate lock serializes the TEST runs and nothing serialized the MERGES. Three writers ship to
+  this main (`self-audit`, `scheduler-builder`, the operator's sessions) and on 2026-11-21
+  sixteen releases landed in one day, so whoever went green second found main moved: one
+  builder release was overtaken four times, renumbered twice and re-gated three times. The
+  script answers that with three properties. The MERGE assigns the version — the next minor
+  above main's own newest CHANGELOG header, rewritten into the candidate's top header and
+  `__version__` in a commit of its own — so a taken number stops being a conflict anyone
+  resolves by hand. One merger at a time, behind `/tmp/rsched-merge.lock`, which is deliberately
+  NOT the gate lock: a candidate still under test must never block a candidate ready to land.
+  And the re-gate owed after the rebase is CLASSIFIED rather than judged — the files main gained
+  that the candidate never wrote are prose (nothing owed), leaf test modules (those modules plus
+  the quality stage) or anything that reaches every test (a full re-gate from `fast`: `src/`,
+  `static/`, a conftest, a shared helper, the config). A `conftest.py` or `tests/helpers.py` is
+  never "test modules only" for exactly that reason. The classification and the stamp covering
+  the merged bytes go into the merge commit's trailer, so which verdict covers which bytes stays
+  answerable later. A stamp is accepted only when its own result says it was green (or `flaky`,
+  which only the gate may declare) over THIS tree: a sibling campaign's verdict says nothing
+  about these bytes. `plan` answers all of it without writing anything.
 - `uv run ruff check` + `uv run mypy` — the strict quality gates (ruff runs `select = ALL`;
   every ignore in pyproject.toml carries its house-style reason). Both MUST be green in every
   commit; `uv run pre-commit install` wires them into git.
