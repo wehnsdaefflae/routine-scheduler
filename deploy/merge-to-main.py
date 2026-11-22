@@ -276,14 +276,19 @@ def merge(repo: Path, tree: Path, branch: str, stamp: str, *, dry_run: bool = Fa
         version = next_version(main_changelog(repo))
         changelog, init = (tree / "CHANGELOG.md"), (tree / "src/rsched/__init__.py")
         today = time.strftime("%Y-%m-%d")
-        new_log, new_init = renumber(changelog.read_text(encoding="utf-8"),
-                                     init.read_text(encoding="utf-8"), version, today)
+        old_log, old_init = changelog.read_text(encoding="utf-8"), init.read_text(encoding="utf-8")
+        new_log, new_init = renumber(old_log, old_init, version, today)
         if dry_run:
             return {**ahead, "version": version, "dry_run": True, "covered": covered}
         changelog.write_text(new_log, encoding="utf-8")
         init.write_text(new_init, encoding="utf-8")
         git(tree, "add", "--", "CHANGELOG.md", "src/rsched/__init__.py")
-        git(tree, "commit", "-q", "-m", f"The merge assigns this candidate {version}\n\n"
+        # A candidate that already carries the number changes no byte here, and the commit is
+        # still made: it is where the stamp covering the merged bytes is recorded.
+        subject = (f"The merge assigns this candidate {version}"
+                   if (new_log, new_init) != (old_log, old_init)
+                   else f"The merge records the gate of this candidate, already {version}")
+        git(tree, "commit", "-q", "--allow-empty", "-m", f"{subject}\n\n"
             f"Merge-gate-stamp: {stamp}\nMerge-delta-class: {delta.kind}\n"
             f"Merge-delta-answer: {delta.owes}\n")
         git(repo, "merge", "--ff-only", branch)

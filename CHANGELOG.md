@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.592.0] — 2026-11-22
+
+### Fixed
+- **`deploy/merge-to-main.py merge` no longer stops half-way when the candidate already carries
+  its number.** The merge renumbers the candidate's top CHANGELOG header and `__version__` to the
+  next minor above main and commits that with the gate-stamp trailer; a candidate that had
+  written that very number changed no byte, `git commit` refused the empty commit, and the merge
+  raised AFTER the rebase and BEFORE the fast-forward — 0.591.0 (the machine setup wizard) had
+  to be fast-forwarded and pushed by hand. The commit is now made with `--allow-empty` and a
+  subject that says which case it was ("assigns this candidate X" / "records the gate of this
+  candidate, already X"), so the stamp is recorded either way. A new end-to-end test merges into
+  a scratch repository with its own origin, for both cases; the already-numbered one fails
+  against the old script with exactly "nothing to commit".
+
 ## [0.591.0] — 2026-11-22
 
 ### Added

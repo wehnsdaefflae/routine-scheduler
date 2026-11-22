@@ -263,3 +263,41 @@ def test_a_main_checkout_on_another_branch_is_refused(tmp_path):
                    capture_output=True, text=True, check=True, timeout=60)
     with pytest.raises(merge_to_main.MergeRefused, match="not main"):
         merge_to_main.merge(repo, tree, "audit/cand", "111")
+
+
+# ---- a whole merge, against a repository with an origin to push to ----------------------
+
+def _git(cwd: Path, *args: str) -> str:
+    return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True,
+                          check=True, timeout=60).stdout.strip()
+
+
+@pytest.mark.parametrize(("written", "subject"), [
+    ("0.590.0", "The merge assigns this candidate 0.588.0"),
+    ("0.588.0", "The merge records the gate of this candidate, already 0.588.0"),
+])
+def test_a_merge_lands_whether_or_not_the_number_has_to_move(tmp_path, monkeypatch, written, subject):
+    """A candidate that already carries the number the merge assigns changes no byte when it is
+    renumbered, and the merge commit that records its gate stamp must still be made — git refused
+    it as empty, after the rebase and before the fast-forward, so the release stopped half-landed."""
+    monkeypatch.setattr(merge_to_main, "LEASE", tmp_path / "merge.lock")
+    repo, tree = _repo_with_worktree(tmp_path)
+    origin = tmp_path / "origin.git"
+    _git(tmp_path, "init", "--quiet", "--bare", str(origin))
+    _git(repo, "remote", "add", "origin", str(origin))
+    _git(repo, "push", "--quiet", "origin", "main")
+    today = merge_to_main.time.strftime("%Y-%m-%d")
+    (tree / "CHANGELOG.md").write_text(
+        _changelog("0.587.0", "0.586.0").replace("# Changelog\n\n",
+                                                f"# Changelog\n\n## [{written}] — {today}\n\n- new\n\n"),
+        encoding="utf-8")
+    (tree / "src/rsched/__init__.py").write_text(f'__version__ = "{written}"\n', encoding="utf-8")
+    _git(tree, "commit", "--quiet", "-am", "the candidate")
+    _evidence(repo, "111", {"verdict": "green", "root": str(tree)})
+
+    out = merge_to_main.merge(repo, tree, "audit/cand", "111")
+
+    assert out["version"] == "0.588.0" and out["commit"] == out["origin"]
+    assert _git(repo, "log", "-1", "--format=%s", "main") == subject
+    assert "Merge-gate-stamp: 111" in _git(repo, "log", "-1", "--format=%b", "main")
+    assert '"0.588.0"' in (repo / "src/rsched/__init__.py").read_text(encoding="utf-8")
