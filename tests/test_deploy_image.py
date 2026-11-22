@@ -256,3 +256,73 @@ def test_the_claude_cli_is_pinned_like_every_other_dependency():
     pinned = re.search(r"^ARG CLAUDE_CODE_VERSION=(.+)$", dockerfile, re.MULTILINE)
     assert pinned, "CLAUDE_CODE_VERSION is not declared as an ARG with a default"
     assert re.fullmatch(r"[\d.]+", pinned.group(1).strip()), pinned.group(1)
+
+
+def _hypervisor_installs() -> dict[Path, str]:
+    """Each Dockerfile that downloads cloud-hypervisor, with its text."""
+    texts = {path: path.read_text(encoding="utf-8") for path in DOCKERFILES}
+    return {path: text for path, text in texts.items()
+            if "cloud-hypervisor/releases/download" in text}
+
+
+def test_one_hypervisor_version_and_checksum_set_across_every_image_that_installs_it():
+    """Two images run guests now — the desktop service's VMs and, since D309, the engine image
+    where D170 phase 1 is measured — and a measurement made against a different hypervisor build
+    from the one production runs answers about the wrong binary. So the version and the checksums
+    are one set, bumped in both files together; the alternative is a drift with nothing in the
+    repository to say which image got which, the same failure every FROM above is pinned against.
+    """
+    installs = _hypervisor_installs()
+    assert len(installs) >= 2, (
+        f"only {sorted(p.name for p in installs)} installs cloud-hypervisor — this check needs "
+        "the engine image (D309) and the desktop image to compare")
+    versions, checksums = {}, {}
+    for path, text in installs.items():
+        pinned = re.search(r"^ARG CH_VERSION=(\S+)$", text, re.MULTILINE)
+        assert pinned, f"{path.name} downloads cloud-hypervisor without an ARG CH_VERSION pin"
+        versions[path.name] = pinned.group(1)
+        checksums[path.name] = dict(sorted(
+            (name, digest) for digest, name in
+            re.findall(r"'([0-9a-f]{64})\s+(/usr/local/bin/\S+)'", text)))
+        assert checksums[path.name], f"{path.name} names no sha256 for what it downloads"
+    assert len(set(versions.values())) == 1, f"the images disagree on the version: {versions}"
+    first = next(iter(checksums.values()))
+    assert all(digests == first for digests in checksums.values()), (
+        f"same version, different checksums — one of these is wrong: {checksums}")
+
+
+@pytest.mark.parametrize("dockerfile", sorted(_hypervisor_installs()), ids=lambda p: p.name)
+def test_a_downloaded_hypervisor_is_verified_and_then_actually_run(dockerfile):
+    """A release asset is fetched over the network, so the build must prove it got the bytes it
+    pinned AND that they run: `curl -fsSL` alone leaves a truncated or platform-wrong static
+    binary in place, and the failure then surfaces at the first micro-VM call inside a run,
+    where nothing can act on it. This is the same reason the claude CLI's install ends in
+    `claude --version`.
+    """
+    text = dockerfile.read_text(encoding="utf-8")
+    step = next(args for keyword, args in _instructions(dockerfile)
+                if keyword == "RUN" and "cloud-hypervisor/releases/download" in args)
+    assert "sha256sum -c" in step, f"{dockerfile.name}: the download is never checksum-verified"
+    assert "chmod +x" in step, f"{dockerfile.name}: the downloaded binary is never made executable"
+    if dockerfile != ENGINE:
+        return    # the desktop image does not run it yet; see the next test for why that is here
+    runs_it = "cloud-hypervisor --version" in text or "cloud-hypervisor -V" in text
+    assert runs_it, (
+        f"{dockerfile.name}: nothing runs cloud-hypervisor during the build, so a stub or a "
+        "wrong-platform binary ships as a green image")
+
+
+def test_the_desktop_image_still_does_not_run_what_it_downloaded():
+    """Held as it IS, not as it should be. `deploy/Dockerfile.desktop` verifies the checksum and
+    stops there, so a static binary that is intact but unrunnable in that image (a missing
+    loader, a wrong platform) ships green and fails at the first desktop VM instead. D309
+    authorized the ENGINE image only, so this records the gap where the next reader of these
+    pins will see it rather than editing a file nobody decided on — and it reds the moment
+    somebody fixes the desktop image, which is the signal to fold the two tests back into one.
+    """
+    desktop = REPO / "deploy" / "Dockerfile.desktop"
+    text = desktop.read_text(encoding="utf-8")
+    assert "cloud-hypervisor/releases/download" in text, "the desktop image no longer installs it"
+    assert "cloud-hypervisor --version" not in text, (
+        "the desktop image now runs the hypervisor it downloads — delete this test and drop the "
+        "`if dockerfile != ENGINE` escape from the one above, so both images are held to it")

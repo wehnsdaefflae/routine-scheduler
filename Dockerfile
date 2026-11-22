@@ -96,6 +96,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         xvfb xauth \
     && rm -rf /var/lib/apt/lists/*
 
+# cloud-hypervisor — D170 phase 1 (per-call micro-VMs in place of the Landlock jail) has to be
+# MEASURED in the container runs actually execute in, and this image shipped no hypervisor at
+# all, so the measurement had nowhere to run (D309, the operator's answer (a), 2026-11-22).
+# deploy/Dockerfile.desktop made this same choice first and its block is copied here verbatim,
+# checksums included: ONE hypervisor across the deployment, bumped in both files together
+# (tests/test_deploy_image.py holds the two pins equal).
+# Static binaries from the project's own GitHub release, verified against a pinned sha256 — the
+# same discipline as every FROM above, and the reason no `curl | bash` installer is used.
+# ch-remote comes along because it is how a running VM is asked to shut down; a measurement that
+# can only SIGKILL its guest measures the wrong teardown.
+# WHAT THIS DOES NOT PROVIDE: a bootable guest. cloud-hypervisor needs a kernel (vmlinux) or
+# firmware plus a root filesystem, and this image carries neither — phase 1 builds or fetches
+# those as part of the measurement. /dev/kvm reaches this service through
+# docker-compose.override.yml (untracked: a devices entry for a device the host lacks stops the
+# container from starting), not through docker-compose.yml.
+ARG CH_VERSION=v53.0
+RUN base="https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/${CH_VERSION}" \
+    && curl -fsSL -o /usr/local/bin/cloud-hypervisor "$base/cloud-hypervisor-static" \
+    && curl -fsSL -o /usr/local/bin/ch-remote "$base/ch-remote-static" \
+    && printf '%s\n' \
+        '448af3d4e59b22c2987f7df94c213ad40fb53a10d437e42b5ee6c4fce7c29ecc  /usr/local/bin/cloud-hypervisor' \
+        '13f32ba952e6791fd901f2279be2055fbacc64005f96c42a8e90d58860df84a7  /usr/local/bin/ch-remote' \
+        | sha256sum -c - \
+    && chmod +x /usr/local/bin/cloud-hypervisor /usr/local/bin/ch-remote \
+    && cloud-hypervisor --version
+
 # Node 24 LTS (the `node-dist` stage) for what still runs on Node in this container:
 #   the claude CLI — `@anthropic-ai/claude-code` is a NATIVE binary now, placed by its npm
 #     postinstall (`node install.cjs`), and the package declares `engines.node >=22`, which the
