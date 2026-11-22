@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.598.0] — 2026-11-23
+
+### Changed
+- **Playbooks are chosen from a list you can read, not a `<select>`** (D307's first increment,
+  his 2026-11-21 code-review order: playbooks should be reachable where a conversation starts and
+  where it ends). The new-conversation screen mounts one card per playbook — title, its one-line
+  `when`, its `varies: …` axis and its tags, all visible without a click, in the library's own
+  order. Each card is a `<button>` with `aria-pressed`, so it is keyboard-reachable without a
+  handler of ours; clicking selects it (the same value and the same `playbook` field the submit
+  path already used), and a selected card offers "✕ start fresh instead" to undo. **With no
+  playbooks in the library nothing is mounted at all** — not an empty box. New
+  `static/components/playbook-picker.js` and `static/playbook.css` (the eighth stylesheet:
+  `base.css` and `views.css` are frozen at their ratchet ceilings, and `static/index.html`
+  states a new file as the house answer).
+- Every render stamps `data-pb-count`, so a test for the ABSENCE of cards waits for the render
+  that denies them instead of racing the `/api/playbooks` fetch — without it the empty-library
+  case passed while never running the branch it was written for.
+- `docs/playbooks.md`'s Reuse row and walkthrough name the new place.
+
 ## [0.597.0] — 2026-11-23
 
 ### Added
@@ -168,6 +187,7 @@
   declared (following the `owner` precedent) and are therefore in `TOP_KEYS`, so neither reads as
   an unknown key. Paying for it line-neutrally moved the two run-gate models to
   `config/rungate.py`, re-exported under the names callers already import.
+
 
 ## [0.589.0] — 2026-11-22
 
