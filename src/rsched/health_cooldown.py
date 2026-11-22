@@ -47,6 +47,57 @@ REPEAT_COOLDOWN_HOURS: dict[str, float] = {
 }
 
 
+def filed_within(routines_home: Path, event: str, routine: str, hours: float) -> bool:
+    """Was `event` filed for `routine` inside the last `hours`? The newest matching row decides.
+
+    The DURABLE form of "once a day while this holds", for a STANDING condition's own writer.
+    Those writers are required to latch themselves (`readmodels/blocked_kinds`) and three of
+    them did it on the watcher object, which a restart forgets. Measured over a live stream:
+    `obligation_overdue` had filed 424 rows for 101 routine-days (4.2x), `migration_due_soon`
+    97 for 24 (4.0x) and `backup_stale` 38 for 15 (2.5x) — 419 rows, 12.5% of the whole stream,
+    saying nothing except how often the daemon restarted. The two watchers that already
+    remember across a restart (`endpoint_watch`, `overhead_alarm`) sit at 1.0x.
+
+    This is NOT `REPEAT_COOLDOWN_HOURS`: that table is applied inside `log_health_event` to
+    events nothing else latches, and a test forbids it from naming a blocked-work event at all
+    (suppressing an INCIDENT would make the fleet look less stuck than it is). A standing row's
+    magnitude is its SPAN, which one row a day keeps exactly — this only removes the copies a
+    restart made of the same day's fact.
+
+    WHICH WRITERS IT SUITS, measured by applying it to all three and reading the gate (the two
+    reds are kept here because the next person will have the same idea): only a writer whose
+    condition is RE-DERIVED whole each sweep and cannot recover mid-day. `owed_watch` is one.
+    The other two are not, and a rolling window silently breaks each:
+      - `backup_watch` clears its in-memory latch the moment a snapshot is fresh again, so the
+        NEXT staleness is reported rather than swallowed. A 24 h window swallows exactly that
+        recovery (`test_a_stale_snapshot_is_filed_once_a_day_not_once_a_tick`).
+      - `marker_watch` re-reports on the next CALENDAR day; a rolling 24 h window from the last
+        filing is a different clock and suppresses it
+        (`test_the_condition_is_reported_once_a_day_not_once_a_tick`).
+    For those two the restart inflation is real (2.5x and 4.0x) and the fix is a per-condition
+    persisted stamp — the state they must remember is "when was THIS condition last filed, and
+    has it lifted since", which is more than one timestamp.
+
+    Fails OPEN, like `blocks`: a latch that cannot read its own history must not be what
+    silences the log.
+    """
+    try:
+        from .readmodels.health_stream import health_records
+        from .readmodels.stamps import instant
+
+        cutoff = datetime.now(UTC) - timedelta(hours=hours)
+        for rec in reversed(health_records(Path(routines_home))):
+            if rec.get("event") != event or str(rec.get("routine") or "") != routine:
+                continue
+            when = instant(rec.get("ts"))
+            if when is None:
+                continue                      # an unstamped row dates nothing; keep looking
+            return when >= cutoff
+    except Exception:                         # fail OPEN — see the docstring
+        return False
+    return False
+
+
 def blocks(routines_home: Path, event: str, routine: str) -> bool:
     """True when `event` was already filed for `routine` inside its cooldown window — the
     newest such row decides, and an event not named in `REPEAT_COOLDOWN_HOURS` never blocks.

@@ -41,7 +41,7 @@ import time
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-from .. import lanes, proofcheck
+from .. import health_cooldown, lanes, proofcheck
 from ..config import ServerConfig, load_routine
 from ..engine import accounting, finishline, obligations
 from ..health_events import log_health_event
@@ -180,6 +180,13 @@ class OwedWatch:
         if not home.is_dir():
             return
         for slug, owed in overdue(home, today).items():
+            # The day latch above lives on this object, so every daemon restart re-filed the
+            # whole sweep — thirteen restarts in one day turned four standing obligations into
+            # 56 rows. One row per routine per day is what this event MEANS (its magnitude is
+            # the condition's span, `readmodels/blocked_kinds`), so the latch is read back off
+            # the stream, which a restart cannot forget.
+            if health_cooldown.filed_within(home, "obligation_overdue", slug, 24):
+                continue
             detail = "; ".join(f"{o['id']} open {o['days']} days: {o.get('text', '')}"
                                + (f" (last left: {o['remains']})" if o.get("remains") else "")
                                for o in owed)
@@ -241,6 +248,10 @@ class OwedWatch:
             if pick and pick["state"] == "never":
                 stuck.setdefault(waiting["slug"], []).append(f"{waiting['qid']} ({pick['why']})")
         for slug, qids in stuck.items():
+            # Same durable day latch as the obligations above: this event reads 1.0x on the
+            # live stream only because it is rare, not because anything protects it.
+            if health_cooldown.filed_within(home, "answer_undelivered", slug, 24):
+                continue
             log_health_event(home, "answer_undelivered", routine=slug, run_id="",
                              detail="no run will read: " + "; ".join(qids)
                              + " — deliver or settle it on the Decisions page",

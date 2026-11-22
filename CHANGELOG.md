@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.585.0] — 2026-11-22
+
+### Fixed
+- **A run gate's own `scripts/admit.py` can import the module beside it again.** The daemon ran
+  the custom admission predicate as `python -I`, and `-I` implies `-P`: the script's own
+  directory never reached `sys.path`, so a sibling import raised `ModuleNotFoundError` and the
+  fire died before turn 0 as the undiagnosable "Run gate failed: gate exited rc=1".
+  `uncensored-model-radar` was dark on every fire its declarative checks did not admit first
+  from 2026-11-18 (when `from radar import …` was added) — two `run_failed` rows, one of them
+  stopping a whole lane chain; `rules-review`'s gate survived only by hand-writing its own
+  `sys.path.insert`. It is `-E -s` now: the same environment and user-site isolation without
+  the implied `-P`, which is what `scriptenv` already does for the script ACTION, for this
+  exact reason. The two doors into `scripts/` finally agree.
+- **A library document that stops parsing is said out loud.** Nothing on the instance read the
+  library linter, and the boot seeder restores only a MISSING seed doc — so a CORRUPTED one
+  stayed corrupted in silence. On 2026-11-20 18:56 the D241 boot migration rewrote the word
+  `subtask` into the prose "sequential child run" inside three workflow patterns' Python import
+  lists; `converse.py` is the one every conversation is materialized from, so
+  `POST /api/conversations` answered a bare `500` from then on (the operator hit it twice at
+  16:52 and 16:53 on 2026-11-21) and no row anywhere said why. `daemon/library_watch` now lints
+  the library when HEAD moves and files the new `library_doc_unreadable` health event naming
+  each unreadable file, latched in its own on-disk marker so a restart does not re-file it;
+  style problems, which 13 live docs carry, are deliberately not reported. And the create
+  endpoint no longer turns the parse failure into a bare 500: it names the pattern, the line
+  and how to repair it.
+- **The owed-work watch files one row per routine per day across restarts.** Its "once a day"
+  guard lived on the watcher object, so every daemon restart re-filed the whole sweep: 13
+  restarts on 2026-11-21 turned four standing obligations into 56 health rows. Over the live
+  stream, `obligation_overdue` had filed 424 rows for 101 routine-days — 4.2× — and a standing
+  row's magnitude is its SPAN, so the copies measure daemon uptime, not owed work. The latch is
+  read back off the stream now (`health_cooldown.filed_within`), where a restart cannot lose
+  it, and `answer_undelivered` with it. `backup_stale` (2.5×) and `migration_due_soon` (4.0×)
+  are inflated the same way but are NOT changed here: both have recovery semantics a rolling
+  window silently breaks, which the gate caught and the new helper's docstring records.
+
 ## [0.584.0] — 2026-11-21
 
 ### Fixed

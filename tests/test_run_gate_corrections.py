@@ -12,7 +12,7 @@ import pytest
 from rsched.daemon import gate_prepare, run_gate, runner_reap, runner_state
 from rsched.grants import CONFIG_FILE
 from rsched.paths import read_json
-from test_run_gate import script, skip_body
+from test_run_gate import finish, script, skip_body
 
 
 @pytest.mark.parametrize("cancel", ["abort", "task", "task_twice"])
@@ -149,3 +149,33 @@ async def test_actual_refusal_is_strict_in_every_server_mode(setup_gate, monkeyp
     assert "enable the required kernel/LSM support" in error
     assert "set `sandbox: permissive`" not in error
     assert "Changing server sandbox mode cannot relax" in error
+
+
+async def test_the_gate_script_can_import_a_sibling_out_of_its_own_scripts_dir(setup_gate):
+    """`-I` implies `-P`: the script's own directory stays OFF sys.path, so an admit.py that
+    imports a module beside it in `scripts/` died with ModuleNotFoundError and the fire failed
+    before turn 0 as "gate exited rc=1". uncensored-model-radar was dark on every fire its
+    declarative checks did not admit first from 2026-11-18 on; rules-review's gate survived only
+    by hand-writing its own sys.path.insert. The script ACTION runs the same files plainly for
+    exactly this reason (`scriptenv`), so the two doors into `scripts/` now agree."""
+    cfg, _, runner = setup_gate
+    (cfg.dir / "scripts" / "sibling.py").write_text('REASON = "the sibling answered"\n')
+    script(cfg, "from sibling import REASON\n"
+                'print(\'{"version":1,"decision":"skip","reason":"%s"}\' % REASON)\n')
+    _, run, st = await finish(runner, cfg)
+    assert st["state"] != "failed", (run.run_dir / "gate-stderr.txt").read_text()
+    gate = read_json(run.run_dir / "gate.json")
+    assert gate["decision"] == "skip" and gate["reason"] == "the sibling answered"
+
+
+def test_the_gate_interpreter_keeps_env_and_user_site_isolation(setup_gate, monkeypatch):
+    """The sibling-import fix trades `-I` for `-E -s`, which is the same isolation MINUS the
+    implied `-P`: PYTHONPATH and the user site directory stay ignored, so nothing outside the
+    jail can inject a module into an admission predicate."""
+    cfg, server, _ = setup_gate
+    script(cfg, skip_body())
+    monkeypatch.setattr(gate_prepare.sandbox, "available", lambda: True)
+    monkeypatch.setattr(gate_prepare.sandbox.landlock, "abi_version", lambda: 6)
+    cmd, _ = gate_prepare.prepare_script(cfg, server)
+    assert "-I" not in cmd
+    assert cmd[-3:-1] == ["-E", "-s"]

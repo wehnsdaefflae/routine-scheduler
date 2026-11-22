@@ -212,7 +212,15 @@ def prepare_script(cfg: RoutineConfig, server: ServerConfig) -> tuple[list[str],
         mode="strict", own_dir=root,
         read_roots=(*cfg.fs_read_roots, *sandbox._shared_read_roots(server)),
         write_roots=tuple(cfg.fs_write_roots))
-    cmd = _wrap([python, "-I", str(path)], policy, server, net=header["net"] == "outbound",
+    # `-E -s`, NOT `-I`: the same environment and user-site isolation, without `-I`'s implied
+    # `-P`, which keeps the script's OWN directory off sys.path. A routine's admit.py lives in
+    # `scripts/` beside the modules it shares with its run (`scriptenv` runs the script action
+    # plainly for exactly that reason), so under `-I` a sibling import raised
+    # ModuleNotFoundError and the whole fire died before turn 0 as "gate exited rc=1" — a
+    # routine dark on every fire its declarative checks did not admit first, and the one gate
+    # that survived doing so only by hand-writing its own sys.path.insert.
+    cmd = _wrap([python, "-E", "-s", str(path)], policy, server,
+                net=header["net"] == "outbound",
                 fs_roots=header["fs_roots"], fs_paths=tuple(header["fs_paths"]))
     return cmd, _scrubbed_env(injected, declared)
 

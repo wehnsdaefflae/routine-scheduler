@@ -270,6 +270,15 @@ rewritten out of it (`daemon/item_record_watch`); `items` names them. The index 
 process_overhead_high: a routine's median `process_share` over its last runs reached the bar —
 its runs go mostly to its own process (`engine/overhead_alarm`, `median`/`threshold`/`runs`).
 
+library_doc_unreadable: a document in the live library no longer parses — a workflow pattern
+whose Python is invalid, so everything materialized from it fails (`daemon/library_watch`,
+`docs` how many, the detail naming each file and its first problem). The boot seeder restores
+only a MISSING seed doc, so a corrupted one stays corrupted and silently: a kind-rename
+migration once rewrote prose words inside three patterns' import lists, and `converse.py` is
+the one every conversation is materialized from — `POST /api/conversations` answered a bare
+500 for a day and a half and no row anywhere said why. One row per library HEAD while it is
+broken (the watcher's own marker latches it), so a restart does not re-file what still stands.
+
 answer_undelivered: an operator's ANSWER that no run will ever read has waited longer than
 `daemon/owed_watch.UNDELIVERED_DAYS` — its conversation finished during the turn it was filed
 in, or its routine is off, retired or has no clock (`readmodels/answer_pickup`). One row per
@@ -308,6 +317,7 @@ EVENTS: tuple[str, ...] = (
     "scheduler_tick_error",
     "migration_due_soon",
     "migration_expired",
+    "library_doc_unreadable",
     "commit_failed",
     "git_lock_cleared",
     "backup_stale",

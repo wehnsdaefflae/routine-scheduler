@@ -42,14 +42,23 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import subprocess
 import time
 
 from .. import libgit
 from ..config import ServerConfig
+from ..health_events import log_health_event
 from ..paths import atomic_write_json, read_json
 
 log = logging.getLogger("rsched.library_watch")
+
+#: The linter's two UNREADABLE verdicts (`workflows/lint.lint_workflow_py`), which it returns
+#: alone because nothing further can be checked on a file it could not read: invalid Python,
+#: and a META that is not a plain literal. Every other problem it reports is style — real, and
+#: the Library tab's business, not a reason to tell the whole fleet something is broken.
+_UNREADABLE_RE = re.compile(r"invalid Python \(|no `META = \{\.\.\.\}` dict literal found"
+                            r"|is not a plain literal")
 
 # Where the last-seen HEAD lives: engine-owned derived state beside the other control files,
 # never config. A missing marker means "first boot" and records the current HEAD without
@@ -119,20 +128,61 @@ class LibraryWatch:
         if not head:
             return                                 # not a git repo (or git is unavailable)
         marker = self.server.routines_home / _MARKER
+        saved = read_json(marker)
+        saved = saved if isinstance(saved, dict) else {}
         if self._seen is None:
-            saved = read_json(marker)
-            self._seen = str(saved.get("head") or "") if isinstance(saved, dict) else ""
+            self._seen = str(saved.get("head") or "")
         if head == self._seen:
             self._sweep()
             return
         prev, first_boot = self._seen, not self._seen
         self._seen = head
-        atomic_write_json(marker, {"head": head, "subject": _subject(repo, head)})
+        # The lint verdict rides the marker, so the row is filed once per HEAD however often
+        # the daemon restarts — the standing-condition cadence, remembered on disk rather than
+        # on this object (the obligation watch's in-memory day latch re-fires on every boot).
+        broken = self._unreadable()
+        if broken and broken != (saved.get("unreadable") or []):
+            self._report_unreadable(head, broken)
+        atomic_write_json(marker, {"head": head, "subject": _subject(repo, head),
+                                   **({"unreadable": broken} if broken else {})})
         if first_boot:
             return          # nothing to compare against; record and stay quiet
         # `prev` is the range this check MISSED, which is where the commit that opened a gap
         # has to be looked for — the HEAD it was noticed at is only the newer end of it.
         self._report(head, str(prev))
+
+    def _unreadable(self) -> list[str]:
+        """The library docs that no longer PARSE, as `"<file>: <first problem>"`, sorted.
+
+        Narrowed to the failures that make a doc unusable rather than imperfect: a workflow
+        pattern whose Python is invalid cannot be read at all, and everything materialized from
+        it fails at the moment someone asks for it. Style problems the same linter reports are
+        left out on purpose — they are the Library tab's business, not the fleet's.
+        """
+        from ..readmodels import library_reads
+
+        try:
+            verdicts = library_reads.lint(self.server.libraries_home)
+        except Exception:        # a linter that cannot run must not stop the watcher
+            log.exception("library watch: the lint pass raised")
+            return []
+        return sorted(f"{name}: {problems[0]}" for name, problems in verdicts.items()
+                      if problems and _UNREADABLE_RE.search(problems[0]))
+
+    def _report_unreadable(self, head: str, broken: list[str]) -> None:
+        """File the unreadable docs on the health stream — the fleet-wide surface, because the
+        damage is not one routine's: `converse.py` broke conversation creation for everyone.
+
+        Reported at a FIRST boot too, unlike drift: a doc that does not parse is true in itself
+        rather than relative to a HEAD this process never saw, and staying quiet about it is
+        how it went unseen for 30 hours in the first place.
+        """
+        log_health_event(self.server.routines_home, "library_doc_unreadable",
+                         routine="(library)", run_id="",
+                         detail=f"{len(broken)} library document(s) do not parse at {head[:8]}"
+                                f" — {'; '.join(broken)}",
+                         docs=len(broken))
+        log.error("library documents do not parse: %s", "; ".join(broken))
 
     def _report(self, head: str, prev: str) -> None:
         """Re-resolve every routine: withdraw the records whose gap closed, and queue a decision

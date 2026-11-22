@@ -70,6 +70,20 @@ def read_workflow(home: Path, slug: str) -> tuple[dict, str]:
     return parse_py(raw), raw
 
 
+def unusable_reason(slug: str, exc: Exception) -> str:
+    """Why `read_workflow(slug)` could not give a pattern back, for a caller to put in front of
+    a person: MISSING, or present and unparseable. The second reached callers as a bare
+    exception — and the boot seeder restores only a missing seed doc, so nothing repaired it
+    and nothing said which file to look at.
+    """
+    if isinstance(exc, FileNotFoundError):
+        return f"the library has no '{slug}' workflow — restart the daemon to seed it ({exc})"
+    where = f" at line {exc.lineno}" if isinstance(exc, SyntaxError) and exc.lineno else ""
+    return (f"the library's '{slug}' workflow does not parse{where}: {exc}. Everything "
+            f"materialized from it fails until workflows/{slug}.py is repaired in the Library "
+            f"tab — `rsched lint --kind workflows` lists every broken pattern.")
+
+
 def head_commit(home: Path) -> str:
     """The library's short HEAD — provenance, best-effort: "" when git cannot say, whether
     it fails, is missing, or runs out of time (libgit.git raises TimeoutExpired then).

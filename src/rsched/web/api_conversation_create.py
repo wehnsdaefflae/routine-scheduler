@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict
 from .. import conversations as conv_mod
 from ..config import DEFAULT_DELIBERATION, DELIBERATION_LEVELS, load_routine
 from ..paths import atomic_write_json
+from ..workflows import library
 from .api_routine_edit import (
     PermissionsBody,
     resolve_permission_layers,
@@ -274,9 +275,9 @@ async def create_conversation(request: Request,
                                                 fs_read_roots=read_roots,
                                                 fs_write_roots=write_roots,
                                                 rules=rule_slugs, connections=conn_map)
-    except FileNotFoundError as exc:
-        raise HTTPException(500, f"the library has no '{conv_mod.CONVERSE_WORKFLOW}' workflow "
-                                 f"— restart the daemon to seed it ({exc})") from exc
+    except (FileNotFoundError, SyntaxError, ValueError) as exc:
+        raise HTTPException(
+            500, library.unusable_reason(conv_mod.CONVERSE_WORKFLOW, exc)) from exc
     try:
         rels = await _save_attachments(conv_dir, form.files)
     except HTTPException:

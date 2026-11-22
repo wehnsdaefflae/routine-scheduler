@@ -130,3 +130,66 @@ def test_two_finishes_of_one_degraded_routine_file_one_row(make_routine, scripte
     assert len(flagged) == 1, (
         f"the standing condition belongs in the stream once per window, got {len(flagged)}")
     assert flagged[0]["routine"] == "trender" and flagged[0]["window"] == 5
+
+
+def test_a_standing_writers_day_latch_survives_a_restart(tmp_path):
+    """`filed_within` is the durable half of "one row a day while this holds": three standing
+    writers latched on their own watcher object, which a restart forgets, and over the live
+    stream that read as obligation_overdue 424 rows for 101 routine-days (4.2x),
+    migration_due_soon 97 for 24 (4.0x) and backup_stale 38 for 15 (2.5x) — 419 rows, 12.5% of
+    the whole stream, measuring daemon restarts rather than owed work."""
+    from rsched.health_cooldown import filed_within
+
+    home = _home(tmp_path)
+    assert not filed_within(home, "obligation_overdue", "owes", 24)   # nothing filed yet
+    log_health_event(home, "obligation_overdue", routine="owes", run_id="",
+                     detail="b1 open 30 days", obligations=1)
+    assert filed_within(home, "obligation_overdue", "owes", 24)
+    # keyed on BOTH event and routine — another routine's day is not this one's
+    assert not filed_within(home, "obligation_overdue", "other", 24)
+    assert not filed_within(home, "answer_undelivered", "owes", 24)
+    # and the window is real: the same row does not latch a one-second one
+    assert not filed_within(home, "obligation_overdue", "owes", 1 / 3600000)
+
+
+def test_the_owed_watch_files_one_row_per_routine_per_day_across_restarts(tmp_path,
+                                                                          monkeypatch):
+    """The defect itself: 13 daemon restarts on 2026-11-21 turned four standing obligations
+    into 56 health rows, because the once-a-day guard was `self._checked` on the watcher."""
+    from datetime import UTC, datetime
+
+    from rsched.daemon import owed_watch
+
+    home = _home(tmp_path)
+    (home / "owes").mkdir(parents=True, exist_ok=True)
+    today = datetime.now(UTC).date()
+    monkeypatch.setattr(owed_watch, "overdue",
+                        lambda h, t: {"owes": [{"id": "b1", "days": 30, "text": "a thing"}]})
+    monkeypatch.setattr(owed_watch.OwedWatch, "_file_unowned", lambda *a, **k: None)
+    monkeypatch.setattr(owed_watch.OwedWatch, "_file_owed_to_operator", lambda *a, **k: None)
+    monkeypatch.setattr(owed_watch.OwedWatch, "_file_undelivered", lambda *a, **k: None)
+
+    class _Server:
+        routines_home = home
+
+    for _ in range(5):                       # five boots, same day, same unmet obligation
+        owed_watch.OwedWatch(_Server()).check(today)
+    rows = _rows(home, event="obligation_overdue")
+    assert len(rows) == 1, [r["detail"] for r in rows]
+    assert rows[0]["obligations"] == 1
+
+
+def test_the_durable_latch_fails_open(tmp_path, monkeypatch):
+    """A latch that cannot read its own history must not become the thing that silences the
+    log — the same rule `blocks` follows."""
+    import rsched.readmodels.health_stream as hs
+    from rsched.health_cooldown import filed_within
+
+    home = _home(tmp_path)
+    log_health_event(home, "obligation_overdue", routine="owes", run_id="", detail="x")
+
+    def boom(*_a, **_k):
+        raise OSError("the stream is unreadable")
+
+    monkeypatch.setattr(hs, "health_records", boom)
+    assert not filed_within(home, "obligation_overdue", "owes", 24)

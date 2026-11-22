@@ -1,6 +1,7 @@
 """The third layer: a library change that arrives with no writer to gate."""
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -232,3 +233,69 @@ async def test_head_is_read_on_its_own_interval_not_once_per_tick(world, monkeyp
     watch._last_check = time.monotonic() - library_watch.CHECK_EVERY_S - 1
     await watch.tick()
     assert len(reads) == 2
+
+
+def _health(routines: Path) -> list[dict]:
+    path = routines / ".control" / "health-events.jsonl"
+    if not path.is_file():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+
+def _break_converse(lib: Path, routines: Path) -> None:
+    """The real 2026-11-20 damage: the D241 migration rewrote the WORD `subtask` into prose
+    inside the pattern's import list, so `converse.py` stopped parsing. Committed, because the
+    watcher only looks when HEAD moves."""
+    wdir = lib / "workflows"
+    wdir.mkdir(exist_ok=True)
+    (wdir / "converse.py").write_text(
+        "from routine.actions import (read_file, sequential child run, finish)\n"
+        'META = {"name": "Converse", "slug": "converse"}\n', encoding="utf-8")
+    _git(lib, "add", "-A")
+    _git(lib, "commit", "-qm", "the migration rewrote prose into an import list")
+
+
+def test_a_library_pattern_that_stopped_parsing_reaches_the_health_stream(world):
+    """`converse.py` is what every conversation is materialized from, so a pattern that does
+    not parse 500s conversation creation for everyone — and the boot seeder restores only a
+    MISSING seed doc, never a corrupted one. For 30 hours on 2026-11-21 nothing anywhere said
+    so: the lint knew, and nothing ran it."""
+    server, lib, routines = world
+    watch = LibraryWatch(server)
+    watch._check()                                   # first boot: record HEAD
+    _break_converse(lib, routines)
+    watch._check()
+    rows = [r for r in _health(routines) if r["event"] == "library_doc_unreadable"]
+    assert len(rows) == 1, _health(routines)
+    assert "converse.py" in rows[0]["detail"] and rows[0]["docs"] == 1
+    assert rows[0]["routine"] == "(library)"         # the damage is nobody's and everybody's
+
+
+def test_the_same_breakage_is_not_refiled_at_every_restart(world):
+    """The cadence of a standing condition, latched ON DISK: the obligation watch's in-memory
+    day latch re-filed 56 rows for 4 routines across 13 restarts on 2026-11-21. A fresh watcher
+    over an unchanged, still-broken library files nothing new."""
+    server, lib, routines = world
+    LibraryWatch(server)._check()
+    _break_converse(lib, routines)
+    LibraryWatch(server)._check()
+    for _ in range(3):                                # three restarts, same broken HEAD
+        LibraryWatch(server)._check()
+    rows = [r for r in _health(routines) if r["event"] == "library_doc_unreadable"]
+    assert len(rows) == 1, [r["detail"] for r in rows]
+
+
+def test_a_doc_with_only_style_problems_is_not_reported(world):
+    """The linter reports far more than unreadability, and 13 live docs carry such problems
+    today. Telling the fleet about those would make the signal worthless — only a doc nothing
+    can READ is a fleet condition."""
+    server, lib, routines = world
+    LibraryWatch(server)._check()
+    wdir = lib / "workflows"
+    wdir.mkdir(exist_ok=True)
+    # parses, but its slug does not match its filename and META is incomplete
+    (wdir / "tidy.py").write_text('META = {"name": "T", "slug": "other"}\n', encoding="utf-8")
+    _git(lib, "add", "-A")
+    _git(lib, "commit", "-qm", "a pattern with style problems only")
+    LibraryWatch(server)._check()
+    assert [r for r in _health(routines) if r["event"] == "library_doc_unreadable"] == []
