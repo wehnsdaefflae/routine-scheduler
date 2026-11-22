@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.587.0] — 2026-11-22
+
+### Added
+- **The seven classes of thing that might need the operator lead a run's page, and the health
+  stream is read once for all of them.** D289/D304: `readmodels/attention.classify_run` has
+  returned his classes (a)…(g) since 0.547.0 and nothing called it — its own docstring said the
+  renderer was the next increment. Three things now exist. `attention_for_runs(home, run_dirs)`
+  reads `.control/health-events.jsonl` ONCE and groups it by `run_id` before classifying, where
+  `classify_run` opened the whole stream per run (`_events` takes pre-grouped rows now), and the
+  fold is memoized through `readmodels/memo` on a stat fingerprint of the stream plus every
+  run's `status.json`, single flight, because the surfaces that will fold many runs refresh on
+  `run_*` bus events. `GET /api/runs/{run_id}` carries an `attention` list for that run.
+  `static/components/attention-block.js` renders it as a labelled block at the head of the run
+  page's narrative column — one line per row: his class label, the row's `text`, `×N` for a
+  repeated event, and the row's own `detail` in the reading face below it, because his
+  requirement on this block was that a row be self-contained (*"worst case scenario is content
+  i need to know about being referenced only by an identifier"*). The order is the server's and
+  is never re-sorted client-side. An empty list renders NOTHING AT ALL, so a run with nothing
+  for him reads exactly as it did before.
+- A sixth stylesheet, `static/attention.css`: `static/views.css` was at its ratchet ceiling, and
+  `static/index.html` states a new file as the house answer to exactly that. `static/views/run.js`
+  was at its ceiling too, so the mount was paid for by moving `waitingLabel` out to
+  `static/components/waiting-label.js` — a pure function, an action payload in and a sentence
+  out — and the ceiling was re-tightened 583 → 578 rather than raised.
+- Tests: `tests/test_attention_fold.py` pins that N runs cost ONE stream read and that the fold's
+  rows are identical to `classify_run`'s, and `tests/ui/test_attention_block.py` drives the real
+  page in chromium for a run with a met goal, a partial finish and a pending ask, and for a run
+  with nothing (no block in the DOM at all). Both fold guards and three of the four browser cases
+  were proven red-first; the fourth is the negative case, which correctly stays green.
+
 ## [0.586.0] — 2026-11-22
 
 ### Fixed
