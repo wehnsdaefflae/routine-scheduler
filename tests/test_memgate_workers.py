@@ -111,9 +111,9 @@ def test_the_xdist_auto_hook_hands_the_headroom_aware_count_to_pytest(monkeypatc
     # that is the seam pytest calls, and a decision nothing calls is inert.
     assert root_conftest.pytest_xdist_auto_num_workers(config) == 3
     assert root_conftest.pytest_xdist_auto_num_workers(
-        types.SimpleNamespace(option=types.SimpleNamespace(markexpr=""))) == 2, (
-        "the browser selection is priced by its Chromiums in another container's cgroup, and "
-        "BROWSER_WORKERS (2) is this floor, so it cannot be moved by this cgroup's headroom")
+        types.SimpleNamespace(option=types.SimpleNamespace(markexpr=""))) == 4, (
+        "the browser selection is priced by its Chromiums in another container's cgroup, so "
+        "this cgroup's headroom (which allowed the fast suite only 3) cannot cut BROWSER_WORKERS")
 
 
 def test_the_memory_wait_is_charged_the_count_xdist_actually_resolved(monkeypatch):

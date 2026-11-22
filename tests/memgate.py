@@ -21,13 +21,13 @@ CGROUP = Path("/sys/fs/cgroup")
 #:     selection   measured hold                                  charge
 #:     fast        3.08-3.29 GB, n=7, controller + 4 workers      3584 (worst 3,367)
 #:     serial      876-2700 MB, n=21, `-n 0`                      2816 (worst 2,700)
-#:     browser     1797-1876 MB, n=5, uitest's own 4 GiB cgroup   2048 (submit.py's peak)
+#:     browser     2440 MB, full suite at 4 workers, uitest's 4 GiB  2560 (memory.current peak)
 #:
 #: `browser` is measured in ANOTHER cgroup: `deploy/uitest/submit.py` hands the job to the
 #: `uitest` container, so there this module reads that container's cgroup (see `READERS_FOR`).
 #: The worker count did not move for these figures: `memory.current` reads 96-100 % on fast
 #: stages because it counts reclaimable cache, while the deciding figure sits at 61.6-65.8 %.
-NEED_MB = {"fast": 3584, "browser": 2048, "serial": 2816}
+NEED_MB = {"fast": 3584, "browser": 2560, "serial": 2816}
 
 #: The fast charge is DERIVED from the worker count (D291). The fast rows' median increment over a
 #: bare controller is 2.25 GB (2.38 GB at worst) — the WORKERS, 2.38 GB / 4 = 610 MB each — and

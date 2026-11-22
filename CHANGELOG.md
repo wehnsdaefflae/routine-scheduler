@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.593.0] — 2026-11-22
+
+### Changed
+- **The browser suite runs FOUR workers again, not two** (operator, re-measured; reverses D238's
+  cut). Measured inside the `uitest` container's 4 GiB ceiling: a 101-test slice ran
+  195 s / 153 s / 120 s at 2 / 3 / 4 workers with the container peaking at 1.32 / 1.62 / 1.94 GB,
+  and the WHOLE browser suite at four passed 821/821 in 15.1 min with no rerun, a 2.44 GB peak
+  and no OOM kill — against 21.4 min at two in the previous green gate. D238's 4.8 GB peak came
+  from a harness that held far more per worker. `memgate.NEED_MB["browser"]` rises to 2,560 MB
+  to admit that peak. A browser selection's `-n auto` is no longer cut by the FAST suite's
+  per-worker memory price (`browsersource.auto_workers`): at two that never bit, at four it
+  would have quietly run three; the browser stage's memory is admitted by its own budget in its
+  own cgroup. Probed and dropped: serving `/static` from memory in the page saves ~0.15 s of a
+  ~1.4 s page load (50 static requests; the time is the console's own JS and its API calls).
+
 ## [0.592.0] — 2026-11-22
 
 ### Fixed

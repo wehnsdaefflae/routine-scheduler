@@ -686,11 +686,11 @@ It is the engine image (`rsched:latest`, built by the `rsched` service — so bu
 with one process, `deploy/uitest/runner.py`, which runs the jobs the gate drops into
 `<checkout>/.uitest-jobs` from inside the engine container. It mounts the checkout and a
 read-only browser cache, nothing else. Give it its own ceiling in the host's
-`docker-compose.override.yml` — four browser workers peaked at ~4.8 GB of anonymous memory in
-the 5 GiB engine cgroup, which is why the suite now runs TWO (`tests/browsersource.py`
-`BROWSER_WORKERS`, D238): under this 4 GiB ceiling four workers had Chromium OOM-killed 153
-times in one week and the stage ran 95-113 minutes. Raise the worker count only together with
-the ceiling, and only on a host with the memory to spare. The container's cap does not protect the
+`docker-compose.override.yml`. The suite runs FOUR browser workers (`tests/browsersource.py`
+`BROWSER_WORKERS`), re-measured as a whole-suite peak of 2.44 GB under this 4 GiB ceiling; an
+earlier harness held far more per worker, and four then had Chromium OOM-killed 153 times in
+one week (D238 cut it to two). Raise the worker count only with a full-suite peak measured
+inside this cgroup, and the ceiling only on a host with the memory to spare. The container's cap does not protect the
 HOST: a gate started while the host is short can still drive a global OOM, so every test session
 waits until `MemAvailable` covers it (`tests/memgate.py`). This host's other big consumers are
 bounded too (2026-11-05): tagfs.service at `MemoryHigh=3G`/`MemoryMax=4G`

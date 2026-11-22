@@ -51,14 +51,13 @@ FAST_WORKERS = 4
 #: How many browsers may run at once when each worker launches its own. A browser worker costs
 #: a Chromium AND a uvicorn AND the test itself, so it is not the arithmetic the fast suite uses.
 #:
-#: TWO, not four (D238, operator 2026-11-05). Four peaked at ~4.8 GB anon, and the `uitest`
-#: container that runs this suite is capped at 4 GiB (docker-compose.override.yml) on a 14 GB
-#: host with ~2 GB free — so the kernel OOM-killed chrome-headless inside it 153 times in the
-#: week to 2026-11-05 (`journalctl -k`), each kill a test parked 120 s on a browser that never
-#: answered, and the browser stage ran 95-113 min or timed out: no release shipped from 11-02.
-#: Raising the ceiling was declined — the host has no memory to give — so each worker gets
-#: twice the headroom instead, and the stage is slower but finishes.
-BROWSER_WORKERS = 2
+#: FOUR (operator, re-measured): each browser worker adds ~300 MB to the `uitest` container,
+#: and the whole suite at four peaks well inside that container's 4 GiB ceiling
+#: (docker-compose.override.yml), so the stage runs ~1.4-1.6x faster than at two for no
+#: coverage. The ceiling is the bound that matters: four OOM-killed Chromium there once, when
+#: the harness held far more per worker (D238 cut it to two then). `memgate.NEED_MB["browser"]`
+#: is the admission; raise this only with a full-suite peak measured inside that cgroup.
+BROWSER_WORKERS = 4
 
 
 #: The fewest workers a fast selection ever runs with. `-n auto` has always guaranteed two
@@ -83,10 +82,14 @@ def fast_workers(cores: int, *, headroom=None) -> int:
 
 
 def auto_workers(cores: int, markexpr: str) -> int:
-    """What `-n auto` means for THIS suite: one worker fewer than the machine has cores, capped
-    for memory by the headroom there IS, and fewer still for the browser selection.
+    """What `-n auto` means for THIS suite: one worker fewer than the machine has cores — for
+    the fast selection also capped for memory by the headroom there IS; for the browser
+    selection `BROWSER_WORKERS`, which the fast suite's per-worker price does not describe
+    (its memory is admitted in `uitest`'s own cgroup, by `memgate.NEED_MB["browser"]`).
     """
-    return worker_cap(markexpr, fast_workers(cores - 1))
+    if is_browser_selection(markexpr):
+        return max(1, min(BROWSER_WORKERS, cores - 1))
+    return fast_workers(cores - 1)
 
 
 def cdp_endpoint() -> str:
@@ -94,13 +97,9 @@ def cdp_endpoint() -> str:
     return os.environ.get("RSCHED_TEST_CDP", "").strip()
 
 
-def worker_cap(markexpr: str, reserved: int) -> int:
-    """`-n auto` for this selection: `reserved` normally, `BROWSER_WORKERS` when the browser
-    directory is in it (the default `-m "not ui"` excludes it).
-    """
-    if "not ui" in (markexpr or "").replace("  ", " "):
-        return reserved
-    return min(BROWSER_WORKERS, reserved)
+def is_browser_selection(markexpr: str) -> bool:
+    """Whether the browser directory is in this selection (the default `-m "not ui"` excludes it)."""
+    return "not ui" not in (markexpr or "").replace("  ", " ")
 
 
 def installed_chromium() -> str:

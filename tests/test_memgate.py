@@ -234,8 +234,9 @@ def test_a_unit_tests_config_stub_never_enters_the_wait():
 
 #: the uitest container's ceiling (docker-compose.override.yml `mem_limit: 4g`)
 UITEST_MB = 4096
-#: what the browser stage really peaked at, per `submit.py`, over the five stages before the fix
-MEASURED_BROWSER_PEAKS_MB = (1876, 1831, 1840, 1811, 1797)
+#: what the browser stage really peaked at with FOUR workers: the whole suite's `memory.current`
+#: peak sampled inside `uitest`, and the 101-test slice's
+MEASURED_BROWSER_PEAKS_MB = (2440, 1938)
 
 
 def test_the_browser_charge_is_the_measured_peak_not_the_containers_ceiling():
