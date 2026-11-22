@@ -71,10 +71,16 @@ ROUTINE_TOKEN_MUTATIONS: tuple[tuple[str, str], ...] = ()
 # were an ordinary read. The relayed screens themselves (`/browser-view`, `/desktop-view`) are
 # the operator's for the same reason: their sockets already need a pass only the primary token
 # mints, and their assets have no reader a run needs.
+#
+# `/api/hook-activity` is the hook stream's "who spoke into which run" reading: the first line
+# of every mid-run injection on the instance, including everything the operator typed into every
+# other routine's runs. Cross-routine freight text is the same class as cross-routine search,
+# and the panel it feeds is the operator's.
 ROUTINE_TOKEN_DENIED_READS: tuple[str, ...] = ("/api/fs", "/api/debug", "/api/settings",
                                                "/api/search", "/api/desktops",
                                                "/api/routines/*/secrets", "/browser-view",
-                                               "/api/conversations/*/secrets", "/desktop-view")
+                                               "/api/conversations/*/secrets", "/desktop-view",
+                                               "/api/hook-activity")
 
 
 def _in_subtree(path: str, prefix: str) -> bool:

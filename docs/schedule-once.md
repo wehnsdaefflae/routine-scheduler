@@ -52,7 +52,13 @@ a stream that is append-only would turn "has this fired?" into a fold over later
 worse than a file that is gone. So the hook row is best-effort and can never stop a one-shot
 being armed. What it adds is the answer to *what will fire later*, which no store could give
 across mechanisms; `scheduleproj.request_of_hook` is its exact inverse, so the projection is
-testable rather than asserted.
+testable rather than asserted. **That answer is now a page:** `readmodels/hook_activity.py`'s
+`next_fires` folds the pending one-shots out of the stream — an arming row with no later row
+about the same id carrying a terminal event — and `GET /api/hook-activity` serves them to the
+Routines page's hook-activity panel, soonest first, each with its target routine, instant,
+reason and who armed it. One past its instant is shown as `overdue` rather than dropped: it is a
+request the daemon has not consumed yet. The week strip's per-routine `one_shots` still come
+from the spool scan.
 
 ```jsonc
 // req-<id>.json  (atomic write, mirrors triggers.write_event)

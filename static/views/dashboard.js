@@ -10,44 +10,19 @@
 import { api } from "/static/api.js";
 import { activityFeed } from "/static/components/activityfeed.js";
 import { routineRows } from "/static/views/dashboard-rows.js";
+import { SORTS, STATE_BUCKETS, ordered, visible } from "/static/views/dashboard-filters.js";
+import { hookActivityPanel } from "/static/components/hook-activity.js";
 import { loadQuota } from "/static/components/quota.js";
 import { lanesToolbar } from "/static/components/lanemanage.js";
 import { cronToFriendly, specAtInstant } from "/static/components/schedule.js";
 import { weekGrid } from "/static/components/weekgrid.js";
 import { el, emptyState, skeleton, storage, tagChip, toast, toastError } from "/static/util.js";
-import { WORKING as RUNNING } from "/static/states.js";
 
 const VIEW_KEY = "rsched_dash_view";
 const SORT_KEY = "rsched_dash_sort";
 const DIR_KEY = "rsched_dash_dir";
 const WEEK_KEY = "rsched_dash_week";
 const ACTIVITY_KEY = "rsched_dash_activity";
-
-// ---- sort keys: [label, value-fn, descending?] -------------------------------------------------
-const tokensOf = (c) => (c.last_run?.usage?.in || 0) + (c.last_run?.usage?.out || 0);
-const SORTS = {
-  activity: ["recent activity", (c) => c.last_run?.ts || "", true],
-  name: ["name", (c) => (c.name || c.slug).toLowerCase(), false],
-  next: ["next run", (c) => c.next_fire || "9999", false],
-  state: ["state", (c) => c.active_state || (c.last_run?.state ?? "zz"), false],
-  cost: ["last cost", (c) => c.last_run?.usage?.cost || 0, true],
-  tokens: ["last tokens", tokensOf, true],
-  turns: ["last turns", (c) => c.last_run?.turns || 0, true],
-  duration: ["last duration", (c) => c.last_run?.elapsed_s || 0, true],
-  questions: ["open questions", (c) => c.open_questions || 0, true],
-};
-// coarse run-state buckets for the state filter chips
-const STATE_BUCKETS = {
-  active: (c) => RUNNING.has(c.active_state),
-  waiting: (c) => c.active_state === "waiting_user" || (c.open_questions || 0) > 0,
-  ok: (c) => !c.active_state && c.last_run?.state === "finished",
-  failed: (c) => !c.active_state && ["failed", "aborted"].includes(c.last_run?.state),
-  // FINISHED before DISABLED, never both: a routine that reached its finish line is a different
-  // thing from one you switched off — lumping them lost the only state that says "this job is
-  // over". `retired` is derived from the finish line; `enabled` is your switch.
-  finished: (c) => c.retired,
-  disabled: (c) => !c.enabled && !c.retired,
-};
 
 export async function render(view) {
   const pauseBtn = el("button", { class: "btn small", hidden: true,
@@ -147,7 +122,12 @@ export async function render(view) {
     if (activityPanel.open) feed.start();
   });
   if (activityPanel.open) feed.start();
-  view.append(banner, weekPanel, filterBar, lanesBar, body, activityPanel);
+  // The hook stream's two readings (what fires next · who spoke into which run), beside the
+  // week strip: both are "what is about to happen / what just happened" to this instance, and
+  // neither had a reader anywhere in the console. It owns its own 60 s refresh.
+  const hooks = hookActivityPanel();
+  view.append(banner, weekPanel, hooks.node, filterBar, lanesBar, body, activityPanel);
+  hooks.start();
   body.append(skeleton(), skeleton(), skeleton());
 
   let cards = [], llmReady = true, firesBySlug = new Map(), oneShotsBySlug = new Map();
@@ -171,25 +151,10 @@ export async function render(view) {
   let sortDir = storage.get(DIR_KEY) || "";
   let search = "";
 
-  function visible(c) {
-    if (states.size && ![...states].some((s) => STATE_BUCKETS[s]?.(c))) return false;
-    if (search) {
-      const hay = `${c.name} ${c.slug} ${c.description} ${(c.tags || []).join(" ")}`.toLowerCase();
-      if (!hay.includes(search)) return false;
-    }
-    return true;
-  }
-
-  function ordered(list) {
-    const [, valueOf, desc] = SORTS[sortKey] || SORTS.activity;
-    // sortDir (F208) overrides the column's natural direction when the user toggled it.
-    const descending = sortDir ? sortDir === "desc" : desc;
-    return [...list].sort((a, b) => {
-      const va = valueOf(a), vb = valueOf(b);
-      const cmp = typeof va === "string" ? va.localeCompare(vb) : va - vb;
-      return descending ? -cmp : cmp;
-    });
-  }
+  // The vocabulary is dashboard-filters.js's; the CHOICE (which key, which direction, what is
+  // typed, which chips) is this page's state, so it is passed in on every call.
+  const shownCards = () => ordered(cards.filter((c) => visible(c, { states, search })),
+    { sortKey, sortDir });
 
   function renderFilterBar() {
     filterBar.replaceChildren();
@@ -259,8 +224,9 @@ export async function render(view) {
   });
 
   function renderBody() {
-    const shown = ordered(cards.filter(visible));
-    week.update(cards.filter(visible), firesBySlug, oneShotsBySlug, lanesOrdered);
+    const shown = shownCards();
+    week.update(cards.filter((c) => visible(c, { states, search })),
+      firesBySlug, oneShotsBySlug, lanesOrdered);
     weekPanel.hidden = !cards.length;
     body.replaceChildren();
     if (!cards.length) {
@@ -426,5 +392,6 @@ export async function render(view) {
     window.removeEventListener("rsched-bus", onBus);
     clearTimeout(pending);
     feed.dispose();
+    hooks.dispose();
   };
 }
