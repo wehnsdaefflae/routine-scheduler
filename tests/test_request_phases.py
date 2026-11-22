@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import asyncio
+import collections
+import re
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 import pytest
 
-from rsched.web import reqphases
+from rsched.web import api_traces, reqphases
 
 
 def _scope(kind: str = "http") -> dict:
@@ -174,6 +178,53 @@ def test_the_app_span_is_stamped_even_when_the_handler_raises():
     with pytest.raises(ValueError, match="boom"):
         asyncio.run(reqphases.PhaseOuter(reqphases.PhaseInner(app))(scope, _noop_receive, sent))
     assert "app_out" in scope[reqphases.KEY]
+
+
+def test_the_durable_row_names_the_dominant_span_and_the_three_numbers():
+    """The deque and the log die with the process; this row is what a later run can read, so the
+    attribution has to reach it or the instrument answers only for whoever was watching."""
+    recorded = []
+    state = SimpleNamespace(slow_requests=collections.deque(), server=object())
+    entry = {"path": "/api/health/blocked", "method": "GET", "seconds": 2.78, "in_flight": 0,
+             "sample": "", "pre_ms": 2600.0, "app_ms": 30.0, "send_ms": 150.0,
+             "dominant": "pre"}
+    with mock.patch.object(api_traces, "record_server_trace",
+                           lambda server, **kw: recorded.append(kw)):
+        api_traces.record_slow_request(state, entry)
+    detail = recorded[0]["detail"]
+    assert "mostly pre" in detail, detail
+    for span in ("pre 2600.0ms", "app 30.0ms", "send 150.0ms"):
+        assert span in detail, detail
+
+
+def test_the_added_clause_leaves_both_downstream_readers_matching():
+    """`detail` is parsed by anchored regexes in self-audit's trace fold (a leading `<n>ms` and
+    `in_flight (\\d+)`), and a row whose shape moved is a fold that silently drops rows."""
+    recorded = []
+    state = SimpleNamespace(slow_requests=collections.deque(), server=object())
+    with mock.patch.object(api_traces, "record_server_trace",
+                           lambda server, **kw: recorded.append(kw)):
+        api_traces.record_slow_request(state, {
+            "path": "/api/items", "method": "GET", "seconds": 7.61, "in_flight": 3,
+            "sample": "20261122-170000-001.json", "pre_ms": 10.0, "app_ms": 7500.0,
+            "send_ms": 100.0, "dominant": "app"})
+    detail = recorded[0]["detail"]
+    assert re.match(r"^\d+ms", detail), detail
+    assert re.search(r"in_flight (\d+)", detail).group(1) == "3", detail
+    assert detail.endswith("sample 20261122-170000-001.json"), detail
+
+
+def test_a_row_with_no_phases_is_written_exactly_as_before():
+    """Every row the self-sample cooldown deduplicated, and every row from a request that was
+    never stamped, must keep the old shape — the clause is additive or it is a migration."""
+    recorded = []
+    state = SimpleNamespace(slow_requests=collections.deque(), server=object())
+    with mock.patch.object(api_traces, "record_server_trace",
+                           lambda server, **kw: recorded.append(kw)):
+        api_traces.record_slow_request(state, {
+            "path": "/api/status", "method": "GET", "seconds": 2.1, "in_flight": 0,
+            "sample": "", "dominant": ""})
+    assert recorded[0]["detail"] == "2100ms, GET, in_flight 0"
 
 
 def test_the_row_carries_no_query_string_or_header(tmp_path):

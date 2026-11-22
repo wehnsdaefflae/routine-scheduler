@@ -213,9 +213,21 @@ def record_slow_request(state, entry: dict) -> None:
     state.slow_requests.appendleft(entry)
     ms = round(float(entry.get("seconds") or 0) * 1000)
     sample = str(entry.get("sample") or "")
+    # WHERE the seconds went, in the DURABLE row (F906). The deque and the log carry the phases
+    # already, but both die with the process — and this row is the only evidence a later run can
+    # read, which is the whole reason the row exists. The clause is appended, never interpolated
+    # into an existing one, and `sample` stays LAST: both downstream readers are anchored
+    # regexes (`^\d+ms`, `in_flight (\d+)`), so an added clause cannot move what they match.
+    dominant = str(entry.get("dominant") or "")
+    phases = ""
+    if dominant:
+        spans = " ".join(f"{name} {entry[key]}ms" for name, key in
+                         (("pre", "pre_ms"), ("app", "app_ms"), ("send", "send_ms"))
+                         if entry.get(key) is not None)
+        phases = f", mostly {dominant} ({spans})" if spans else f", mostly {dominant}"
     record_server_trace(state.server, kind="slow", target=str(entry.get("path") or ""),
                         detail=f"{ms}ms, {entry.get('method') or '?'}, "
-                               f"in_flight {entry.get('in_flight')}"
+                               f"in_flight {entry.get('in_flight')}" + phases
                                + (f", sample {sample}" if sample else ""))
 
 
