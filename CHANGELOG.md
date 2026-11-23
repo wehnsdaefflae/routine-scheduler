@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.599.0] — 2026-11-23
+
+### Fixed
+- **The console's unexplained multi-second waits were the credential-store guard, and it now
+  resolves the stores once instead of once per question** (F906, second half). The phase
+  instrument shipped in 0.588.0 answered the open question: every slow row recorded since the
+  restart reads `mostly app` with `app ≈ elapsed` and `first_byte == app` — so `send` is ~0 and
+  `pre` is 0.0-0.1 ms, several of the rows at `in_flight 0`. The wait is neither queueing before
+  the handler nor the response path; it is real work inside the application span, and the
+  self-samples named the frame: `registry.scan` → `load_config` → `load_routine` →
+  `entities.guarded_roots` → `never_grantable_fs` → `_spellings` → `Path.resolve` → `realpath`,
+  with the threadpool healthy (40 tokens, 4 borrowed). Measured on `main`: one `load_routine`
+  pass over this instance's 30 routines cost **1,592 ms and 872 `Path.resolve()` calls**, 3.00 s
+  of a 3.15 s profile under `guarded_roots` (1,127 `stat` + 4,006 `lstat`), because
+  `_touches_store` rebuilt the resolved spellings of all 12 credential stores on EVERY call —
+  13 resolves per guard question, asked once per folder-grant entry of every routine the
+  registry scans, on every `/api/runs`, `/api/conversations` and `/api/questions` request. The
+  resolved set is now cached behind a key of the stores themselves plus an `lstat` stamp of each
+  store path: **546 ms cold, 66 ms warm, 80 resolves**. A patched `NEVER_GRANTABLE` still reaches
+  the guard (the stores are in the key — the contract every enforcement-door test relies on); a
+  store created, deleted, replaced or re-pointed invalidates it; `lstat` and not `stat`, so a
+  store that is itself a symlink is read as the link it is; and the parents need no stamp,
+  because `lstat` traverses every component above the last — established by proof, since the
+  guard written for a parents stamp could not be made to fail and the loop was dead code.
+- Four guards in `tests/test_guard_cache.py`, all proven red-first. A fifth was written and
+  DELETED rather than kept: "a store created after the first question is guarded" cannot fail,
+  because the written spelling matches whether or not the cache is stale, and a test that cannot
+  go red is not evidence.
+
 ## [0.598.0] — 2026-11-23
 
 ### Changed
