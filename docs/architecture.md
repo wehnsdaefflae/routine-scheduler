@@ -1685,7 +1685,20 @@ install gets the revision from the seed sync itself.)
   action (`engine/create_routine.py`) — valid ONLY from a root conversation — which materializes the routine
   SYNCHRONOUSLY through the SAME `workflows.scaffold` path the retired wizard build once called (decompose the chosen
   workflow into main.md + stages/, record its held rules, write routine.yaml, init the auto-push git repo; the
-  daemon's `registry_rescan_s` timer picks the new dir up). There is no clarification ROUTINE behind
+  daemon's `registry_rescan_s` timer picks the new dir up).
+  **A created routine is born with a resolvable `uncensored` role** (R3680,
+  `workflows/uncensored_default.py`): every settings pattern ships `models: {}` as boilerplate, so a
+  routine created outside a pattern — or from one whose `models` block nobody filled — had no refusal
+  target at all, and `endpoints.for_uncensored` returning None meant the engine could not re-drive a
+  refused turn (it advanced the catalog fallback chain into more censored models and then ended the
+  run). `scaffold` therefore FILLS the role when nothing named it, from what this instance already
+  stands for rather than from a hardcoded name: the most common `models.uncensored` across the
+  existing routines, kept only if the catalog still serves it (a stale name would reproduce F643),
+  else the catalog's SOLE model whose name or provider id says it has no guardrails. Neither → the
+  role is left unset, exactly as before. A role someone CHOSE is never overwritten, and the value is
+  written into `routine.yaml` (visible on the routine's page, clearable) rather than defaulted inside
+  `for_uncensored`, where it would have switched referral on invisibly for every routine whose role is
+  unset on purpose — the reading `config/routine_scrub.py` and the blank picker both depend on. There is no clarification ROUTINE behind
   any of this: the standalone clarification wizard was retired with D59; the clarifying now
   happens in the conversation's own chat.
   The intake is held to a WALKED clarification, and the walking is done in DECISIONS (F383): every point

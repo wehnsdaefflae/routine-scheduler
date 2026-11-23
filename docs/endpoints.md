@@ -882,7 +882,10 @@ agent turn loop (children run the same loop and are covered identically):
 
 - **Opt-in takeover, always-on flagging.** Without `models.uncensored` the engine still
   detects and flags - only the takeover is skipped (the event says so). The role has no
-  system-model fallback.
+  system-model fallback. Since R3680 a routine CREATED through `workflows.scaffold` is born
+  with the role filled from this instance's own standard (`workflows/uncensored_default.py`),
+  so "unset" now means someone cleared it or the instance names no standard - not that nobody
+  got round to it. The resolution rule itself is unchanged: unset is still referral off.
 - **Only free-text replies are considered** - a schema-constrained (`response_schema`)
   reply is an answer by construction. An explicit `model: uncensored` call is the
   caller's own probe and is never taken over.

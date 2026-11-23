@@ -20,6 +20,7 @@ from ..config.base import _known_tz
 from ..health_events import log_health_event
 from ..ids import is_slug, now_iso
 from ..paths import atomic_write_yaml
+from . import uncensored_default
 
 # mnt/ = transient remote-machine share mounts; .util_outputs/ = spilled util output
 # (engine-owned and pruned, and it can carry whatever a util printed — never committed);
@@ -200,6 +201,13 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         cfg["fs_read_roots"] = [fields.tilde(p) for p in fs_read_roots]
     if fs_write_roots:
         cfg["fs_write_roots"] = [fields.tilde(p) for p in fs_write_roots]
+    # R3680: every settings pattern ships `models: {}`, so a routine was born with NO uncensored
+    # role and `endpoints.for_uncensored` returned None = referral off — a classifier refusal had
+    # nothing to re-drive the turn on. The role is FILLED here (and only when nothing named it)
+    # from what this instance already stands for; `uncensored_default` says where that is read
+    # from and why the fill belongs at creation rather than in the engine's resolution.
+    if filled := uncensored_default.with_uncensored(cfg.get("models") or {}, server):
+        cfg["models"] = filled
     atomic_write_yaml(routine_dir / "routine.yaml", cfg)
     # The pattern's own finish line, if it carries one; the finish line the PERSON described
     # is specific to this routine, so it is proposed below rather than written here.

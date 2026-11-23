@@ -31,6 +31,13 @@ settings:                         # every governed value (rsched/patterns/fields
   …
 ```
 
+Every shipped pattern carries `models: {}` as boilerplate, and that used to mean a routine built
+on one was born with no `uncensored` role and so no target for a classifier refusal to be
+re-driven on. It is harmless since R3680: `workflows/uncensored_default.py` fills the role at
+creation from this instance's own standard whenever nothing named it, so a pattern leaving
+`models` empty says "no opinion", not "no refusal recovery". A pattern that DOES name a model
+still wins — the fill only ever closes a gap.
+
 A pattern is **immutable**: it is created, never overwritten, and deleted only as a whole. A
 routine that should differ from its pattern differs in its own file (an OVERRIDE); a new kind
 of work is a new pattern. The library ships twelve, each built on one abstract workflow:
