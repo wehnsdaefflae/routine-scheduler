@@ -121,10 +121,14 @@ def claim_child(parent_ctx: RunContext) -> int:
         return n
 
 
-def materialize_to_disk(server, slug: str, sub_dir, prompt: str) -> tuple[str, str]:
+def materialize_to_disk(server, slug: str, sub_dir, prompt: str, *,
+                        parent_slug: str = "", parent_run_id: str = "") -> tuple[str, str]:
     """Write the child's files into sub_dir (main.md + instruction.md) so it is a real on-disk
     routine while it runs. Returns (effective slug, note). Permissions stay OFF — a child
     reports through its finish summary; it keeps no LEDGER/audit of its own.
+
+    `parent_slug`/`parent_run_id` only name WHO asked, for the health event a degrade files;
+    they are optional so a caller outside a run (the detached task builder) needs neither.
     """
     from ..paths import atomic_write
     try:
@@ -141,6 +145,15 @@ def materialize_to_disk(server, slug: str, sub_dir, prompt: str) -> tuple[str, s
                      "materialized_from: {slug: fallback, commit: '', version: 0}\n---\n\n"
                      + FALLBACK_SUB_BODY + "\n")
         atomic_write(sub_dir / "instruction.md", prompt)
+        # Never only in the note (F939): the note is one aside in an observation nobody reads
+        # twice, and the child RUNS, so a routine that asked for a specialised harness gets the
+        # generic one and nothing fails. A broken library pattern can therefore degrade every
+        # spawn on the instance in silence. Same shape as `wizard_build_degraded`: a degraded
+        # build that still produced something.
+        from ..health_events import log_health_event
+        log_health_event(server.routines_home, "child_recipe_unavailable",
+                         routine=parent_slug, run_id=parent_run_id,
+                         detail=f"{slug}: {exc}", recipe=slug)
         return "(builtin-fallback)", f"recipe {slug!r} unavailable ({exc}) — builtin fallback"
 
 
@@ -155,7 +168,9 @@ def build_child(parent_ctx: RunContext, action: dict, *, n: int, label: str, mod
     recipe_slug = action.get("workflow") or "general-task"
     sub_dir = parent_ctx.run_dir / "sub" / str(n)
     recipe_slug, note = materialize_to_disk(parent_ctx.server, recipe_slug, sub_dir,
-                                            action["prompt"])
+                                            action["prompt"],
+                                            parent_slug=parent_ctx.routine.slug,
+                                            parent_run_id=str(parent_ctx.run_id))
     transcript = Transcript(sub_dir / "transcript.jsonl")
     # The optional `model` override: a ROLE (main/tool_call/uncensored/supervisor) or a
     # CATALOG NAME. Default MAIN — a child continues the routine's work. The subruns caller

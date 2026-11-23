@@ -279,6 +279,14 @@ the one every conversation is materialized from — `POST /api/conversations` an
 500 for a day and a half and no row anywhere said why. One row per library HEAD while it is
 broken (the watcher's own marker latches it), so a restart does not re-file what still stands.
 
+child_recipe_unavailable: a child run asked for a library workflow pattern that could not be
+materialized, so it got the BUILTIN fallback instead (`engine/childrun.materialize_to_disk`,
+`recipe` the pattern asked for, the detail naming it and the exception). The child still runs,
+and the degrade was only ever a one-line aside in the parent's observation: a routine that
+asked for a specialised harness gets the generic one and nothing fails. Since one unparseable
+pattern degrades every spawn that names it — fleet-wide and silently, for as long as the
+library stays broken — the drop is recorded where the fleet's incidents are read.
+
 answer_undelivered: an operator's ANSWER that no run will ever read has waited longer than
 `daemon/owed_watch.UNDELIVERED_DAYS` — its conversation finished during the turn it was filed
 in, or its routine is off, retired or has no clock (`readmodels/answer_pickup`). One row per
@@ -318,6 +326,7 @@ EVENTS: tuple[str, ...] = (
     "migration_due_soon",
     "migration_expired",
     "library_doc_unreadable",
+    "child_recipe_unavailable",
     "commit_failed",
     "git_lock_cleared",
     "backup_stale",

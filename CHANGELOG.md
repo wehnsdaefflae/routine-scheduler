@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.595.0] — 2026-11-23
+
+### Added
+- **A child run that silently got the builtin harness now files a health event** (F939,
+  reported by `scheduler-builder` as R3665). `engine/childrun.materialize_to_disk` catches every
+  failure from the library materializer, writes the builtin fallback body and returns a NOTE
+  string — which reached the parent's observation line and nothing else: no health event, no
+  ledger row, no counter. The child still runs, so a routine that asked for a specialised
+  pattern gets the generic one and nothing fails. The builder's 15:08 child asked for
+  `maintain-a-codebase`, ran on the fallback, and that was discoverable only by re-reading a
+  one-line aside. Since three library patterns do not parse right now (the D241 migration's
+  prose-in-import-list damage: `converse.py:25`, `maintain-a-codebase.py:51`,
+  `steward-a-project.py:55`), every spawn naming one degrades fleet-wide and silently for as
+  long as the library stays broken. `child_recipe_unavailable` now records who asked, which
+  pattern, and the exception — the same shape as `wizard_build_degraded`. The materializer
+  takes the parent's slug and run id as optional keywords, so the detached task builder's call
+  is unchanged.
+
 ## [0.594.0] — 2026-11-23
 
 ### Fixed
