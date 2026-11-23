@@ -613,51 +613,6 @@ no `/lineage` request. Then 1 and 4 together (the visible control opens the dial
 
 ---
 
-## Playbooks: reachable where a conversation starts and where it ends (decided 2026-11-21, code review)
-
-**Decided by the operator 2026-11-21 (code review), no finding.** He kept playbooks and ordered
-their discoverability fixed: saving a conversation as a playbook and starting from one must be
-reachable where a person starts and ends a conversation — the new-conversation screen LISTS the
-playbooks, and a finished conversation OFFERS "save as playbook".
-
-**Problem.** Both moves exist (`docs/playbooks.md`: Reuse, Capture, Refine) and both are tucked
-away:
-
-- **Starting.** The new-conversation screen (`static/views/conversations-new.js`
-  `mountComposerOnly`) offers playbooks as a `<select>` labelled "playbook" under the message
-  box, defaulting to "no playbook · start fresh"; a playbook's `when` and `axis` appear only after
-  it is picked. A person who does not already know a playbook exists has nothing to see.
-- **Ending.** `components/playbook-row.js` renders "＋ save as playbook" as a ghost button under
-  the composer of EVERY conversation, at all times; D175's offer (`web/playbook_offer.py`,
-  `SUBSTANTIAL_TURNS`) only un-ghosts it and adds a line there. The moment a conversation ENDS —
-  the reply whose finish carries `final: true` (written to the finish event by
-  `loopend.finish_run`; nothing in `static/` reads it) — has no offer at all.
-
-**Shape.**
-
-- **The new-conversation screen lists them.** Above the message box, a "start from a playbook"
-  list built from the `GET /api/playbooks` read the screen already makes: one card per playbook
-  with its title, its one-line `when`, its `axis` ("varies: …") and its tags — visible without a
-  click, in the library's order. Clicking a card selects it (the existing `pbSel` value and
-  placeholder switch), and a selected card shows a clear "start fresh instead" to undo. With no
-  playbooks in the library the list is absent, not an empty box. The `<select>` goes.
-- **A finished conversation offers to save it.** When the newest reply's finish event carries
-  `final: true` and the conversation is terminal, the chat renders the offer directly under that
-  reply: "This conversation is done — save it as a playbook?" with the save button (or "update
-  playbook: <slug>" when `detail.playbook` is set, the existing `mode: "update"`), posting to the
-  same `POST`/`PUT /api/conversations/{slug}/playbook`. `playbook_offer.offer` takes the final
-  flag as a second reason to `show` beside `SUBSTANTIAL_TURNS`, so the predicate stays one
-  testable server function and the console still never recomputes it. The always-present ghost
-  button under the composer stays for the cases neither reason covers.
-- **docs/playbooks.md** "The three moves" table names the two new places.
-
-**First increment.** The playbook list on the new-conversation screen, with a browser test (two
-seeded playbooks render as cards with `when` and `axis`; clicking one selects it and the empty
-first message is accepted; an empty library renders no list). The final-reply offer and the
-`offer()` change are the second commit.
-
----
-
 ## Detach: say when to use it, show it in the rail, let the operator start one (decided 2026-11-21, code review)
 
 **Decided by the operator 2026-11-21 (code review), no finding.** He kept `detach` and ordered it

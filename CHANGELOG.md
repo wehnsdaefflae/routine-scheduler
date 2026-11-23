@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.602.0] — 2026-11-23
+
+**The playbook offer where a conversation ENDS, and the conversations view split.**
+
+**D307 (2/2), the operator's playbooks order.** A finished conversation now offers to be saved
+as a playbook at its ENDING, not only at the composer — "playbooks are where a conversation
+starts and ends". The offer reads as one sentence, a conversation still working is never called
+done, a short one is not asked at all, and a conversation seeded FROM a playbook offers to
+update that playbook instead of making a second one. `static/components/playbook-row.js` grew
+`finalOffer`; `static/playbook.css` carries its rules.
+
+A send used to spend an extra `/api/conversations/{slug}` read: the offer refreshed itself on
+every terminal state transition and a send is terminal for an instant. It is now asked only
+where the finish event lands, carrying that event's own `final` flag. The 0.602.0 candidate's
+first gate caught it (`test_a_send_resumes_the_tail_instead_of_remounting_the_view`) and the
+candidate was restored before it reached `main`.
+
+**`static/views/conversations.js` was SPLIT, not squeezed.** It sat at its size ceiling with zero
+slack, so a four-line fix could not land; the answer is a seam, not shorter comments. The
+sidebar — the conversation list with its out-of-order read guard, the search/tag filter, the rows
+and the shared hover card — is now `static/views/conversations-list.js`, and the view is 538 →
+457 lines with its ratchet ceiling tightened to match. Which conversations exist is read and
+changed separately from the one being read.
+
+Verified on the shipped bytes: 68 scanner tests (size ratchet, quality, four static scanners,
+class contract, stylesheet tokens, policy, doc-claims, prose history) and 80 browser tests —
+every conversation, chat, branch, rail, playbook and offer module, because an extraction of this
+view answers for all of them, not only for the item that touched it.
+
 ## [0.601.0] — 2026-11-23
 
 ### Added
