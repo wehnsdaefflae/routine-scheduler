@@ -82,6 +82,15 @@ model in a decision role, a decision model in a chat role, and a text-only model
 decision=<name>` overrides one for a single run. CAPABILITIES marks the defaults THIS routine
 gets, so a run reads its own picture.
 
+### The engine's own question: root commands
+
+The engine asks the same model one question of its own: while a run holds a machine whose login
+has root rights, *would this call risk serious harm?* — the call and the five before it as
+evidence (the routine's `root_check` picks which calls: `remote` commands, `any` tool call, or
+`off`), the routine's `decision` role (else the instance default) answering, the spend folded
+into the run like any `decide`. P(risky) ≥ 0.5, or no answer at all, holds the call for the
+operator (docs/remote-machines.md § Root command check).
+
 ## The protocol
 
 Every provider speaks one wire shape; its adapter (`endpoints/decisions_systemone.py`)

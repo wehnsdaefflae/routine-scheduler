@@ -220,7 +220,8 @@ export function questionPanel(box, q, { onAnswered } = {}) {
   box.append(el("div", { class: "panel warn mt" },
     el("div", { class: "evlabel" },
       "❓ ", q.type === "util-approval" ? el("strong", {}, "[util approval]")
-        : q.type === "request" ? el("strong", {}, "[access request]") : null),
+        : q.type === "request" ? el("strong", {}, "[access request]")
+        : q.type === "command-approval" ? el("strong", {}, "[root command]") : null),
     md(q.question || "", "md prose"),
     q.expires ? el("div", { class: "faint small" },
       "the run continues without you ", when(q.expires, { mode: "rel" }),

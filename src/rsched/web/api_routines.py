@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import lanes, registry, rolecatalog, schedule
+from .. import lanes, machine_privilege, registry, rolecatalog, schedule
 from .. import triggers as triggers_mod
 from ..config import ROUTINE_MODEL_ROLES
 from ..config.base import DEFAULT_LADDER, DEFAULT_TURN_INTERVAL
@@ -232,9 +232,8 @@ def routine_detail(request: Request, slug: str) -> dict:
         # come from GET /api/settings/machines. A binding to a machine no longer in the catalog
         # is kept as-is (resolves to nothing at run time) — the UI flags it.
         "machines": list(info.cfg.machines),
-        "machine_catalog": [{"name": m.name, "description": m.description,
-                             "host": m.host, "user": m.user, "tags": list(m.tags)}
-                            for m in server.machines.values()],
+        "machine_catalog": machine_privilege.catalog_rows(server),
+        "root_check": info.cfg.root_check,
         "deliberation": info.cfg.deliberation,
         # The ESCALATION LADDER, split across its two authority classes (docs/architecture.md):
         # `ladder` is CONFIG — whether a run of this routine is supervised at all and the

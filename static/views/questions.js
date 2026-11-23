@@ -24,8 +24,8 @@ import { answeredChips, lifecycleControls, proofNote }
 import { md, summaryLine } from "/static/md.js";
 import { act, chip, el, emptyState, fmtAbs, groupHead, skeleton, when } from "/static/util.js";
 import { TERMINAL } from "/static/states.js";
-import { FILTERS, GROUPS, SORTS, expiringSoon, isBlocking, kindOf, sortQuestions, waitsOnYou }
-  from "/static/views/questions-taxonomy.js";
+import { FILTERS, GROUPS, QTYPE_CHIPS, SORTS, expiringSoon, isBlocking, kindOf, sortQuestions,
+  waitsOnYou } from "/static/views/questions-taxonomy.js";
 
 // F621: a decision born as a REPORT — a routine routed work to another routine and the call
 // is the operator's. The chip names the report and who acts once he answers, because that is
@@ -247,8 +247,7 @@ export async function render(view, query = {}) {
       return el("div", { class: "panel question-item answered" },
         el("div", { class: "q-meta" },
           q.meta ? chip("meta", "meta") : null,
-          q.type === "util-approval" ? chip("util approval", "partial") : null,
-          q.type === "request" ? chip("access request", "partial") : null,
+          QTYPE_CHIPS[q.type] ? chip(...QTYPE_CHIPS[q.type]) : null,
           reportChip(q),
           // What the answer WAS and what became of it — a decline in place of the answered chip
           // (R2197), a proof verdict beside it (D220); composed in decision-lifecycle.js.
@@ -386,8 +385,7 @@ export async function render(view, query = {}) {
       el("div", { class: "q-meta" },
         expiringSoon(q) ? chip("expiring", "failed") : null,
         q.meta ? chip("meta", "meta") : null,
-        q.type === "util-approval" ? chip("util approval", "partial") : null,
-        q.type === "request" ? chip("access request", "partial") : null,
+        QTYPE_CHIPS[q.type] ? chip(...QTYPE_CHIPS[q.type]) : null,
         reportChip(q),
         chip(q.mode, q.mode),
         q.snoozed ? chip("snoozed", "meta") : null,

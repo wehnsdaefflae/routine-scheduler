@@ -44,3 +44,20 @@ def test_delete_removes_one_and_names_a_missing_one(api_client):
     assert c.delete("/api/settings/machines/gpu").status_code == 200
     assert "gpu" not in c.app.state.server.machines
     assert c.delete("/api/settings/machines/gpu").status_code == 404
+
+
+
+def test_a_row_reports_what_the_box_said_about_its_login(api_client):
+    """`privileged` is None until a test probed the box (which counts as root), then the
+    box's own answer with its reason."""
+    from rsched import machine_privilege
+
+    c, _ = api_client
+    c.put("/api/settings/machines/gpu", json=GPU)
+    (row,) = c.get("/api/settings/machines").json()["machines"]
+    assert row["privileged"] is None and row["privilege_why"] == ""
+    server = c.app.state.server
+    machine_privilege.record(server.routines_home, "gpu", server.machines["gpu"],
+                             privileged=True, why="member of sudo")
+    (row,) = c.get("/api/settings/machines").json()["machines"]
+    assert row["privileged"] is True and row["privilege_why"] == "member of sudo"

@@ -299,7 +299,7 @@ class EngineLoop:
         a resumed leg rebuilds its once-only guards from it (engine/guardscope.py).
         """
         ctx = self.ctx
-        obs = hold.before_dispatch(self, action) or actionroute.dispatch_action(self, action, ctx)
+        obs = hold.before_dispatch(self, action) or actionroute.dispatch_checked(self, action, ctx)
         # Whether the rest of this reply still runs, and the actions that did NOT — stored on
         # this observation so a resumed leg replays the same words (engine/replyactions.py).
         obs = {**obs, **chain.stop_fields(self, obs)}

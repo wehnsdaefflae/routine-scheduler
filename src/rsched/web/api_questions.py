@@ -26,6 +26,7 @@ from ..paths import atomic_write_json, read_json, read_yaml
 from . import report_answers
 from .decisions_read import _audit_decisions, _record_dir, find_question
 from .decisions_window import SETTLED_MAX, open_window
+from .root_check_answer import apply_general
 
 router = APIRouter(tags=["questions"])
 
@@ -40,16 +41,14 @@ def list_questions(request: Request, routine: str = "",
 class Answer(BaseModel):
     text: str = ""
     intermediate: bool = False   # dialog reply to a BLOCKING question — it stays open
-    # Access requests only: one of the typed decisions (allow/deny × now/forever,
-    # plus allow_once for once-grantable classes — D65, widened to secret/fs by D76).
-    # A forever-decision is APPLIED to routine.yaml right here, at click time — the
-    # engine only bridges it into a live run's overlay and never writes config.
+    # Access requests only: a typed decision (allow/deny × now/forever, plus allow_once for
+    # once-grantable classes — D65/D76). A forever-decision is APPLIED to routine.yaml here, at
+    # click time; the engine only bridges it into a live run's overlay, never writing config.
     decision: str | None = None
-    # The operator's "answer & run now": file the answer AND fire one manual run of the
-    # routine, exactly as the routine page's Run now would — a deliberate click, never a
-    # side effect of answering. Ignored for a conversation (it resumes on its own), for a
-    # meta decision (self-audit reads it on its schedule) and for a routine whose run is
-    # active (the live run drains the answer at its next turn boundary).
+    # The operator's "answer & run now": file the answer AND fire one manual run, as the
+    # routine page's Run now would — a deliberate click, never a side effect of answering.
+    # Ignored for a conversation (it resumes on its own), a meta decision (self-audit reads it
+    # on its schedule) and a routine whose run is active (it drains the answer at its next turn).
     run_now: bool = False
     # …optionally with the one job that run is for (engine/brief.py)
     brief: str = Field(default="", max_length=300)
@@ -128,6 +127,7 @@ def _file_answer(request: Request, qid: str, body: Answer) -> tuple[dict, Path, 
                      "ts": now_iso()}
     if body.decision:
         payload.update(_decide_request(request, match, routine_dir, body.decision))
+    payload.update(apply_general(request, match, routine_dir, body.text))
     # R2189 + R2778: a `config_patch` on the record is NOT applied by answering (operator's
     # ruling, 2026-10-05: only the button applies) — unless the apply BUTTON is what posted
     # this answer, which says so explicitly. Either way the record states which happened, for

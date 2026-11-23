@@ -37,6 +37,7 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
     "budgets": (LIVE, "the run's remaining window is re-derived from the new ceilings"),
     "deliberation": (LIVE, "the say contract changes from the next turn"),
     "grants": (LIVE, "the policy is rebuilt and the action schema re-projected"),
+    "root_check": (LIVE, "the root command check reads it before the run's next call"),
 
     # ---- takes effect at the next run ------------------------------------------------------
     "enabled": (NEXT_RUN, "it governs whether the daemon FIRES, not a run already going"),
@@ -115,7 +116,7 @@ ADOPTABLE = tuple(f for f, (half, _) in CLASSIFICATION.items() if half == LIVE)
 #: are spelled out here; `tests/test_configflow.py` pins each one to its model.
 ROUTINE_PATCH_FIELDS = frozenset({
     "enabled", "run_gate", "schedule", "budgets", "models", "efforts", "connections",
-    "grants", "machines", "name", "description", "tags", "pattern", "permissions",
+    "grants", "machines", "root_check", "name", "description", "tags", "pattern", "permissions",
     "capabilities", "rules", "shared_reminders", "improve", "chain_actions", "deliberation",
     "keep_runs",
     "fs_read_roots", "fs_write_roots", "outcome",
@@ -123,7 +124,8 @@ ROUTINE_PATCH_FIELDS = frozenset({
     "ladder", "ladder_turn_interval", "oversight_turns",
 })
 CONVERSATION_PATCH_FIELDS = frozenset({
-    "title", "tags", "workdir", "budgets", "models", "efforts", "machines", "connections",
+    "title", "tags", "workdir", "budgets", "models", "efforts", "machines", "root_check",
+    "connections",
     "deliberation", "fs_read_roots", "fs_write_roots",
     # D216 (d): the escalation ladder reaches a conversation too. The engine never gated it —
     # `engine/ladder.ladder_settings` reads `ctx.routine.ladder` and a conversation IS a

@@ -13,8 +13,8 @@ from collections.abc import Callable
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from ... import machine_privilege, sandbox, utils_run
 from ... import machines as machines_mod
-from ... import sandbox, utils_run
 from ...config import MachineConfig
 from ...machine_queue import REMOTE_UTIL
 from ...secrets import load_secrets
@@ -25,9 +25,15 @@ router = APIRouter()
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")   # catalog key = the name routines bind
 
 
-def _machine_view(mac: MachineConfig, have_keys: set[str]) -> dict:
-    return machines_mod.machine_public(
+def _machine_view(server, mac: MachineConfig, have_keys: set[str]) -> dict:
+    """The row: public metadata plus what the box last said about its login's rights —
+    `privileged` is None until a test probed it, which counts as root.
+    """
+    view = machines_mod.machine_public(
         mac, name=mac.name, key_set=bool(mac.key_var and mac.key_var in have_keys))
+    probed = machine_privilege.load(server.routines_home, mac.name, mac)
+    return {**view, "privileged": None if probed is None else probed["privileged"],
+            "privilege_why": "" if probed is None else str(probed.get("why") or "")}
 
 
 @router.get("/settings/machines")
@@ -37,7 +43,7 @@ def list_machines(request: Request) -> dict:
     """
     server = server_of(request)
     have = set(load_secrets())
-    return {"machines": [_machine_view(m, have) for m in server.machines.values()]}
+    return {"machines": [_machine_view(server, m, have) for m in server.machines.values()]}
 
 
 def _rewrite_machines(request: Request, mutate: Callable[[dict], None]) -> dict:
@@ -136,6 +142,8 @@ async def scan_host(request: Request, body: ScanBody) -> dict:
 async def test_machine(request: Request, name: str) -> dict:
     """Connect to a catalog machine and run `true` — the exact host-key-pinned, keyed path a run
     uses. Surfaces resolution warnings (unset key_var, missing host_key) alongside the result.
+    A reachable box is then asked who its login is (`machine_privilege.probe`): a root login
+    puts every routine bound to it under the root command check.
     """
     server = server_of(request)
     if name not in server.machines:
@@ -145,6 +153,9 @@ async def test_machine(request: Request, name: str) -> dict:
     def call() -> dict:
         result = _parse_util_json(*_run_remote(server, ["test", name, "--json"], env))
         result["warnings"] = warnings
+        if result.get("ok"):
+            probed = machine_privilege.probe(server, name)
+            result |= {"privileged": probed["privileged"], "privilege_why": probed["why"]}
         return result
 
     return await asyncio.to_thread(call)

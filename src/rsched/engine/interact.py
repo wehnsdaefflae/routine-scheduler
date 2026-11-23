@@ -50,8 +50,10 @@ def is_approval(text: str) -> bool:
     return _head_word(text) in _APPROVE_WORDS
 
 
-#: Question types settled ONLY by a clear approve/decline (D38) — every authoring approval.
-_APPROVAL_QTYPES = frozenset({"util-approval", "rule-approval", "reminder-approval"})
+#: Question types settled ONLY by a clear approve/decline (D38) — every authoring approval, and
+#: a root command the risk check held (engine/rootcheck.py).
+_APPROVAL_QTYPES = frozenset({"util-approval", "rule-approval", "reminder-approval",
+                              "command-approval"})
 
 
 def _settles_approval(text: str) -> bool:

@@ -121,6 +121,7 @@ export function describe(key, v) {
     case "connections": return Object.entries(v || {}).map(([p, a]) => `${p}: ${a}`).join(", ")
       || "no accounts bound";
     case "machines": return list(v, "no machines");
+    case "root_check": return `root check: ${{ any: "every tool call", off: "off" }[v] || "remote commands"}`;
     case "models": return Object.entries(v || {}).filter(([, m]) => m)
       .map(([k, m]) => `${k}: ${m}`).join(" · ") || "system default";
     case "efforts": return Object.entries(v || {}).filter(([, l]) => l)

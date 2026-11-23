@@ -71,6 +71,16 @@ _SECRET_GATES = {
 }
 
 
+def dispatch_checked(loop, action: dict, ctx) -> dict:
+    """`dispatch_action` for a RUN's own action: first the root command check
+    (engine/rootcheck.py), which may hold any kind — a backgrounded call on its starting turn.
+    An operator's slash command is not the run's, and goes to `dispatch_action` unchecked.
+    """
+    from . import rootcheck
+
+    return rootcheck.gate(loop, action) or dispatch_action(loop, action, ctx)
+
+
 def _gate_for_background(loop, action: dict) -> dict | None:
     """The gate a backgroundable kind must pass on the STARTING turn, or None.
 

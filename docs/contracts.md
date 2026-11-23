@@ -986,6 +986,18 @@ by a test, by the engine, or by a past incident.
   box reading as free is the one failure mode that would cause the collision this prevents.
   Cooperative, like every machine guard — a human on the box or a `shell` action bypasses it.
   See docs/remote-machines.md.
+- **A run holding a root login has its calls risk-rated.** While a run holds a machine whose
+  login has root rights, its routine's `root_check` (`rsched/rootmodes.py`: `remote` by default,
+  `any`, `off`) picks the calls `engine/rootcheck.py` puts to the decision model with the five
+  before it, from `actionroute.dispatch_checked`; P(risky) ≥ 0.5 or NO verdict holds the call for
+  a blocking `command-approval` whose options also switch the mode for the run or from now on
+  (the web writes the latter, `web/root_check_answer.py`), and a child or detached run is
+  refused. Invariants: who is root is PROBED on the box (`rsched/machine_privilege.py`, keyed to
+  host+user+port), never inferred from a user name; never probed counts as root; what the check
+  read (calls made, a switch chosen) comes from the run's own transcript, so a resumed leg
+  rebuilds it; and while the check is on, a root machine's key reaches ONLY a direct `remote`
+  util call (`exec_env._machine_env`), since a script or util that `calls: remote` sends
+  commands the gate never sees. A pattern does not govern `root_check`.
 - **Cache READS alone cannot tell a working prompt cache from a broken one.** A transport
   that stops resuming its session still serves the static system+tools prefix from cache,
   so `cached_in` stays large and the token count actually FALLS — while the whole

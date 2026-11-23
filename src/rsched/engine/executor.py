@@ -221,7 +221,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — many sm
     code, out, err = utils_run.run_util(
         home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S),
         policy=policy,
-        extra_secrets=_extra_secrets(ctx), withhold_secrets=withheld.names,
+        extra_secrets=_extra_secrets(ctx, name), withhold_secrets=withheld.names,
         cwd=work_dir(ctx), aborted=ctx.aborted,
         cancelled=cancelled_for_turn(ctx))
     killed = _note_if_killed(ctx, "util", name, code)

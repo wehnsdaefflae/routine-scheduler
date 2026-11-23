@@ -54,6 +54,8 @@ FIELDS: tuple[Field, ...] = (
     Field("fs_write_roots", "reach", "Read-write roots", "set"),
     Field("connections", "reach", "Connections", "map"),
     Field("machines", "reach", "Machines", "set"),
+    # Like chain_actions, the operator's own switch: a pattern must not turn a safety check off.
+    Field("root_check", "reach", "Root command check", "scalar", governable=False),
     Field("models", "models", "Models", "map"),
     Field("efforts", "models", "Reasoning effort", "map"),
     Field("deliberation", "models", "Deliberation", "scalar"),
@@ -178,6 +180,7 @@ def snapshot(cfg) -> dict:
         "fs_write_roots": [tilde(p) for p in cfg.fs_write_roots],
         "connections": dict(cfg.connections or {}),
         "machines": list(cfg.machines or []),
+        "root_check": cfg.root_check,
         "models": dict(cfg.models or {}),
         "efforts": dict(cfg.efforts or {}),
         "deliberation": cfg.deliberation,

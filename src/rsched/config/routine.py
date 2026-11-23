@@ -15,6 +15,7 @@ from pydantic import (
     field_validator,
 )
 
+from .. import rootmodes
 from ..ids import is_slug
 from ..paths import atomic_write_yaml, read_yaml
 from .base import (
@@ -99,10 +100,11 @@ class RoutineConfig(_Config):
     # connections are user config, never set by a run. See docs/oauth-connections.md.
     connections: dict[str, str] = Field(default_factory=dict)
     # Remote-machine bindings: catalog machine NAMES this routine may act on (Settings →
-    # Machines). A RESOURCE binding like connections/models — the list IS the grant; the
-    # reserved `remote` util receives the bound machines' connection details + private keys.
-    # Never set by a run. See docs/remote-machines.md.
+    # Machines) — the list IS the grant; the reserved `remote` util receives the bound machines'
+    # connection details + private keys. Never set by a run. See docs/remote-machines.md.
     machines: list[str] = Field(default_factory=list)
+    # While a bound machine logs in as root: which calls are risk-rated (rsched/rootmodes.py)
+    root_check: rootmodes.RootCheck = rootmodes.DEFAULT
     # Grant-decision rows (entities.py ids): the deny-forever tombstones for ANY entity
     # (`util:discord: false` — asks are suppressed) plus secret exposure, the one class
     # with no native switch (`secret:FOO_KEY: true/false`; absent = undecided, asked on

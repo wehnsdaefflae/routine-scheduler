@@ -134,17 +134,17 @@ def _ctx(bound: list[str], catalog: dict) -> SimpleNamespace:
         routine=SimpleNamespace(slug="mach", machines=bound, connections={}, models={}),
         granted_now=set(), grant_args={},
         server=SimpleNamespace(machines=catalog, endpoints={}, models={}, routine_token="",
-                               system_model="", system_tool_call_model=""))
+                               system_model="", system_tool_call_model="", routines_home=Path("/-")))
 
 
 def test_machine_env_resolves_bindings(monkeypatch):
     monkeypatch.setattr(secrets, "load_secrets", lambda: {"GPU_KEY": "PEM"})
-    env = _machine_env(_ctx(["gpu"], {"gpu": _mac("gpu", key_var="GPU_KEY")}))
+    env = _machine_env(_ctx(["gpu"], {"gpu": _mac("gpu", key_var="GPU_KEY")}), "remote")
     assert json.loads(env[machines.MACHINE_KEYS_VAR]) == {"gpu": "PEM"}
 
 
 def test_machine_env_no_bindings():
-    assert _machine_env(_ctx([], {})) == {}
+    assert _machine_env(_ctx([], {}), "remote") == {}
 
 
 def test_extra_secrets_merges_connections_and_machines(monkeypatch):

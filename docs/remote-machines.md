@@ -227,6 +227,57 @@ Before this existed, three routines sharing `predator` had each invented their o
 in their own `scripts/` and shared-store files — incompatible, invisible to the daemon, and one of
 them once had to reclaim an 18-hour-stale lease by hand.
 
+## Root command check: a run holding a root login has its calls risk-rated
+
+A machine whose login is root — or can become it — makes what a run sends there work done as
+root. So while a run (a routine's or a conversation's) holds such a machine, bound or granted
+mid-run, its routine's **root command check** decides what the decision model rates before it
+runs (`root_check` in routine.yaml; the routine page's *Limits & reach → Root command check*,
+the conversation header's capabilities panel):
+
+| mode | what is rated |
+|---|---|
+| `remote` (the default) | the `remote` util's `exec`, `submit`, `push` and `pull` to a root machine, with the **five commands this run last sent to that machine** |
+| `any` | every tool call the run makes — all but `finish`, `ask_user`, `report`, `wait`, `children`, `do_nothing`, `goal` and `kill` — with the **five calls it made before** |
+| `off` | nothing |
+
+The routine's `decision` role (else the instance `decision_model`, docs/decision-models.md)
+answers one yes/no question. **Under P(risky) 0.5 the call runs** with nothing added to its
+observation. **At or over it — or with no verdict at all** (no decision model, the model
+unreachable or refusing) — a top-level run or conversation files a blocking **root command**
+approval (`command-approval`) naming the call, the five before it and the verdict, and waits.
+Its options are *approve*, *decline*, and — for each OTHER mode — *approve, then check … for
+this run* or *… from now on*. A switch approves the call and changes the mode: for this run
+the engine applies it (read back from the transcript, so a resumed leg keeps it); "from now
+on" is also written into routine.yaml by the web at click time, like an access request's
+forever-decision (`web/root_check_answer.py`). *decline*, or the ask timing out, leaves the call
+unrun and the run reads `OBSERVATION (<kind> NOT run): root command check (…): …`. A child or
+detached run cannot ask, so its flagged call is refused outright. A mid-run edit of the
+setting on the routine page is adopted at the next turn and replaces a switch made earlier.
+
+- **Who counts as root is asked of the box, never guessed from the user name.** The Settings
+  **test** (and the wizard's last step) runs `id -u; id -Gn` through the `remote` util and
+  records the answer under `<routines>/.control/machine-privilege/<name>.json`, keyed to the
+  host, user and port it was probed as: uid 0, or membership in `sudo`, `admin`, `wheel`,
+  `docker`, `lxd` or `root`, is root. A machine **never probed counts as root**, and a changed
+  user, host or port makes the old answer someone else's; a run probes each never-probed machine
+  it holds once, at start or before its first checked call. Settings → Machines shows each
+  row's answer, and the machine lists on routine and conversation pages mark root logins
+  **root**. The restricted `agent` user the wizard creates probes as unprivileged.
+- **The key follows the check.** While the check is not `off`, a root machine's private key
+  reaches only a DIRECT `remote` util call (`engine/exec_env._machine_env`); a script, or another
+  util whose `calls:` names `remote`, receives the machine's metadata but not its key, since the
+  commands it would send are ones the check never sees.
+
+The pieces: `rsched/rootmodes.py` (the modes and the warning's options), `rsched/machine_privilege.py`
+(the probe, the record, `is_root`), `engine/rootcheck.py` (the gate, called by
+`actionroute.dispatch_checked` for every action the run takes — a `background: true` call on
+its starting turn — while an operator's slash command goes unchecked). Settings patterns do not
+govern `root_check`: like action chaining it is the operator's own switch. Like the queue it
+guards what runs send: a person on the box is not checked, and a `share` mounted from a root
+machine is written as root by ordinary file actions in `remote` mode — mount shares from an
+unprivileged login, or use `any`.
+
 ## Filesystem: mounting a share
 
 Set a machine's **`share`** (a remote directory) and, whenever a routine binds that machine, the
@@ -303,6 +354,8 @@ for heavy random I/O (or mmap / file locking) `pull` the file, work locally, the
 - **The remote host is NOT sandboxed.** A command there runs with the login account's full
   privileges. Use a dedicated, least-privilege remote user; the sandbox protects the daemon host,
   not the target.
+  A run holding a root login has its calls risk-rated first
+  ([above](#root-command-check-a-run-holding-a-root-login-has-its-calls-risk-rated)).
 - Private keys never enter the prompt, transcripts, or the search index (the config dir and tool
   observations are excluded); only the non-secret catalog metadata is ever shown.
 

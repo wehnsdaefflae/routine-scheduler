@@ -35,6 +35,9 @@ export function renderMachines(view) {
             testOut.style.color = r.ok ? "var(--ok)" : "var(--err)";
             testOut.textContent = r.ok ? "✓ reachable" : `✗ ${r.error}`;
             testOut.title = (r.warnings || []).join("; ");
+            // the test also asks the box who its login is: a changed answer shows or hides
+            // the row's root-command checkbox
+            if (r.ok && r.privileged !== m.privileged) reload();
           } catch (err) { testOut.style.color = "var(--err)"; testOut.textContent = `✗ ${err.message}`; }
           testBtn.disabled = false;
         };
@@ -54,11 +57,19 @@ export function renderMachines(view) {
           m.has_host_key ? null : el("span", { class: "small", style: "color:var(--warn)" }, "no host key"),
           m.has_key ? null : el("span", { class: "small", style: "color:var(--warn)" },
             m.key_var ? `key ${m.key_var} unset` : "no key_var")].filter(Boolean);
+        // Who the login is, as the box last said (a test asks it). Root — or never asked —
+        // puts every run holding this machine under its routine's root command check.
+        const rights = el("div", { class: "muted small", "data-mach-privilege":
+            m.privileged === false ? "user" : m.privileged ? "root" : "unknown" },
+          m.privileged === false ? `unprivileged login (${m.privilege_why})`
+            : m.privileged ? `root login (${m.privilege_why}) · routines holding it check their commands`
+              : "login rights not probed yet (test finds out) — treated as root");
         return el("tr", { "data-mach": m.name },
           el("td", {}, el("strong", {}, m.name),
             m.description ? el("div", { class: "muted small" }, m.description) : null,
             m.share ? el("div", { class: "muted small mono" }, `mnt/${m.name}/ ← ${m.share}`) : null,
-            m.exclusive ? el("div", { class: "muted small" }, "exclusive · submitted jobs queue, one at a time") : null),
+            m.exclusive ? el("div", { class: "muted small" }, "exclusive · submitted jobs queue, one at a time") : null,
+            rights),
           el("td", { class: "muted small mono" }, `${m.user}@${m.host}:${m.port}`),
           el("td", { class: "small" }, flags.length ? flags : el("span", { style: "color:var(--ok)" }, "✓ ready")),
           el("td", {}, el("div", { class: "row" }, testBtn, accessBtn, editBtn, delBtn), testOut));

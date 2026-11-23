@@ -21,6 +21,7 @@ from ..config.base import TUNING_KEYS, _known_tz
 from ..config.outcome import OutcomeConfig
 from ..config.routine import RunGatePatch
 from ..paths import read_yaml
+from ..rootmodes import RootCheck
 from .config_fields import (
     BudgetsPatch,
     clean_tags,
@@ -94,6 +95,7 @@ class RoutinePatch(BaseModel):
     grants: dict | None = None              # {entity-id: bool} decision rows (secret exposure
     #                                          + deny-forever tombstones — entities.py)
     machines: list[str] | None = None       # catalog machine names this routine may act on (SSH)
+    root_check: RootCheck | None = None     # what a root login's run risk-rates (rootmodes)
     name: str | None = None
     description: str | None = None
     tags: list[str] | None = None           # freeform filter tags (e.g. ["meta"])
@@ -139,11 +141,9 @@ assert not set(TUNING_FIELDS) - set(RoutinePatch.model_fields), (  # noqa: S101
     f"{sorted(set(TUNING_FIELDS) - set(RoutinePatch.model_fields))}")
 
 
-#: D216 (d): `_validate_tuning` MOVED to `patch_merge.validate_tuning` when the conversation
-#: PATCH gained the same two ladder knobs — that file already holds the appliers both surfaces
-#: call, and a second copy of the engine's own floor is how two homes come to mean different
-#: things. Re-exported under its old name because `tests/test_ladder_settings_api.py` and
-#: `patterns/validate.py`'s gap prose both name it here.
+#: D216 (d): `_validate_tuning` lives in `patch_merge.validate_tuning`, beside the appliers both
+#: PATCH surfaces call (one copy of the engine's floor). Re-exported under its old name because
+#: `tests/test_ladder_settings_api.py` and `patterns/validate.py`'s gap prose name it here.
 _validate_tuning = validate_tuning
 
 

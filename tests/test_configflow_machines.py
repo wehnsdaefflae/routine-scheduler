@@ -15,10 +15,10 @@ def test_a_mid_run_machine_grant_reaches_the_run_already_going(make_routine, tmp
                       server=server_config(routines_home=tmp_path))
     assert not ctx.routine.machines, "the fixture routine must declare no bindings"
 
-    assert _machine_env(ctx) == {}, "no binding and no grant is no machine env"
+    assert _machine_env(ctx, "remote") == {}, "no binding and no grant is no machine env"
 
     ctx.granted_now.add("machine:omen")
-    env = _machine_env(ctx)
+    env = _machine_env(ctx, "remote")
     assert "RSCHED_MACHINES" in env and "RSCHED_MACHINE_KEYS" in env, (
         "a machine granted mid-run must reach the env the next util call receives — this is "
         "what R3057 measured live and what the old note denied")

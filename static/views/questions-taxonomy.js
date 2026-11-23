@@ -67,6 +67,14 @@ export const classOf = (q) => {
 };
 export const isBlocking = (q) => classOf(q) === "blocking";
 
+/** The decision TYPES settled otherwise than a plain answer, as the chip a card wears:
+ *  [label, state]. A root command is red: a run holds a command bound for a root login. */
+export const QTYPE_CHIPS = {
+  "util-approval": ["util approval", "partial"],
+  "command-approval": ["root command", "failed"],
+  "request": ["access request", "partial"],
+};
+
 /** The proof state a decision's options have reached, or "" — the client's reading of the map
  *  `rsched/proofs.py` stores on the record (D220). The RANK is that module's `_RANK`: a
  *  positive proof clears the row, so it outranks everything; `negative` is the loud case;

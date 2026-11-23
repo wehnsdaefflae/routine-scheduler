@@ -7,6 +7,7 @@ import { branchControls } from "/static/components/branches.js";
 import { connectionsCard } from "/static/components/connections.js";
 import { declinedAccessCard, heldGrantsCard } from "/static/components/declined-access.js";
 import { machinesCard } from "/static/components/machines.js";
+import { rootCheckControl } from "/static/components/root-check.js";
 import { deliberationControl } from "/static/components/deliberation.js";
 import { ladderPanel } from "/static/components/ladder-settings.js";
 import { confirmDialog } from "/static/components/dialog.js";
@@ -266,6 +267,9 @@ export function renderHead(head, detail, stateChip,
       onSave: (machines) => api(`/api/conversations/${slug}`,
         { method: "PATCH", body: { machines } }),
     }));
+  capBody.append(rootCheckControl(detail.root_check, {
+    onSave: (mode) => api(`/api/conversations/${slug}`, { method: "PATCH", body: { root_check: mode } }),
+  }));
   // Own secrets (D216 rank 1): credentials belonging to THIS conversation. The engine has
   // always injected `secrets.d/<slug>.env` into a conversation's util calls — the slug keys
   // the scoped store whichever home it lives in — but there was no way to PUT one there, so

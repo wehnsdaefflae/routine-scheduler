@@ -8,9 +8,11 @@ unbound connection becomes an access REQUEST, never a silent empty string.
 
 from __future__ import annotations
 
+import json
 import logging
 
 from .. import machines, utils_run
+from ..machine_queue import REMOTE_UTIL
 from ..oauth import store as oauth_store
 from .run_context import RunContext
 
@@ -44,13 +46,20 @@ def _connection_env(ctx: RunContext) -> dict[str, str]:
         log.warning("connections: %s", w)
     return env
 
-def _machine_env(ctx: RunContext) -> dict[str, str]:
+def _machine_env(ctx: RunContext, util: str) -> dict[str, str]:
     """The routine's EFFECTIVE remote machines (config bindings + one-time machine grants)
     resolved to RSCHED_MACHINES (connection metadata) + RSCHED_MACHINE_KEYS (private-key
     PEMs), passed to run_util as extra_secrets; only the reserved `remote` util declares them.
     An unresolvable binding is absent. A one-time grant covers EXEC only — mounts come with
     forever-bindings, made by the daemon.
+
+    While the root command check is on, a root machine's key reaches only a DIRECT `remote`
+    call (`util`), the one call it sees (engine/rootcheck.py); a script or util that
+    `calls: remote` gets the machine's metadata without it.
     """
+    from ..machine_privilege import is_root
+    from .rootcheck import run_mode
+
     bound = list(ctx.routine.machines or [])
     bound += [eid.partition(":")[2] for eid in sorted(ctx.granted_now)
               if eid.startswith("machine:") and eid.partition(":")[2] not in bound]
@@ -59,6 +68,11 @@ def _machine_env(ctx: RunContext) -> dict[str, str]:
     env, warnings = machines.machines_for_routine(bound, ctx.server.machines)
     for w in warnings:                       # a broken binding must not fail SILENTLY
         log.warning("machines: %s", w)
+    if util != REMOTE_UTIL and run_mode(ctx) != "off":
+        keys = json.loads(env[machines.MACHINE_KEYS_VAR])
+        env[machines.MACHINE_KEYS_VAR] = json.dumps(
+            {name: pem for name, pem in keys.items() if not is_root(ctx.server, name)},
+            separators=(",", ":"))
     return env
 
 def _routine_secrets(ctx: RunContext) -> dict[str, str]:
@@ -102,7 +116,7 @@ def _decision_env(ctx: RunContext) -> dict[str, str]:
         return {}
     return decision_env_for_routine(ctx.routine.slug, models, ctx.server)
 
-def _extra_secrets(ctx: RunContext) -> dict[str, str]:
+def _extra_secrets(ctx: RunContext, util: str = "") -> dict[str, str]:
     """Engine-resolved, per-run secrets a util may receive (still under the declared-only gate):
     the routine's OWN scoped secrets, OAuth connection access tokens, bound remote-machine
     details/keys, the routine's own inference endpoints and its DECISION catalog. The var names
@@ -118,12 +132,15 @@ def _extra_secrets(ctx: RunContext) -> dict[str, str]:
     routine configured for a local model. Keys cover ROLE endpoints only; any other key stays
     behind its own `secret:<NAME>` grant.
 
+    `util` names the util a DIRECT util call runs; a script's or any other caller's is "", so a
+    root machine's key is left out while the root command check is on (`_machine_env`).
+
     RSCHED_API_TOKEN: always the server's read-only ROUTINE token, UNCONDITIONALLY overriding
     any store value so the primary console token can never reach a util. An empty routine token
     is injected as "" (the call fails visibly with a 401) — never skipped, which would let the
     store's value through.
     """
-    out = {**_routine_secrets(ctx), **_connection_env(ctx), **_machine_env(ctx),
+    out = {**_routine_secrets(ctx), **_connection_env(ctx), **_machine_env(ctx, util),
            **_llm_env(ctx), **_decision_env(ctx)}
     out["RSCHED_API_TOKEN"] = str(ctx.server.routine_token or "")
     out["RSCHED_ROUTINE"] = ctx.routine.slug

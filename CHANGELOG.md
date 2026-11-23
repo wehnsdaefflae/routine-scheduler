@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.597.0] — 2026-11-23
+
+### Added
+- **A run holding a root login has its calls risk-rated before they run.** Each routine and
+  conversation has a **root command check** (`root_check`, *Limits & reach → Root command
+  check*, the conversation header): `remote` — the `remote` util's exec/submit/push/pull to a
+  root machine, the **default** — `any` — every tool call but the run's own steering kinds — or
+  `off`. While a run holds a machine whose login has root rights, the engine asks the routine's
+  decision model (its `decision` role, else the instance default) one yes/no question over the
+  call and **the five calls before it** (in `remote` mode, the commands sent to that machine).
+  Under P(risky) 0.5 the call runs untouched. At or over it, or with no verdict at all, a
+  top-level run files a blocking **root command** approval (`command-approval`) and waits; a
+  child or detached run cannot ask, so its call is refused (`engine/rootcheck.py`, called from
+  `actionroute.dispatch_checked` for every action — background calls on their starting turn;
+  an operator's slash command is not checked).
+- **Every warning can change the setting.** Besides approve and decline it offers, for each
+  other mode, *approve, then check … for this run* and *… from now on*. The engine applies the
+  switch to the run (read back from the transcript, so a resumed leg keeps it); "from now on"
+  is written to routine.yaml by the web at click time, like a forever access decision
+  (`rsched/rootmodes.py`, `web/root_check_answer.py`). A routine-page edit is adopted live.
+- **Who is root is asked of the box** (`rsched/machine_privilege.py`): `id -u; id -Gn` through
+  the `remote` util — uid 0, or membership in sudo/admin/wheel/docker/lxd/root. The Settings
+  **test** records it and a run probes a never-probed machine it holds once; the record is
+  keyed to host+user+port. Never probed counts as root. Settings → Machines shows the answer,
+  machine pickers mark root logins, and `ubuntuserver-root` (user `mark`) probes as root.
+- **While the check is on, a root machine's private key reaches only a direct `remote` call**
+  (`engine/exec_env._machine_env`); a script or a util that `calls: remote` gets the metadata
+  only, so restricted `agent` logins (probed unprivileged) work as before.
+- `root_check` is the operator's own switch: settings patterns do not govern it.
+
 ## [0.596.0] — 2026-11-23
 
 ### Fixed

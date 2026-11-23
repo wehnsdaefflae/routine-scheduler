@@ -203,6 +203,10 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     # A share that did not come up is named as unavailable, not left as an empty dir (R514).
     ctx.mounted_shares = {m.name for m in mounts}
     ctx.unavailable_shares = unavailable
+    # who each bound machine's login is, asked of the box once (rsched/machine_privilege.py)
+    from ..machine_privilege import ensure_probed
+
+    ensure_probed(server, list(cfg.machines or []))
     try:
         engine = EngineLoop(ctx, body, instruction,
                             allowed_tools=allowed_tools, resume=bool(resume_from))

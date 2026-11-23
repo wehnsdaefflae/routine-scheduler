@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import logging
 
+from .. import rootmodes
 from ..config import DELIBERATION_LEVELS, EFFORT_LEVELS
 from ..paths import atomic_write_json, read_json
-from . import assist, deliberation, enginenote
+from . import assist, deliberation, enginenote, rootcheck
 
 log = logging.getLogger("rsched.control")
 
@@ -185,6 +186,8 @@ def _adopt(loop, field: str, value: object) -> None:
             ctx.routine.grants = value
             build_base_policy(loop, value)   # the SAME builder configure() used — see there
             rebuild_policy(loop)
+        elif field == "root_check" and value in rootmodes.MODES:
+            rootcheck.adopt(ctx, str(value))
     except (AttributeError, TypeError, ValueError, OSError) as exc:
         log.warning("config_change: could not adopt %r live (%s) — it lands at the next run",
                     field, exc)

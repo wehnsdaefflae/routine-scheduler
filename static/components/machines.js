@@ -9,7 +9,7 @@
 // A binding whose machine left the catalog stays visible so it can be cleared (it resolves
 // to nothing at run time — the row says so).
 
-import { el, toast, toastError } from "/static/util.js";
+import { chip, el, toast, toastError } from "/static/util.js";
 
 export function machinesCard(catalog, bound, { onSave, onChange }) {
   const checks = {};
@@ -39,6 +39,8 @@ export function machinesCard(catalog, bound, { onSave, onChange }) {
     const tags = (m.tags || []).length ? ` [${m.tags.join(", ")}]` : "";
     box.append(el("label", { class: "row", style: "margin:5px 0;gap:8px;cursor:pointer" },
       cb, el("span", { style: "font-weight:600;min-width:110px" }, m.name),
+      // a root login puts a run holding it under the root command check (root-check.js)
+      m.root ? el("span", { "data-mach-root": "" }, chip("root", "failed")) : null,
       el("span", { class: "muted small" }, meta + tags)));
   }
   for (const name of boundSet) if (!(catalog || []).some((m) => m.name === name)) {

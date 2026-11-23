@@ -40,9 +40,9 @@ from . import accounting, frictions
 #: Every RoutineConfig field is in exactly one of these two sets (tests/test_runrecord.py fails
 #: on a field in neither, so a new field is DECIDED, never hashed by default). BEHAVIOUR is what
 #: a run may use and how far it may go — the config hash covers these and nothing else.
-BEHAVIOUR = frozenset({"models", "efforts", "connections", "machines", "grants", "budgets",
-                       "permissions", "shared_reminders", "capabilities", "fs_read_roots",
-                       "fs_write_roots", "ladder", "chain_actions"})
+BEHAVIOUR = frozenset({"models", "efforts", "connections", "machines", "root_check", "grants",
+                       "budgets", "permissions", "shared_reminders", "capabilities",
+                       "fs_read_roots", "fs_write_roots", "ladder", "chain_actions"})
 #: What does not change what a run DOES: identity, WHEN it runs, retention, `improve`, and what
 #: the fingerprint measures separately (`deliberation`, `rules` by text, `tuning` as recipe).
 #: `outcome` measures a run and changes nothing it may do.

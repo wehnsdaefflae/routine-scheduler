@@ -220,6 +220,9 @@ Each is enforced somewhere — a test, the engine, or a past incident. Long form
   endpoint (`static/questions-store.js`); read models on event paths are memoized single-flight
 - **An exclusive machine's compute is QUEUED, not locked**; the truth is on the box, and an
   unreadable machine is UNKNOWN, never FREE
+- **A run holding a root login has its calls risk-rated** (`engine/rootcheck.py`, the routine's
+  `root_check`): who is root is PROBED on the box, never-probed counts as root, and that
+  machine's key reaches only a direct `remote` call while the check is on
 - **Cost is VOLUME, never `tokens`**; dollars come from one source per route, unpriced stays
   unpriced; cache reads alone cannot tell a working cache from a broken one; the gap between two
   fires is a separate bill (`readmodels/cache_gap.py`)

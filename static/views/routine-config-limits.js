@@ -15,6 +15,7 @@ import { BUDGET_FIELDS, DERIVED_BUDGETS, UNLIMITED_BUDGETS }
 import { connectionsCard } from "/static/components/connections.js";
 import { rootsEditor } from "/static/components/fsroots.js";
 import { machinesCard } from "/static/components/machines.js";
+import { rootCheckControl } from "/static/components/root-check.js";
 import { ladderSwitch } from "/static/components/ladder-settings.js";
 
 /** A number input that reports only a value it can stand behind; anything else snaps back. */
@@ -72,6 +73,8 @@ export function limitsGroup(ctx) {
 
   const machines = fieldBlock(form, "machines", (value, set) =>
     machinesCard(d.machine_catalog || [], value || [], { onChange: set }));
+  const rootCheck = fieldBlock(form, "root_check", (value, set) =>
+    rootCheckControl(value, { onChange: set }));
 
   // The escalation ladder's CONFIG half. It sits with the per-run ceilings because that is what
   // it is — the ladder's RUNG HEIGHT, how deep oversight of this routine may go — and because
@@ -85,8 +88,8 @@ export function limitsGroup(ctx) {
   return settingsGroup({
     form, title: "Limits & reach", hint: "per-run ceilings · filesystem reach",
     keys: ["budgets", "fs_read_roots", "fs_write_roots", "ladder", "keep_runs", "connections",
-           "machines"],
-    moreKeys: ["keep_runs", "connections", "machines"],
+           "machines", "root_check"],
+    moreKeys: ["keep_runs", "connections", "machines", "root_check"],
     digest: () => [describe("keep_runs", form.get("keep_runs")),
                    describe("connections", form.get("connections")),
                    describe("machines", form.get("machines"))].join(" · "),
@@ -124,6 +127,7 @@ export function limitsGroup(ctx) {
         retention.node),
       ...settingsSection({ title: "Connections", id: "connections" }, null, connections.node),
       ...settingsSection({ title: "Machines", id: "machines" }, null, machines.node),
+      ...settingsSection({ title: "Root command check", id: "root-check" }, null, rootCheck.node),
     ],
   });
 }

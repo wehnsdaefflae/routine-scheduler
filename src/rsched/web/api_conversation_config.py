@@ -15,10 +15,12 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict
 
 from .. import conversations as conv_mod
+from .. import machine_privilege
 from ..config import ROUTINE_MODEL_ROLES
 from ..config.base import DEFAULT_LADDER
 from ..engine.ladder import DEFAULT_TURN_INTERVAL, oversight_turns_for
 from ..paths import atomic_write_yaml, read_yaml
+from ..rootmodes import RootCheck
 from . import playbook_offer
 from .api_background import list_background_rows
 from .api_routine_edit import (
@@ -102,9 +104,8 @@ def detail(request: Request, slug: str) -> dict:
         # RSCHED_MACHINES stayed empty however many grants it held). Stale bindings are
         # kept, like routines: the UI flags them clearable.
         "machines": list(info.cfg.machines),
-        "machine_catalog": [{"name": m.name, "description": m.description,
-                             "host": m.host, "user": m.user, "tags": list(m.tags)}
-                            for m in server.machines.values()],
+        "machine_catalog": machine_privilege.catalog_rows(server),
+        "root_check": info.cfg.root_check,
         "permissions": permissions,
         "capabilities": capabilities,
         "rules": list(info.cfg.rules),
@@ -139,6 +140,7 @@ class ConversationPatch(BaseModel):
     models: dict | None = None
     efforts: dict | None = None       # {main|tool_call|uncensored: level} — REPLACE wholesale
     machines: list[str] | None = None   # catalog machine names (D102) — REPLACE wholesale
+    root_check: RootCheck | None = None   # what a root login's run risk-rates (rootmodes)
     connections: dict | None = None   # {provider: account} — bound OAuth connections (D55)
     deliberation: str | None = None   # DELIBERATION_LEVELS — applies at the next reply
     fs_read_roots: list[str] | None = None    # D82: full folder-access lists — REPLACE
@@ -202,6 +204,8 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
         raw["connections"] = validate_connections(updates["connections"])
     if "machines" in updates:
         raw["machines"] = validate_machines(request.app.state.server, updates["machines"])
+    if "root_check" in updates:
+        raw["root_check"] = updates["root_check"]
     repaired: list[str] = []
     # D216 (d): `ladder` is CONFIG and merges into routine.yaml through the SAME applier the
     # routine PATCH uses — it refuses a bad value rather than letting the loader degrade it

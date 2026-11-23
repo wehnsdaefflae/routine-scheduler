@@ -101,6 +101,10 @@ def _not_executed(obs: dict, kind: str) -> str | None:
         return str(obs["message"])
     if obs.get("rejected") and obs.get("reason") and kind not in _OWN_REFUSALS:
         return f"OBSERVATION ({kind} REJECTED): {obs['reason']}"
+    if obs.get("root_check"):
+        # the root command check held it before dispatch, whatever its kind (engine/rootcheck)
+        name = f" {obs['name']}" if obs.get("name") else ""
+        return f"OBSERVATION ({kind}{name} NOT run): {obs['error']}"
     if obs.get("engine_error"):
         # a handler that RAISED — never the kind's renderer, which reads keys a crash never set
         return f"OBSERVATION ({kind} FAILED — engine error): {obs['error']}"

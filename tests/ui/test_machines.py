@@ -149,3 +149,33 @@ def test_conversation_machine_binding(ui, ui_page):
 
     raw = yaml.safe_load((ui.conversations / slug / "routine.yaml").read_text(encoding="utf-8"))
     assert raw["machines"] == ["gpu-box"]
+
+
+
+def test_a_root_login_is_marked_and_the_routine_picks_what_is_checked(ui, ui_page):
+    """A machine never probed counts as root: Settings says so, the routine's machine list
+    marks it, and the routine's root command check — `remote` commands by default — is one
+    draft field the accept writes (docs/remote-machines.md § Root command check)."""
+    from rsched import machine_privilege
+
+    _seed_exclusive_box(ui)
+    ui_page.goto(f"{ui.url}/#/settings?section=machines")
+    row = ui_page.locator('[data-mach="gpu-box"]')
+    expect(row.locator('[data-mach-privilege="unknown"]')).to_contain_text("treated as root")
+    machine_privilege.record(ui.server_cfg.routines_home, "gpu-box",
+                             ui.server_cfg.machines["gpu-box"], privileged=False, why="uid 1000")
+    ui_page.reload()
+    expect(row.locator('[data-mach-privilege="user"]')).to_contain_text("unprivileged login")
+    (ui.server_cfg.routines_home / ".control" / "machine-privilege" / "gpu-box.json").unlink()
+
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    unfold(ui_page)
+    expect(ui_page.locator("#sec-machines + .panel [data-mach-root]")).to_have_count(1)
+    select = ui_page.locator("[data-root-check]")
+    expect(select).to_have_value("remote")
+    select.select_option("any")
+    ui_page.locator(".accept-bar [data-accept]").click()
+    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("accepted")
+    path = ui.routine_dir("uir") / "routine.yaml"
+    until(lambda: yaml.safe_load(path.read_text(encoding="utf-8")).get("root_check") == "any",
+          what="the accepted root command check")
