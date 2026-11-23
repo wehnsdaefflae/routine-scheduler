@@ -18,7 +18,7 @@ import { liveTail } from "/static/stream.js";
 import { forgetField } from "/static/formpersist.js";
 import { familyOf, forkAt, rewindTo } from "/static/components/branches.js";
 import { flagRefusal } from "/static/components/refusalflag.js";
-import { playbookRow } from "/static/components/playbook-row.js";
+import { finalOffer, playbookRow } from "/static/components/playbook-row.js";
 import { createChat, typedBody, userEcho } from "/static/components/chat.js";
 import { createArtifacts } from "/static/components/artifacts.js";
 import { createBackgroundTasks } from "/static/components/bg-tasks.js";
@@ -241,13 +241,13 @@ export async function render(view, slug, _query = {}) {
                { slug, isLive: () => !TERMINAL.has(curState), onListChanged: loadList,
                  family: () => familyOf(items, slug) });   // pt 5: no /lineage with no family
     const chatBox = el("div", { class: "conv-chat" });
-    // the echo box sits AFTER the chat so the pending bubble always renders below the
-    // transcript history, which streams in asynchronously (F295)
+    // the echo box sits AFTER the chat so the pending bubble renders below the async transcript history (F295); D307's offer for a FINISHED conversation goes between them, reading as the line under its last reply
     const echoBox = el("div", { class: "chat-echo" });
+    const pbFinal = finalOffer(slug, detail);
     const waiting = el("div", {});
     const questionBox = el("div", {});
     const composer = buildComposer();
-    main.replaceChildren(head, chatBox, echoBox, waiting, questionBox, composer.node);
+    main.replaceChildren(head, chatBox, pbFinal.node, echoBox, waiting, questionBox, composer.node);
     if (pendingEcho) { pendingEcho.node = echoNode(); echoBox.append(pendingEcho.node); }
 
     artBody.replaceChildren();
@@ -334,7 +334,7 @@ export async function render(view, slug, _query = {}) {
       phaseGraph.setPhase(WORKING.has(s) ? "working" : "waiting for you");
       composer.setLive(!TERMINAL.has(s));
       if (TERMINAL.has(s)) { chat.finishOpenFold(); artifacts.refresh(); subRunTree?.refresh();
-                             fileActivity?.refresh(); scripts.refresh(); }
+                             fileActivity?.refresh(); scripts.refresh(); pbFinal.refresh(); }
       bgTasks.refresh();     // a finished detached task wakes the conversation → catch it here
     };
     setState(detail.state);

@@ -23,7 +23,7 @@ way it worked last time" (reuse) and "that was right — remember how to do it" 
 | Move | Where | What happens |
 |---|---|---|
 | **Reuse** | The playbook **list** above the message box on the *new conversation* screen — one card per playbook, its *when*, its axis and its tags readable without a click | The playbook's brief seeds the conversation; your first message just *specializes* it (and can be left empty). |
-| **Capture** | **Save as playbook** button in a conversation | The system model reads the conversation — your intent plus the procedure that satisfied it — and writes a new, generalized playbook to the library. |
+| **Capture** | Under the **last reply** of a finished conversation — *"This conversation is done — save it as a playbook?"* — and, at any time, the **save as playbook** button under the composer | The system model reads the conversation — your intent plus the procedure that satisfied it — and writes a new, generalized playbook to the library. |
 | **Refine** | **Update playbook** button (only when the conversation was started from a playbook) | The same distillation, but folded back into the playbook you started from — so it absorbs the corrections you made this time. |
 
 All three are one click. Capture and Refine commit straight to the library; there's no approval
@@ -58,10 +58,15 @@ agent actually took — into a generalized playbook:
 - it picks a **generalization axis** and turns the things that should vary into `{{parameters}}`,
 - and it writes a one-line **when** (when to reach for this playbook) and a few **tags**.
 
-When a conversation has done substantial work (eight turns or more, finished), the console asks
-first, above the button: *"This conversation did real work — 23 turns — distil the procedure that
-satisfied it into a playbook?"* — one prompt at the right moment, not a nag on every conversation.
-Started from a playbook, the same line offers the refinement instead.
+The console asks for itself at the two moments it is worth asking, and never at both: when a
+conversation **has ended** — the reply that declares itself final — the offer renders under that
+last reply, *"This conversation is done — save it as a playbook?"*, with the save button beside
+it; and when a conversation **did substantial work** (eight turns or more, finished) but may yet
+do more, the prompt appears above the composer button instead: *"This conversation did real
+work — 23 turns — distil the procedure that satisfied it into a playbook?"* One prompt at the
+right moment, not a nag on every conversation. Started from a playbook, both offer the
+refinement instead. The server decides which (`src/rsched/web/playbook_offer.py`); the ghost
+button under the composer stays for the conversations neither reason covers.
 
 Save always creates a **new** playbook (the slug is suffixed if it collides). A toast tells you the
 slug and the axis it chose. If the axis or steps aren't quite right, open the playbook in the

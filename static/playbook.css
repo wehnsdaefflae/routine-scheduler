@@ -108,3 +108,27 @@
 
 /* The undo. A ghost button already, so this only pulls it under its card. */
 .pb-fresh { margin-left: var(--s1); }
+
+/* D307's SECOND place: the offer under a conversation's FINAL reply
+   (components/playbook-row.js `finalOffer`). It sits between the chat and the composer, so it
+   has to read as the line under that last reply rather than as a banner of its own: the
+   affirmative tint the selected card uses, indented to the assistant bubble's side, and the
+   save control on the same line as the question. */
+.pb-final {
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+  flex-wrap: wrap;
+  margin: var(--s1) 0 var(--s2);
+  padding: var(--s2) var(--s3);
+  background: var(--signal-dim);
+  border: 1px solid color-mix(in srgb, var(--signal) 38%, transparent);
+  border-radius: var(--r2);
+}
+
+/* The question itself — the conversation's own ending, stated once. */
+.pb-final-ask {
+  flex: 1 1 auto;
+  font-size: var(--t-m);
+  color: var(--ink);
+}

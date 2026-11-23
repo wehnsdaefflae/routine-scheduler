@@ -46,6 +46,13 @@ class RunInfo:
     updated: str = ""
     model: str = ""              # the engine's resolved "<endpoint>/<model>" for this run
     elapsed_s: int | None = None   # active wall-clock (final write = the run's duration)
+    # A conversation REPLY's own `final` declaration (the finish action's field, written to
+    # status.json by run_context.write_status): True = this reply delivered what was asked and
+    # the conversation is done, False = it handed back with goals still open, None = never
+    # declared (every routine run, and a conversation reply that predates the field). A resumed
+    # leg rewrites status.json from its own context, so what stands here is always the NEWEST
+    # reply's declaration, never an older one's.
+    final: bool | None = None
     # status.json's `budgets` block as written (engine/turnwindow.status_budgets): what makes
     # `turn` legible — the resume base turn and the window's ceiling it is counted against.
     budgets: dict = field(default_factory=dict)
@@ -162,6 +169,8 @@ def _read_run_fresh(run_dir: Path, slug: str) -> RunInfo:
         info.usage = st.get("usage") or {}
         info.question = st.get("question")
         info.updated = st.get("updated", "")
+        f = st.get("final")
+        info.final = f if isinstance(f, bool) else None
         b = st.get("budgets")
         info.budgets = b if isinstance(b, dict) else {}
         if st.get("elapsed_s") is not None:

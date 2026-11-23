@@ -1,5 +1,6 @@
 """Derived catalog, run index, cron math, retention."""
 
+import json
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -82,6 +83,38 @@ def test_scan_catalog(make_routine, tmp_path):
     assert [r.ts for r in alpha.runs] == ["20260707-070000", "20260706-070000"]
     assert alpha.active_run and alpha.active_run.state == "running"
     assert alpha.runs[1].summary == "did the thing"
+
+
+def test_a_replys_final_declaration_is_read_off_its_status(make_routine):
+    """D307: `final` is the finish action's own field for a conversation reply — "this reply
+    delivered what was asked". run_context writes it to status.json, where nothing read it
+    until the playbook offer needed to know a conversation had ENDED. Three values, three
+    meanings, and the absent case must stay None rather than becoming False: a routine run and
+    a reply that declared itself unfinished are not the same thing."""
+    d = make_routine(slug="declared")
+    for ts, final in (("20260706-070000", True), ("20260707-070000", False)):
+        run = _mk_run(d, ts, "finished", "a reply")
+        status = json.loads((run / "status.json").read_text(encoding="utf-8"))
+        status["final"] = final
+        atomic_write_json(run / "status.json", status)
+    _mk_run(d, "20260708-070000", "finished", "a routine run declares nothing")
+    runs = {r.ts: r for r in registry.run_index(d, "declared")}
+    assert runs["20260706-070000"].final is True
+    assert runs["20260707-070000"].final is False
+    assert runs["20260708-070000"].final is None
+
+
+def test_a_non_boolean_final_is_no_declaration_at_all(make_routine):
+    """The field is a tri-state read by `is True` / `is False`, so a junk value has to land as
+    None. A truthiness read would make the string below mean "this conversation is done" and
+    offer a playbook on a conversation that never ended."""
+    d = make_routine(slug="junk")
+    run = _mk_run(d, "20260706-070000", "finished", "a reply")
+    status = json.loads((run / "status.json").read_text(encoding="utf-8"))
+    status["final"] = "yes"
+    atomic_write_json(run / "status.json", status)
+    [info] = registry.run_index(d, "junk")
+    assert info.final is None
 
 
 def test_next_fire(make_routine):
