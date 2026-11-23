@@ -11,6 +11,7 @@ import { referChip } from "/static/components/referchip.js";
 import { filePicker } from "/static/components/filepicker.js";
 import { mountComposerOnly, prefillComposer } from "/static/views/conversations-new.js";
 import { renderHead } from "/static/views/conversations-head.js";
+import { createConversationList } from "/static/views/conversations-list.js";
 import { api, apiUpload } from "/static/api.js";
 import { questionPanel } from "/static/components/answerform.js";
 import { navigate } from "/static/router.js";
@@ -37,13 +38,7 @@ import { TERMINAL, WORKING } from "/static/states.js";
 
 export async function render(view, slug, _query = {}) {
   view.classList.add("conv-view");
-  const sideList = el("div", { class: "conv-list" });
-  const tagSel = el("select", { class: "conv-tagsel", "data-nopersist": "", title: "filter by tag" });
-  const search = el("input", { type: "search", placeholder: "search…" });
-  const newBtn = el("a", { class: "btn primary small", href: "#/conversations" }, "+ new");
-  const sideBody = el("div", { class: "pane-body" },
-    el("div", { class: "row", style: "gap:6px" }, search, newBtn),
-    el("div", { class: "row", style: "gap:6px" }, tagSel), sideList);
+  const sideBody = el("div", { class: "pane-body" });
   const main = el("section", { class: "conv-main" });
   const artBody = el("div", { class: "pane-body" });
 
@@ -62,7 +57,6 @@ export async function render(view, slug, _query = {}) {
   wireRunRail(sideRail, "left");
   wireRunRail(artRail, "right");
 
-  let items = [], activeTag = "";
   let cleanup = [];   // per-mount teardowns (tail, timers, artifact blobs)
   // Set by the view's teardown. A remount can still be on its way when the view goes — the
   // one 700 ms after a send, or one already awaiting its detail read — and whatever it armed
@@ -112,86 +106,11 @@ export async function render(view, slug, _query = {}) {
   }
 
   // ---- sidebar --------------------------------------------------------------------------------
-  // The list reloads on a 20 s timer, on run events and after a rename or a tag edit — reads
-  // that overlap and answer out of order. Only the newest one paints: a read begun before a
-  // rename used to land after it and put the old title back.
-  let listSeq = 0;
-  async function loadList() {
-    const seq = ++listSeq;
-    let next;
-    try { next = await api("/api/conversations"); }
-    catch (err) {
-      if (seq !== listSeq) return;
-      const retry = el("button", { class: "btn small", onclick: loadList }, "retry");
-      sideList.replaceChildren(el("div", { class: "empty" },
-        el("div", {}, `couldn't load conversations: ${err.message}`), retry));
-      return;
-    }
-    if (seq !== listSeq) return;
-    items = next;
-    renderList();
-  }
+  // Its own module (views/conversations-list.js): which conversations exist is read and changed
+  // separately from the one being read, and this file is at its size ceiling.
+  const sideHost = createConversationList(sideBody, { view, onCurrent: () => slug });
+  const loadList = sideHost.loadList;
 
-  // One shared hover card: the list rows stay one line each; snippet, tags, and state
-  // detail appear beside the row on hover instead of costing permanent vertical space.
-  let hover = null, hoverHideT = 0;
-  const hideHover = () => { clearTimeout(hoverHideT); if (hover) hover.hidden = true; };
-  function showHover(row, it) {
-    if (!hover) {
-      hover = el("div", { class: "conv-hover", hidden: true });
-      view.append(hover);
-    }
-    clearTimeout(hoverHideT);
-    const when = it.updated ? relTime(it.updated) : "no replies yet";
-    hover.replaceChildren(...[
-      el("div", { class: "conv-hover-title" }, it.title || it.slug),
-      el("div", { class: "faint small" },
-        `${it.state} · ${when}${it.turns ? ` · ${it.turns} turns` : ""}`),
-      it.snippet ? el("div", { class: "conv-hover-snippet" }, it.snippet) : null,
-      it.tags?.length ? el("div", { class: "conv-hover-tags" },
-        ...it.tags.map((t) => el("span", { class: "tag" }, t))) : null,
-      it.question ? el("div", { class: "small", style: "color:var(--warn)" }, "❓ waiting for you") : null,
-    ].filter(Boolean));
-    hover.hidden = false;
-    const r = row.getBoundingClientRect();
-    hover.style.left = Math.min(r.right + 8, window.innerWidth - 300) + "px";
-    hover.style.top = Math.min(r.top, window.innerHeight - hover.offsetHeight - 12) + "px";
-  }
-
-  function renderList() {
-    const q = search.value.trim().toLowerCase();
-    const tags = [...new Set(items.flatMap((i) => i.tags || []))].sort();
-    tagSel.replaceChildren(
-      el("option", { value: "" }, "all tags"),
-      ...tags.map((t) => el("option", { value: t, ...(t === activeTag ? { selected: true } : {}) }, t)));
-    tagSel.hidden = !tags.length;
-    const shown = items.filter((i) =>
-      (!activeTag || (i.tags || []).includes(activeTag))
-      && (!q || `${i.title} ${i.snippet} ${(i.tags || []).join(" ")}`.toLowerCase().includes(q)));
-    sideList.replaceChildren();
-    hideHover();
-    if (!shown.length) {
-      sideList.append(emptyState("💬", items.length ? "No matches" : "No conversations yet",
-        items.length ? "" : "Start one — the first message is the task."));
-      return;
-    }
-    for (const it of shown) {
-      const row = el("a", {
-        class: `conv-item${it.slug === slug ? " on" : ""}`,
-        href: `#/conversations/${it.slug}` },
-        el("span", { class: `dot ${it.state}`, role: "img", title: it.state,
-          "aria-label": `state: ${it.state}` }),
-        el("span", { class: "conv-title" }, it.title || it.slug),
-        it.question ? el("span", { class: "conv-q", title: "waiting for you" }, "❓") : null,
-        el("span", { class: "conv-when" }, relTime(it.updated)));
-      row.addEventListener("mouseenter", () => showHover(row, it));
-      row.addEventListener("mouseleave",
-        () => { hoverHideT = setTimeout(() => { if (hover) hover.hidden = true; }, 120); });
-      sideList.append(row);
-    }
-  }
-  search.oninput = renderList;
-  tagSel.onchange = () => { activeTag = tagSel.value; renderList(); };
 
   // ---- the center pane ------------------------------------------------------------------------
   const unmount = () => { for (const fn of cleanup.splice(0)) { try { fn(); } catch { /* gone */ } } };
@@ -239,13 +158,12 @@ export async function render(view, slug, _query = {}) {
     const head = el("div", { class: "conv-head" });
     renderHead(head, detail, stateChip,
                { slug, isLive: () => !TERMINAL.has(curState), onListChanged: loadList,
-                 family: () => familyOf(items, slug) });   // pt 5: no /lineage with no family
+                 family: () => familyOf(sideHost.rows(), slug) });   // pt 5: no /lineage with no family
     const chatBox = el("div", { class: "conv-chat" });
-    // the echo box sits AFTER the chat so the pending bubble renders below the async transcript history (F295); D307's offer for a FINISHED conversation goes between them, reading as the line under its last reply
+    // the echo box sits AFTER the chat so the pending bubble always renders below the
+    // transcript history, which streams in asynchronously (F295)
     const echoBox = el("div", { class: "chat-echo" });
-    const pbFinal = finalOffer(slug, detail);
-    const waiting = el("div", {});
-    const questionBox = el("div", {});
+    const pbFinal = finalOffer(slug, detail), waiting = el("div", {}), questionBox = el("div", {});
     const composer = buildComposer();
     main.replaceChildren(head, chatBox, pbFinal.node, echoBox, waiting, questionBox, composer.node);
     if (pendingEcho) { pendingEcho.node = echoNode(); echoBox.append(pendingEcho.node); }
@@ -334,7 +252,7 @@ export async function render(view, slug, _query = {}) {
       phaseGraph.setPhase(WORKING.has(s) ? "working" : "waiting for you");
       composer.setLive(!TERMINAL.has(s));
       if (TERMINAL.has(s)) { chat.finishOpenFold(); artifacts.refresh(); subRunTree?.refresh();
-                             fileActivity?.refresh(); scripts.refresh(); pbFinal.refresh(); }
+                             fileActivity?.refresh(); scripts.refresh(); }
       bgTasks.refresh();     // a finished detached task wakes the conversation → catch it here
     };
     setState(detail.state);
@@ -352,6 +270,7 @@ export async function render(view, slug, _query = {}) {
                            pendingEcho.node?.remove(); pendingEcho = null;   // the real bubble takes over (F295)
                          }
                          chat.add(ev); scrollDown();
+                         if (ev.type === "finish") pbFinal.refresh(ev.payload?.final === true);
                          if (ev.type === "child_start" || ev.type === "child_end") subRunTree?.poke();
                          if (ev.type === "observation" && ["read_file", "view_image", "write_file",
                              "edit_file"].includes(ev.payload?.kind)) fileActivity?.poke(); },

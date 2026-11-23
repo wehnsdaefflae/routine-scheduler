@@ -116,12 +116,27 @@ export function finalOffer(slug, detail) {
   };
 
   paint(detail);
+  let asked = false;
   return {
     node,
-    /** Re-read the detail and repaint — the conversation just became terminal. */
-    async refresh() {
+    /**
+     * Repaint because a reply just DECLARED ITSELF FINAL — and only then.
+     *
+     * This costs a detail read, and a send makes a conversation terminal for a moment, so
+     * refreshing on every terminal transition spends one read per message sent. The browser
+     * guard `test_a_send_resumes_the_tail_instead_of_remounting_the_view` holds exactly that
+     * line and caught it: a send must not re-read `/api/conversations/{slug}`. The caller
+     * therefore passes the finish event's own `final` flag — the live tail already carries it —
+     * and an ordinary ending asks for nothing. The offer is re-derived from the server on the
+     * next mount regardless, so a missed repaint costs a page view, never the offer.
+     *
+     * Once per conversation: a second final reply cannot add a second ask.
+     */
+    async refresh(isFinal) {
+      if (!isFinal || asked) return;
+      asked = true;
       try { paint(await api(`/api/conversations/${slug}`)); }
-      catch { /* a failed read leaves what is already rendered; the next one repaints */ }
+      catch { asked = false; /* a failed read repaints on the next final reply */ }
     },
   };
 }
