@@ -4,20 +4,37 @@ from pathlib import Path
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
 MD_MODULE = "/static/md.js"
-HELPERS = ("mdInline", "md", "clampedBody", "summaryLine", "outcomeLine")
+#: `components/prose.js` is console prose: the same `md`/`mdInline` with every item id in them
+#: linked to its item (b9). It PROVIDES both names, so importing them from there satisfies this
+#: invariant exactly as importing them from `md.js` does — what the check exists to catch is a
+#: call to a name the module never imported, which is a ReferenceError the moment it renders,
+#: and that is about whether a BINDING exists rather than about which module supplied it.
+PROSE_MODULE = "/static/components/prose.js"
+#: Which module each helper may come from. Only the two the prose module re-exports have a
+#: second source; a call to `summaryLine` still has to reach `md.js`, where it is defined.
+SOURCES = {
+    "mdInline": (MD_MODULE, PROSE_MODULE),
+    "md": (MD_MODULE, PROSE_MODULE),
+    "clampedBody": (MD_MODULE,),
+    "summaryLine": (MD_MODULE,),
+    "outcomeLine": (MD_MODULE,),
+}
+HELPERS = tuple(SOURCES)
 
 
 def _js_files():
-    # md.js itself DEFINES the helpers; every other module must import to use them.
+    # md.js itself DEFINES the helpers; every other module must import to use them. prose.js
+    # defines its own `md`/`mdInline` wrappers around them, so it is exempt for those two the
+    # same way — and the guard below pins that it really does import what it wraps.
     return sorted(p for p in STATIC.rglob("*.js") if p.name != "md.js")
 
 
-def _imported_from_md(text: str) -> set[str]:
+def _imported_from(text: str, module: str) -> set[str]:
     names: set[str] = set()
-    pattern = r'import\s*\{([^}]*)\}\s*from\s*"' + re.escape(MD_MODULE) + r'"'
+    pattern = r'import\s*\{([^}]*)\}\s*from\s*"' + re.escape(module) + r'"'
     for m in re.finditer(pattern, text):
         for part in m.group(1).split(","):
-            part = part.strip()
+            part = part.strip().split(" as ")[0].strip()
             if part:
                 names.add(part)
     return names
@@ -68,28 +85,36 @@ def test_md_helpers_are_imported_where_used():
     for path in _js_files():
         source = path.read_text(encoding="utf-8")
         text = _without_comments(source)
-        imported = _imported_from_md(text)
+        served = f"/static/{path.relative_to(STATIC).as_posix()}"
         for name in HELPERS:
-            if _calls(text, name) and name not in imported:
-                rel = path.relative_to(STATIC.parent)
-                problems.append(f"{rel}: calls {name}() but never imports it from {MD_MODULE}")
+            if not _calls(text, name):
+                continue
+            # The module that DEFINES a name does not import it (md.js is excluded above;
+            # prose.js defines its own md/mdInline around md.js's, which the next guard pins).
+            if served in SOURCES[name]:
+                continue
+            sources = SOURCES[name]
+            if any(name in _imported_from(text, module) for module in sources):
+                continue
+            rel = path.relative_to(STATIC.parent)
+            problems.append(f"{rel}: calls {name}() but never imports it from "
+                            f"{' or '.join(sources)}")
     assert not problems, "unimported md-helper usage (ReferenceError at runtime):\n" + "\n".join(problems)
+
+
+def test_the_prose_module_really_wraps_the_renderer_it_stands_in_for():
+    """`prose.js` is accepted as a source of `md`/`mdInline` above, so it has to BE one: it must
+    import both from `md.js` and it must linkify what it returns, or the exemption would let a
+    module satisfy the import check while rendering nothing (b9)."""
+    text = _without_comments((STATIC / "components" / "prose.js").read_text(encoding="utf-8"))
+    from_md = _imported_from(text, MD_MODULE)
+    assert {"md", "mdInline"} <= from_md, f"prose.js imports {from_md} from {MD_MODULE}"
+    assert "linkifyKnownRefs" in _imported_from(text, "/static/components/reflinks.js")
 
 
 API_MODULE = "/static/api.js"
 API_HELPERS = ("openStreamCount",    # F263 stream-count gauge — used by stream.js + trace.js
                "onRequestTiming")    # F858 request-latency hook — used by trace.js
-
-
-def _imported_from(text: str, module: str) -> set[str]:
-    names: set[str] = set()
-    pattern = r'import\s*\{([^}]*)\}\s*from\s*"' + re.escape(module) + r'"'
-    for m in re.finditer(pattern, text):
-        for part in m.group(1).split(","):
-            part = part.strip()
-            if part:
-                names.add(part)
-    return names
 
 
 def test_api_stream_gauge_is_imported_where_used():

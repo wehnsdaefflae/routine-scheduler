@@ -24,7 +24,7 @@
 //                        frees the tree). Omitted = this transcript owns its own.
 
 import { actionTime } from "/static/components/actiontime.js";
-import { md, mdInline } from "/static/md.js";
+import { md, mdInline } from "/static/components/prose.js";   // b9: prose with its ids linked
 import { answerForm } from "/static/components/answerform.js";
 import { closingAsks } from "/static/components/closing-asks.js";
 import { highlightJson } from "/static/components/code.js";

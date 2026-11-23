@@ -32,7 +32,7 @@ import { answerForm } from "/static/components/answerform.js";
 import { isDeliverable } from "/static/components/artifacts.js";
 import { commandResult } from "/static/components/command-result.js";
 import { handbackCard, isHandback } from "/static/components/handback-card.js";
-import { md, mdInline } from "/static/md.js";
+import { md, mdInline } from "/static/components/prose.js";   // b9: prose with its ids linked
 import { el, fmtTime, fmtTokens } from "/static/util.js";
 
 const NEW_TOPIC = /^\s*\[new-topic\]\s*(.*)$/;

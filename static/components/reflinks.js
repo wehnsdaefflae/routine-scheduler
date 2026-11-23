@@ -10,8 +10,12 @@ import { flash } from "/static/landing.js";
 import { loadRefTitles, onTitles, titleOf, titlesLoaded } from "/static/ref-titles.js";
 
 // Unbounded digits: the R namespace passes R10000, and a capped pattern left every id past it
-// as plain text.
-const REF_RE = /\b([FDR]\d+)\b/g;
+// as plain text. The optional LETTER SUFFIX is a real part of the namespace, not a courtesy:
+// `F557b` is in the ledger today, and a run names a follow-on increment `D307b` while it builds
+// it — without the suffix the pattern matched `D307` and left a stray `b` outside the link,
+// which both mislinks and reads as a typo (the operator, 2026-11-23: *"ids like D306, D307,
+// D307b, or D310 in messages should all be hyperlinks to the actual item"*).
+const REF_RE = /\b([FDR]\d+[a-z]?)\b/g;
 
 // The one address of an item's card — every link to one is built here, so no call site
 // leaves an id unencoded beside an encoded one.
@@ -60,7 +64,7 @@ function paint(a, id) {
   a.title = `${id}: ${subject}\n(jump to it on the Messages page)`;
 }
 
-export function linkifyRefs(root) {
+function walkAndLink(root, wanted) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: (n) => (n.parentElement?.closest("a, code, pre, button, select, textarea, summary")
       ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
@@ -75,12 +79,42 @@ export function linkifyRefs(root) {
     let last = 0;
     REF_RE.lastIndex = 0;
     for (const m of n.nodeValue.matchAll(REF_RE)) {
+      if (!wanted(m[1])) continue;
       frag.append(n.nodeValue.slice(last, m.index));
       frag.append(refLink(m[1]));
       last = m.index + m[1].length;
     }
+    if (last === 0) continue;       // nothing in this node was wanted: leave it exactly as it is
     frag.append(n.nodeValue.slice(last));
     n.replaceWith(frag);
+  }
+  return root;
+}
+
+export function linkifyRefs(root) {
+  return walkAndLink(root, () => true);
+}
+
+/**
+ * Linkify ONLY the ids the item index actually carries — the variant that is safe on prose
+ * nobody wrote as a maintenance record.
+ *
+ * `linkifyRefs` links every `F63`/`D14`/`R7` token by pattern, which is right for the Messages
+ * page and wrong for a run's narration: there a bare `D1` or `F5` is ordinary text far more
+ * often than an item, and a link to a card that does not exist is worse than no link. So this
+ * asks the shared subject index first and leaves anything it does not know as the text it was.
+ *
+ * TWO PASSES, and the first one is synchronous. The index is read once per session, so the
+ * first prose on a cold page renders before it lands; linking only then would make a link
+ * arrive a frame after the words, which reads as ids that link sometimes. So: link what is
+ * known NOW, and when the read lands walk the same node again for the rest. A node already
+ * linked is skipped by the walker's own `a` rejection, so the second pass cannot double-link.
+ */
+export function linkifyKnownRefs(root) {
+  walkAndLink(root, (id) => Boolean(titleOf(id)));
+  if (!titlesLoaded()) {
+    loadRefTitles();
+    onTitles(() => walkAndLink(root, (id) => Boolean(titleOf(id))));
   }
   return root;
 }
