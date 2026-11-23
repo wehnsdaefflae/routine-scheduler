@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.596.0] — 2026-11-23
+
+### Fixed
+- **The `report` bullet now names the one pairing `closes` requires** (F942). It said a reply
+  without `closes` is "a new open report waiting for one more reply" and never that `closes` is
+  valid only BESIDE `answers` or `settles` — so a run filing an originating notice set it and
+  lost the turn to a schema refusal. That refusal is the fleet's most repeated live one: **8
+  rejections across 5 routines on 4 separate days** (`deficit-coach`, `fau`, `feeld-android`,
+  `scheduler-builder`, `self-audit` — twice in one run), every one a wasted turn on a contract
+  the run had read. The refusal itself was already exemplary and tested; what was missing is
+  that the always-on prose teaches the rule BEFORE a run earns it. The clause now names
+  `` `answers`/`settles` `` and says a bare closure is refused, and a new guard in
+  `tests/test_report_closes_refusal.py` pins it — red on the old wording, proven on a scratch
+  checkout. Two wordier sentences in the same bullet paid for the addition, so the always-on
+  contract **shrank by 2 characters** (`tests/prompt_budget.json` 58132 → 58130) instead of
+  growing; `docs/prompt-anatomy.md` and its string pin follow the new text.
+
 ## [0.595.0] — 2026-11-23
 
 ### Added

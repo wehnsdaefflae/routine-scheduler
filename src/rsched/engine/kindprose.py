@@ -219,11 +219,12 @@ which it reads on its NEXT SCHEDULED RUN — nothing is started and nobody is in
 Naming no owner is always allowed; guessing wrong sends the work to someone who will bounce it.
 A report addressed to YOU arrives in its own prompt section — act on it, or close it by \
 reporting back to the sender, IN THIS RUN: once you finish, \
-nothing is left that can close it but a person reading the ledger. A reply that completes the \
-exchange sets `closes: true` so the thread ends settled — without it your answer is itself a \
-new open report waiting for one more reply; a message marked "no reply needed" gets none.
-FOLD a row rather than merely naming it: naming leaves it exactly where it was, to be routed \
-again next pass, and a fold is also how you add to a thread you already have open instead of \
+only a person reading the ledger can close it. A reply that completes the \
+exchange sets `closes: true` BESIDE its `answers`/`settles` — alone it is refused, an \
+originating notice completing nothing; without it your answer is a new open report awaiting one \
+more reply; a message marked "no reply needed" gets none.
+FOLD a row rather than naming it: naming leaves it to be routed \
+again next pass, and a fold also adds to a thread you already have open instead of \
 opening a second one. \
 Make a report a DECISION FOR THE USER (at most {ask_options_max} choices) \
 the moment you are blocked on a call only he \

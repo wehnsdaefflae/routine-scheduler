@@ -99,7 +99,7 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "docstring HEADER violations",
         # the terminal acknowledgment (kindsurface report bullet + ACTION_SCHEMA `closes`):
         # a reply that completes an exchange ends the thread settled instead of ratcheting
-        "sets `closes: true` so the thread ends settled",
+        "sets `closes: true` BESIDE its `answers`/`settles`",
         "it settles its target(s) AND is itself born settled",
         # the FOLD (F492) + the open-thread cap (D110): routing that leaves the original
         # behind is a copy, and a cap is only fair beside an operation that can consolidate.

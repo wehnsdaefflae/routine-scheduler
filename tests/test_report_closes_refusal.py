@@ -84,6 +84,25 @@ def test_a_fold_carrying_a_closure_is_refused_where_it_is_built(tmp_path):
     assert read_reports(reports_path(home)) == []
 
 
+def test_the_report_bullet_teaches_the_pairing_before_a_run_is_refused_for_it():
+    """F942: the refusal above was exemplary and runs kept earning it anyway — 8 rejections
+    across 5 routines in 4 days — because the always-on `report` bullet said only that a reply
+    without `closes` is "a new open report waiting for one more reply" and never that `closes`
+    needs `answers` or `settles` beside it, so a run filing an originating notice set it and
+    lost the turn. A refusal that teaches is the second line of defence; the bullet every turn
+    carries is the first.
+    """
+    from rsched.engine.kindprose import kind_bullets
+
+    bullet = kind_bullets({"report"}, util_confirm="", ask_timeout_min=480)
+    assert "`answers`/`settles`" in bullet, bullet
+    assert "refused" in bullet, bullet
+    # and the refusal it warns about must still be the one the grammar gives, so the bullet
+    # cannot drift into describing a rule that no longer exists
+    problems = validate_action({"say": "s", "kind": "report", "title": "fyi", "closes": True})
+    assert any("answers" in p and "settles" in p for p in problems), problems
+
+
 def test_a_fold_that_also_settles_its_rows_is_the_accepted_form(tmp_path):
     """The way through, which the refusal's message teaches: say what is settled. A fold that
     genuinely ends the rows it took over names them in `settles` and may then be born settled.
