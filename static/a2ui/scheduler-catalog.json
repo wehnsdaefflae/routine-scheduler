@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://routine-scheduler.local/a2ui/v1_0/catalogs/scheduler/catalog.json",
+  "protocolVersion": "1.0",
+  "title": "routine-scheduler catalog",
+  "description": "The components this console needs that the A2UI Basic Catalog has no equivalent for. It EXTENDS basic rather than replacing it (D310, the operator's answer a-rich-plus, 2026-11-23): a surface's default catalogId stays the basic catalog, and a component reaches these by naming this catalogId in its own @catalogId — which is how the protocol spells mixable catalogs. Nothing here duplicates a basic component: a decision's prose is basic Text, its options are a basic ChoicePicker, its submit is a basic Button. These three are the surfaces a general catalog cannot carry, because they render this system's own artefacts.",
+  "catalogId": "https://routine-scheduler.local/a2ui/v1_0/catalogs/scheduler/catalog.json",
+  "instructions": "Use the Basic Catalog for everything it covers — text, layout, inputs, buttons, cards, tabs, modals. Reach for a component here only when the thing being shown IS one of this system's artefacts:\n\n- `RunTranscript` when the point is what a run DID: it renders turns as action/observation pairs with their own narration, which no arrangement of Text and Column reproduces readably.\n- `DiffView` when the point is a CHANGE to a file: a unified diff with per-line gutters, so a reader can see what a patch would do before approving it.\n- `GateVerdict` when the point is whether a candidate PASSED: the stages, their seconds and the failures, as one block that is scannable at a glance.\n\nEvery one of them takes its content from the data model by binding, never inline — the payloads are large and are updated by `updateDataModel` as a run progresses. Give each an `@accessibility.label` naming what it shows ('the gate verdict for 0.600.0'), because none of the three has a visible title of its own.",
+  "components": {
+    "RunTranscript": {
+      "type": "object",
+      "description": "One run's turns, as the console renders them: each turn an action with its narration and the observation that came back. Bound to an array in the data model, because a transcript grows while it is being watched.",
+      "properties": {
+        "component": {
+          "const": "RunTranscript"
+        },
+        "turns": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "An array of turn objects, each with `turn` (number), `say` (string), `kind` (string) and optionally `observation` (string) and `usage` (object). Bind it with {\"@path\": …}: a transcript is large and is replaced by updateDataModel as the run proceeds."
+        },
+        "runId": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "The run this transcript belongs to, shown as its heading and used as the link target when `linkable` is true."
+        },
+        "linkable": {
+          "$ref": "common_types.json#/$defs/DynamicBoolean",
+          "description": "Whether the heading links to the run's own page. False inside a surface that is itself shown on that page.",
+          "default": true
+        },
+        "collapsed": {
+          "$ref": "common_types.json#/$defs/DynamicBoolean",
+          "description": "Whether the turns start folded, leaving only the heading and the turn count. Use it when the transcript is context rather than the subject.",
+          "default": false
+        }
+      },
+      "required": [
+        "component",
+        "turns"
+      ]
+    },
+    "DiffView": {
+      "type": "object",
+      "description": "A unified diff of one file, with per-line gutters — what a change WOULD do, rendered so a reader can approve or decline it on sight. The protocol's Text would show the same characters without the structure that makes a diff legible.",
+      "properties": {
+        "component": {
+          "const": "DiffView"
+        },
+        "patch": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "The unified diff as text, one file's worth. Bind it rather than inlining it: a patch is large, and inlining it makes the component message grow with the change."
+        },
+        "path": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "The file the patch applies to, shown as the diff's heading."
+        },
+        "wrap": {
+          "$ref": "common_types.json#/$defs/DynamicBoolean",
+          "description": "Whether long lines wrap instead of scrolling horizontally. Wrapping reads better in prose, scrolling preserves column alignment in code.",
+          "default": false
+        }
+      },
+      "required": [
+        "component",
+        "patch"
+      ]
+    },
+    "GateVerdict": {
+      "type": "object",
+      "description": "Whether a candidate passed its gate, as one scannable block: the verdict, each stage with its seconds, and the failures by name. A general catalog has no component for this because the shape is this system's own.",
+      "properties": {
+        "component": {
+          "const": "GateVerdict"
+        },
+        "verdict": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "green, red, timeout or running — the one word a reader needs first."
+        },
+        "stages": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "An array of stage objects, each with `stage` (string), `seconds` (number), `exit_code` (number) and `failed` (array of node ids)."
+        },
+        "stamp": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "The gate stamp, so a verdict can be traced back to its evidence log."
+        },
+        "action": {
+          "$ref": "common_types.json#/$defs/Action",
+          "description": "Optional: what a click on the verdict dispatches — opening the evidence, or re-arming a stage."
+        }
+      },
+      "required": [
+        "component",
+        "verdict"
+      ]
+    }
+  },
+  "functions": {
+    "format_duration": {
+      "description": "Seconds as the console spells a duration (`4m 12s`, `0.6s`), so a gate's stage times and a run's elapsed time read the same everywhere.",
+      "allowedCallers": "rendererOrAgent",
+      "properties": {
+        "seconds": {
+          "$ref": "common_types.json#/$defs/DynamicNumber",
+          "description": "The duration in seconds."
+        }
+      },
+      "required": [
+        "seconds"
+      ],
+      "returns": {
+        "type": "string"
+      }
+    },
+    "format_version": {
+      "description": "A release version as the console shows it, so an agent never has to spell the convention itself.",
+      "allowedCallers": "rendererOrAgent",
+      "properties": {
+        "version": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "The version string, e.g. 0.600.0."
+        }
+      },
+      "required": [
+        "version"
+      ],
+      "returns": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "anyComponent": {
+      "oneOf": [
+        {
+          "$ref": "#/components/RunTranscript"
+        },
+        {
+          "$ref": "#/components/DiffView"
+        },
+        {
+          "$ref": "#/components/GateVerdict"
+        }
+      ]
+    },
+    "anyFunction": {
+      "oneOf": [
+        {
+          "$ref": "#/functions/format_duration"
+        },
+        {
+          "$ref": "#/functions/format_version"
+        }
+      ]
+    }
+  }
+}
