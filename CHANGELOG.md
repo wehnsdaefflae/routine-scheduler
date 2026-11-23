@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.600.0] — 2026-11-23
+
+### Added
+- **A detached task is started from the composer, and it lives in the conversation rail**
+  (D308's first increment, points 3 and 2 of his 2026-11-21 code-review order). A "⇥ background"
+  control beside send takes the composer's text as the task prompt, offers its first line as the
+  label in a one-field dialog, and posts both to the existing
+  `POST /api/conversations/{slug}/background`; the box is cleared and **no reply is started** — a
+  person delegating a job is not a person asking the assistant something. The rail's `background`
+  section (`static/components/bg-tasks.js`) loses its 15 s content-armed poll and refreshes on
+  the `run_started` / `run_finished` bus events whose run id is one of this conversation's task
+  slugs; the only timer left ticks the elapsed number in the DOM, asks the server nothing and
+  disarms when no row is live. Each row now carries the elapsed time while live or, once
+  terminal, **"delivered" / "awaiting delivery"** from the `delivered` flag the API already
+  served but nothing rendered, a link to the task's own run page, and each landed file under
+  `artifacts/from-bg-<taskid>/` as a button into the artifacts panel. `started` is the run's
+  existing `ts`, and `files` are listed only once `delivered.json` exists — linking files that
+  have not reached the conversation would assert a delivery that did not happen. A task launched
+  from the composer is served as a `queued` row from `.requests/` until the manager's next 5 s
+  tick, so "it appears in the rail at once" holds exactly rather than on average. The chat side
+  needed NO code: `handback-card.js` already carried `background` in `CHANNELS`, so the delivery
+  already rendered as the hand-back card — what was missing was the test. Point 1 (the `detach`
+  copy and the `conversation` prompt-budget measurement) is the second commit.
+
+### Fixed
+- **A routine created today is born with an uncensored role it can resolve** (R3680, reported by
+  `config-optimizer`, the operator's answer: default it on scaffold). Every settings pattern
+  ships `models: {}`, so a routine created outside a pattern had no uncensored role at all —
+  `for_uncensored` returned `None`, and on a classifier refusal `degrade._handle_refusal` had no
+  target to re-drive the turn on: it walked the catalog fallback chain (more censored models) and
+  ended the run. `workflows/scaffold.py` is the one chokepoint all three create routes pass
+  through, and it now fills the role when the new config names none. **No model name is written
+  twice in the tree, not even as a constant**: `workflows/uncensored_default.py` derives it from
+  this instance — the value the fleet already agrees on (kept only if the catalog still serves
+  it, since a stale name reproduces F643) and, failing that, the catalog's sole guardrail-free
+  model; neither answers and nothing is written, as before. The engine was deliberately NOT
+  changed: `None` from `for_uncensored` means "referral deliberately off" and three surfaces
+  reason from it, so defaulting there would switch referral on invisibly for every routine whose
+  role is unset on purpose. A role already named by the pattern, the caller or the person is
+  never touched.
+
 ## [0.599.0] — 2026-11-23
 
 ### Fixed
