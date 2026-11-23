@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.601.0] — 2026-11-23
+
+### Added
+- **A visible "⑂ branch" on every reply, and the branch starts working from one click**
+  (D306 points 1 and 4, his 2026-11-21 code-review order — he kept conversation branches and
+  diagnosed their non-use as the UI's fault, *"unused only because the UI is bad"*). The fork
+  control leaves the bubble's hover-only corner family and becomes a labelled control in the
+  reply's footer row, at full opacity in the reading ink instead of `.45` on hover and invisible
+  on a touch screen; ⧉ ⟲ ⚑ are untouched and stay mellowed. `ForkBody` gains
+  `instruction: str = ""`, and when it carries text the route files it through the same path
+  `POST /conversations/{slug}/message` uses, so the branch is working the moment it exists —
+  the operator's own click, one of the three things allowed to start a run. An empty instruction
+  keeps today's behaviour (the branch opens idle), and the route refuses 503 BEFORE forking
+  while the runner drains, so a drain can no longer leave a branch created but never started.
+  `static/components/chat.js` was AT its ratchet ceiling, so the per-reply controls were
+  EXTRACTED to `static/components/reply-controls.js` first: it is now 322 lines, **under the
+  350-line bar, and its ratchet entry is gone** rather than merely lowered.
+
+### Fixed
+- **Every item id the console renders is now a link to its item** (goal b9, his words today:
+  *"ids like D306, D307, D307b, or D310 in messages should all be hyperlinks to the actual
+  item"*). The cause was structural, not a missing surface: `linkifyRefs` was applied by twelve
+  per-surface call sites, so a run's own narration — the surface he reads most — carried bare
+  ids while the Messages page linked the same ones. New `static/components/prose.js` composes
+  the markdown renderer with the id linker, and the transcript and chat import `md`/`mdInline`
+  from there: narration, finish summaries, questions, observations and user messages are all
+  covered by the one change, and neither file (both at its ceiling) gains a line.
+- The id pattern accepts a **letter suffix** (`F557b`, `D307b` — the old one matched `F557` and
+  left a stray `b`), and the new `linkifyKnownRefs` links only ids the item index actually
+  CARRIES, which is what makes it safe on prose nobody wrote as a maintenance record: in a
+  sentence about a grade or a key, `D1` and `F5` are ordinary text, and a link to a card that
+  does not exist is worse than no link. Its first pass is synchronous, so a link never arrives a
+  frame after the words it belongs to.
+- `tests/test_static_imports.py`'s md-helper invariant was generalized rather than bypassed (a
+  per-helper source list, plus a guard that `prose.js` really wraps what it stands in for), and
+  a DUPLICATE `_imported_from` definition in that file — the second shadowing the first — is
+  gone.
+
 ## [0.600.0] — 2026-11-23
 
 ### Added
