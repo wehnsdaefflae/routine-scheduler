@@ -47,12 +47,24 @@ def _answer_modal(ui_page, value):
     dlg.get_by_role("button", name="ok").click()
 
 
-def _fork_at(ui_page):
-    """Fork via the per-message control on the reply — the only fork path since the header
-    ⑂ branch button was removed (D113). The fork point is the reply's own turn (2 here)."""
+def _fork_dialog(ui_page, *, instruction=""):
+    """Answer the fork dialog (D306 pt 4): keep the prefilled name, optionally type a first
+    instruction, confirm. One dialog, two fields — the name and the instruction."""
+    dlg = ui_page.locator(".modal-overlay")
+    expect(dlg).to_be_visible()
+    if instruction:
+        dlg.locator(".fork-form textarea").fill(instruction)
+    dlg.get_by_role("button", name="branch", exact=True).click()
+
+
+def _fork_at(ui_page, *, instruction=""):
+    """Fork via the reply's own ⑂ branch control — the only fork path since the header
+    ⑂ branch button was removed (D113). The fork point is the reply's own turn (2 here), and
+    the control opens the fork dialog (D306 pt 4)."""
     reply = ui_page.locator(".msg.assistant", has_text="Option B, on the cost curve")
     expect(reply).to_be_visible()
-    reply.locator(".branch-msg").click()
+    reply.locator(".branch-from").click()
+    _fork_dialog(ui_page, instruction=instruction)
 
 
 def test_branch_button_forks_and_opens_the_branch_with_its_lineage(ui, ui_page):
@@ -92,8 +104,9 @@ def test_parent_lists_its_branches_and_has_no_hand_back(ui, ui_page):
     expect(head).to_contain_text("1 branch")
     expect(ui_page.get_by_role("button", name="↩ hand back")).to_be_hidden()
     # D113: the header carries NO fork button anymore — forking is per-message only
-    expect(ui_page.get_by_role("button", name="⑂ branch", exact=True)).to_have_count(0)
-    expect(ui_page.locator(".msg.assistant .branch-msg")).to_have_count(1)
+    expect(ui_page.locator(".conv-head-row").first
+           .get_by_role("button", name="⑂ branch")).to_have_count(0)
+    expect(ui_page.locator(".msg.assistant .branch-from")).to_have_count(1)
 
 
 def test_hand_back_delivers_summary_and_artifacts_to_the_parent(ui, ui_page):
@@ -131,8 +144,10 @@ def test_branch_refuses_while_a_reply_is_live(ui, ui_page):
     ui_page.reload()
     reply = ui_page.locator(".msg.assistant", has_text="Option B, on the cost curve")
     expect(reply).to_be_visible()
-    reply.locator(".branch-msg").click()
+    reply.locator(".branch-from").click()
     expect(ui_page.locator("#toast")).to_contain_text("mid-reply")
+    # the refusal comes BEFORE the dialog — nothing to answer, nothing forked
+    expect(ui_page.locator(".modal-overlay")).to_have_count(0)
     assert not (ui.conversations / f"{slug}-b1").exists()
 
 
@@ -162,10 +177,12 @@ def test_a_reply_carries_a_branch_from_here_control_that_needs_no_turn_number(ui
 
     reply = ui_page.locator(".msg.assistant", has_text="Option B, on the cost curve")
     expect(reply).to_be_visible()
-    fork = reply.locator(".branch-msg")
-    # the fork point is the reply's own turn — no modal, no typed number
+    fork = reply.locator(".branch-from")
+    # the fork point is the reply's own turn — the dialog asks for a name and a first
+    # instruction (D306 pt 4), never for the number
     expect(fork).to_have_attribute("data-branch-turn", "2")
     fork.click()
+    _fork_dialog(ui_page)
 
     ui_page.wait_for_url(f"**/conversations/{slug}-b1")
     expect(ui_page.locator(".conv-head-row").first).to_contain_text("at turn 2")
@@ -190,8 +207,8 @@ def test_a_user_message_carries_no_fork_control(ui, ui_page):
     atomic_write_json(run_dir / "status.json", {"state": "finished", "turn": 2})
     ui_page.reload()
 
-    expect(ui_page.locator(".msg.assistant .branch-msg")).to_have_count(1)
-    expect(ui_page.locator(".msg.user .branch-msg")).to_have_count(0)
+    expect(ui_page.locator(".msg.assistant .branch-from")).to_have_count(1)
+    expect(ui_page.locator(".msg.user .branch-from")).to_have_count(0)
 
 
 def test_a_reply_carries_a_rewind_to_here_control_that_posts_the_reply_turn(ui, ui_page):
@@ -231,10 +248,11 @@ def test_a_reply_carries_a_rewind_to_here_control_that_posts_the_reply_turn(ui, 
 
 def test_the_reply_corner_controls_show_at_rest_where_nothing_can_hover(ui, ui_page, browser):
     """F433 put the bubble's ⧉ copy at rest, at half strength, wherever the pointer cannot hover
-    — a phone has no hover, so a hover-revealed control is no control there. ⑂ branch and
-    ⟲ rewind are the same family in the same corner and were left out: on a phone they stayed
-    at opacity 0 and still took a tap, so a touch on a reply's corner could fork the
-    conversation (no confirm) through a control nobody could see. ⚑ flag joined the family."""
+    — a phone has no hover, so a hover-revealed control is no control there. ⟲ rewind was the
+    same family in the same corner and was left out: on a phone it stayed at opacity 0 and
+    still took a tap, a control nobody could see. ⚑ flag joined the family. ⑂ branch was in it
+    too until D306 pt 1 took it out of the corner altogether — its visibility is
+    `test_the_branch_control_is_labelled_and_visible_without_a_hover`."""
     slug, conv_dir = start_conversation(ui, ui_page, ASK)
     run_dir = conv_dir / "runs" / "20260827-100000"
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -251,7 +269,7 @@ def test_the_reply_corner_controls_show_at_rest_where_nothing_can_hover(ui, ui_p
         assert page.evaluate("matchMedia('(hover: none)').matches"), "not a no-hover pointer"
         reply = page.locator(".msg.assistant", has_text="Option B, on the cost curve")
         expect(reply).to_be_visible()
-        for control in ("copy-msg", "branch-msg", "rewind-msg", "flag-msg"):
+        for control in ("copy-msg", "rewind-msg", "flag-msg"):
             opacity = reply.locator(f".{control}").evaluate("e => getComputedStyle(e).opacity")
             assert float(opacity) > 0, f".{control} is invisible where nothing can hover"
     finally:

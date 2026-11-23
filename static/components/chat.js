@@ -32,6 +32,10 @@ import { answerForm } from "/static/components/answerform.js";
 import { isDeliverable } from "/static/components/artifacts.js";
 import { commandResult } from "/static/components/command-result.js";
 import { handbackCard, isHandback } from "/static/components/handback-card.js";
+// The reply bubble's own controls (components/reply-controls.js): ⑂ branch is a LABELLED
+// footer control, ⟲ and ⚑ stay quiet corner glyphs. Their own module because this file is at
+// its size-ratchet ceiling.
+import { branchFromHere, flagBtn, rewindBtn } from "/static/components/reply-controls.js";
 import { md, mdInline } from "/static/components/prose.js";   // b9: prose with its ids linked
 import { el, fmtTime, fmtTokens } from "/static/util.js";
 
@@ -121,46 +125,6 @@ export function userEcho(text, ctl) {
   return node;
 }
 
-// "Branch from here" (R1006): forking is conceptually "fork AT a turn" — and the only control
-// for it lived in the conversation HEADER behind a free-text prompt asking the user to type a
-// turn number — a translation from "this reply, here" into an integer they had to go and count.
-// A REPLY is a clean turn boundary (its `turns` is the turn its finish action ran on, the exact
-// number `cut_index_for_turn` snaps to), so the reply itself can be the fork point and the
-// number never has to be spoken. The header control stays for the cases a reply cannot name.
-function branchBtn(turn, onBranch) {
-  if (!onBranch || !Number.isInteger(turn)) return null;
-  return el("button", { class: "branch-msg", "data-branch-turn": String(turn),
-    title: `branch the conversation from here (turn ${turn}) — the new one inherits `
-         + "everything up to and including this reply; this one is untouched",
-    onclick: () => onBranch(turn) }, "⑂");
-}
-
-// ⟲ rewind-from-here: the clicked reply's turn IS the cut point (R1006-style), so rewind gets a
-// per-message control beside ⑂ instead of only the run view's turn-prompt. Terminal-only; the
-// onRewind wiring toasts if the conversation is still mid-reply.
-function rewindBtn(turn, onRewind) {
-  if (!onRewind || !Number.isInteger(turn)) return null;
-  return el("button", { class: "rewind-msg", "data-rewind-turn": String(turn),
-    title: `rewind the conversation to here (turn ${turn}) — everything after this reply is `
-         + "archived (reversible) and the conversation re-opens live from this point",
-    onclick: () => onRewind(turn) }, "⟲");
-}
-
-// ⚑ flag-as-refusal (operator decision 2026-10-01): this reply is a refusal the conversation's
-// uncensored model should answer instead — and go on answering. Every reply carries it, the
-// engine's own failure replies included: a classifier refusal that exhausted the chain ends
-// as one. The reply names itself by its turn AND its own ts, because such a reply ran no turn
-// of its own and shares the turn number of the reply before it. The gate and the mid-reply
-// toast are the onFlag wiring's (components/refusalflag.js).
-function flagBtn(ev, onFlag) {
-  if (!onFlag || !Number.isInteger(ev.turns)) return null;
-  return el("button", { class: "flag-msg", "data-flag-turn": String(ev.turns),
-    title: "flag this reply as a refusal — it and every reply after it are discarded, your "
-         + "message is re-sent, and the conversation's uncensored model answers it and "
-         + "carries the conversation from here",
-    onclick: () => onFlag({ turn: ev.turns, ts: ev.ts || "" }) }, "⚑");
-}
-
 export function createChat(container, opts = {}) {
   const root = el("div", { class: "chat" });
   container.append(root);
@@ -214,11 +178,13 @@ export function createChat(container, opts = {}) {
         p.status && p.status !== "ok" ? el("span", { class: `chip ${p.status}` }, p.status) : null,
         el("span", {}, `${ev.turns ?? "?"} turns`),
         ev.usage_total ? el("span", {}, fmtTokens(ev.usage_total)) : null,
-        ev.ts ? el("span", { title: ev.ts }, fmtTime(ev.ts)) : null),
+        ev.ts ? el("span", { title: ev.ts }, fmtTime(ev.ts)) : null,
+        // D306 pt 1: ⑂ branch is LABELLED and lives here, in the footer the reader is already
+        // reading — not as a corner glyph a hover had to reveal (and a phone never could).
+        branchFromHere(ev.turns, opts.onBranch)),
       referButton(opts.onRefer, `your reply${ev.ts ? ` at ${fmtTime(ev.ts)}` : ""}`,
         (summary || "").split("\n")[0]),
       copyBtn(() => summary || ""),
-      branchBtn(ev.turns, opts.onBranch),
       rewindBtn(ev.turns, opts.onRewind),
       flagBtn(ev, opts.onFlag));
     return node;

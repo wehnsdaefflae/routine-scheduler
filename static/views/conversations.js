@@ -300,9 +300,9 @@ export async function render(view, slug, _query = {}) {
         prefillComposer(lastUserText);
         navigate("#/conversations");
       },
-      // R1006: fork the conversation AT the reply the user clicked. The header's ⑂ still
-      // takes a typed turn number; this is the same call with the number already known.
-      onBranch: (turn) => forkAt(slug, turn, { isLive: () => !TERMINAL.has(curState) }),
+      // R1006: fork AT the clicked reply, so the turn is never typed. D306 pt 4: the control
+      // opens the fork dialog (name + optional first instruction); `name` prefills it.
+      onBranch: (turn) => forkAt(slug, turn, { isLive: () => !TERMINAL.has(curState), name: detail.title || slug }),
       onRewind: (turn) => rewindTo(slug, detail.run_id, turn, { isLive: () => !TERMINAL.has(curState) }),
       // ⚑ (operator decision 2026-10-01): redo a refused reply on the uncensored model, which
       // then carries the conversation — the pick, when it has none, from its own catalog

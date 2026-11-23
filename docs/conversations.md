@@ -183,8 +183,9 @@ Two things follow from this that are worth knowing:
   how only when you want it. Hover any message — yours, a reply, even a single step inside a work
   fold — and a **↩ refer-to** button primes the composer with it, messenger-reply style: your next
   message leads with a quoted `> re …` line the agent reads naturally, and the sent bubble shows the
-  reference as a compact quote chip (✕ on the chip drops it before sending). A reply's corner also
-  carries ⧉ copy, ⑂ branch from here, ⟲ rewind to here and ⚑ flag as refusal (below). **⟲ takes
+  reference as a compact quote chip (✕ on the chip drops it before sending). Every reply's footer
+  row carries a labelled **⑂ branch** control, always visible (below); its corner also carries
+  ⧉ copy, ⟲ rewind to here and ⚑ flag as refusal (below). **⟲ takes
   the FILES back too**: a conversation is not a git repo, so each reply's close-out snapshots
   `artifacts/` and a rewind restores the newest snapshot at or before the turn it keeps —
   otherwise the conversation would go back while its deliverables kept whatever the discarded
@@ -353,10 +354,16 @@ a new topic and offers a **one-click fork** that starts a fresh conversation pre
 message. Take the fork to keep each thread's context clean.
 
 That fork starts EMPTY. When you instead want to try a second approach **from where you already
-are** — same history, same setup, without risking the thread you have — use **⑂ branch** in the
-header.
+are** — same history, same setup, without risking the thread you have — use the **⑂ branch**
+control in the footer of the reply you want to branch from.
 
 ### Branching
+
+**One click, with an optional instruction.** The reply's **⑂ branch** control opens one small
+dialog: the branch's **name** (prefilled `"<this conversation> (branch)"`) and an optional **first
+instruction**. Type the instruction and the branch starts working on it the moment it opens —
+filed as its first message, exactly as if you had typed it there. Leave it empty and the branch
+opens idle, waiting for you.
 
 A branch forks the conversation at a turn you choose into a new one that inherits:
 
@@ -391,7 +398,7 @@ rewritten.
 
 When a reply declines what you asked, you can have it **redone on the conversation's
 uncensored model** — which then carries the conversation (operator decision 2026-10-01). Every
-reply carries a **⚑ flag as refusal** control beside ⟲ rewind and ⑂ branch, the engine's own
+reply carries a **⚑ flag as refusal** control beside ⟲ rewind in its corner, the engine's own
 failure replies included: a provider's safety classifier refusing a turn on every model in the
 fallback chain ends as one.
 

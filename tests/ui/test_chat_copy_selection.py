@@ -14,10 +14,12 @@ from .helpers import start_conversation
 
 pytestmark = pytest.mark.ui
 
-#: Every corner control a REPLY carries. `refer-btn` is the ↩ shared with runs and finish
+#: Every control a REPLY carries. `refer-btn` is the ↩ shared with runs and finish
 #: banners (`views.css:351`), and the red-first run found it the same way: stripping the fix made
-#: a reply's selection end `↩⧉⑂⟲⚑`, so the ↩ was riding every copied message too.
-BUBBLE_CONTROLS = ("refer-btn", "copy-msg", "branch-msg", "rewind-msg", "flag-msg")
+#: a reply's selection end `↩⧉⑂⟲⚑`, so the ↩ was riding every copied message too. `branch-from`
+#: is the labelled ⑂ branch control D306 pt 1 moved into the footer row: it left the corner
+#: family, but it is still inside `.msg` and so still has to stay out of a selection.
+BUBBLE_CONTROLS = ("refer-btn", "copy-msg", "branch-from", "rewind-msg", "flag-msg")
 
 TS = "20261031-090000"
 FENCE = "sudo apt install cowsay"

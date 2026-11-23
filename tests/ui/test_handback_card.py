@@ -99,7 +99,9 @@ def test_a_conversation_with_no_family_makes_no_lineage_request(ui, ui_page):
 
     # …and a conversation that HAS a family still reads it: the fork lands on the branch, whose
     # own list row carries `parent`, and its header names where it came from.
-    reply.locator(".branch-msg").click()
+    reply.locator(".branch-from").click()
+    # D306 pt 4: the control opens the fork dialog; the default name, no instruction
+    ui_page.locator(".modal-overlay").get_by_role("button", name="branch", exact=True).click()
     ui_page.wait_for_url(f"**/conversations/{slug}-b1")
     expect(ui_page.locator(".conv-head-row").first).to_contain_text("branched from")
     assert asked, "a branch must still read its lineage"

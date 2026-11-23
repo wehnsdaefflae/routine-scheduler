@@ -7,14 +7,57 @@
 // merge: the branch keeps its own conversation, and the parent receives a summary plus files.
 
 import { api } from "/static/api.js";
-import { confirmDialog, promptDialog } from "/static/components/dialog.js";
+import { confirmDialog, openModal, promptDialog } from "/static/components/dialog.js";
 import { navigate, remount } from "/static/router.js";
 import { el, toast, toastError } from "/static/util.js";
 
-// Fork this conversation at `turn` — the fork path used by the per-message "branch from here"
-// control in the chat, where the clicked reply IS the fork point (R1006). One set of guards, one
-// toast. (The header fork button was removed in D113; forking is a per-message act now.)
-export async function forkAt(slug, turn, { isLive } = {}) {
+/** The fork dialog (D306 pt 4): a NAME (prefilled "<parent> (branch)") and an OPTIONAL first
+ * instruction, in one small panel. Resolves `{ name, instruction }`, or null on cancel.
+ *
+ * Before this, a fork created the branch and navigated to it, and the person then had to type
+ * its first instruction there — two separate acts for one intention ("I want this explored over
+ * there"). Given an instruction the route starts the branch at once; left empty, the branch
+ * opens idle exactly as it used to, so the dialog never forces an answer. That is also why the
+ * instruction is a textarea rather than an input: it is a message to an agent, not a label.
+ */
+function forkDialog(parentName) {
+  return new Promise((resolve) => {
+    const msg = el("div", { class: "dlg-msg" }, "Branch this conversation from here.");
+    const name = el("input", { type: "text", "data-nopersist": true,
+      placeholder: "the branch's name" });
+    name.value = `${parentName || "this conversation"} (branch)`;
+    const instruction = el("textarea", { "data-nopersist": true,
+      placeholder: "what the branch should do first (optional)" });
+    const ok = el("button", { class: "btn primary" }, "branch");
+    const cancel = el("button", { class: "btn" }, "cancel");
+    const panel = el("div", { class: "panel" }, msg,
+      el("div", { class: "fork-form" },
+        el("label", {}, "name"), name,
+        el("label", {}, "first instruction"), instruction,
+        el("div", { class: "fork-hint" },
+          "with an instruction the branch starts working at once; leave it empty and it opens "
+          + "idle, waiting for you")),
+      el("div", { class: "row mt", style: "justify-content:flex-end; gap:8px" }, cancel, ok));
+    const done = (value) => { close(); resolve(value); };
+    ok.onclick = () => done({ name: name.value.trim(), instruction: instruction.value.trim() });
+    cancel.onclick = () => done(null);
+    // Enter confirms from the NAME field only: the instruction is prose, where Enter is a
+    // newline. A focused button keeps its own Enter (dialog.js says why).
+    panel.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.target === name) { e.preventDefault(); ok.onclick(); }
+    });
+    const close = openModal(panel, { label: msg, focus: name, onCancel: () => done(null) });
+  });
+}
+
+// Fork this conversation at `turn` — the fork path used by the per-message "⑂ branch" control in
+// the chat, where the clicked reply IS the fork point (R1006). One set of guards, one toast.
+// (The header fork button was removed in D113; forking is a per-message act now.)
+//
+// `name` is the parent's display title, for the dialog's prefill. The dialog is D306 pt 4: one
+// click asks for the name and the first instruction together, and the route starts the branch
+// when there is one.
+export async function forkAt(slug, turn, { isLive, name } = {}) {
   if (isLive?.()) {
     toast("this conversation is mid-reply — branch it once the reply has finished", 4000,
       { error: true });
@@ -24,9 +67,14 @@ export async function forkAt(slug, turn, { isLive } = {}) {
     toast("a branch needs a turn number (1 or higher)", 4000, { error: true });
     return null;
   }
+  const asked = await forkDialog(name);
+  if (asked == null) return null;
   try {
-    const r = await api(`/api/conversations/${slug}/branch`, { method: "POST", body: { turn } });
-    toast(`branched at turn ${r.at_turn} — opening the branch`);
+    const r = await api(`/api/conversations/${slug}/branch`,
+      { method: "POST", body: { turn, name: asked.name, instruction: asked.instruction } });
+    toast(r.started
+      ? `branched at turn ${r.at_turn} — the branch is working on your instruction`
+      : `branched at turn ${r.at_turn} — opening the branch`);
     navigate(`#/conversations/${r.slug}`);
     return r;
   } catch (err) { toastError(err); return null; }

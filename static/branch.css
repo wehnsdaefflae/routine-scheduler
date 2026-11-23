@@ -1,0 +1,27 @@
+/* The reply footer's "⑂ branch" control (D306 pt 1, components/reply-controls.js). Its own file
+   because base.css and views.css are both over the 350-line house bar and frozen at their
+   ratchet ceilings — the same reason static/rail.css says at its own `<link>` in index.html.
+
+   It is a LABELLED text control, not a corner glyph: the glyph it replaced sat at opacity 0
+   until the bubble was hovered, beside three others, and on a touch screen was never visible at
+   all — which is why branching went unused ("unused only because the UI is bad", operator,
+   2026-11-21 code review). So: always visible, at reading contrast (--ink-2, the quiet-but-read
+   ink the footer's own `.msg-meta` siblings use), sitting IN the footer row the reader is
+   already reading. A hover and a keyboard focus lift it to --signal, the console's affordance
+   colour, so it still answers a pointer the way a control should. */
+.branch-from {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font: inherit; font-size: var(--t-xs); line-height: 1;
+  color: var(--ink-2); user-select: none;   /* R3085: never selected with the reply's text */
+  transition: color 0.12s;
+}
+.branch-from:is(:hover, :focus-visible) { color: var(--signal); }
+
+/* The fork dialog (D306 pt 4): a name and an OPTIONAL first instruction, so starting a branch
+   is one click instead of "fork, land in an empty branch, now type what you wanted". The two
+   fields stack full width inside components/dialog.js's panel. */
+.fork-form { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+.fork-form label { font-size: var(--t-s); color: var(--ink-2); }
+.fork-form :is(input, textarea) { width: 100%; }
+.fork-form textarea { min-height: 5em; resize: vertical; }
+.fork-hint { font-size: var(--t-xs); color: var(--ink-3); }

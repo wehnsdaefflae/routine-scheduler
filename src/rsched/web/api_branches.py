@@ -14,6 +14,8 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import branches
+from ..config import load_routine
+from ..engine import inbox
 from ..paths import read_yaml
 from ..registry import TERMINAL_STATES
 from .conversations_common import conversation_info
@@ -24,6 +26,7 @@ router = APIRouter(tags=["branches"])
 class ForkBody(BaseModel):
     turn: int          # fork through THIS turn — the branch inherits the history up to it
     name: str = ""     # optional display name; defaults to "<parent> (branch)"
+    instruction: str = ""   # optional first message — given, the branch starts working at once
 
 
 class HandBackBody(BaseModel):
@@ -50,23 +53,52 @@ def _parent_record(conv_dir: Path) -> dict:
 
 
 @router.post("/conversations/{slug}/branch")
-def fork(request: Request, slug: str, body: ForkBody) -> dict:
+async def fork(request: Request, slug: str, body: ForkBody) -> dict:
     """Fork this conversation at `turn` into a new one that inherits its config and its
     history up to that point. The original is untouched — a branch cannot mutate it.
+
+    With an `instruction`, the branch also STARTS: the text is filed as its first message
+    through the same `inbox.file_message` + `resume_terminal` path
+    `POST /conversations/{slug}/message` uses, so a branch is one click instead of "fork,
+    land in an empty conversation, now type what you came to ask" (D306 pt 4). The start is
+    the operator's own click — one of the three things allowed to start a run. Without one
+    the branch opens idle, exactly as before.
     """
     info = conversation_info(request, slug)
     last = info.last_run
     if last and last.state not in TERMINAL_STATES:
         raise HTTPException(409, "this conversation is mid-reply — branch it once the reply "
                                  "has finished, so the fork point is a settled turn")
+    runner = request.app.state.runner
+    text = body.instruction.replace("\r\n", "\n").strip()
+    # R81, the branch door: in the restart's exit window the wake is refused, so refuse BEFORE
+    # the fork — a branch made and never started is a conversation in the list holding the
+    # instruction nobody is reading, and the retry makes a second one.
+    if text and getattr(runner, "draining", False):
+        raise HTTPException(
+            503, "the server is restarting — the branch was NOT made. Try again in a moment.")
     try:
         made = branches.fork_conversation(
             request.app.state.server, parent_dir=info.cfg.dir, parent_slug=slug,
             at_turn=body.turn, name=body.name)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"ok": True, "slug": made["slug"], "at_turn": made["at_turn"],
-            "kept_events": made["kept_events"]}
+    out = {"ok": True, "slug": made["slug"], "at_turn": made["at_turn"],
+           "kept_events": made["kept_events"], "started": False}
+    if not text:
+        return out
+    inbox.file_message(made["dir"], text, via="conversation")
+    cfg, _problems = load_routine(made["dir"])
+    # The fork left a TERMINAL run beside the copied transcript (branches.fork_conversation
+    # says why), so starting the branch is the ordinary terminal resume a typed message takes
+    # — not a fresh fire, which would discard the inherited history.
+    rid = await runner.resume_terminal(cfg, reason="converse")
+    # A filed-but-unwoken instruction is not lost: it stays queued and the branch's next reply
+    # drains it. Say which happened rather than claim a start that did not take.
+    out["started"] = bool(rid)
+    if rid:
+        out["run_id"] = rid
+    return out
 
 
 @router.post("/conversations/{slug}/handback")
