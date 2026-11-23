@@ -219,12 +219,20 @@ def record_slow_request(state, entry: dict) -> None:
     # into an existing one, and `sample` stays LAST: both downstream readers are anchored
     # regexes (`^\d+ms`, `in_flight (\d+)`), so an added clause cannot move what they match.
     dominant = str(entry.get("dominant") or "")
+    # The SPANS decide whether the clause is written, never the word: a request whose spans
+    # explain too little of its elapsed time is deliberately left unattributed, and dropping its
+    # numbers with the word is what makes such a row unfalsifiable — it then reads exactly like
+    # a request nothing measured. `first_byte` is carried too, because it is the one stamp that
+    # exists for every real request and so the only span a reader can check the others against.
+    spans = " ".join(f"{name} {entry[key]}ms" for name, key in
+                     (("pre", "pre_ms"), ("app", "app_ms"), ("send", "send_ms"),
+                      ("first_byte", "first_byte_ms"))
+                     if entry.get(key) is not None)
     phases = ""
-    if dominant:
-        spans = " ".join(f"{name} {entry[key]}ms" for name, key in
-                         (("pre", "pre_ms"), ("app", "app_ms"), ("send", "send_ms"))
-                         if entry.get(key) is not None)
-        phases = f", mostly {dominant} ({spans})" if spans else f", mostly {dominant}"
+    if spans:
+        phases = f", mostly {dominant} ({spans})" if dominant else f", unattributed ({spans})"
+    elif dominant:
+        phases = f", mostly {dominant}"
     record_server_trace(state.server, kind="slow", target=str(entry.get("path") or ""),
                         detail=f"{ms}ms, {entry.get('method') or '?'}, "
                                f"in_flight {entry.get('in_flight')}" + phases

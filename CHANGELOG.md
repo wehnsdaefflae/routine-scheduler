@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.594.0] — 2026-11-23
+
+### Fixed
+- **A slow request's phase attribution named the one span that could be proven not to hold the
+  wait** (F938, a follow-on defect in F906's own instrument). Every durable phase row ever
+  written — 16 of 16 — read `mostly pre (pre 0.0–0.2ms)`, including an 11,630 ms
+  `GET /api/questions` whose self-sample shows the handler itself inside
+  `decisions_read._all_questions`. The row is composed in `web/slowsample.py`'s `slow_requests`,
+  a `BaseHTTPMiddleware` whose `call_next` returns at `http.response.start`: `app_out` and
+  `last_byte` are therefore unstamped at composition, `phases_of` computed `app_ms` only from
+  `app_out`, and `dominant()` named `pre` because it was the sole known span. Three changes:
+  the app's span falls back to `app_in → first_byte`, which the composer can actually see;
+  `dominant()` takes the elapsed time the caller measured and withholds the word when the
+  largest span explains under half of it (`ATTRIBUTION_FLOOR`); and the durable row keeps its
+  spans — plus `first_byte_ms`, the one stamp every real request has — when the word is
+  withheld, so an unattributed row is falsifiable instead of reading like an unmeasured one.
+  The existing guards all drove the two phase layers alone, so they passed over a configuration
+  that cannot occur in the process; the new one wires `slow_requests` outside them as `web/app.py`
+  does.
+
 ## [0.593.0] — 2026-11-22
 
 ### Changed

@@ -321,7 +321,7 @@ def install(app: FastAPI) -> None:
                 entry = {"method": request.method, "path": str(request.url.path),
                          "ts": now_iso(), "seconds": round(took, 2),
                          "in_flight": app.state.in_flight, "sample": sample,
-                         **phases, "dominant": reqphases.dominant(phases)}
+                         **phases, "dominant": reqphases.dominant(phases, took * 1000)}
                 api_traces.record_slow_request(app.state, entry)
                 log.warning(
                     "slow request: %s %s took %.1fs (in_flight=%d, pre=%sms app=%sms "

@@ -85,8 +85,15 @@ def phases_of(scope: dict) -> dict[str, float] | None:
     out: dict[str, float] = {}
     if app_in is not None:
         out["pre_ms"] = round((app_in - entry) * 1000, 1)
+        # The row is composed by a `BaseHTTPMiddleware`, whose `call_next` returns at
+        # `http.response.start` — so no real request has an `app_out` stamp yet when its row is
+        # built, and the app's span must be read to the FIRST BYTE instead. Without this branch
+        # `app_ms` is absent on every row, `pre_ms` is the only known span, and the whole wait
+        # is attributed to the one span that can be proven not to hold it.
         if app_out is not None:
             out["app_ms"] = round((app_out - app_in) * 1000, 1)
+        elif first is not None:
+            out["app_ms"] = round((first - app_in) * 1000, 1)
     end = last if last is not None else first
     if app_out is not None and end is not None:
         out["send_ms"] = round((end - app_out) * 1000, 1)
@@ -97,18 +104,34 @@ def phases_of(scope: dict) -> dict[str, float] | None:
     return out or None
 
 
-def dominant(phases: dict[str, float] | None) -> str:
+#: How much of the measured wait the named span must actually hold. A span that explains almost
+#: none of it names the wrong cause with the same confidence as the right one, and a reader has
+#: no way to tell the two rows apart — so below this fraction the row says nothing instead.
+ATTRIBUTION_FLOOR = 0.5
+
+
+def dominant(phases: dict[str, float] | None, elapsed_ms: float | None = None) -> str:
     """Which span holds most of the wait: `pre`, `app`, `send` — or "" when it is not known.
 
     This is the one word a reader needs, and it is computed here rather than in the eye of
     whoever reads the row: three numbers in a log line get averaged by a human into whatever
     they already believed.
+
+    `elapsed_ms` is the wait as the caller measured it, and it is what keeps the word honest.
+    The spans are stamped by layers that do not bracket the whole request, so their sum can be
+    a rounding error beside the elapsed time — and the largest of three tiny spans is still the
+    largest. Naming it would attribute multi-second stalls to a tenth of a millisecond.
     """
     if not phases:
         return ""
     spans = {name: phases.get(f"{name}_ms") for name in ("pre", "app", "send")}
     known = {name: value for name, value in spans.items() if value is not None}
-    return max(known, key=lambda name: known[name]) if known else ""
+    if not known:
+        return ""
+    best = max(known, key=lambda name: known[name])
+    if elapsed_ms and known[best] < ATTRIBUTION_FLOOR * elapsed_ms:
+        return ""
+    return best
 
 
 class PhaseOuter:
