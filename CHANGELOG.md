@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.603.0] — 2026-11-23
+
+**D299: what a backup ATTEMPT cost, recorded where a run can read it.** The operator answered
+D299 with (b) — grant a run the means to diagnose the off-box backup instead of only reporting
+its staleness. The stamps say a night started and did not finish; they could not say whether it
+missed by a minute or by three hours, nor how much it moved, and the remedy the stale health
+event printed (the backup unit's journal) does not exist inside a run's sandbox.
+
+`deploy/backup.sh` now appends one JSON line per attempt per tier to
+`~/routines/.control/backup-attempts.jsonl` — the directory every run already reads — at three
+sites: the local tier completing, the off-box tier completing with rsync's own transferred
+figure, and the off-box tier FAILING, which is the case that happens nightly on this instance.
+The off-box function already computed its elapsed seconds and that figure for its stdout; this
+routes them somewhere durable. It is append-only, overridable by `BACKUP_ATTEMPTS_FILE`, and
+never fatal: a backup must not fail over its own bookkeeping.
+
+A new `daemon/backup_attempts.py` is its only reader, per TIER (the off-box tier fails while the
+local one completes nightly, so the newest row of the file would answer about the wrong tier
+almost every time). `daemon/backup_watch.py` appends the clause to a STALE verdict only, and its
+remedy now names the readable record before the journal.
+
+The reader is a module of its own rather than more of `backup_watch.py`: the stamp arithmetic
+asks *is the backup current?* from two timestamps on a share, this asks *what happened last
+night?* from a log on local disk, and they fail independently.
+
+11 guards, all proven red-first — including `bash -n deploy/backup.sh`, because this is a
+758-line script that runs unattended as the only thing between this instance and a disk loss.
+Two of the eleven were reported unproven first and were fixed: one passed vacuously, one sliced
+the source at prose that repeated the words it looked for.
+
 ## [0.602.0] — 2026-11-23
 
 **The playbook offer where a conversation ENDS, and the conversations view split.**
