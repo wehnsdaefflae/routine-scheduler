@@ -21,6 +21,8 @@ import { flagRefusal } from "/static/components/refusalflag.js";
 import { playbookRow } from "/static/components/playbook-row.js";
 import { createChat, typedBody, userEcho } from "/static/components/chat.js";
 import { createArtifacts } from "/static/components/artifacts.js";
+import { createBackgroundTasks } from "/static/components/bg-tasks.js";
+import { backgroundButton } from "/static/components/bg-start.js";
 import { createRail } from "/static/components/rail.js";
 import { mountRunScripts } from "/static/components/runscripts.js";
 import { createFileActivity } from "/static/components/fileactivity.js";
@@ -277,54 +279,16 @@ export async function render(view, slug, _query = {}) {
     // F833: a conversation holds its own scripts/ — the run rail's section, re-read per reply
     const scripts = mountRunScripts(rail, { slug, base: "conversations" });
 
-    const BG_LIVE = new Set(["queued", "starting", "running", "waiting_user", "paused"]);
-    function paintBackground(rows) {
-      bgRows = rows;
-      armPolls();
-      bgBody.replaceChildren();
-      rail.toggle("background", !!rows.length);
-      for (const t of rows) {
-        const row = el("div", { class: "bg-task" },
-          chip(t.state, t.state),
-          el("span", { class: "bg-task-label", title: t.summary || "" }, t.label));
-        if (BG_LIVE.has(t.state)) {
-          const btn = el("button", { class: "bg-cancel", title: "cancel this background task" }, "✕");
-          btn.onclick = async () => {
-            btn.disabled = true;
-            try { await api(`/api/conversations/${slug}/background/${t.taskid}/cancel`, { method: "POST" }); }
-            catch (err) { toastError(err); btn.disabled = false; return; }
-            toast("cancelling background task…");
-            setTimeout(refreshBackground, 800);
-          };
-          row.append(btn);
-        }
-        bgBody.append(row);
-      }
-    }
-    async function refreshBackground() {
-      try { paintBackground(await api(`/api/conversations/${slug}/background`)); } catch { /* transient */ }
-    }
+    // D308 pt 2: the section is its own module now (components/bg-tasks.js) — each row carries
+    // its elapsed time while live, its DELIVERY once terminal, a link to the task's own run
+    // page and the files it landed. It refreshes on the `run_started`/`run_finished` events of
+    // the runs it owns, so the 15 s content-armed poll that used to ask every tab about an
+    // empty list is gone with it.
+    const bgTasks = createBackgroundTasks(bgBody, { slug, rail,
+      openArtifact: (p) => artifacts.openPath(p) });
+    bgTasks.paint(detail.background || []);
 
-    // #/conversations is the console's DEFAULT route, and the background rail section is hidden
-    // until it has a row — so an idle tab parked where it opens used to spend ~600 requests an
-    // hour asking endpoints about lists that were empty and could not fill, because nothing was
-    // running. The timer is therefore armed by CONTENT — rows that exist now, or a live run that
-    // could create some — and disarmed again the moment neither holds. The browser section's own
-    // 8 s poll is gone with the section (F561); the dock reads the screen directly.
-    let bgTimer = null;
-    let bgRows = [];
-    const arm = (timer, on, fn, ms) => {
-      if (on && !timer) return setInterval(fn, ms);
-      if (!on && timer) clearInterval(timer);
-      return on ? timer : null;
-    };
-    function armPolls() {
-      const live = WORKING.has(curState);
-      bgTimer = arm(bgTimer, bgRows.length > 0 || live, refreshBackground, 15000);
-    }
-    paintBackground(detail.background || []);
-
-    cleanup.push(() => { clearInterval(bgTimer);
+    cleanup.push(() => { bgTasks.stop();
                          artifacts.destroy(); subRunTree?.stop(); scripts.stop(); });
 
     const chat = createChat(chatBox, {
@@ -371,8 +335,7 @@ export async function render(view, slug, _query = {}) {
       composer.setLive(!TERMINAL.has(s));
       if (TERMINAL.has(s)) { chat.finishOpenFold(); artifacts.refresh(); subRunTree?.refresh();
                              fileActivity?.refresh(); scripts.refresh(); }
-      armPolls();            // the run going live or terminal changes what is worth polling for
-      refreshBackground();   // a finished detached task wakes the conversation → catch it here
+      bgTasks.refresh();     // a finished detached task wakes the conversation → catch it here
     };
     setState(detail.state);
 
@@ -501,9 +464,16 @@ export async function render(view, slug, _query = {}) {
         onMsg: "admin on — this conversation runs with the full toolset",
         offMsg: "admin off — messages send normally",
       });
+      // D308 pt 3: delegate what is in the box as a DETACHED task instead of asking for a
+      // reply about it. No reply is started — see components/bg-start.js.
+      const bgBtn = backgroundButton({ slug,
+        text: () => input.value,
+        clear: () => { input.value = ""; forgetField(input); },
+        onStarted: () => bgTasks.refresh() });
       const node = el("div", { class: "conv-composer" }, helpPanel, refBar,
         el("div", { class: "cmd-anchor" }, suggests, input),
-        el("div", { class: "row", style: "gap:8px" }, picker, helpBtn, admin.node, send, stopBtn), pbRow);
+        el("div", { class: "row", style: "gap:8px" },
+           picker, helpBtn, admin.node, bgBtn, send, stopBtn), pbRow);
       const submit = async () => {
         if (!input.value.trim()) return;
         send.disabled = true;

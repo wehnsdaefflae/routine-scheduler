@@ -1,0 +1,39 @@
+/* The conversation rail's BACKGROUND rows (D308 pt 2) and the composer's ⇥ control.
+   Its own file for rail.css's reason: base.css and views.css are both over the repo's
+   350-line house bar and frozen at their ratchet ceilings, so new CSS ships as a new
+   stylesheet. Loaded after views.css, which keeps the .bg-task rules it already had — these
+   add the second line each row now carries. Colour and type come from tokens only
+   (tests/test_stylesheet_tokens.py). */
+
+/* One task = a two-line card: state + label + cancel, then what the task IS doing or DID. */
+.bg-task-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.bg-task-card:last-child { border-bottom: 0; }
+
+.bg-task-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-left: 2px;
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}
+
+/* Elapsed time ticks while the task runs — a number that moves, so it reads as live. */
+.bg-task-elapsed { font-family: var(--f-mono); }
+
+/* Whether the result reached this conversation. Awaiting delivery is a GAP the reader has to
+   notice (the run ended, the hand-back has not landed), so it wears the warning colour;
+   delivered is simply done and stays quiet. */
+.bg-task-delivery { color: var(--warn); }
+.bg-task-delivery.on { color: var(--ok); }
+
+.bg-task-run { color: var(--signal); text-decoration: none; }
+.bg-task-run:hover { text-decoration: underline; }

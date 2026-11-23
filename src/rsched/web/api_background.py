@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Form, HTTPException, Request
 
 from .. import registry
+from ..engine import child
 from ..ids import background_task_id
-from ..paths import atomic_write_json
+from ..paths import atomic_write_json, read_json
 
 router = APIRouter(tags=["background"])
 
@@ -28,17 +30,59 @@ def _background_tasks(request: Request, owner_slug: str) -> list[tuple[str, regi
             if (ti.cfg.owner or {}).get("slug") == owner_slug]
 
 
+def _landed_files(owner_dir: Path, taskid: str) -> list[str]:
+    """The task's delivered artefacts, as paths the owner's artifact panel addresses.
+
+    Same convention the delivery copied them under (`engine/child.handback_dirname`), read
+    rather than re-spelled — the rail links each one into the panel, which keys on a path
+    relative to the conversation dir.
+    """
+    rel = child.handback_dirname(child.BACKGROUND, taskid)
+    base = owner_dir / rel
+    if not base.is_dir():
+        return []
+    return sorted(f"{rel}/{p.relative_to(base).as_posix()}"
+                  for p in base.rglob("*") if p.is_file())
+
+
+def _pending_rows(request: Request, slug: str) -> list[dict]:
+    """The tasks this conversation has ASKED for whose dir the DetachedManager has not made
+    yet — one `.requests/<taskid>.json` each.
+
+    Without them a task started from the composer is invisible until the next 5 s tick, so the
+    control that claims "it appears in the rail at once" would be telling the truth only on
+    average. A request file IS the task: intake is keyed on it, and it survives a restart.
+    """
+    reqs = request.app.state.server.background_home / ".requests"
+    out: list[dict] = []
+    for path in sorted(reqs.glob("*.json")):
+        req = read_json(path)
+        if not isinstance(req, dict) or (req.get("owner") or {}).get("slug") != slug:
+            continue
+        taskid = str(req.get("taskid") or path.stem)
+        out.append({"taskid": taskid, "label": str(req.get("label") or taskid),
+                    "state": "queued", "run_id": "", "summary": "", "started": "",
+                    "delivered": False, "files": []})
+    return out
+
+
 def list_background_rows(request: Request, slug: str) -> list[dict]:
     out: list[dict] = []
     for taskid, ti in _background_tasks(request, slug):
         last = ti.last_run
+        owner_dir = Path((ti.cfg.owner or {}).get("dir") or "")
+        delivered = (ti.cfg.dir / "delivered.json").exists()
         out.append({"taskid": taskid, "label": ti.cfg.name or taskid,
                     "state": last.state if last else "pending",
                     "run_id": last.run_id if last else "",
                     "summary": (last.summary[:200] if last else ""),
-                    "delivered": (ti.cfg.dir / "delivered.json").exists()})
+                    # the run's own ts, which is what the rail counts elapsed time from
+                    "started": last.ts if last else "",
+                    "delivered": delivered,
+                    "files": _landed_files(owner_dir, taskid) if delivered else []})
     out.sort(key=lambda r: r["run_id"])
-    return out
+    # the ones with no dir yet are the NEWEST, so they read last
+    return out + _pending_rows(request, slug)
 
 
 @router.get("/conversations/{slug}/background")

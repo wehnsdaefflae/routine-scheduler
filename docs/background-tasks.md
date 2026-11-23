@@ -119,15 +119,29 @@ Pinned by `tests/test_global_pause.py` (intake, boot `reconcile`, and the delive
 
 ## Monitor + cancel
 
-- The conversation rail (`static/views/conversations.js`) shows a **background** card: each task's label,
-  state, and a cancel button while it runs. It refreshes when the conversation wakes (a
-  completion) and — while there is a task to watch or a run that could start one — on a 15 s poll
-  that DISARMS itself when neither holds: `#/conversations` is the default route, so an idle tab
-  otherwise polled that endpoint forever about an empty list.
+- The conversation rail (`static/components/bg-tasks.js`, mounted by `static/views/conversations.js`)
+  shows a **background** card per task: its state chip and label, a cancel button while it runs,
+  the time it has been running, and — once terminal — whether its result reached this
+  conversation (`delivered` / `awaiting delivery`), a link to the task's own run page, and each
+  file it landed under `artifacts/from-bg-<taskid>/` as a link into the artifacts panel (D308).
+  It refreshes when the conversation wakes (a completion) and on the `run_started` /
+  `run_finished` bus events of the runs it owns — NOT on a timer. The 15 s content-armed poll it
+  replaced asked that endpoint about a list nothing could fill (`#/conversations` is the default
+  route, so an idle tab polled it forever); the only timer left ticks a live row's elapsed time
+  in the DOM and asks the server nothing.
+- **Starting one by hand.** The composer's "⇥ background" control (`static/components/bg-start.js`)
+  takes the message box as the task's prompt, offers its first line as the label in a one-field
+  dialog, and posts it. The conversation's own reply is NOT started — a person delegating a job
+  is not a person asking the assistant something.
 - API (`web/api_background.py`): `GET /conversations/{slug}/background` lists them,
-  `POST …/background` drops an intent (the human/test analog of the engine action),
+  `POST …/background` drops an intent (the human/composer/test analog of the engine action),
   `POST …/background/{id}/cancel` aborts one (`runner.abort` + a pid fallback for a task that outlived a
-  restart). Deleting a conversation tears down its detached jobs.
+  restart). Deleting a conversation tears down its detached jobs. A row carries `started` (the
+  run's ts, which is what elapsed time is counted from), `delivered`, and `files` — the landed
+  paths, relative to the conversation dir, so the panel can address them. A task whose
+  `.requests/<taskid>.json` the manager has not taken up yet is a row too, in state `queued`:
+  intake is a tick away, and a control whose result appeared five seconds later read as one
+  that did nothing.
 - A detached run's transcript / sub-run tree resolve on the generic `/api/runs/{run_id}` endpoints
   (`_run_dir` searches `background_home` too).
 
