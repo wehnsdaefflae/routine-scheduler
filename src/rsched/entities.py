@@ -201,14 +201,70 @@ def never_grantable_fs(path: str | Path) -> bool:
     return any(_touches_store(p) for p in _spellings(path))
 
 
+#: The resolved guarded set, kept between calls as a one-entry `{key: spellings}` — one entry,
+#: because the stores change only when the config dir moves, the constant is patched, or a store
+#: appears, vanishes or is re-pointed. Empty until the first guard question is asked. A dict
+#: rather than a rebound module global: the cache is written on the read path, and a `global`
+#: statement there is what the linter refuses (PLW0603).
+_GUARDED: dict[tuple, set[Path]] = {}
+
+
+def _store_identity(stores: tuple[str, ...]) -> tuple:
+    """What the resolved guarded set DEPENDS ON, cheaply: each store path's own identity.
+
+    This is half the cache key, and it is what keeps the cache honest. Resolving the stores is
+    a `realpath` per store — 13 `Path.resolve()` calls per guard question, measured — and the
+    guard is asked once per folder-grant entry of every routine the registry scans, so one
+    `/api/runs` request paid 872 of them (F906: ~1.6 s inside a span no instrument reached).
+    Stamping instead costs one `lstat` per store, ~20x less, and it changes the moment a store
+    is created, replaced or re-pointed at something else — which is exactly when a cached
+    resolution would start lying. `None` for a store that cannot be stat'ed is a value like
+    any other: the store appearing later changes it.
+
+    `lstat` and not `stat`, so the final component is read as the LINK it may be: a store that
+    is itself a symlink, re-pointed at another directory, changes this stamp. It is also why
+    the PARENTS need no stamp of their own — `lstat` traverses every component above the last
+    one, so a directory above a store being swapped for a link lands on a different inode and
+    changes the stamp by itself. Stamping the parents as well was measured to add cost and
+    catch nothing (proven by neutering: the guard for it could not be made to fail).
+    """
+    out: list[object] = []
+    for store in stores:
+        try:
+            st = expand(store).lstat()
+        except OSError:
+            out.append(None)
+        else:
+            out.append((st.st_dev, st.st_ino, st.st_mtime_ns))
+    return tuple(out)
+
+
+def _guarded_spellings() -> set[Path]:
+    """Every spelling of every credential store, written and resolved — cached per identity.
+
+    `never_grantable_stores()`, not the NEVER_GRANTABLE constant: the config dir may be moved
+    by RSCHED_CONFIG, and the guard must name the files that actually hold this instance's
+    credentials. Reading the function at CALL time is also what lets a test patch the constant
+    and still reach every enforcement door, so the cache is keyed on its answer.
+    """
+    stores = never_grantable_stores()
+    key = (stores, _store_identity(stores))
+    cached = _GUARDED.get(key)
+    if cached is None:
+        cached = {g for store in stores for g in _spellings(store)}
+        # One entry only, so the cache cannot grow: the live instance asks one key for the
+        # life of the process, and a test that flips between store configurations simply pays
+        # the resolve again on each flip.
+        _GUARDED.clear()
+        _GUARDED[key] = cached
+    return cached
+
+
 def _touches_store(p: Path) -> bool:
-    # `never_grantable_stores()`, not the NEVER_GRANTABLE constant: the config dir may be
-    # moved by RSCHED_CONFIG, and the guard must name the files that actually hold this
-    # instance's credentials. `g in p.parents` is what keeps the config DIRECTORY ungrantable
-    # after D169's narrowing — it contains these entries, so a grant on it still contains a
-    # store, while a sibling that holds no credential (config.yaml) passes clean.
-    guarded = {g for store in never_grantable_stores() for g in _spellings(store)}
-    return any(p == g or p in g.parents or g in p.parents for g in guarded)
+    # `g in p.parents` is what keeps the config DIRECTORY ungrantable after D169's narrowing —
+    # it contains these entries, so a grant on it still contains a store, while a sibling that
+    # holds no credential (config.yaml) passes clean.
+    return any(p == g or p in g.parents or g in p.parents for g in _guarded_spellings())
 
 
 def reaches_store_only_through_a_link(path: str | Path) -> bool:
