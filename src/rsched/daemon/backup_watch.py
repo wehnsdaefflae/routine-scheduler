@@ -81,6 +81,7 @@ from time import monotonic
 from ..config import ServerConfig
 from ..health_events import log_health_event
 from ..readmodels.stamps import instant
+from .backup_attempts import ATTEMPTS_FILE, attempt_detail
 
 log = logging.getLogger("rsched.daemon")
 
@@ -217,7 +218,12 @@ def staleness(now: datetime | None = None, roots: list[Path] | None = None) -> t
             judged.sort(key=lambda row: _WORST_FIRST.index(row[1]))
             worst_label, worst_state, worst_detail = judged[0]
             others = "; ".join(f"{label} tier: {state}" for label, state, _ in judged[1:])
-            return worst_state, (f"{worst_label} tier: {worst_detail}"
+            # D299: a stale verdict also says what the last attempt COST, from the record
+            # backup.sh appends where a run can read it. Only for a stale one — an `ok` verdict
+            # has nothing to diagnose, and `unknown` means this process could not read the
+            # stamps, so an attempt row would be answering a question nobody asked.
+            cost = attempt_detail(worst_label) if worst_state == "stale" else ""
+            return worst_state, (f"{worst_label} tier: {worst_detail}{cost}"
                                  + (f" (also — {others})" if others else ""))
     return _tier_staleness(now, roots)
 
@@ -234,7 +240,8 @@ def _tier_staleness(now: datetime | None, roots: list[Path] | None) -> tuple[str
         last = (f"the last COMPLETE one finished {when.isoformat()} ({stamp})" if when is not None
                 else "no snapshot has ever completed")
         return "stale", (f"the state snapshot attempt that started {began.isoformat()} did not "
-                         f"complete within {ATTEMPT_BOUND_HOURS}h, and {last}. Read it with "
+                         f"complete within {ATTEMPT_BOUND_HOURS}h, and {last}. What it cost is in "
+                         f"`.control/{ATTEMPTS_FILE}`; the unit's own log needs a shell: "
                          "`journalctl --user -u rsched-backup`")
     if when is None:
         looked = ", ".join(str(r) for r in candidates)

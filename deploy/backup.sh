@@ -454,6 +454,41 @@ TODAY="$(date +%F)"
 # instead of three days later.
 date -Iseconds > "${ROOT}/.rsched-backup-started"
 
+# D299: WHAT the attempt cost, where a RUN can read it. The stamps above say a night started and
+# did not finish; they cannot say whether it missed by a minute or by three hours, nor how much it
+# moved — and the remedy the health event printed, the backup unit's journal, is unreachable from
+# inside a run's sandbox (no journalctl, no systemctl, no docker there). So each attempt also
+# appends ONE JSON line here, in the directory every run already reads. The off-box tier is the one
+# that fails (sshfs at one round trip per file over ~167k files), and it already COMPUTES its
+# elapsed seconds and rsync's own transferred figure for its stdout — this routes them somewhere
+# durable instead of into a journal nobody can open.
+#
+# Append-only, one line per attempt per tier, and never fatal: a backup must not fail because its
+# own bookkeeping could not be written.
+ATTEMPTS_FILE="${BACKUP_ATTEMPTS_FILE:-${HOME}/routines/.control/backup-attempts.jsonl}"
+
+record_attempt() {
+  # record_attempt <tier> <outcome> <started_epoch> [transferred] [note]
+  local tier="$1" outcome="$2" started="$3" transferred="${4:-}" note="${5:-}"
+  local elapsed=$(( $(date +%s) - started ))
+  mkdir -p "$(dirname "${ATTEMPTS_FILE}")" 2>/dev/null || return 0
+  python3 - "${tier}" "${outcome}" "${elapsed}" "${transferred}" "${note}" \
+           "${ATTEMPTS_FILE}" <<'PY' 2>/dev/null || true
+import json, sys, datetime
+tier, outcome, elapsed, transferred, note, path = sys.argv[1:7]
+row = {"at": datetime.datetime.now().astimezone().isoformat(), "tier": tier,
+       "outcome": outcome, "elapsed_s": int(elapsed)}
+if transferred:
+    row["transferred"] = transferred
+if note:
+    row["note"] = note
+with open(path, "a", encoding="utf-8") as fh:
+    fh.write(json.dumps(row, sort_keys=True) + "\n")
+PY
+}
+
+LOCAL_STARTED_AT=$(date +%s)
+
 rsched_collect_state_paths
 mkdir -p "${SNAPS}"
 
@@ -599,6 +634,7 @@ if [ -e "${SNAPS}/${TODAY}" ]; then discard "${TODAY}"; fi
 mv -T "${WORK}" "${SNAPS}/${TODAY}"
 point_latest_at "${TODAY}"
 date -Iseconds > "${ROOT}/.rsched-backup-completed"
+record_attempt local complete "${LOCAL_STARTED_AT}"
 
 # What the snapshot cost the share — rsync's OWN figure, and the share's used space as the check
 # on it. This used to be a `du -sh prev today`, counting a hard-linked file once per invocation so
@@ -682,6 +718,7 @@ mirror_offbox() {
     echo "OFF-BOX MIRROR FAILED (rsync ${rc}) — the LOCAL snapshot ${newest} is complete and" >&2
     echo "                     unaffected; only the off-box copy is behind." >&2
     echo "${out}" | grep -E '^rsync|^IO error|cannot ' | head -6 | sed 's/^/      /' >&2
+    record_attempt offbox "failed" "${started_at}" "" "rsync exit ${rc}"
     return 1
   fi
   if [ -e "${snaps}/${newest}" ]; then
@@ -696,6 +733,7 @@ mirror_offbox() {
   local sent
   sent=$(echo "${out}" | awk -F': *' '/Total transferred file size/ {print $2}')
   echo "  off-box ${root}: ${newest} mirrored (${sent:-0})   elapsed: ${elapsed}s"
+  record_attempt offbox complete "${started_at}" "${sent:-}"
   ROOT="${root}" SNAPS="${snaps}" DISCARD="${snaps}/.discard" prune_snapshots
   return 0
 }
