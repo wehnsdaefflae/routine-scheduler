@@ -109,11 +109,22 @@ def test_a_stale_verdict_carries_the_cost_and_an_ok_one_does_not(tmp_path, monke
     assert state == "stale"
     assert "the last recorded attempt was failed after 14400s" in detail
 
+    # The ok case needs a RECORDED attempt of its own tier, or "no clause" would hold simply
+    # because there was nothing to say — the assertion has to fail when the condition is dropped.
     fresh = tmp_path / "fresh"
     fresh.mkdir()
     (fresh / ".rsched-backup-completed").write_text(
         datetime.now(UTC).isoformat(), encoding="utf-8")
-    monkeypatch.setattr(backup_watch, "backup_roots", lambda env=None: [fresh])
+    (tmp_path.parent / "routines" / ".control" / ATTEMPTS_FILE).write_text(
+        json.dumps({"tier": "local", "outcome": "complete", "elapsed_s": 62}) + "\n",
+        encoding="utf-8")
+    fresh2 = tmp_path / "fresh2"
+    fresh2.mkdir()
+    (fresh2 / ".rsched-backup-completed").write_text(
+        datetime.now(UTC).isoformat(), encoding="utf-8")
+    # BOTH tiers fresh, so the verdict is `ok` while the two-tier path that composes the clause
+    # still runs — a single root skips that branch entirely and would prove nothing.
+    monkeypatch.setattr(backup_watch, "backup_roots", lambda env=None: [fresh, fresh2])
     ok_state, ok_detail = backup_watch.staleness()
     assert ok_state == "ok"
     assert "last recorded attempt" not in ok_detail
@@ -124,7 +135,8 @@ def test_the_stale_remedy_names_the_readable_record_before_the_journal():
     `journalctl --user -u rsched-backup` — which does not exist inside a run's sandbox. The
     readable path comes FIRST in the sentence now; the journal stays for whoever has a shell."""
     source = (REPO / "src" / "rsched" / "daemon" / "backup_watch.py").read_text(encoding="utf-8")
-    remedy = source[source.index("did not "):source.index("journalctl --user -u rsched-backup")]
+    journal = source.index("journalctl --user -u rsched-backup")
+    remedy = source[source.index("ATTEMPT_BOUND_HOURS}h, and {last}"):journal]
     assert "ATTEMPTS_FILE" in remedy, (
         "the stale verdict must name the readable record BEFORE the journal, so a reader without "
         "a shell is told where to look first")
