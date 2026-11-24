@@ -135,18 +135,6 @@ system_tool_call_model: ""        # fleet default for the tool_call role; blank 
   (the field is dropped for one degraded retry), so setting it costs a wasted round trip per
   turn on those models rather than failing them — steer them with the role's effort instead. It still
   works on everything else the wire serves, Haiku and a proxy's `gpt-*` ids included.
-- `quota_source` — `cliproxy` binds the PROXY to its management API (the edit form calls
-  the field *Proxy management (CLIProxyAPI)*): the signed-in account rows on the card, the
-  card's *re-authenticate* control that signs a dead session back in without a terminal, each
-  row's *remove* that deletes a lapsed or replaced login, and the Claude subscription quota read
-  (`docs/model-gateway.md`, "Signing in, signing back in, and removing a login"). Here that binding is `cliproxy-mgmt`, an endpoint with no models on the standalone
-  proxy's own origin. One binding per proxy is enough — an endpoint without its own resolves a
-  sibling's on the same origin — and each card shows the accounts for ITS models, by model
-  family (`claude-*` → Claude, `gemini-*` and `gpt-oss*` → Antigravity — matched before the
-  generic `gpt-*`/`o*`/`codex-*` → Codex); the quota line appears only on a card whose models
-  are Claude's. Claude, Codex and Antigravity (Google) all sign in from the card; the terminal
-  is only a fallback for when the console itself is broken.
-- `quota_key_var` / `quota_auth_index` — management key secret name and optional account selector.
 - `extra_body` — merged into every request body (`openai` kind only). This is where
   aggregator routing lives, e.g. OpenRouter provider pinning:
 
@@ -735,50 +723,16 @@ its client key. CLIProxyAPI owns OAuth login, token refresh, and account routing
 behind an Otari gateway that routes normalised model names to it. See the
 [model gateway guide](model-gateway.md).
 
-### Seeing what is left of the subscription
+### Subscription logins, quota and sign-in are NOT here
 
-Set `quota_source: cliproxy` and the management key's secret name in `quota_key_var`.
-The endpoint card and dashboard show the real account windows from Anthropic's usage
-API through the proxy, including usage outside this scheduler. A failed quota read
-shows a soft error; it does not block inference. OAuth tokens remain in the proxy.
-
-**A rate-limited read is reported apart from every other failure**, because the two call for
-opposite behaviour: an ordinary error should be re-read the moment the operator has fixed
-something, while a rate-limited account must be left alone. A 429 — from the proxy itself, or
-carried inside its envelope as Claude's own status, which is the usual shape — comes back as
-`rate_limited: true` with `retry_after_s`, the upstream's own `Retry-After` converted to whole
-seconds by `cliproxy_quota.retry_after_seconds` (RFC 9110 allows a delta OR an HTTP date and
-Anthropic has sent both, so the conversion happens once on the server rather than in each
-renderer). The Settings card then says *rate limited — reading again in Ns* and re-reads itself
-when that delay has passed; the header chip reads `quota · rate limited` instead of
-`subscription quota unavailable`, whose wording exists to send you to a one-line fix that a
-rate limit does not have. An unusable header — blank, a word, a negative or absurd value, a date
-already past — yields NO figure rather than a plausible wrong one: *"reads again in 0s"* would
-invite exactly the immediate re-ask this avoids, so the fact is shown without a countdown.
-Before this, every non-200 became one soft error string and both surfaces simply re-asked on
-their own cadence, which hammers a rate-limited account and says nothing about when a figure
-will exist again.
-
-### Noticing a DEAD credential before a run spends a turn
-
-The same binding is what the daemon watches. `daemon/endpoint_watch.py` reads the proxy's
-account list every 10 minutes — the lightest probe there is, never a completion and never an
-upstream request — and judges each SUBSCRIPTION LOGIN the gateway's `plans:` name
-([model gateway](model-gateway.md#signing-in-signing-back-in-and-removing-a-login)), writing a
-verdict per login (`otari/claude`, `otari/codex`, …) to `.control/endpoint-health.json`: `ok`,
-`cooling` (all accounts unavailable but the proxy expects one back — a usage limit),
-`needs_reauth` (all unavailable with no retry expected: the credential is dead and only a person
-can fix it, so sign the account back in from the management card) or `unknown` (the proxy could
-not be read, or no account is signed in — nothing is claimed). A `needs_reauth` verdict files one
-`endpoint_needs_reauth` health event a day while it holds, and it stands on the blocked-fleet fold
-(`GET /api/health/blocked`, the Stats page's **Blocked work** panel) as a block only you can
-clear — every fire whose model routes to that login is work that will not happen — until the next
-pass reads it alive.
-
-Why it exists: on 2026-09-14 06:18 a claude-proxy subscription token expired and eight
-routines failed at turn 0 within two minutes, each `503 auth_unavailable`. A gateway
-provider with no `plans` is a metered key, not a login, and is NOT watched — for an API-key
-route the light probe is the credits read, which the Settings card makes by hand.
+A subscription's accounts, how much of its window is left, and signing one back in belong to the
+gateway that owns the logins, and are managed on CLIProxyAPI's own panel
+(`/management.html`) — this product configures the TRANSPORT and nothing else (0.606.0, the
+operator's call: "we don't need any mention of subscriptions in routine-scheduler"). The
+scheduler once mirrored all three, plus a 10-minute watch that filed a blocked-work row when a
+login died; the cost of dropping it is named in [contracts](contracts.md) and
+[architecture](architecture.md). For a pay-per-use key the Settings card still reads the
+provider's own BALANCE (OpenRouter, Nano-GPT), which is a credits read, not a subscription.
 
 ## Abliterated GLM 5.2 (uncensored community variants)
 

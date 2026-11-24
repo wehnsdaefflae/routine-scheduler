@@ -56,7 +56,7 @@ def filed_within(routines_home: Path, event: str, routine: str, hours: float) ->
     `obligation_overdue` had filed 424 rows for 101 routine-days (4.2x), `migration_due_soon`
     97 for 24 (4.0x) and `backup_stale` 38 for 15 (2.5x) — 419 rows, 12.5% of the whole stream,
     saying nothing except how often the daemon restarted. The two watchers that already
-    remember across a restart (`endpoint_watch`, `overhead_alarm`) sit at 1.0x.
+    remember across a restart (`overhead_alarm`) sit at 1.0x.
 
     This is NOT `REPEAT_COOLDOWN_HOURS`: that table is applied inside `log_health_event` to
     events nothing else latches, and a test forbids it from naming a blocked-work event at all

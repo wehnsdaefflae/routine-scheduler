@@ -43,15 +43,10 @@ endpoints:
     key_var: OTARI_API_KEY
     schema_mode: none
     gateway: otari
-  cliproxy-mgmt:               # NO models: the subscription logins' management surface
-    kind: anthropic
-    base_url: http://172.17.0.1:8318
-    quota_source: cliproxy
-    quota_key_var: CLIPROXY_MANAGEMENT_KEY
 ```
 
-Put `OTARI_API_KEY` and `CLIPROXY_MANAGEMENT_KEY` in Settings → Secrets. The management key
-never reaches a routine: it is resolved on the server for the management routes alone.
+Put `OTARI_API_KEY` in Settings → Secrets. There is no management endpoint and no management
+key here: the proxy's own panel manages its logins (see below).
 
 `gateways:` is how the limits refresh sizes each model by the ROUTE its name takes rather than by
 the model's public figure ([endpoints](endpoints.md#windows-and-output-caps-are-discovered--leave-them-blank)).
@@ -116,54 +111,20 @@ Claude table.
 
 ## Signing in, signing back in, and removing a login
 
-The subscription logins belong to the standalone proxy, and the console still manages them —
-through `cliproxy-mgmt`, the one endpoint bound to the proxy's management API. Its card lists the
-proxy's accounts with the proxy's own status words: `token expired` when a refresh token was
-rejected (`invalid_grant` — only a fresh sign-in fixes it), a usage-limit message with a
-`retry after` time when a subscription window is spent (that one only waits). An endpoint with no
-models bound is of no known family, so this card shows every account, offers every provider's
-sign-in (Claude, Codex, Antigravity) and carries the Claude subscription's quota line
-(`endpoints/cliproxy_mgmt.py`).
+The subscription logins belong to the standalone proxy and are managed THERE, on its own panel at
+`/management.html` (Auth Files): the signed-in accounts and their status, signing one back in when
+a refresh token is rejected, removing a lapsed login, and what is left of each account's window.
+This scheduler holds none of that and no management key — an endpoint here is a transport
+(0.606.0, the operator's call). Two practical notes kept from when it did:
 
-To sign one back in, press *re-authenticate Claude* (or *Codex*, *Antigravity*) on the card and
-open the link it shows. The consent page then sends the browser to the PROXY'S callback address
-(`http://localhost:54545/callback?code=…&state=…` for Claude, `localhost:1455/callback` for Codex,
-`localhost:51121/oauth-callback` for Antigravity), which exists only on the server, so on your own
-device the page fails to load while its address bar still carries the code. Copy the whole
-address, paste it into the card's box and press *finish sign-in*; if the consent page shows a
-code instead of redirecting, paste that. The console hands the code to the proxy's management
-callback and polls until the token exchange settles. It never sees a token: its four routes
-(`GET …/proxy-accounts`, `POST …/proxy-login`, `POST …/proxy-login/complete`,
-`POST …/proxy-accounts/remove`) carry the consent link, the state, an account's file name and the
-proxy's status words, and every POST is refused for the routine token like every
-config-mutating route.
-
-Each account row has a *remove* button: it deletes that login from the proxy (its auth file,
-after a confirm that names the file), for a subscription that lapsed or was replaced. A new
-sign-in for an address the proxy already holds does not replace the old login, it adds one
-beside it (2026-11-16: the lapsed free-plan Codex login and the new Plus login for the same
-address), so two rows with the same address also name their file (`codex-…-plus.json`). A
-card can remove only an account it lists, the proxy's delete-everything form is never sent,
-and there is no undo: only a fresh sign-in brings a login back. Switching a login off without
-deleting it is still the proxy's own panel (`/management.html`, Auth Files). An `error` status
-without a usage limit can be one refused request (a model the plan does not include), which the
-proxy keeps as the account's last word even while later requests succeed.
-
-The terminal fallback — the proxy's own `--claude-login` with its callback port tunnelled over
-SSH — belongs to the gateway repo now, since the container it runs in is that stack's.
-
-`daemon/endpoint_watch.py` watches the same logins, found where this file says they are: each
-gateway's `plans:` names the CLIProxyAPI logins Otari routes to, and each plan group belongs to one
-login provider (`claude`, `antigravity`, `codex-plus` → `codex`). Every ten minutes it reads the
-proxy's account list ONCE through `cliproxy-mgmt` (a read-only GET) and records `ok`, `cooling`,
-`needs_reauth` or `unknown` per LOGIN — `otari/claude`, `otari/antigravity`, `otari/codex` — in
-`.control/endpoint-health.json`, filing `endpoint_needs_reauth` once a day while one is dead
-([endpoints](endpoints.md#noticing-a-dead-credential-before-a-run-spends-a-turn)). That row stands
-on the Stats page's **Blocked work** panel, counted on the rail's badge as a block only you can
-clear, until the next pass reads the login alive again. Judged per login, one dead subscription
-is flagged even while the others serve — the account list as a whole would read "2 of 3
-available" and say nothing. No management endpoint, or more than one, records every login
-`unknown` with that reason.
+* reaching that panel over the LAN needs the reverse proxy to route the management API as well as
+  the page: both `/v0/management*` AND `/v8/management*` must go to the proxy, or its newer
+  web build reports "v8 Management API not found" and tells you to upgrade a server that is
+  already new enough (diagnosed 2026-11-24 — the request was reaching the model gateway, which
+  404s it);
+* the management API IP-BANS a caller for ~30 minutes after a few failed authentications, keyed
+  on the socket address — behind a reverse proxy that is ONE address for every browser, so a bad
+  key locks everyone out until it lapses or the proxy restarts.
 
 ## Decisions through the gateway
 

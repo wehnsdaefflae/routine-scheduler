@@ -20,7 +20,7 @@ from ...config import (
     ModelConfig,
     SchemaMode,
 )
-from ...endpoints import cliproxy_mgmt, limits
+from ...endpoints import limits
 from ..model_fit import effective_window_pair, fit_fields
 from .common import rewrite_block, server_of
 from .endpoint_keys import key_source, refuse_a_credential_nobody_holds, resolve_inline_key
@@ -34,21 +34,12 @@ TEST_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["an
 MIN_PLAUSIBLE_MAX_TOKENS = 4096
 
 
-def _endpoint_view(name: str, ep: EndpointConfig, server) -> dict:
-    # `proxy_management`: a CLIProxyAPI binding resolves for this endpoint — its own, or a
-    # sibling's on the same proxy (cliproxy_mgmt.binding) — so the card lists the proxy's
-    # accounts for ITS models and offers their sign-in. `has_subscription_quota`: the Claude
-    # subscription's windows apply, i.e. a binding resolves AND the endpoint's models are
-    # Claude's (or of no known family). The Codex card resolves the first and not the second.
-    bound = cliproxy_mgmt.binding(server, name)
-    providers = cliproxy_mgmt.endpoint_providers(server, name)
+def _endpoint_view(name: str, ep: EndpointConfig) -> dict:
+    # An endpoint is a TRANSPORT and nothing else here: which subscription login serves a model
+    # behind the gateway, and whether it needs signing in again, is the gateway's own business
+    # and is read on its management panel.
     return {"name": name, "kind": ep.kind, "base_url": ep.base_url,
             "key_env_file": ep.key_env_file, "key_var": ep.key_var,
-            "quota_source": ep.quota_source, "quota_key_var": ep.quota_key_var,
-            "quota_auth_index": ep.quota_auth_index,
-            "proxy_management": bound is not None,
-            "has_subscription_quota": bound is not None and (not providers
-                                                               or "claude" in providers),
             "schema_mode": ep.schema_mode, "tool_choice": ep.tool_choice,
             "context_tokens": ep.context_tokens,
             "temperature": ep.temperature, "max_tokens": ep.max_tokens,
@@ -158,7 +149,7 @@ def _model_view(mc: ModelConfig, endpoints: dict, found: dict | None = None,
 @router.get("/settings/endpoints")
 def list_endpoints(request: Request) -> dict:
     server = server_of(request)
-    return {"endpoints": [_endpoint_view(n, e, server) for n, e in server.endpoints.items()],
+    return {"endpoints": [_endpoint_view(n, e) for n, e in server.endpoints.items()],
             "models": [_model_view(m, server.endpoints, _found(server, m), _served(server, m))
                        for m in server.models.values()],
             "system_model": server.system_model or None,
@@ -200,9 +191,6 @@ class EndpointBody(BaseModel):
     api_key: str | None = ""
     key_env_file: str = ""
     key_var: str = ""
-    quota_source: Literal["", "cliproxy"] | None = None
-    quota_key_var: str | None = None
-    quota_auth_index: str | None = None
     # the loader's own vocabulary: as a free string, a mode it cannot load was saved with
     # `ok: true` and quietly reverted to the default by the next load (R102)
     schema_mode: SchemaMode = "json_schema"
@@ -238,11 +226,6 @@ def upsert_endpoint(request: Request, body: EndpointBody, name: str | None = Non
                 spec[field] = prev[field]
         for field in ("base_url", "key_var"):
             if field not in body.model_fields_set and field in prev:
-                spec[field] = prev[field]
-        for field in ("quota_source", "quota_key_var", "quota_auth_index"):
-            if field in body.model_fields_set and getattr(body, field) is not None:
-                spec[field] = getattr(body, field)
-            elif field in prev:
                 spec[field] = prev[field]
         # Last, on the ASSEMBLED spec: every preserved field is in it, so the check reads the
         # endpoint as it would be loaded. It raises, which aborts the whole read-modify-write

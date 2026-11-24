@@ -35,20 +35,6 @@ nothing (an unmounted share reads as unknown, never as stale). F602: the unit fa
 2026-09-12 to 10-01 and nothing in this product read backup state. The other half of that fix is
 the unit's own `OnFailure=` push, which still works when this daemon is down.
 
-endpoint_needs_reauth: every account of a SUBSCRIPTION LOGIN behind the model gateway is
-unavailable with no retry expected — the credential is dead and a run whose model routes to it
-fails at turn 0 (`daemon/endpoint_watch`, R2195; re-pointed from endpoints to the gateway's
-`plans:` logins by C5). routine is empty (an instance fact, `backup_stale`'s idiom);
-`login` (`<gateway>/<provider>`, e.g. `otari/claude`), `gateway`, `provider` and the `probe` that
-asked ride as fields, one row a day per login while the state holds. On 2026-09-14 06:18 a
-claude-proxy subscription token expired and eight routines failed at turn 0 within two minutes,
-each `503 auth_unavailable`: the daemon kept user CONNECTIONS alive and never asked it of the
-model credentials. An account the proxy expects back is `cooling`, never this (`oauth_refresh`:
-only a REFUSAL flags `needs_reauth`). It is in `readmodels/health_stream.BLOCKED_EVENTS` as a
-STANDING condition only the operator clears (a sign-in is his act): every fire whose model routes
-to the dead login is work that will not happen, and the row counts only while the record
-(`endpoints/endpoint_health`) still says so.
-
 ungated_write: a run holding `shell` ran a command whose SHAPE may have written, and no
 file-action gate saw it (D158's deliberate hole; `engine/shellwrite.py` holds the shapes).
 routine/run_id name the run, `turn` the first such turn, detail the command's first 200 chars.
@@ -310,7 +296,6 @@ EVENTS: tuple[str, ...] = (
     "util_killed",
     "finish_gate_failed",
     "observation_render_failed",
-    "endpoint_needs_reauth",
     "tool_param_salvaged",
     "cache_read_degraded",
     "cost_trend_degraded",

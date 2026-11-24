@@ -49,9 +49,6 @@ class EndpointConfig(_Config):
     api_key: BlankableStr = ""
     key_env_file: BlankableStr = ""
     key_var: BlankableStr = ""  # unset → the endpoint kind's KEY_VAR_DEFAULTS entry
-    quota_source: Literal["", "cliproxy"] = ""
-    quota_key_var: str = "CLIPROXY_MANAGEMENT_KEY"
-    quota_auth_index: str = ""  # blank selects the sole enabled Claude account
     schema_mode: SchemaMode = "json_schema"  # openai kind only
     # anthropic kind only: how the action tool is offered. `auto` (the default) lets a configured
     # effort and the model's thinking reach it; `forced` is for models validated only on the

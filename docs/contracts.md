@@ -1058,26 +1058,15 @@ by a test, by the engine, or by a past incident.
   spend" bounded nothing on the route 17 of 30 enabled routines inherit through `system_model`. On
   a subscription route the cap is therefore LIST-PRICE dollars, not an invoice — the only dollar
   figure that exists there — and an UNPRICED model still meters 0.0, so no ceiling binds it.
-- **A dead model CREDENTIAL is noticed before a run spends a turn.** `daemon/endpoint_watch.py`
-  (R2195) is to model credentials what `daemon/oauth_refresh.py` is to connections: every
-  `CHECK_EVERY_S` (10 min, never the 5 s tick, `_off_tick` like every other manager) it reads the
-  CLIProxyAPI account list ONCE through the instance's one `quota_source: cliproxy` endpoint —
-  the LIGHTEST already-implemented probe, never the live completion test and never an upstream
-  request — and judges each SUBSCRIPTION LOGIN behind the gateway (C5, 2026-11-21): the gateways'
-  `plans:` name them, each plan group one login provider (`cliproxy_mgmt.plan_provider`), keyed
-  `<gateway>/<provider>`. One of four states per login goes to
-  `<routines>/.control/endpoint-health.json` (`endpoints/endpoint_health.py`, derived state, never
-  config): `ok` · `cooling` (all accounts unavailable, a retry expected — a usage limit) ·
-  `needs_reauth` (all unavailable, no retry: the credential is dead) · `unknown` (the proxy could
-  not be read, no account is signed in, or which proxy holds the logins is not said — nothing
-  claimed, `backup_stale`'s rule). `needs_reauth` files `endpoint_needs_reauth` once a day while
-  it holds, and the latch lives in the RECORD so a daemon restart cannot re-file the fleet. It is
-  a STANDING condition on the blocked-work surface and an operator block (a sign-in is his act),
-  retired the moment the record reads every login alive (`web/operator_conditions`); a login no
-  gateway names any more leaves the record at the next pass. Judging per login is the point: the
-  per-endpoint probe it replaced read one list of all accounts, so a dead subscription beside a
-  live one read `ok`. Before any of this, one expiring claude-proxy token (2026-09-14 06:18)
-  failed eight routines at turn 0 within two minutes and nothing detected it.
+- **An endpoint is a TRANSPORT and nothing more.** This product configures where a model call
+  goes and what pays for it; whose SUBSCRIPTION LOGIN serves a model behind the gateway, whether
+  that login is still signed in, and how much of its window is left are the gateway's own facts,
+  managed on CLIProxyAPI's management panel and never mirrored here (0.606.0, the operator's
+  call). A guarantee was RETIRED to get there, and the cost is stated rather than implied: a
+  10-minute credential watch used to file a standing blocked-work condition when a login died,
+  because one expiring claude-proxy token failed eight routines at turn 0 within two minutes and
+  nothing detected it. That failure mode is now visible as those runs failing, not as a warning
+  beforehand.
 - **A model's limits are DISCOVERED, not configured — and they are the ROUTE's.**
   `endpoints/limits.py` asks what each model's real context window and output maximum are and
   caches it under `<routines>/.control/model-limits.json` — derived state, never config —

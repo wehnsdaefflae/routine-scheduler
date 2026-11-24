@@ -6,21 +6,19 @@
 // and the raw error detail (auth hint) on fail.
 
 import { api } from "/static/api.js";
-import { quotaLine } from "/static/components/quota.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { proxyAccounts } from "/static/components/proxy-accounts.js";
 import { modelIdPicker } from "/static/components/model-id-picker.js";
 import { modelPanels } from "/static/views/settings-models.js";
 import { savedToast, temperatureHint } from "/static/views/settings-common.js";
 import { act, el, toast } from "/static/util.js";
 
-// Each kind needs a DIFFERENT credential — spelled out per endpoint so the subscription token
+// Each kind needs a DIFFERENT credential — spelled out per endpoint so the gateway client key
 // and metered API keys don't get confused (they land in different places).
 const KIND = {
   openai: { title: "OpenAI-compatible API (OpenRouter, Featherless, vLLM, …)", keyLabel: "API key",
-    subscription: false, hint: "Needs an API key — paste it below, or set its key_var in Secrets. Setup guide: Help → endpoints." },
+    hint: "Needs an API key — paste it below, or set its key_var in Secrets. Setup guide: Help → endpoints." },
   anthropic: { title: "Anthropic-compatible Messages API", keyLabel: "API or proxy client key",
-    subscription: false, hint: "Direct Anthropic uses a metered API key. A subscription proxy uses its own client key; sign in through the proxy." },
+    hint: "Direct Anthropic uses a metered API key. A gateway route uses the gateway's own client key." },
 };
 const KINDS = ["openai", "anthropic"];
 const SCHEMA_MODES = ["json_schema", "none"];
@@ -108,7 +106,7 @@ export async function renderEndpoints(view) {
   }
 
   function item(ep) {
-    const info = KIND[ep.kind] || { title: ep.kind, keyLabel: "key", subscription: false, hint: "" };
+    const info = KIND[ep.kind] || { title: ep.kind, keyLabel: "key", hint: "" };
     // the id to test: what this endpoint says it serves, or a text box when it cannot say
     const modelInput = modelIdPicker({ placeholder: "model id (e.g. opus)", label: "model to test" });
     modelInput.setEndpoint(ep.name);
@@ -159,11 +157,6 @@ export async function renderEndpoints(view) {
     const baseIn = el("input", { type: "text", value: ep.base_url || "", placeholder: "https://host/v1" });
     const keyVarIn = el("input", { type: "text", value: ep.key_var || "", placeholder: "KEY_VAR in Secrets (optional)" });
     const keyEnvIn = el("input", { type: "text", value: ep.key_env_file || "", placeholder: "path to an env file (optional)" });
-    const quotaSel = el("select", {}, el("option", { value: "" }, "None"),
-      el("option", { value: "cliproxy" }, "CLIProxyAPI")); quotaSel.value = ep.quota_source || "";
-    const quotaKeyIn = el("input", { type: "text", value: ep.quota_key_var || "CLIPROXY_MANAGEMENT_KEY" });
-    const quotaAccountIn = el("input", { type: "text", value: ep.quota_auth_index || "",
-      placeholder: "Automatic for one Claude account" });
     const ctxIn = el("input", { type: "number", min: "1", value: ep.context_tokens,
       placeholder: CONTEXT_BLANK });
     const tempIn = el("input", { type: "number", step: "0.1", value: ep.temperature ?? "", placeholder: "provider default" });
@@ -176,8 +169,6 @@ export async function renderEndpoints(view) {
     saveEdit.onclick = () => act(saveEdit, async () => {
       const body = {
         name: ep.name, kind: kindSel.value, base_url: baseIn.value.trim(),
-        quota_source: quotaSel.value, quota_key_var: quotaKeyIn.value.trim(),
-        quota_auth_index: quotaAccountIn.value.trim(),
         key_env_file: keyEnvIn.value.trim(), key_var: keyVarIn.value.trim(),
         schema_mode: schemaSel.value, ...contextField(ctxIn),
         temperature: tempIn.value.trim() ? Number(tempIn.value) : null,
@@ -206,9 +197,7 @@ export async function renderEndpoints(view) {
           temperatureHint()),
         el("label", { class: "field" }, el("span", {}, "max_tokens (default)"), mtIn)),
       el("div", { class: "field-row" },
-        el("label", { class: "field" }, el("span", {}, "Proxy management (CLIProxyAPI)"), quotaSel),
-        el("label", { class: "field" }, el("span", {}, "Management key secret name"), quotaKeyIn),
-        el("label", { class: "field" }, el("span", {}, "Quota account index"), quotaAccountIn)),
+        ),
       extraBodyIn ? el("div", { style: "margin-top:6px" },
         el("div", { class: "field" },
           el("span", {}, "extra_body (JSON — merged into every request)"), extraBodyIn)) : null,
@@ -231,49 +220,6 @@ export async function renderEndpoints(view) {
       }).catch(() => creditsRow.replaceChildren());
     }
 
-    // Proxy subscription: the REAL per-window quota, read from the account's own
-    // usage API. This replaced a local token tally (D33) that could not express "% remaining" in
-    // principle — Anthropic's windows are not a token count, and the tally was blind to the
-    // operator's own interactive sessions on the same subscription.
-    const usageRow = el("div", { class: "small muted", style: "margin-top:4px" });
-    function loadQuota() {
-      usageRow.textContent = "subscription quota: checking…";
-      api(`/api/settings/endpoints/${encodeURIComponent(ep.name)}/quota`).then((q) => {
-        if (!q.supported) { usageRow.replaceChildren(); return; }
-        if (q.rate_limited) {
-          // A 429 is NOT the actionable case below: nothing is wrong with the account or the
-          // credential, so "unavailable — <fix>" sends the operator to repair something that
-          // is not broken. The server carries the upstream's own `Retry-After` as seconds
-          // (endpoints/cliproxy_quota.retry_after_seconds), so the card can say WHEN instead
-          // of leaving a dead line, and it re-reads ITSELF once that delay has passed rather
-          // than waiting for the next page visit.
-          const secs = Number(q.retry_after_s) || 0;
-          usageRow.replaceChildren(el("span", { class: "muted" },
-            secs ? `subscription quota: rate limited — reading again in ${secs}s`
-                 : "subscription quota: rate limited — it will read again later"));
-          if (secs) setTimeout(loadQuota, (secs + 1) * 1000);
-          return;
-        }
-        if (!q.ok) {
-          // The error is the actionable half here — it always names the one-line fix, because
-          // the credential this needs expires; the proxy-account rows below carry the way back in.
-          usageRow.replaceChildren(el("span", { class: "warn-line" },
-            `subscription quota unavailable — ${q.error || "unknown reason"}`));
-          return;
-        }
-        usageRow.replaceChildren(el("span", { title: "from the account's own usage API — the "
-          + "whole subscription, including your interactive sessions" },
-          `subscription: ${quotaLine(q)}`));
-      }).catch(() => usageRow.replaceChildren());
-    }
-    if (ep.has_subscription_quota) loadQuota();
-    // The signed-in accounts and the way back in, on every endpoint of a bound proxy (the
-    // binding is the proxy's, resolved server-side) — a finished sign-in also changes what the
-    // quota read returns, so it reloads that row.
-    // (and what a signed-in account serves, so the model-id list is asked again)
-    const proxy = ep.proxy_management
-      ? proxyAccounts(ep, () => { loadQuota(); modelInput.setEndpoint(ep.name, true); }) : null;
-
     return el("div", { class: "panel mt" },
       el("div", { class: "row spread" },
         el("div", {}, el("strong", {}, ep.name), " ", el("span", { class: "chip bare" }, ep.kind), " ",
@@ -283,8 +229,6 @@ export async function renderEndpoints(view) {
       el("div", { class: "muted small", style: "margin-bottom:2px" }, info.hint),
       credSourceLine(ep),
       creditsRow,
-      usageRow,
-      proxy ? proxy.box : null,
       keyRow,
       el("div", { class: "row mt", style: "align-items:flex-start" }, modelInput.node, testBtn),
       resultBox,

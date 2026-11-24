@@ -8,12 +8,10 @@ import time
 from concurrent.futures import CancelledError
 from pathlib import Path
 
-import httpx
 import yaml
 
 from rsched import reminders as reminder_store
 from rsched.config import ServerConfig, load_routine
-from rsched.endpoints import cliproxy_mgmt
 from rsched.engine.budgets_config import Budgets
 from rsched.engine.run_context import RunContext
 from rsched.engine.transcript import Transcript, read_events
@@ -271,18 +269,6 @@ def pid_alive(pid: int) -> bool:
     except FileNotFoundError:
         return False
     return not stat.rsplit(") ", 1)[1].startswith("Z")
-
-
-def mock_proxy(monkeypatch, handler) -> None:
-    """Send every request the CLIProxy management client makes to `handler` instead
-    (an httpx MockTransport handler).
-    """
-    monkeypatch.setattr(cliproxy_mgmt.httpx, "Client", lambda **kw: _REAL_CLIENT(
-        transport=httpx.MockTransport(handler), **kw))
-
-
-#: The unpatched `httpx.Client`, bound before any test can monkeypatch it — see `mock_proxy`.
-_REAL_CLIENT = httpx.Client
 
 
 #: A `create_routine` `produces` field that settles an outcome contract (engine/outcome_words.py).

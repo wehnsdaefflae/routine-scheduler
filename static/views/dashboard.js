@@ -11,7 +11,6 @@ import { api } from "/static/api.js";
 import { activityFeed } from "/static/components/activityfeed.js";
 import { routineRows } from "/static/views/dashboard-rows.js";
 import { SORTS, STATE_BUCKETS, ordered, visible } from "/static/views/dashboard-filters.js";
-import { loadQuota } from "/static/components/quota.js";
 import { lanesToolbar } from "/static/components/lanemanage.js";
 import { cronToFriendly, specAtInstant } from "/static/components/schedule.js";
 import { weekGrid } from "/static/components/weekgrid.js";
@@ -32,21 +31,11 @@ export async function render(view) {
       catch (err) { toastError(err); }
       pauseBtn.disabled = false;
     } }, "⏸ pause scheduling");
-  // The subscription's remaining quota, on the page the operator opens. It lived only on a
-  // Settings endpoint card as muted 11px text, which is why the answer to "why don't I see it"
-  // was partly "you would have had to go looking". SIGNAL while there is room, SUMMONS when a
-  // window is nearly spent — an exhausted quota is a thing that waits on a person.
-  const quotaChip = el("span", { class: "chip bare", hidden: true });
-  // The chip reads "7d 57% left" and nothing on it said 57% of WHAT. The subject goes beside it
-  // rather than inside it: `.chip` is white-space:nowrap, and a longer chip is what once broke
-  // the horizontal viewport on a phone (where the label hides — see base.css).
-  const quotaLbl = el("span", { class: "lbl quota-lbl", hidden: true }, "Claude quota");
   view.append(
     el("div", { class: "page-head" },
       el("div", {},
         el("h1", {}, "Routines")),
-      el("div", { class: "row" }, quotaLbl, quotaChip, pauseBtn)));
-  loadQuota(quotaChip).then(() => { quotaLbl.hidden = quotaChip.hidden; });
+      el("div", { class: "row" }, pauseBtn)));
   const banner = el("div", {});
   // Week-strip drag ops (weekgrid-drag.js): every drop PATCHes, then reloads so the strip
   // redraws from truth. Lane-membership PATCHes always carry the FULL member record list —

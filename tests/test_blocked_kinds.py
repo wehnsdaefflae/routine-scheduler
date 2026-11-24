@@ -13,7 +13,6 @@ LATCHED_BY_THE_DAY = {
     "obligation_overdue": "daemon/owed_watch — one row per routine per day",
     "answer_undelivered": "daemon/owed_watch — one row per routine or conversation per day",
     "process_overhead_high": "engine/overhead_alarm LATCH_HOURS = 24, read back off the stream",
-    "endpoint_needs_reauth": "daemon/endpoint_watch REFILE_AFTER, latched in the login's record",
 }
 
 #: Events whose every row is a distinct thing that happened, so counting them is counting facts.

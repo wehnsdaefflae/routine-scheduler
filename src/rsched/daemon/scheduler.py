@@ -23,7 +23,6 @@ from ..ids import now_iso
 from . import containerbirth, pause, pause_skip, reap_resume, restart, runner_reap
 from .backup_watch import BackupWatch
 from .detached import DetachedManager
-from .endpoint_watch import EndpointWatch
 from .events import EventBus
 from .item_record_watch import ItemRecordWatch
 from .lane_runs import LaneRunManager
@@ -72,11 +71,11 @@ class Scheduler:
         # durably; this manager advances it one member per tick — fire, wait for terminal,
         # apply the on_failure policy, fire the next (see daemon/lane_runs.py).
         self.lane_runs = LaneRunManager(server, runner)
-        # Credential upkeep: refresh expiring CONNECTIONS before they lapse (oauth_refresh.py),
-        # and ask each proxy-backed ENDPOINT whether its own credential is still alive, which
-        # nothing did until eight routines failed at turn 0 on one dead token (endpoint_watch.py).
+        # Credential upkeep: refresh expiring CONNECTIONS before they lapse (oauth_refresh.py).
+        # The gateway's SUBSCRIPTION logins are deliberately not watched here — an endpoint is a
+        # transport, and whose login serves a model is the gateway's own fact (docs/architecture.md
+        # states what that costs).
         self.oauth = OAuthRefreshManager(server)
-        self.credentials = EndpointWatch(server)   # `endpoints` is the CONFIG dict, not this
         # The library MOVES under its holders — a sync pull, a hand edit, a restored bundle — with
         # no writer to gate. This notices and files the breakage as a decision (library_watch.py).
         self.library = LibraryWatch(server)
@@ -292,12 +291,11 @@ class Scheduler:
                     # sequential lane fires: advance each armed chain one member per tick
                     await self.lane_runs.tick(self.catalog)
                 # Upkeep runs BESIDE the tick (`_off_tick`), never inside it: OAuth refreshes
-                # expiring connections with a 20 s POST each, the library watch re-resolves every
-                # routine after a library change, the endpoint watch asks each proxy whose
-                # credential is alive — awaited here, any of them held every fire behind it.
+                # expiring connections with a 20 s POST each, and the library watch re-resolves
+                # every routine after a library change — awaited here, either held every fire
+                # behind it.
                 self._off_tick("oauth", self.oauth.tick)
                 self._off_tick("library-watch", self.library.tick)
-                self._off_tick("endpoint-watch", self.credentials.tick)
                 self._off_tick("backup-watch", self.backup.tick)
                 self._off_tick("marker-watch", self.markers.tick)
                 self._off_tick("owed-watch", self.owed.tick)

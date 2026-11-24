@@ -1,5 +1,4 @@
-"""Asking an endpoint about ITSELF — the credits read, the subscription quota, and the live
-connection test.
+"""Asking an endpoint about ITSELF — the credits read and the live connection test.
 
 Split out of `endpoints.py` (F393): storing endpoint config and going out to the network to see
 whether it works are different jobs, and only this one can be slow, fail, or cost money. Keeping
@@ -14,14 +13,7 @@ import time
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ...endpoints import (
-    EndpointRegistry,
-    cliproxy_login,
-    cliproxy_mgmt,
-    cliproxy_quota,
-    failure_hints,
-    model_ids,
-)
+from ...endpoints import EndpointRegistry, failure_hints, model_ids
 from ...endpoints.base import EndpointError
 from ...schema_guard import SchemaViolation, parse_reply
 from .common import server_of
@@ -119,103 +111,6 @@ def _endpoint(request: Request, name: str):
     if ep is None:
         raise HTTPException(404, f"no endpoint {name!r}")
     return ep
-
-
-@router.get("/settings/endpoints/{name}/quota")
-async def endpoint_quota(request: Request, name: str) -> dict:
-    """What is LEFT of the Claude subscription's rolling windows — the operator's literal ask.
-
-    A sibling of the credits read above and deliberately shaped like it: `{"supported": false}`
-    for endpoints without a quota source, never raises, and the card renders the error text
-    when the provider or the credential is the problem. The quota is per-ACCOUNT rather than per
-    endpoint, so two subscription proxy endpoints would honestly report the same numbers.
-    """
-    server = server_of(request)
-    _endpoint(request, name)
-    bound = cliproxy_mgmt.binding(server, name)
-    providers = cliproxy_mgmt.endpoint_providers(server, name)
-    # the Claude subscription's windows, read through whichever endpoint carries the
-    # binding — but only ON a card whose models are Claude's (unknown families count as
-    # Claude's, since the read was configured somewhere); the Codex card gets none
-    if bound is None or (providers and "claude" not in providers):
-        return {"supported": False}
-    return await asyncio.to_thread(cliproxy_quota.read_quota, bound)
-
-
-# ---- signing the proxy's accounts back in (or removing one), from the card -----------------
-# The management binding is the proxy's (`quota_source: cliproxy` + the management key in
-# `quota_key_var` on ANY endpoint of that proxy — cliproxy_mgmt.binding resolves a sibling's),
-# and which accounts a card shows follows the provider of the models bound to that endpoint.
-# The proxy owns the OAuth flow; the two login routes ferry the consent URL out to the
-# operator's browser and the code back (endpoints/cliproxy_login.py explains why the code
-# comes back by hand: the consent page redirects to localhost on the OPERATOR'S device), and
-# the remove route deletes one account the card lists.
-# Mutating routes, so the read-only routine token is refused like every other POST.
-
-def _proxy_binding(request: Request, name: str):
-    _endpoint(request, name)
-    bound = cliproxy_mgmt.binding(server_of(request), name)
-    if bound is None:
-        raise HTTPException(400, f"endpoint {name!r} has no proxy management binding — set "
-                                 "Proxy management to CLIProxyAPI on it (or on any endpoint "
-                                 "of the same proxy) first")
-    return bound
-
-
-@router.get("/settings/endpoints/{name}/proxy-accounts")
-async def proxy_accounts(request: Request, name: str) -> dict:
-    """Who the proxy is signed in as, for THIS endpoint's models — provider, label, the
-    proxy's status word and its one-line reason when an account is unavailable (a dead
-    refresh token, a usage limit) — plus the sign-in controls the card offers.
-    `{"supported": false}` for an endpoint that resolves no binding, like the quota read.
-    """
-    server = server_of(request)
-    _endpoint(request, name)
-    bound = cliproxy_mgmt.binding(server, name)
-    if bound is None:
-        return {"supported": False}
-    return await asyncio.to_thread(cliproxy_login.accounts, bound,
-                                   cliproxy_mgmt.endpoint_providers(server, name))
-
-
-class ProxyLoginStart(BaseModel):
-    provider: str
-
-
-@router.post("/settings/endpoints/{name}/proxy-login")
-async def proxy_login_start(request: Request, name: str, body: ProxyLoginStart) -> dict:
-    """A consent URL + the state naming this sign-in; the card shows the link."""
-    bound = _proxy_binding(request, name)
-    return await asyncio.to_thread(cliproxy_login.start, bound, body.provider)
-
-
-class ProxyLoginComplete(BaseModel):
-    provider: str
-    state: str
-    response: str   # the callback address the operator landed on, `code#state`, or the code
-
-
-@router.post("/settings/endpoints/{name}/proxy-login/complete")
-async def proxy_login_complete(request: Request, name: str,
-                               body: ProxyLoginComplete) -> dict:
-    """Hand the pasted code to the proxy and wait for its token exchange to settle."""
-    bound = _proxy_binding(request, name)
-    return await asyncio.to_thread(cliproxy_login.complete, bound, body.provider, body.state,
-                                   body.response)
-
-
-class ProxyAccountRemove(BaseModel):
-    account: str    # the auth file's name, as the account list carries it
-
-
-@router.post("/settings/endpoints/{name}/proxy-accounts/remove")
-async def proxy_account_remove(request: Request, name: str, body: ProxyAccountRemove) -> dict:
-    """Delete one of the accounts THIS card lists from the proxy (a lapsed subscription's old
-    login, say). Only a listed account can go; signing in again is the only way back.
-    """
-    bound = _proxy_binding(request, name)
-    providers = cliproxy_mgmt.endpoint_providers(server_of(request), name)
-    return await asyncio.to_thread(cliproxy_login.remove, bound, body.account, providers)
 
 
 @router.get("/settings/endpoints/{name}/model-ids")

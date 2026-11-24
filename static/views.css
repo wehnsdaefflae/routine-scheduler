@@ -495,16 +495,6 @@ pre.hl-json .tok-const { color: var(--warn); }
 }
 
 /* ---------- settings ---------- */
-/* A line about something that is WRONG with a transport: a provider error, a quota refusal, a
-   proxy the console could not reach. Six call sites (components/proxy-accounts.js,
-   views/settings-endpoints.js) named this class and no stylesheet defined it, so every one of
-   them rendered as plain body ink — the warning colour was in the markup and nowhere on screen.
-   Both properties are load-bearing: a provider error arrives as ITS text, which has been a
-   250-character JSON body with no break opportunity in it. */
-.warn-line { color: var(--warn); overflow-wrap: anywhere; }
-/* The signed-in account's status is provider text too, and it widened the whole Settings
-   document to 624px on a 375px phone — a raw `{"error":{"type":"usage_limit_reached",…}` with
-   nowhere to break. It breaks here; making it a sentence is the provider adapter's job. */
 .proxy-accounts { overflow-wrap: anywhere; }
 .test-result { font-size: var(--t-s); margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .test-result.ok { color: var(--ok); }

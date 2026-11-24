@@ -59,7 +59,7 @@ def test_every_off_tick_watcher_hands_its_work_to_a_thread():
     proof that nothing blocks — a guard against the shape all three defects had, where the
     word does not occur in the class at all."""
     watchers = _off_tick_watchers()
-    assert len(watchers) >= 7, f"the scan found too few watchers to mean anything: {watchers}"
+    assert len(watchers) >= 6, f"the scan found too few watchers to mean anything: {watchers}"
     missing = [f"{attr} ({cls.__name__})" for attr, cls in sorted(watchers.items())
                if "asyncio.to_thread" not in inspect.getsource(cls)]
     assert not missing, f"these watchers run their work on the event loop: {missing}"

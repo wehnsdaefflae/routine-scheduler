@@ -1177,9 +1177,6 @@ label.field > span, .field > .lbl {
 .lt-proc-children { padding: 2px var(--s1) var(--s1) 14px; border-top: 1px solid var(--rule); }
 
 @media (max-width: 860px) {
-  /* The quota chip's label is desktop-only: the chip itself is nowrap and already the widest
-     thing in the phone header, and the chip's tooltip names its subject either way. */
-  .quota-lbl { display: none; }
   /* the rail has become the bottom bar, so the corner the docks live in is taken. It clears the
      bar on the bar's own terms: 39px of fixed height plus the padding that grows with the
      safe-area inset on a notched phone, plus the 19px of air .workspace's 62px reserve leaves. */

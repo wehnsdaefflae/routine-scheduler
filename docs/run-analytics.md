@@ -845,7 +845,7 @@ health stream for that window held exactly one event, about an unrelated oversiz
 
 ## Blocked work (`/api/health/blocked`)
 
-Everything above measures runs that HAPPENED. 20 health events record the opposite —
+Everything above measures runs that HAPPENED. 19 health events record the opposite —
 `postdeploy_failed` (the daemon's own post-boot checklist found that what it serves, or what it
 can write or back up, is not what the deploy intended — most sharply a build that did not
 relaunch, which is a deploy that was due and did not land; `daemon/postdeploy_watch.py`),
@@ -855,9 +855,8 @@ relaunch, which is a deploy that was due and did not land; `daemon/postdeploy_wa
 `backup_stale`, `migration_expired`, `migration_due_soon`, `obligation_overdue`,
 `finish_gate_failed`, `item_dropped_live`, `model_chain_exhausted` and
 `process_overhead_high` (a routine's run time going to its own process rather than its task —
-"Process overhead" above), `answer_undelivered` (an answer of yours that no run will
-ever read — `readmodels/answer_pickup`) and `endpoint_needs_reauth` (a subscription login behind
-the model gateway is dead, so every fire routed to it fails at turn 0 — `daemon/endpoint_watch`) — and no run page, Items row or Stats slice can carry any of them: the first six produce
+"Process overhead" above) and `answer_undelivered` (an answer of yours that no run will
+ever read — `readmodels/answer_pickup`) — and no run page, Items row or Stats slice can carry any of them: the first six produce
 no run at all; a commit that did not land happens after a run's finish is written, or
 outside any run (a web edit, a boot seed sync, a migration); a finish gate that RAISED
 (F678) leaves a run that reads as finished on every surface, because it did finish — on its own
@@ -888,9 +887,8 @@ NOTHING INSIDE THE SYSTEM WILL CLEAR: `operator: true` plus `waiting_on_you`, th
 naming what only the operator can do, for `backup_stale` (a host unit did not complete),
 `fire_paused` / `lane_fire_paused` (scheduling is paused and due fires are being dropped, never
 made up — D237), `oneshot_skipped` (consumed unfired), `lane_chain_member_skipped` (a lane
-names a member that is not a routine in any home), `answer_undelivered` (an answer of his no
-run will read) and `endpoint_needs_reauth` (a dead subscription login — signing it back in is
-a consent page in his browser). A row counts only WHILE ITS CONDITION STILL HOLDS (2026-11-09,
+names a member that is not a routine in any home) and `answer_undelivered` (an answer of his no
+run will read). A row counts only WHILE ITS CONDITION STILL HOLDS (2026-11-09,
 `web/operator_conditions.py`): the pause is still on, the backup watch still reads it stale (its
 KEPT verdict, `BackupWatch.current` — the request never reads the backup share itself), the
 answer still has no reader, the lane still names the missing slug. One known to be over is
@@ -912,9 +910,8 @@ so a condition that ENDED stood on the panel for the rest of its week: an overhe
 recipe already revised, a due-soon marker already deleted, an obligation already met. The same
 checker now asks each of them of the reader that decides it — `owed_watch.overdue` for
 `obligation_overdue`, the overhead reading under the CURRENT recipe for `process_overhead_high`
-(a revised recipe with no measured run has no reading — the alarm would not file, so the row is over), `migration_markers` for
-the two marker events, the credential watch's record (`endpoint_health.any_needs_reauth`) for
-`endpoint_needs_reauth` — and a row known to be over is `resolved`: it leaves `standing_rows`
+(a revised recipe with no measured run has no reading — the alarm would not file, so the row is over) and `migration_markers` for
+the two marker events — and a row known to be over is `resolved`: it leaves `standing_rows`
 and the panel's table, and the panel names it in one `N resolved since — …` line instead. The judgement is SERVED, exactly like `vocabulary`:
 one module decides it and the console renders what it was not compiled with, so adding an event
 to the set lights the badge with no console change.

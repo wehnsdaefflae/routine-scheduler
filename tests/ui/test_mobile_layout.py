@@ -5,21 +5,11 @@ from __future__ import annotations
 from playwright.sync_api import expect
 
 from rsched import lanes
-from rsched.config import EndpointConfig
-from rsched.endpoints import cliproxy_login, cliproxy_quota
 
 from .helpers import start_conversation
 from .test_mobile_nav import LONG_TOKEN, PHONE
 
 DESKTOP = {"width": 1400, "height": 900}
-
-#: A provider payload as it actually arrives: `{"error":{"type":"usage_limit_reached",…}}` with
-#: not one break opportunity in it. On 2026-09-22 this string alone made the whole Settings
-#: document 624px wide on a 375px phone — and the bottom bar is laid out against that width.
-RAW_PROVIDER_ERROR = (
-    '{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached",'
-    '"plan_type":"prolite","resets_at":1790467371,"eligible_promo":null,"resets_in":420000}}')
-
 
 def _doc_width(page) -> int:
     return page.evaluate("() => document.documentElement.scrollWidth")
@@ -80,52 +70,6 @@ def test_a_dropdown_cannot_widen_a_conversation_on_a_phone(ui, ui_page):
     ui_page.wait_for_timeout(120)
     assert _doc_width(ui_page) <= PHONE["width"] + 1, (
         f"a model name widened the conversation to {_doc_width(ui_page)}px")
-
-
-def test_a_raw_provider_error_cannot_widen_settings_on_a_phone(ui, ui_page, monkeypatch):
-    """The account line prints what the provider said, and what the provider says can be an
-    unbreakable JSON body. Settings must break it, not pan sideways: the operator reads this
-    page on a phone precisely when an account has stopped working.
-    """
-    ui.server_cfg.endpoints["claude-proxy"] = EndpointConfig(
-        kind="anthropic", base_url="http://127.0.0.1:1", quota_source="cliproxy")
-    monkeypatch.setattr(cliproxy_quota, "read_quota", lambda cfg: {"supported": False})
-    monkeypatch.setattr(cliproxy_login, "accounts", lambda cfg, providers: {
-        "supported": True, "ok": True,
-        "accounts": [{"name": "claude-me.json", "provider": "claude", "label": "me@example.org",
-                      "status": "error", "status_message": RAW_PROVIDER_ERROR,
-                      "unavailable": True, "disabled": False, "next_retry_after": ""}],
-        "providers": [{"id": "anthropic", "label": "Claude"}]})
-
-    ui_page.set_viewport_size(PHONE)
-    ui_page.goto(f"{ui.url}/#/settings?section=endpoints")
-    line = ui_page.locator(".proxy-accounts").first
-    expect(line).to_contain_text("usage_limit_reached")
-    assert _doc_width(ui_page) <= PHONE["width"] + 1, (
-        f"a provider error widened Settings to {_doc_width(ui_page)}px")
-
-
-def test_a_warning_line_wears_the_warning_colour(ui, ui_page, monkeypatch):
-    """`.warn-line` was named in six places and defined in no stylesheet, so every failure it
-    marked — a provider error, a quota refusal — rendered as ordinary body ink."""
-    ui.server_cfg.endpoints["claude-proxy"] = EndpointConfig(
-        kind="anthropic", base_url="http://127.0.0.1:1", quota_source="cliproxy")
-    monkeypatch.setattr(cliproxy_quota, "read_quota", lambda cfg: {"supported": False})
-    monkeypatch.setattr(cliproxy_login, "accounts", lambda cfg, providers: {
-        "supported": False, "ok": False, "error": "the proxy is not answering"})
-    ui_page.goto(f"{ui.url}/#/settings?section=endpoints")
-    ui_page.wait_for_selector("#sec-endpoints")
-    colours = ui_page.evaluate(
-        """() => {
-            const n = document.createElement("span");
-            n.className = "warn-line"; n.textContent = "x";
-            document.body.append(n);
-            const c = getComputedStyle(n).color;
-            const plain = getComputedStyle(document.body).color;
-            n.remove();
-            return [c, plain];
-        }""")
-    assert colours[0] != colours[1], "`.warn-line` is styled by no stylesheet"
 
 
 def test_the_bottom_bar_gives_every_destination_its_own_glyph(ui, ui_page):
