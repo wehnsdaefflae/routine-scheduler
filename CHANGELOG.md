@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.610.0] — 2026-11-24
+
+**D288 step 1 — a util's model spend is booked against the run that called it.** The
+prerequisite for the operator's *"Convert fully"*: `llm` and `decide` are to stop being action
+kinds, and both of those handlers call `ctx.add_usage(...)` while a util call booked **nothing**.
+Remove the actions as things stood and every token a run spends on inference disappears from its
+own meter, from the usage stream and from the per-routine cost — a regression dressed as a
+cleanup. This is already live for every routine reaching a model through `llm-complete` today.
+
+- `src/rsched/engine/utilspend.py` (new): `RSCHED_USAGE_SINK` names a file a util appends one
+  JSON object per model call to; the engine folds what it finds through `ctx.add_usage`, the
+  single writer of a run's usage. Both spellings are read, because both are in the house — the
+  engine's `in`/`out` and an OpenAI-compatible provider's `prompt_tokens`/`completion_tokens`,
+  which is what a util has in hand.
+- A FILE and not stdout: stdout is the util's answer and only some invocations are `--json`, so
+  parsing spend out of prose would make a util's output format part of the accounting contract.
+- The sink rides `extra_secrets`, the channel `RSCHED_API_TOKEN` and `RSCHED_ROUTINE` already
+  take, so `utils_run.py` is untouched (it is at its 520-line ceiling, which is why `_child_env`
+  moved out of it) and `executor.py` is line-neutral at its own.
+- It never fails a call: a missing, empty or damaged sink books nothing and raises nothing, and
+  `ctx.add_usage` is read with `getattr` and FAILS OPEN — this path runs for every util call and
+  some callers hand in a context stand-in (a hard attribute read there reddened 8 tests in 6
+  files in 0.532.0). A negative count and a boolean are refused rather than booked.
+
+12 guards proven red-first; 141 tests green over the final bytes.
+
+**Still open in D288:** the two kinds remain in the schema. `state/plan.md` in
+`scheduler-builder` carries the full removal map, including the refusal takeover — engine-side
+today, and a util reaches no uncensored role for it.
+
 ## [0.609.0] — 2026-11-24
 
 **D306 point 2 — branches in the conversation rail, live. The order is now complete and its

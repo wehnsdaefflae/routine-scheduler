@@ -37,6 +37,10 @@ RECORDERS: dict[tuple[str, str], str] = {
         "the stub's own recording list — the real Transcript.event() appends to a file, and "
         "these tests read the recording back instead (tests/test_ladder_trigger.py:27, "
         "tests/test_grant_secrets.py:151)",
+    ("_Ctx", "booked"):
+        "the stub's own recording list — the real RunContext.add_usage() folds into `usage` "
+        "under a lock, and what D288's spend seam must prove is WHICH readings reached it and "
+        "which were refused, which the folded total cannot show (tests/test_util_spend.py:14)",
 }
 
 #: Floors — a detection that silently finds nothing must red, not pass. Set at ~75% of the
