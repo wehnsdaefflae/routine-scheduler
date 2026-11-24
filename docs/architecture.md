@@ -1244,6 +1244,25 @@ and the capabilities digest's catalog listing):
   engine reads to deny the grant and the only ones that settle a blocking request's wait
   (`engine/interact._held_not_settled`) — and the question-scoped word is kept separate from
   that grant vocabulary for exactly that reason.
+  **A decision can also be rendered through A2UI** (D310), the open protocol for agent-declared
+  UI: `GET /api/questions/{qid}/a2ui` (`web/api_a2ui.py`) serves the SAME record as a v1.0
+  `createSurface` envelope composed by `web/a2ui_decision.py`, so the console's own surface and
+  one a routine streams are indistinguishable to the renderer. The renderer is vanilla ES modules
+  under `static/a2ui/` — `surface.js` the protocol state (envelope dispatch, JSON-Pointer binding,
+  collection scopes), `expr.js` the regex dialect and `formatString`'s grammar, `functions.js`
+  the Basic Catalog's fourteen functions, `render.js` the walk and catalog resolution,
+  `widgets-layout.js` + `widgets-input.js` the eighteen components — with NO bundler and no
+  `node_modules`, which is what keeps the browser gate driving files served straight from
+  `static/`. Catalogs are MIXABLE and resolve per component via `@catalogId`: the Basic Catalog
+  plus this instance's own (`static/a2ui/scheduler-catalog.json` — a run-transcript block, a
+  diff view, a gate-verdict panel, which the protocol has no equivalent for), and a component
+  that resolves to NO catalog is refused rather than falling back to the only one registered,
+  which the spec forbids. The point of adopting it is element types the console's cards do not
+  have — a filterable chip picker instead of a row of buttons, a validated long-text field, the
+  without-an-answer sentence in a modal — and the ANSWER still travels one route: the surface's
+  submit is an A2UI agent event that `static/components/a2ui-decision.js` posts to
+  `POST /api/questions/{qid}/answer`, so `answerfile.write` remains the only writer of the
+  inbox's answer shape.
   `~/routines/.control/reports.jsonl` is the append-only REPORT ledger every routine writes
   through the ungated `report` action (`R<n>` id, routine, title, detail, an optional `target`
   when the reporter can name the owner, plus event rows folded onto it: `delivered`, stamped

@@ -38,6 +38,27 @@
   font-size: var(--t-xs);
 }
 
+/* The console's own mount point for a served surface (components/a2ui-decision.js): it bounds
+ * the width so a decision rendered through the protocol reads as a column of prose rather than
+ * stretching the page, and gives the fetch-failure and answered notes somewhere to sit. */
+.a2-host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  max-width: 44rem;
+}
+
+/* The receipt after an answer posted: the surface itself is DELETED (the protocol's own way to
+ * say a decision is no longer a decision), so this is what is left in its place. */
+.a2-answered {
+  padding: var(--s2) var(--s3);
+  border-left: var(--lift-hairline) solid var(--ok);
+  color: var(--ink-2);
+  background: var(--ok-dim);
+  border-radius: var(--r1);
+  font-size: var(--t-xs);
+}
+
 /* ---- display ---------------------------------------------------------------------------- */
 
 .a2-text { color: var(--ink); font-size: var(--t-m); line-height: 1.5; }
