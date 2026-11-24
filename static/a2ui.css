@@ -1,0 +1,190 @@
+/* The A2UI surface's appearance — D310 step 3, the eleventh stylesheet.
+ *
+ * A2UI components arrive as declarative JSON from an agent, so their LOOK cannot come with them:
+ * the protocol carries structure and data, and the host decides how a Card, a chip or an invalid
+ * field reads. That is the whole reason a catalog is safe to render — and it is why these rules
+ * are the console's own tokens and nothing else, exactly as every stylesheet beside base.css and
+ * views.css is held to by tests/test_stylesheet_tokens.py.
+ *
+ * It is a FILE OF ITS OWN rather than more of views.css for the same reason every stylesheet
+ * since rail.css is: views.css sits at its ratchet ceiling, and an addition ships as a new
+ * stylesheet. index.html says so at each `<link>`.
+ */
+
+/* ---- the surface and its nodes ---------------------------------------------------------- */
+
+.a2-surface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+/* Every drawn component carries this, and it earns its rule: an A2UI node is almost always a
+ * flex child (Row, Column and List are the catalog's only containers), and a flex item defaults
+ * to `min-width: auto` — so a long unbroken string inside a Text makes its whole row overflow
+ * instead of the item shrinking. One rule here, rather than every container guessing. */
+.a2-node { min-width: 0; }
+
+/* A component the renderer could not draw, in place of the component. VISIBLE on purpose: a
+ * surface silently missing a component is the failure mode that makes a protocol impossible to
+ * debug from outside, and the code is in a data attribute so a test can assert on it. */
+.a2-error {
+  padding: var(--s2) var(--s3);
+  border-left: var(--lift-hairline) solid var(--err);
+  color: var(--err);
+  background: var(--err-dim);
+  border-radius: var(--r1);
+  font-family: var(--f-mono);
+  font-size: var(--t-xs);
+}
+
+/* ---- display ---------------------------------------------------------------------------- */
+
+.a2-text { color: var(--ink); font-size: var(--t-m); line-height: 1.5; }
+.a2-text-heading { font-size: var(--t-xl); font-family: var(--f-display); color: var(--ink); }
+.a2-text-subheading { font-size: var(--t-l); color: var(--ink); }
+.a2-text-caption { font-size: var(--t-xs); color: var(--ink-2); }
+.a2-text-mono { font-family: var(--f-mono); font-size: var(--t-s); }
+
+.a2-image { max-width: 100%; border-radius: var(--r1); display: block; }
+.a2-fit-cover { object-fit: cover; }
+.a2-fit-contain { object-fit: contain; }
+.a2-image-circle { border-radius: 50%; }
+
+.a2-icon { display: inline-block; width: 1em; height: 1em; color: var(--ink-2); }
+.a2-video, .a2-audio { max-width: 100%; border-radius: var(--r1); }
+
+.a2-divider-horizontal {
+  height: 1px;
+  background: var(--rule);
+  margin: var(--s2) 0;
+}
+.a2-divider-vertical {
+  width: 1px;
+  align-self: stretch;
+  background: var(--rule);
+  margin: 0 var(--s2);
+}
+
+/* ---- layout ----------------------------------------------------------------------------- */
+
+.a2-row, .a2-column, .a2-list { gap: var(--s2); }
+
+.a2-card {
+  padding: var(--s3);
+  background: var(--plate-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--r2);
+}
+
+/* Tabs — new to this console. The strip is a row of buttons with the selected one carrying the
+ * signal colour on its underline, which is how every other selected thing here reads. */
+.a2-tabs { display: flex; flex-direction: column; gap: var(--s2); }
+.a2-tabstrip {
+  display: flex;
+  gap: var(--s1);
+  border-bottom: 1px solid var(--rule);
+}
+.a2-tab {
+  padding: var(--s2) var(--s3);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: var(--t-s);
+  cursor: pointer;
+}
+.a2-tab:hover { background: var(--hover); color: var(--ink); }
+.a2-tab-on { color: var(--ink); border-bottom-color: var(--signal); }
+.a2-tabpanel { padding-top: var(--s2); }
+
+/* A Modal is a trigger plus a dialog, which is what the catalog declares — so `<dialog>` does
+ * the focus trap and the Escape key, instead of a card that happens to be hidden. */
+.a2-modal-trigger { display: inline-block; cursor: pointer; }
+.a2-dialog {
+  padding: var(--s4);
+  max-width: min(40rem, 90vw);
+  background: var(--plate);
+  color: var(--ink);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r2);
+  box-shadow: var(--lift-shadow);
+}
+.a2-dialog::backdrop { background: var(--scrim); }
+.a2-dialog-close {
+  margin-top: var(--s3);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r1);
+  background: var(--plate-2);
+  color: var(--ink);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* ---- the interactive six ---------------------------------------------------------------- */
+
+.a2-field { display: flex; flex-direction: column; gap: var(--s1); }
+.a2-label { color: var(--ink-2); font-size: var(--t-xs); }
+
+/* One message element for every invalid input, whichever catalog drew it. */
+.a2-invalid { color: var(--err); font-size: var(--t-xs); }
+
+.a2-input, .a2-datetime {
+  padding: var(--s2);
+  background: var(--plate-3);
+  color: var(--ink);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r1);
+  font-family: inherit;
+  font-size: var(--t-s);
+}
+.a2-input:focus-visible, .a2-datetime:focus-visible { outline: 2px solid var(--iris); }
+.a2-input[readonly] { color: var(--ink-3); background: var(--plate-2); }
+textarea.a2-input { min-height: 6rem; resize: vertical; }
+
+.a2-button {
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r1);
+  background: var(--plate-2);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: var(--t-s);
+  cursor: pointer;
+}
+.a2-button:hover { background: var(--hover-2); }
+.a2-button-primary { background: var(--signal); color: var(--on-accent); border-color: var(--signal); }
+.a2-button-borderless { background: transparent; border-color: transparent; color: var(--signal); }
+
+.a2-choicepicker { display: flex; flex-direction: column; gap: var(--s2); }
+.a2-choices { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.a2-checks { flex-direction: column; }
+.a2-choice { display: flex; align-items: center; gap: var(--s2); }
+
+/* Chips — a selection element the Decisions page has no equivalent for today. */
+.a2-chip {
+  padding: var(--s1) var(--s3);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r3);
+  background: var(--plate-2);
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: var(--t-xs);
+  cursor: pointer;
+}
+.a2-chip:hover { background: var(--hover-2); color: var(--ink); }
+.a2-chip-on { background: var(--signal-dim); color: var(--ink); border-color: var(--signal); }
+
+.a2-filter { max-width: 14rem; }
+
+.a2-sliderrow { display: flex; align-items: center; gap: var(--s3); }
+.a2-slider { flex: 1; accent-color: var(--signal); }
+.a2-readout {
+  min-width: 3ch;
+  text-align: right;
+  color: var(--ink-2);
+  font-family: var(--f-mono);
+  font-size: var(--t-xs);
+}
