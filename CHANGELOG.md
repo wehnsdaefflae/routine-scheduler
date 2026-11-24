@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.608.0] — 2026-11-24
+
+**D310 / goal b8: decisions render through A2UI, with element types this console did not have.**
+The operator's order was *"use https://a2ui.org/ for all decision / ask elements"*, and his
+correction set the bar: *"We shouldn't be fixated on the controls we already use. We need to
+improve to UI/UX with new elements!"* — so this is the full Basic Catalog (18 components), not a
+protocol wrapper around the five cards that exist. Five commits, one campaign, released together.
+
+**The protocol, in vanilla ES modules with no bundler and no `node_modules`** — which is what
+keeps the browser gate driving files served straight from `static/`. Six modules by layer:
+`surface.js` the state (all six envelope types, JSON-Pointer binding, collection scopes, two-way
+binding, the protocol's refusals), `expr.js` the two little languages (the A2UI regex dialect
+with the spec's static safety check — a pattern is rejected on its SOURCE text, because a
+backreference compiles perfectly well in V8 and that is exactly the problem — and
+`formatString`'s `${…}` grammar, where brace depth is counted so a nested expression is one),
+`functions.js` the catalog's fourteen functions, `render.js` the core walk with `@checks`,
+`@accessibility` as ARIA, `weight` as flex-grow and CATALOG RESOLUTION (a component resolving to
+no catalog is refused rather than falling back to the only one registered, which the spec forbids
+in those words), and `widgets-layout.js` + `widgets-input.js` for the eighteen components.
+
+**What is new on the page**, which is the claim worth checking: a decision's options are a
+mutually-exclusive **ChoicePicker** with chips, filterable past six; the typed answer is a
+**longText TextField** with a renderer-evaluated `@checks` rule; what happens without an answer
+is a **Modal**, an element this console has none of. `GET /api/questions/{qid}/a2ui` serves the
+same record every other decision surface reads as a v1.0 `createSurface` envelope, so the
+console's own surface and one a routine streams are indistinguishable to the renderer. The
+Decisions page offers it as a fold under each card — closed by default, because the card is what
+the operator answers real work on and replacing it with a rendering he has not seen would be the
+wrong order.
+
+**The answer still travels one route**: the surface's submit is an A2UI agent event, routed to
+`POST /api/questions/{qid}/answer`, so `answerfile.write` stays the only writer of the inbox's
+answer shape, and an unhandled event is reported with its name rather than swallowed.
+
+The fold's room came from an extraction along a responsibility: `questions.js` was at 446/446, so
+the settled RECEIPT moved to `static/components/settled-card.js` — **403 lines with the feature**.
+
+**41 guards proven red-first** across the five steps, each neuter a named red and each file
+restored byte-for-byte. Two were `unproven` first and both are findings about the TESTS, left in
+their own docstrings rather than quietly fixed: a chip-picker test clicking one chip never
+exercised "mutually exclusive", and the fold's `onAnswered` filtering is not what removes an
+answered card — the store's bus snapshot does, so that callback buys latency, not the outcome.
+
 ## [0.607.0] — 2026-11-24
 
 **D299/F931: the backup outcome that actually HAPPENS is now the one that gets recorded, and the

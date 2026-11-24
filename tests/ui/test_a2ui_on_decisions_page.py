@@ -1,11 +1,11 @@
-"""The A2UI rendering ON THE DECISIONS PAGE — D310 step 5, where a person can actually reach it.
-
-Steps 1-4 made the protocol real and served a decision through it; until this step the surface was
-reachable only by the route and by its own tests. Here it is a fold under each open card: closed by
-default (the card above is what the operator answers real work on, and swapping it for a rendering
-he has not seen would be the wrong order), mounted on FIRST OPEN rather than on every repaint (a
-page of decisions must not fetch an envelope per card), and answering inside it posts to the one
-answer route and takes the card out of the open list exactly as the form does.
+"""The A2UI rendering ON THE DECISIONS PAGE — D310 step 5, where a person can actually reach it:
+steps 1-4 made the protocol real and served a decision through it, but until this step the surface
+was reachable only by the route and by its own tests. Here it is a fold under each open card —
+closed by default (the card above is what the operator answers real work on, and swapping it for a
+rendering he has not seen would be the wrong order), mounted on FIRST OPEN rather than on every
+repaint (a page of decisions must not fetch an envelope per card), torn down when it closes
+(the renderer subscribes to its store), and answering inside it posts to the one answer route and
+takes the card out of the open list exactly as the form does.
 """
 
 from __future__ import annotations
