@@ -1,6 +1,8 @@
-// HOOK ACTIVITY — the hook stream's two readings, on the Routines page beside the watch ribbon:
+// HOOK ACTIVITY — the hook stream's two readings, on the MESSAGES page above the ledger list:
 // "Fires next" (the one-shots still armed, soonest first) and "Spoken into runs" (the last day's
-// mid-run injections and run-tree hooks).
+// mid-run injections and run-tree hooks). It moved off the Routines page on the operator's order
+// (2026-11-23), and the reason is the stream's own shape: 6,064 of its 8,043 rows ARE the report
+// ledger this page reads, so the stream's readings and the ledger's rows belong on one page.
 //
 // Both come from ONE fetch of `/api/hook-activity`, because they are one fold of one file
 // (`readmodels/hook_activity.py`): two endpoints would parse `.control/hooks.jsonl` twice per
@@ -83,7 +85,10 @@ export function hookActivityPanel() {
   const spoken = el("div", { class: "hookact-spoken" });
   const node = el("details", { class: "panel mt hookact-panel", open: true },
     el("summary", {}, "hook activity — what fires next, and who spoke into which run"),
-    el("div", { class: "sub" },
+    // `hookact-sub`, not the page-level `sub`: on the Messages page that class already belongs
+    // to the page head, and two of them made an existing test's `.sub` locator a strict-mode
+    // violation — the same collision this panel's `quiet()` avoids for `.empty`.
+    el("div", { class: "hookact-sub" },
       "one read of the hook stream: the one-shots still armed, and the last day's mid-run "
       + "injections and run-tree hand-backs"),
     el("h3", { class: "hookact-head" }, "Fires next"), fires,

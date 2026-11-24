@@ -11,7 +11,6 @@ import { api } from "/static/api.js";
 import { activityFeed } from "/static/components/activityfeed.js";
 import { routineRows } from "/static/views/dashboard-rows.js";
 import { SORTS, STATE_BUCKETS, ordered, visible } from "/static/views/dashboard-filters.js";
-import { hookActivityPanel } from "/static/components/hook-activity.js";
 import { loadQuota } from "/static/components/quota.js";
 import { lanesToolbar } from "/static/components/lanemanage.js";
 import { cronToFriendly, specAtInstant } from "/static/components/schedule.js";
@@ -122,12 +121,10 @@ export async function render(view) {
     if (activityPanel.open) feed.start();
   });
   if (activityPanel.open) feed.start();
-  // The hook stream's two readings (what fires next · who spoke into which run), beside the
-  // week strip: both are "what is about to happen / what just happened" to this instance, and
-  // neither had a reader anywhere in the console. It owns its own 60 s refresh.
-  const hooks = hookActivityPanel();
-  view.append(banner, weekPanel, hooks.node, filterBar, lanesBar, body, activityPanel);
-  hooks.start();
+  // The hook stream's two readings moved to the MESSAGES page (operator, 2026-11-23): the
+  // report ledger is 6,064 of the stream's 8,043 rows, so the page that reads reports is where
+  // the stream's own readings belong. This page keeps the week strip and the live feed.
+  view.append(banner, weekPanel, filterBar, lanesBar, body, activityPanel);
   body.append(skeleton(), skeleton(), skeleton());
 
   let cards = [], llmReady = true, firesBySlug = new Map(), oneShotsBySlug = new Map();

@@ -22,6 +22,7 @@ import { ACTIVE, backlogChips } from "/static/components/backlog-chips.js";
 import { itemCard } from "/static/components/itemcard.js";
 import { newPass, queuedAttachmentRow, revokeQueued } from "/static/components/queued-attachments.js";
 import { orphanBanner } from "/static/components/orphan-banner.js";
+import { hookActivityPanel } from "/static/components/hook-activity.js";
 import { focusRef, linkifyRefs } from "/static/components/reflinks.js";
 import { chip, el, emptyState, skeleton, tagChip, toast, toastError, when } from "/static/util.js";
 
@@ -83,11 +84,10 @@ export async function render(view, query = {}) {
   const filterBar = el("div", { class: "filterbar" });
   const body = el("div", {});
   body.append(skeleton());
-  // The three ways work leaves this ledger without becoming an open item anywhere, above the
-  // list because all three are invisible to every filter below it. Its own module since F793
-  // added the third group (components/orphan-banner.js): this file was AT its size ceiling, so
-  // the extraction came first and the group second.
-  view.append(header, orphanBanner(), filterBar, body);
+  // Above the list and invisible to every filter below it: F793's orphan groups, and the hook
+  // stream's two readings — 6,064 of its 8,043 rows ARE the report ledger (operator 2026-11-23)
+  const hooks = hookActivityPanel(); hooks.start();
+  view.append(header, orphanBanner(), hooks.node, filterBar, body);
 
   // ---- feedback → the routine's inbox → consumed by the next (or current) run -----------
   // Structured feedback (finding comments, decision answers) keeps the tagged audit

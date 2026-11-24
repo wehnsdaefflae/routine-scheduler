@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.605.0] — 2026-11-24
+
+**Hook activity moved off the Routines page onto Messages, on the operator's order.** He wrote:
+*"'hook activity' needs to move away from the routines page. to me it seems like there's
+considerable overlap with the 'messages' subpage up to the point where hooks actually completely
+replace messages. confirm"*.
+
+**Confirmed, and the census is why the panel moves rather than being deleted.**
+`.control/hooks.jsonl` holds 8,043 rows: `report` **6,064**, `injection` 1,421, `reminder` 484,
+`runtree` 72, `schedule_once` 2. The report count is exactly `reports.jsonl`'s line count,
+because the hook is the SOURCE of every report and the ledger is a projection of it
+(`hooks/reportproj.rebuild` reconstructs the whole ledger from the stream alone). So the Messages
+page and the hook stream are not two overlapping things: the ledger Messages reads IS the
+stream's majority, and the panel showed the 1,493-row minority — pending one-shots and a day of
+injections and run-tree hand-backs — on a different page entirely.
+
+The panel now sits above the ledger list, beside F793's orphan groups, which is the same class of
+thing: what reached this page without becoming a filterable row. It keeps its own 60 s refresh and
+still renders zero as a reading. `static/views/dashboard.js` keeps the week strip and the live
+feed.
+
+The panel's subtitle moved from the page-level `sub` class to its own `hookact-sub`. Two reasons,
+one of which the first gate found: `base.css` styles that class only as `.page-head .sub`, so
+inside the panel it drew nothing, and a second `.sub` in the Messages DOM turned
+`test_messages_page`'s `locator(".sub")` into a Playwright strict-mode violation — the same
+collision this panel's `quiet()` already avoids for `.empty`. Its styling is now explicit in
+`hookact.css`, in tokens.
+
+`tests/ui/test_hook_activity_panel.py` loads `#/messages` and gains
+`test_the_routines_page_no_longer_carries_the_panel` — the move has two halves, and a test that
+only checked the page it moved TO would pass while the panel the operator asked to be gone was
+still there. `static/views/messages.js` stays at its 363-line ratchet ceiling (the mount is four
+lines and the comment above it paid for them); `dashboard.js` shrank 397 → 394 and its ceiling was
+tightened to match.
+
 ## [0.604.0] — 2026-11-24
 
 **F944: `cd <own dir> &&` no longer flips a shell call from process to task.** The overhead

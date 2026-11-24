@@ -13,6 +13,15 @@
 
 .hookact-panel > summary { font-weight: 600; }
 
+/* The panel's own subtitle. NOT the page-level `sub` class: base.css styles that only as
+   `.page-head .sub`, so inside this panel it drew nothing, and on the Messages page a second
+   `.sub` in the DOM made an existing test's locator a strict-mode violation. */
+.hookact-sub {
+  color: var(--ink-2);
+  font-size: var(--t-m);
+  max-width: 68ch;
+}
+
 /* The two readings' captions. Not `h2`, whose rule draws the page-section line. */
 .hookact-head {
   margin: var(--s2) 0 var(--s1);

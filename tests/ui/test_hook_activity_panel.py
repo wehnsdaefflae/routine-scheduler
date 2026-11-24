@@ -1,6 +1,8 @@
-"""The Routines page's hook-activity panel on the real console: the one-shots still armed and the
+"""The Messages page's hook-activity panel on the real console: the one-shots still armed and the
 last day's mid-run injections and run-tree hand-backs, each as a ROW the operator can read — the
-two questions the hook stream exists to answer for the instance and had no reader for."""
+two questions the hook stream exists to answer for the instance and had no reader for. It sits
+where the report ledger is read because that ledger IS the stream's majority, and a test that
+loads the Routines page instead would pass while the panel the operator asked for was gone."""
 
 from __future__ import annotations
 
@@ -45,7 +47,7 @@ def test_the_panel_lists_what_fires_next_and_who_spoke_into_which_run(ui, ui_pag
     _inject(ui, via="web-converse", text="stop and read the gate")
     _runtree(ui, delivered=False, title="the fold is red")
 
-    ui_page.goto(f"{ui.url}/#/routines")
+    ui_page.goto(f"{ui.url}/#/messages")
 
     panel = ui_page.locator(PANEL)
     expect(panel).to_be_visible()
@@ -76,9 +78,24 @@ def test_the_panel_lists_what_fires_next_and_who_spoke_into_which_run(ui, ui_pag
     expect(ui_page).to_have_url(f"{ui.url}/#/run/uir:20260715-100000")
 
 
+def test_the_routines_page_no_longer_carries_the_panel(ui, ui_page):
+    """The move has two halves and only one of them is visible on the page it moved TO."""
+    _arm(ui, "so-live", hours=2, reason="re-check the seat", requested_by="ui")
+    _inject(ui, via="web-converse", text="stop and read the gate")
+
+    ui_page.goto(f"{ui.url}/#/routines")
+    expect(ui_page.locator("table.list, .empty").first).to_be_visible()
+    expect(ui_page.locator(PANEL)).to_have_count(0)
+    expect(ui_page.locator(".hookact-fire")).to_have_count(0)
+
+    ui_page.goto(f"{ui.url}/#/messages")
+    expect(ui_page.locator(PANEL)).to_have_count(1)
+    expect(ui_page.locator(PANEL)).to_contain_text("re-check the seat")
+
+
 def test_a_quiet_instance_renders_both_readings_rather_than_nothing(ui, ui_page):
     """An absent panel and a quiet one are indistinguishable, and only one of them reassures."""
-    ui_page.goto(f"{ui.url}/#/routines")
+    ui_page.goto(f"{ui.url}/#/messages")
 
     panel = ui_page.locator(PANEL)
     expect(panel).to_contain_text("nothing armed")
