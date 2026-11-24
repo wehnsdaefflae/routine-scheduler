@@ -25,3 +25,26 @@
 .fork-form :is(input, textarea) { width: 100%; }
 .fork-form textarea { min-height: 5em; resize: vertical; }
 .fork-hint { font-size: var(--t-xs); color: var(--ink-3); }
+
+/* The rail's BRANCHES section (D306 pt 2, components/branch-rail.js). The order's own words for
+   what was wrong: branches were "a lineage LINE in the header: names joined by commas, no state,
+   no way to tell a branch working from one long finished". So a row is a line per relative with
+   its state chip — the same `chip(state)` vocabulary every other surface uses, because a second
+   set of words for one fact is how two surfaces come to disagree about it.
+
+   `--rail-w` is narrow, so a row WRAPS rather than truncating: a branch's name is the thing the
+   reader came for, and an ellipsis in the middle of it would make the section useless. */
+.branch-rail, .branch-rail-body { display: flex; flex-direction: column; gap: var(--s1); }
+.branch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1);
+  font-size: var(--t-xs);
+  line-height: 1.4;
+}
+/* "from" / "branch" — which side of the fork this row is, in the quietest ink: it is a label for
+   the link beside it, never the thing being read. */
+.branch-role { text-transform: uppercase; letter-spacing: 0.04em; }
+.branch-name { color: var(--ink); text-decoration: none; }
+.branch-name:is(:hover, :focus-visible) { color: var(--signal); text-decoration: underline; }

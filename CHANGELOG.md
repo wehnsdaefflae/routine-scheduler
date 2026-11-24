@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.609.0] — 2026-11-24
+
+**D306 point 2 — branches in the conversation rail, live. The order is now complete and its
+design entry is deleted in this commit.**
+
+The operator kept conversation branches and diagnosed their non-use as the console's fault
+(*"unused only because the UI is bad"*, 2026-11-21 code review). Point 2 named the remaining
+gap exactly: branches were "a lineage LINE in the header: names joined by commas, no state, no
+way to tell a branch working from one long finished".
+
+- **A `branches` rail section** (`static/components/branch-rail.js`): one row per relative — the
+  parent it was forked from and each branch forked off it — carrying the name as a link, the
+  state as the same `chip(state)` every other surface uses, the fork turn, when it last moved,
+  and "handed back" once it has. Both directions, because a branch needs to offer the way back
+  as readily as the way down. Hidden when there is no family, which is the overwhelming
+  majority, and refreshed on `run_started` / `run_finished` for a slug of this family — never
+  polled.
+- **`GET /conversations/{slug}/lineage` gains the live fields** (`src/rsched/web/branch_lineage.py`,
+  new): `state` and `updated` per relative, out of the conversations catalog the page has already
+  read (memoized and single-flighted, so the rail costs no walk of its own), and `handed_back`
+  read from the parent's inbox — still queued, or archived under a run's `consumed/`. The flag is
+  READ, never stored: a copy in the branch's config would be a third place one fact lives.
+- **The section makes no request of its own.** `branchControls` already reads the lineage once
+  per real family change, behind a signature guard, and point 5 made that read conditional; the
+  section is fed by it. A browser test asserts exactly one `/lineage` request per view.
+- `static/views/conversations.js` **423 lines (was 457, at its ceiling)** — the rail's whole
+  construction moved to `static/views/conversation-rail.js`, so the feature was paid for by
+  extracting a responsibility rather than by shaving the frozen file; ceiling tightened.
+
+14 guards proven red-first (8 server, 6 browser): the queued and the archived hand-back halves
+separately, another `via` not reading as one, an unreadable message skipped rather than raised,
+both the branch and the parent row's live fields, the state chip, the fork turn, the hidden
+section and the single-read feed. One of the eight was `unproven` first time round and the
+finding was about the test: the route guard asserted `state` was PRESENT, which a route
+answering a constant `new` for everything would satisfy — it now asserts the real value.
+
 ## [0.608.0] — 2026-11-24
 
 **D310 / goal b8: decisions render through A2UI, with element types this console did not have.**

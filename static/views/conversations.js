@@ -17,18 +17,13 @@ import { questionPanel } from "/static/components/answerform.js";
 import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { forgetField } from "/static/formpersist.js";
+import { branchSectionBody } from "/static/components/branch-rail.js";
+import { buildConversationRail } from "/static/views/conversation-rail.js";
 import { familyOf, forkAt, rewindTo } from "/static/components/branches.js";
 import { flagRefusal } from "/static/components/refusalflag.js";
 import { finalOffer, playbookRow } from "/static/components/playbook-row.js";
 import { createChat, typedBody, userEcho } from "/static/components/chat.js";
-import { createArtifacts } from "/static/components/artifacts.js";
-import { createBackgroundTasks } from "/static/components/bg-tasks.js";
 import { backgroundButton } from "/static/components/bg-start.js";
-import { createRail } from "/static/components/rail.js";
-import { mountRunScripts } from "/static/components/runscripts.js";
-import { createFileActivity } from "/static/components/fileactivity.js";
-import { createPhaseGraph } from "/static/components/phasegraph.js";
-import { createSubRunTree } from "/static/components/subruntree.js";
 import { adminToggle } from "/static/components/admintoggle.js";
 import { busy, chip, el, emptyState, relTime, toast, toastError } from "/static/util.js";
 import { wireRunRail } from "/static/resizable.js";
@@ -156,8 +151,11 @@ export async function render(view, slug, _query = {}) {
     let curState = detail.state;
     const stateChip = chip(detail.state, detail.state);
     const head = el("div", { class: "conv-head" });
-    renderHead(head, detail, stateChip,
-               { slug, isLive: () => !TERMINAL.has(curState), onListChanged: loadList,
+    // D306 pt 2: the rail's BRANCHES body, made before the head because the head's branch bar
+    // fills it from the lineage read it already makes — one read, two surfaces, no second poll.
+    const branchBody = branchSectionBody();
+    const branchBar = renderHead(head, detail, stateChip,
+               { slug, isLive: () => !TERMINAL.has(curState), onListChanged: loadList, railBody: branchBody,
                  family: () => familyOf(sideHost.rows(), slug) });   // pt 5: no /lineage with no family
     const chatBox = el("div", { class: "conv-chat" });
     // the echo box sits AFTER the chat so the pending bubble always renders below the
@@ -168,46 +166,13 @@ export async function render(view, slug, _query = {}) {
     main.replaceChildren(head, chatBox, pbFinal.node, echoBox, waiting, questionBox, composer.node);
     if (pendingEcho) { pendingEcho.node = echoNode(); echoBox.append(pendingEcho.node); }
 
-    artBody.replaceChildren();
-    // R341: the SHARED rail component (components/rail.js) — the run view renders the same
-    // one, so per-section collapse (F296, R262 pt1) is one implementation, not two.
-    const rail = createRail(artBody);
-    // the phase graph rides at the top of the artifact rail: current phase lit up,
-    // re-highlighted live on the live-stream state events below
-    const graphBody = rail.add("phases", el("div", {}));
-    const treeBody = detail.run_id ? rail.add("children", el("div", {})) : el("div", {});
-    const filesBody = detail.run_id ? rail.add("files", el("div", {})) : el("div", {});
-    // NO browser section here (F561, operator 2026-10-01: "we wanna remove the browser preview
-    // in the sidebar. it is redundant now that we have the browser preview chip"): the permanent
-    // dock (components/browserdock.js) shows the shared browser live on every page, and the rail
-    // copy was a second, POLLED, staler view — "● RUNNING" over an empty box after a stop.
-    // detached background tasks the assistant launched (the `detach` action): a flat cross-run
-    // list with a cancel affordance. Hidden until there is at least one.
-    const bgBody = rail.add("background", el("div", { class: "bg-tasks" }));
-    rail.toggle("background", false);
-    const artsBody = rail.add("artifacts", el("div", {}));
-    const phaseGraph = createPhaseGraph(graphBody, {
-      graphUrl: `/api/conversations/${slug}/phasegraph`,
-      ...(detail.run_id ? { statsUrl: `/api/runs/${detail.run_id}/phases` } : {}) });
-    const subRunTree = detail.run_id ? createSubRunTree(treeBody, {
-      treeUrl: `/api/runs/${detail.run_id}/tree`, isLive: () => !TERMINAL.has(curState) }) : null;
-    const fileActivity = detail.run_id
-      ? createFileActivity(filesBody, { url: `/api/runs/${detail.run_id}/files` }) : null;
-    const artifacts = createArtifacts(artsBody, { slug });
-    // F833: a conversation holds its own scripts/ — the run rail's section, re-read per reply
-    const scripts = mountRunScripts(rail, { slug, base: "conversations" });
-
-    // D308 pt 2: the section is its own module now (components/bg-tasks.js) — each row carries
-    // its elapsed time while live, its DELIVERY once terminal, a link to the task's own run
-    // page and the files it landed. It refreshes on the `run_started`/`run_finished` events of
-    // the runs it owns, so the 15 s content-armed poll that used to ask every tab about an
-    // empty list is gone with it.
-    const bgTasks = createBackgroundTasks(bgBody, { slug, rail,
-      openArtifact: (p) => artifacts.openPath(p) });
-    bgTasks.paint(detail.background || []);
-
-    cleanup.push(() => { bgTasks.stop();
-                         artifacts.destroy(); subRunTree?.stop(); scripts.stop(); });
+    // Every rail section, the component behind each and their teardown, in one module
+    // (views/conversation-rail.js): which sections exist and what fills them is one
+    // responsibility, and this view's own is the reply cycle.
+    const { phaseGraph, subRunTree, fileActivity, artifacts, scripts, bgTasks, stop: stopRail } =
+      buildConversationRail(artBody, { slug, detail, branchBody,
+        isLive: () => !TERMINAL.has(curState), family: familyOf(sideHost.rows(), slug) });
+    cleanup.push(stopRail);
 
     const chat = createChat(chatBox, {
       answer: (qid, text, decision) => api(`/api/questions/${qid}/answer`, { method: "POST", body: decision ? { decision } : { text } }),
@@ -254,6 +219,7 @@ export async function render(view, slug, _query = {}) {
       if (TERMINAL.has(s)) { chat.finishOpenFold(); artifacts.refresh(); subRunTree?.refresh();
                              fileActivity?.refresh(); scripts.refresh(); }
       bgTasks.refresh();     // a finished detached task wakes the conversation → catch it here
+      branchBar?.refresh();  // D306 pt 2: a branch's state changed → its rail row with it
     };
     setState(detail.state);
 

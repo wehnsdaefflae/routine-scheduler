@@ -13,12 +13,13 @@ import yaml
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import branches
+from .. import branches, registry
 from ..config import load_routine
 from ..engine import inbox
 from ..paths import read_yaml
 from ..registry import TERMINAL_STATES
-from .conversations_common import conversation_info
+from . import branch_lineage
+from .conversations_common import _item, conversation_info
 
 router = APIRouter(tags=["branches"])
 
@@ -128,20 +129,31 @@ def lineage(request: Request, slug: str) -> dict:
     info = conversation_info(request, slug)
     server = request.app.state.server
     parent = _parent_record(info.cfg.dir)
+    home = server.conversations_home
+    # ONE catalog read for the whole answer (memoized and single-flighted, `readmodels/memo`):
+    # both the parent's live fields and every branch's come out of it, so D306 pt 2's state
+    # columns cost no walk of their own on top of the loop below.
+    rows = {s: _item(i) for s, i in registry.scan(server, home).items()} if home.is_dir() else {}
     if parent.get("slug"):
-        raw = _config(server.conversations_home / str(parent["slug"]))
+        raw = _config(home / str(parent["slug"]))
         # A deleted parent leaves the record standing: the branch's history still came from
         # somewhere, and saying so beats silently reading as a root conversation.
         parent = {**parent, "name": str(raw.get("name") or parent["slug"]),
-                  "exists": bool(raw)}
+                  "exists": bool(raw),
+                  **branch_lineage.live_fields(rows, str(parent["slug"]))}
     kids = []
-    home = server.conversations_home
     if home.is_dir():
+        # D306 pt 2: each branch carries what BECAME of it — state, last update, whether it has
+        # handed back — because a list of names with no state is the gap the operator named
+        # ("no way to tell a branch working from one long finished"). `branch_lineage` owns what
+        # one row says; the catalog it reads was taken once, above.
         for d in sorted(home.iterdir()):
             raw = _config(d)
             rec = raw.get("parent")
             if not isinstance(rec, dict) or rec.get("slug") != slug:
                 continue
-            kids.append({"slug": d.name, "name": str(raw.get("name") or d.name),
-                         "turn": rec.get("turn"), "forked": rec.get("forked")})
+            kids.append(branch_lineage.branch_row(
+                {"slug": d.name, "name": str(raw.get("name") or d.name),
+                 "turn": rec.get("turn"), "forked": rec.get("forked")},
+                info.cfg.dir, rows))
     return {"parent": parent or None, "branches": kids}

@@ -122,7 +122,7 @@ function modelControl(detail, slug, isLive) {
 }
 
 export function renderHead(head, detail, stateChip,
-                           { slug, isLive, onListChanged, family }) {
+                           { slug, isLive, onListChanged, family, railBody = null }) {
   const title = el("h1", { class: "conv-h1", contenteditable: "plaintext-only",
     spellcheck: "false" }, detail.title || slug);
   // `saved` is the title the conversation HAS — it moves with every save, or renaming one back
@@ -328,11 +328,17 @@ export function renderHead(head, detail, stateChip,
   // delete because both are lifecycle decisions about the conversation as a whole.
   // `family` (D306 pt 5): the lineage route is asked only when the list rows say this thread
   // HAS a parent or a branch — it reads every conversation's routine.yaml to answer.
-  const branchBar = branchControls(slug, { family });
+  // `railBody` (D306 pt 2): the rail's BRANCHES section, fed by the lineage read this bar
+  // already makes. One read answers both the header's line and the rail's live rows.
+  const branchBar = branchControls(slug, { family, railBody });
   head.replaceChildren(
     el("div", { class: "conv-head-row" }, stateChip, title,
       el("span", { style: "margin-left:auto" }), branchBar.node, del),
     el("div", { class: "conv-head-row sub" }, modelControl(detail, slug, isLive),
       el("span", { class: "conv-tagwrap" }, el("span", { class: "faint small" }, "tags"), tagsRow)),
     caps);
+  // The branch bar is returned so the view can ask for a fresh lineage when a run of THIS
+  // conversation's family starts or finishes — the rail's rows carry live state, and the
+  // alternative to one event-driven read is a poll (D306 pt 2 says never polled).
+  return branchBar;
 }

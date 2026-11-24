@@ -7,6 +7,7 @@
 // merge: the branch keeps its own conversation, and the parent receives a summary plus files.
 
 import { api } from "/static/api.js";
+import { branchRail } from "/static/components/branch-rail.js";
 import { confirmDialog, openModal, promptDialog } from "/static/components/dialog.js";
 import { navigate, remount } from "/static/router.js";
 import { el, toast, toastError } from "/static/util.js";
@@ -131,7 +132,14 @@ export function familyOf(items, slug) {
 // routine.yaml to find children, and it was called on mount for every conversation view: paid
 // in full by the overwhelming majority, which have neither a parent nor a branch. With no
 // `family` reader the fetch is unconditional, which is what a caller holding no list gets.
-export function branchControls(slug, { family } = {}) {
+export function branchControls(slug, { family, railBody = null } = {}) {
+  // D306 pt 2: the rail's BRANCHES section, fed by the read below rather than making its own.
+  // The header's line answers "what is this conversation's place in its family"; the rail answers
+  // "what is each of them DOING" — which is the gap the operator named ("no state, no way to tell
+  // a branch working from one long finished"). One read serves both, and the signature guard
+  // under it keeps that read from becoming a poll.
+  const rail = railBody ? branchRail() : null;
+  if (rail) railBody.replaceChildren(rail.node);
   const lineage = el("span", { class: "faint small" });
   const backBtn = el("button", { class: "btn small", hidden: true,
     title: "hand this branch's result back to the conversation it was forked from" },
@@ -159,6 +167,7 @@ export function branchControls(slug, { family } = {}) {
     lineage.replaceChildren();
     bits.forEach((b, i) => { if (i) lineage.append(" · "); lineage.append(b); });
     backBtn.hidden = !d.parent;
+    rail?.paint(d);
   };
 
   // The signature of the family we last READ for, so the list's own 20 s reload (and every
@@ -172,8 +181,10 @@ export function branchControls(slug, { family } = {}) {
       if (!fam.parent && !fam.branches) {
         // No family: the route has nothing to tell us, so it is never called. The line stays
         // empty and the hand-back button stays hidden, which is what it renders for a
-        // conversation with no parent anyway.
+        // conversation with no parent anyway — and the rail section empties with it, so a
+        // conversation whose only branch was just deleted does not keep showing it.
         read = sig;
+        rail?.paint({ parent: null, branches: [] });
         return Promise.resolve();
       }
       if (sig === read) return Promise.resolve();
@@ -205,5 +216,9 @@ export function branchControls(slug, { family } = {}) {
 
   refresh();
   return { node: el("span", { class: "row", style: "gap:6px;align-items:center" },
-    lineage, backBtn), refresh };
+    lineage, backBtn), refresh,
+    //: Whether a run id belongs to this conversation's family — so a host watching the bus can
+    //: ask for a fresh lineage when a BRANCH starts or finishes, and ignore every other run.
+    //: False when no rail body was given, because then nothing is showing branch state anyway.
+    ownsRun: (id) => Boolean(rail?.ownsRun(id)) };
 }
