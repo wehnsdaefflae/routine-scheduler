@@ -74,14 +74,19 @@ OTARI_EMBED_URL = "http://172.17.0.1:4000/api/v1/embeddings"
 #: between them, which is why it treats `-local` as the private-file substitute for the same
 #: vectors.
 #:
-#: The CLOUD one is the default here because it is the one that answers: `-local` is served by
-#: omen's local-model-server through decision-balancer's EMBED_BACKENDS pool, and that service
-#: is currently down (the gateway returns 502 for it). Switching to the local model once it is
-#: up needs no code change — set RSCHED_PLAYGROUND_EMBED_MODEL=qwen3-embedding-8b-local — and
-#: the vector store re-embeds rather than mixing spaces, because its keys carry the model.
-OTARI_EMBED_MODEL = "qwen3-embedding-8b"
-#: The local substitute, for when omen's embedder is running. Same family, same index.
-OTARI_EMBED_MODEL_LOCAL = "qwen3-embedding-8b-local"
+#: The LOCAL one is the default (operator's choice): omen's local-model-server serves it
+#: through decision-balancer's EMBED_BACKENDS pool, so no condition text leaves the network to
+#: be indexed. Measured against its cloud sibling on the same pair — cosine 0.7256 local vs
+#: 0.7221 cloud, both 4096 dims — which matches tag-fs's own finding that the two agree to a
+#: median cosine of 0.9973 and may share an index.
+#:
+#: A model switch needs no code change (RSCHED_PLAYGROUND_EMBED_MODEL) and cannot corrupt the
+#: index: the store's keys carry the model, so switching re-embeds rather than comparing
+#: vectors from two spaces.
+OTARI_EMBED_MODEL = "qwen3-embedding-8b-local"
+#: The cloud sibling — the fallback when omen's embedder is down (the gateway answers 502 for
+#: the local id then), and the model tag-fs uses by default.
+OTARI_EMBED_MODEL_CLOUD = "qwen3-embedding-8b"
 OTARI_KEY_ENV = "OTARI_API_KEY"
 
 
@@ -248,14 +253,14 @@ def vectors(request: Request) -> dict:
     # switching is a fact about this store, not a guess.
     from ..playground.vectorstore import VectorStore
 
-    local = VectorStore(_cache_dir(server) / "index", OTARI_EMBED_MODEL_LOCAL)
+    other = VectorStore(_cache_dir(server) / "index", OTARI_EMBED_MODEL_CLOUD)
     return {"model": backend.model, "backend_available": backend.available,
             "why": backend.why, "conditions": len(conditions), "held": held,
             "missing": len(store.missing(conditions)), "dim": store.dim(),
             "path": str(store.path),
-            "local_model": OTARI_EMBED_MODEL_LOCAL, "local_held": local.load(),
-            "local_hint": ("set RSCHED_PLAYGROUND_EMBED_MODEL to the local model once omen's "
-                           "embedder is up; its vectors share this family's index")}
+            "alt_model": OTARI_EMBED_MODEL_CLOUD, "alt_held": other.load(),
+            "alt_hint": ("the cloud sibling, already indexed — RSCHED_PLAYGROUND_EMBED_MODEL "
+                         "switches to it if omen's embedder goes down")}
 
 
 @router.post("/playground/vectors/sync")

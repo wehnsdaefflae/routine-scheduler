@@ -42,10 +42,14 @@ STOPWORDS = frozenset({
 })
 MIN_TOKEN = 3
 
-#: The embeddings HTTP timeout. A replay makes many calls; a hung provider must not wedge a page.
-EMBED_TIMEOUT_S = 30
+#: The embeddings HTTP timeout. A replay makes many calls; a hung provider must not wedge a
+#: page — but a LOCAL model is far slower than a cloud one: a 64-text batch against omen's
+#: local-model-server exceeded 30s, and the gateway's own `local-embed` provider allows 870s.
+#: So the default is generous and both knobs are env-tunable, because the right values differ
+#: by an order of magnitude between a cloud endpoint and a laptop GPU.
+EMBED_TIMEOUT_S = int(os.environ.get("RSCHED_PLAYGROUND_EMBED_TIMEOUT_S") or 300)
 #: How many texts go in one embeddings request.
-EMBED_BATCH = 64
+EMBED_BATCH = int(os.environ.get("RSCHED_PLAYGROUND_EMBED_BATCH") or 16)
 
 
 @dataclass(frozen=True)
