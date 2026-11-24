@@ -34,6 +34,7 @@ from .reach import routine_root
 from .run_context import RunContext, work_dir
 from .shellwrite import marks_a_write, record_ungated_write
 from .shiftedfields import could_be_util
+from .utilspend import run_and_book
 
 
 def script_home(ctx: RunContext, name: str) -> Path | None:
@@ -218,11 +219,10 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — many sm
     withheld = withheld_for_util(ctx, name)
     # One policy object for the jail AND the dead-root note, so the two cannot disagree.
     policy = sandbox.policy_for_ctx(ctx)
-    code, out, err = utils_run.run_util(
-        home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S),
-        policy=policy,
-        extra_secrets=_extra_secrets(ctx, name), withhold_secrets=withheld.names,
-        cwd=work_dir(ctx), aborted=ctx.aborted,
+    code, out, err = run_and_book(      # D288: the call AND its spend — see utilspend.py
+        ctx, utils_run.run_util, extra_secrets=_extra_secrets(ctx, name), home=home, name=name,
+        args=args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S), policy=policy,
+        withhold_secrets=withheld.names, cwd=work_dir(ctx), aborted=ctx.aborted,
         cancelled=cancelled_for_turn(ctx))
     killed = _note_if_killed(ctx, "util", name, code)
     ended = _ended_by_a_person(ctx, code)
