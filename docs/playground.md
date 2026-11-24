@@ -71,6 +71,61 @@ A second brittleness is pinned as a test: `email` does not match `mail`, and `sm
 match `smtp`. That is the strongest case for the embedding comparison, which is what the bench
 is for.
 
+## The vector index, and what it measured
+
+`playground/vectorstore.py` is the real store: one `vectors.jsonl` per model under
+`<routines_home>/.control/playground-embed-cache/index/<model>/`, keyed by a hash of
+**(model, condition text)**. That key is what makes it self-maintaining — an edited summary gets
+a new key and is re-embedded, an unchanged one is never re-embedded, a deleted item is dropped
+by `prune()`, and two models never share a space. `POST /api/playground/vectors/sync` builds it;
+a second call with nothing changed makes **no provider call at all**.
+
+Search is an exact scan: at 774 conditions × 4096 dims a full cosine pass is milliseconds, and
+an ANN index (faiss, hnswlib, qdrant) would add a dependency and an approximation to a search
+that is already exact. `search()` is the only method that scans, so that swap stays local.
+
+**The embedding model is the instance's own, through otari.** The gateway serves exactly two
+embedders among its 809 models: `qwen3-embedding-8b` (cloud, 4096 dims) and
+`qwen3-embedding-8b-local` (omen's local-model-server, via decision-balancer's `EMBED_BACKENDS`
+pool). tag-fs already reaches them the same way — all four of its roles point at
+`http://127.0.0.1:4000/api/v1` — and holds **671,679** vectors of the cloud model at 256 dims.
+The cloud one is the default here because the local one's backend is currently down (the gateway
+returns 502 for it); `RSCHED_PLAYGROUND_EMBED_MODEL=qwen3-embedding-8b-local` switches over once
+it is up, and the store re-embeds rather than mixing spaces.
+
+### Dense beats lexical at RANKING, and neither can GATE
+
+Built: **774 conditions, 4096 dims, 50 seconds.** Then ten hand-labelled cases — seven real
+manual-re-implementation turns plus three negatives nothing in the library covers
+(`scripts/compare-backends.py cases`):
+
+| | top-1 correct (of 7) |
+|---|---|
+| lexical (token overlap) | **1** |
+| dense (qwen3-embedding-8b) | **7** |
+
+Dense fixes lexical's worst failures outright: the `cp …voice-rewrite-new.py` turn that scored
+lexical's highest false positive (14.46 for `voice-rewrite`, matched on the filename) returns
+`fs-ops`; the hand-rolled `smtplib` call returns `mail`; `pdftotext` returns `doc-read`.
+
+But the gating question is separate, and the answer is no — for both:
+
+* dense's weakest true positive **0.558** sits *below* its strongest false positive **0.630**;
+* over 150 real `shell`/`script`/`write_util` turns, dense's median top score is **0.618** with
+  p10 0.539 and p90 0.697 — so the true positives land *inside* the noise band;
+* lexical is worse on both counts (median 1.061, p90 1.206, true positives from 0.707).
+
+**So a fixed floor cannot carry a push channel on either backend.** What the measurement
+supports is dense retrieval for *ranking* — "which util is this about" — not for *deciding
+whether to interrupt*. Three routes worth testing from here: a margin test (top-1 minus top-2)
+rather than an absolute floor; a cheap classifier over the top few candidates; or restricting
+the channel to the moment a run is about to *author* a util, where a list is useful and a false
+positive is cheap.
+
+One practical cost the numbers also exposed: a per-turn dense query is a network round trip.
+A 150-turn serial replay timed out and had to be batched 32 at a time — which is why the live
+`util-hint` layer stays lexical and the dense comparison lives on the page.
+
 ## The bench
 
 `POST /api/playground/bench` and the panel on the page: fill in any components, pick stores, and

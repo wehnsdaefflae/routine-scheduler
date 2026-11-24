@@ -242,10 +242,20 @@ def vectors(request: Request) -> dict:
     conditions = load_all(server.libraries_home, server.routines_home)
     store = _store(server)
     held = store.load()
+    # The LOCAL substitute is named here, with its own index's state, because switching to it
+    # is the operator's choice and the honest answer to "is it usable" is how many vectors it
+    # already holds — a model switch re-embeds (the keys carry the model), so the cost of
+    # switching is a fact about this store, not a guess.
+    from ..playground.vectorstore import VectorStore
+
+    local = VectorStore(_cache_dir(server) / "index", OTARI_EMBED_MODEL_LOCAL)
     return {"model": backend.model, "backend_available": backend.available,
             "why": backend.why, "conditions": len(conditions), "held": held,
             "missing": len(store.missing(conditions)), "dim": store.dim(),
-            "path": str(store.path)}
+            "path": str(store.path),
+            "local_model": OTARI_EMBED_MODEL_LOCAL, "local_held": local.load(),
+            "local_hint": ("set RSCHED_PLAYGROUND_EMBED_MODEL to the local model once omen's "
+                           "embedder is up; its vectors share this family's index")}
 
 
 @router.post("/playground/vectors/sync")
