@@ -9,7 +9,7 @@
 
 import { api } from "/static/api.js";
 import { activityFeed } from "/static/components/activityfeed.js";
-import { routineRows } from "/static/views/dashboard-rows.js";
+import { routineRows, tokenPaceChip } from "/static/views/dashboard-rows.js";
 import { SORTS, STATE_BUCKETS, ordered, visible } from "/static/views/dashboard-filters.js";
 import { lanesToolbar } from "/static/components/lanemanage.js";
 import { cronToFriendly, specAtInstant } from "/static/components/schedule.js";
@@ -35,7 +35,7 @@ export async function render(view) {
     el("div", { class: "page-head" },
       el("div", {},
         el("h1", {}, "Routines")),
-      el("div", { class: "row" }, pauseBtn)));
+      el("div", { class: "row" }, tokenPaceChip(), pauseBtn)));
   const banner = el("div", {});
   // Week-strip drag ops (weekgrid-drag.js): every drop PATCHes, then reloads so the strip
   // redraws from truth. Lane-membership PATCHes always carry the FULL member record list —

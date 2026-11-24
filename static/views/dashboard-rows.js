@@ -19,21 +19,39 @@ import { outcomeLine } from "/static/md.js";
 import { asButton, chip, el, fmtCost, fmtDur, fmtNum, storage, tagChip, toast, toastError,
          when } from "/static/util.js";
 import { WORKING as RUNNING } from "/static/states.js";
+// Re-exported so the page imports its header chip from the module it already imports: the chip
+// itself lives in components/tokenpace.js (dashboard.js is AT the house size bar, and growth
+// there is never baselined).
+export { tokenPaceChip } from "/static/components/tokenpace.js";
 
 const LANES_OPEN_KEY = "rsched_dash_lanes_open";
 
 // "Jul: 41M vol · $93.10 (Jun: 30M · $70.04)" — the durable monthly series, not last-run:
 // context volume and its notional list-price cost (readmodels/stats.monthly_spend)
-function spendLine(spend) {
+function spendLine(spend, tokenPace) {
   if (!spend?.current) return null;
   const cell = (c) => c ? [fmtNum(c.volume) + " vol", fmtCost({ cost: c.notional })].filter(Boolean).join(" · ") : "—";
   const monthName = (m) => new Date(m + "-01T00:00:00").toLocaleString("en", { month: "short" });
   let text = `${monthName(spend.month)}: ${cell(spend.current)}`;
   if (spend.prev) text += `  (${monthName(spend.prev_month)}: ${cell(spend.prev)})`;
   const growing = spend.prev && spend.current.volume > spend.prev.volume * 1.2;
+  // The TOKEN count and where this month's rate lands by month end — "what did this cost" and
+  // "when do I run out" are different questions, and the line above only answered the first.
+  // No ceiling is named: per-routine token budgets are unset (-1), and the window that really
+  // binds belongs to the model gateway. A projection is shown only once the month is far
+  // enough along to mean anything (readmodels/token_pace.MIN_ELAPSED_FRAC).
+  const pace = tokenPace?.tokens
+    ? `${fmtNum(tokenPace.tokens)} tok`
+      + (tokenPace.projected_tokens
+          ? ` → ~${fmtNum(tokenPace.projected_tokens)} by month end` : "")
+    : null;
   return el("div", { class: "muted small",
     title: "this month's spend from the durable usage stream (survives run retention)" },
-    text, growing ? el("span", { class: "chip partial", style: "margin-left:6px" }, "↑ growing") : null);
+    text,
+    pace ? el("span", { style: "margin-left:6px",
+      title: "tokens this month, and this month's rate carried to month end — a projection, "
+           + "not a ceiling: no per-routine token budget is set" }, `· ${pace}`) : null,
+    growing ? el("span", { class: "chip partial", style: "margin-left:6px" }, "↑ growing") : null);
 }
 
 function statsLine(run) {
@@ -149,7 +167,7 @@ export function routineRows(ctx) {
           title: "open questions waiting for you" }, `${c.open_questions} open question${c.open_questions > 1 ? "s" : ""}`) : null,
         c.decision_backlog ? el("a", { href: "#/questions", class: "chip failed",
           title: "this routine is starving on deferred decisions — answer some" }, "decision backlog") : null),
-      spendLine(c.spend),
+      spendLine(c.spend, c.token_pace),
       // the past mirror of "next fire": the last runs at a glance — flaky ≠ green-today
       c.recent_runs?.length ? el("div", { class: "hb-row" }, heartbeat(c.recent_runs)) : null,
       last ? el("div", { class: "lastrun" },

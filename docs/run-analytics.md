@@ -843,6 +843,32 @@ health stream for that window held exactly one event, about an unrelated oversiz
   `model_failover` events for one run_id mean successive members failing, never the same
   primary flapping back in every five minutes.
 
+## Token pace — anticipating the budget, not reporting the bill
+
+The monthly spend reading above says what a routine HAS spent. That never answers *when do we run
+out*, which is what the operator asked the Routines page for, so `readmodels/token_pace.py` adds
+two readings over the same series (one parse, already made for the spend line):
+
+* **per routine**, on its card beside the spend line — tokens this month, and this month's rate
+  carried to month end (`token_pace` in the card payload);
+* **for the whole instance**, as a chip in the page header — `GET /api/routines-token-pace`,
+  because a subscription's window is spent by every routine at once and no single card can show
+  that.
+
+**No ceiling is claimed, and that is deliberate.** Per-routine `max_total_tokens` defaults to
+-1 (unlimited) and nothing sets it, so a "% of budget" figure would divide by a number that does
+not exist; the ceiling that really binds is a subscription's rolling window, which belongs to the
+model gateway that owns the logins. A rate and a destination let the reader compare against
+whatever ceiling they actually hold.
+
+A projection is honest only while it is labelled one: none is offered before the month is
+`MIN_ELAPSED_FRAC` (15%) gone — one heavy run on the 1st would otherwise "project" thirty times
+itself — and `elapsed_frac` always rides beside the figure, so the share of the month it is
+extrapolated from is visible. A month already over projects to its own total, because it is a
+fact rather than a forecast. `tokens` leaves the prompt cache out while `volume` is the whole
+context the model processed; both are carried, since which one runs a budget down depends on the
+route.
+
 ## Blocked work (`/api/health/blocked`)
 
 Everything above measures runs that HAPPENED. 19 health events record the opposite —

@@ -21,6 +21,7 @@ from ..endpoints.prices import USAGE_KEYS
 from ..engine.ladder import oversight_turns_for
 from ..readmodels.gate_history import gate_run_row
 from ..readmodels.stats import monthly_spend
+from ..readmodels.token_pace import pace
 from .api_jobs import layer_on
 from .config_fields import decision_picker, effort_picker
 from .decisions_read import _snooze_active
@@ -135,6 +136,10 @@ def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict,
         "problems": info.problems,
         "improve": info.cfg.improve, "chain_actions": info.cfg.chain_actions,
         "spend": _spend_line(monthly, info.slug),
+        # The token COUNT and where this month's rate lands by month end — the spend line
+        # above says what was spent, which never answers "when do I run out" (readmodels/
+        # token_pace.py; no ceiling is claimed, because per-routine token budgets are unset).
+        "token_pace": pace(monthly, info.slug),
     }
 
 
@@ -144,6 +149,7 @@ def list_routines(request: Request) -> list[dict]:
     lane_of = lanes.scheduled_lane_by_member(_state(request).server.routines_home)
     return [_card(request, info, monthly=monthly, lane_of=lane_of)
             for info in _catalog(request).values()]
+
 
 
 @router.get("/routines/{slug}/surface")

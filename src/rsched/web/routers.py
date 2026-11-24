@@ -62,6 +62,7 @@ def include_api_routers(app: FastAPI, deps: list) -> None:
         api_search,
         api_settings,
         api_stats,
+        api_token_pace,
         api_traces,
         api_workflows,
         settings,
@@ -77,6 +78,8 @@ def include_api_routers(app: FastAPI, deps: list) -> None:
                    api_conversation_grants,   # F783 + D216: a conversation's `grants:` rows —
                    # the deny tombstones, the grants it holds, and (part a) the shared-store
                    # exposure dial; only the routine page had any of the three
+                   api_token_pace,   # the fleet's token pace — its own module: api_routines
+                   # is at the house size bar, and this answers a different question
                    api_background, api_branches, api_desktops, api_runs,
                    api_run_control, api_run_undo,   # D269's ⤺ lives apart: undoing a FINISHED
                    # run's work is not steering a live one, and api_run_control is at its bar
