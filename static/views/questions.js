@@ -17,6 +17,8 @@ import { loadQuestions, subscribeQuestions, wantSettled } from "/static/question
 import { SETTLED_PAGE, settledMore } from "/static/components/settled-more.js";
 import { pendingBand } from "/static/components/pending.js";
 import { answerForm } from "/static/components/answerform.js";
+import { settledCard } from "/static/components/settled-card.js";
+import { a2uiFold } from "/static/components/a2ui-decision.js";
 import { linkifyRefs } from "/static/components/reflinks.js";
 import { configProposal } from "/static/components/configproposal.js";
 import { answeredChips, lifecycleControls, proofNote }
@@ -191,61 +193,13 @@ export async function render(view, query = {}) {
     // Already answered (the inbox file exists; the routine consumes it on its next turn/run):
     // show the settled state instead of re-asking — reloads must not resurrect it as open.
     if (q.answered) {
-      // What you said stays on the page (F525). Before the durable record, consuming an
-      // answer deleted it: you answered, a run booted, and your own words were gone from
-      // the only surface that had shown them. A settled decision now keeps its card — and
-      // stays revisable, because answering one of four questions and wanting to add the
-      // other three is an ordinary thing to do, not an error to be locked out of.
-      const body = el("div", {});
-      const say = (text, note) => body.replaceChildren(
-        el("div", { class: "flow-note" }, el("span", {}, `“${text}” ${note}`)),
-        ...proofNote(q),                 // D220: what is being CHECKED, so the band reads
-        el("div", { class: "row mt" }, reviseBtn));
-      const editor = () => {
-        const box = el("textarea", { class: "answer-input", rows: "3",
-          "data-persist": `revise-${q.qid}` });
-        box.value = q.answer || "";
-        const save = el("button", { class: "btn small primary" }, "save revision");
-        const cancel = el("button", { class: "btn small" }, "cancel");
-        cancel.onclick = () => say(q.answer, settledNote());
-        save.onclick = () => {
-          const text = box.value.trim();
-          if (!text) return;
-          // act() re-enables in a `finally`, which is the only place it cannot be forgotten:
-          // this handler used to re-enable only on the failure path, so a revision that SAVED
-          // left its own button dead.
-          act(save, async () => {
-            const r = await api(`/api/questions/${q.qid}/revise`, { method: "POST", body: { text } });
-            q.answer = text;
-            q.settled = false;              // re-queued: a run has to read the amendment
-            say(text, "→ inbox → the next run reads this instead");
-            return r;
-          }, "revised — the next run reads the new answer");
-        };
-        body.replaceChildren(box, el("div", { class: "row mt" }, save, cancel));
-        box.focus();
-      };
-      const reviseBtn = el("button", { class: "btn small",
-        title: "change what you answered — a decision a run already read is re-queued so the next one sees the amendment" },
-        "revise");
-      reviseBtn.onclick = editor;
-      const settledNote = () => (q.settled
-        ? "→ read by the run that asked"
-        : `→ inbox → consumed by the ${q.mode === "blocking" ? "waiting run"
-            : q.ran_now ? "run starting now" : "next run"}`);
-      say(q.answer, settledNote());
-      // The unapplied proposal, kept alive on the receipt (see the comment at the return).
-      // R2778: `host` is this WRAPPER, not the card body, so applying REPLACES the "NOT
-      // applied" warning instead of landing beside it — with `body` as the host, one card
-      // carried both labels at once and no reader could tell which of them was true.
-      const settledConfig = el("div", { class: "mt" });
-      const settledBar = proposal(q, { host: settledConfig, clearWarn: () => {} });
-      if (settledBar) settledConfig.append(
-        el("div", { class: "small faint" },
-          "the proposed config change was NOT applied — answering never applies it; "
-          + "approve it here while it is still offered"), settledBar);
-      return el("div", { class: "panel question-item answered" },
-        el("div", { class: "q-meta" },
+      // The RECEIPT is its own component (components/settled-card.js): what you said and what
+      // became of it, the revise affordance, and a config proposal answering did not apply. The
+      // meta row and the question's rendering are built HERE, because the open card below builds
+      // the same row and a second construction of it is a second place for the chips to drift.
+      return settledCard(q, {
+        proposal,
+        meta: el("div", { class: "q-meta" },
           q.meta ? chip("meta", "meta") : null,
           QTYPE_CHIPS[q.type] ? chip(...QTYPE_CHIPS[q.type]) : null,
           reportChip(q),
@@ -255,23 +209,11 @@ export async function render(view, query = {}) {
           sourceLink(q),
           q.asked ? el("span", {}, "asked ", when(q.asked)) : null,
           q.consumed ? el("span", { class: "faint small" }, "read ", when(q.consumed)) : null),
-        // A settled card is a RECEIPT: what was asked, what you said, and the chance to revise.
-        // Rendering the whole proposal body — rationale, prior art, sketch, an impact table —
-        // above the answer made the page eleven thousand pixels of decisions already taken. The
-        // first line leads; the rest is one click, and nothing is dropped.
-        el("details", { class: "q-settled" },
+        question: el("details", { class: "q-settled" },
           el("summary", { class: "q-text prose" },
             summaryLine(q.question, "(no question)")),
           qText(q)),
-        el("div", { class: "mt" }, body),
-        // R2189, the operator's ruling of 2026-10-05 (option 3: "only the button; answering
-        // warns and keeps the patch available"): answering NEVER applies a config_patch, so a
-        // settled card whose patch is still unapplied must keep OFFERING it. Without this the
-        // proposal and its only control vanished the moment you answered — reported twice, the
-        // second time on an option that read "Ja — Patch übernehmen", where the answer said yes
-        // and nothing happened. The receipt is where it belongs, because answering is exactly
-        // when the card moves here.
-        settledBar ? settledConfig : null);
+      });
     }
     const runBits = q.run_id ? [
       el("a", { class: "btn small", href: `#/run/${q.run_id}` }, "view run"),
@@ -412,7 +354,22 @@ export async function render(view, query = {}) {
         title: "what the routine does if this stays unanswered" },
         `↪ without an answer: ${q.default}`) : null,
       configSlot,
-      controls);
+      controls,
+      // D310 step 5: the same decision RENDERED THROUGH A2UI, one click away under the card it
+      // stands beside. Not a replacement, deliberately — the operator answers real work on this
+      // page, and swapping the control he relies on for a protocol rendering he has not seen
+      // would be the wrong order. It is a `<details>` so the surface is MOUNTED on first open
+      // rather than on every repaint: a page of decisions must not fetch an envelope per card.
+      // Answered through the protocol is answered: the card leaves the open list exactly as it
+      // does when the form posts. MEASURED red-first: the shared questions store's own bus
+      // snapshot already re-renders it as the settled receipt, so this callback is NOT what
+      // makes that true — it only removes the wait for that round trip, which is why neutering
+      // it leaves the browser test green. Kept for the latency, not the outcome.
+      a2uiFold(q.qid, { onAnswered: () => {
+        state.items = state.items.filter((x) => x.qid !== q.qid);
+        syncToolbar();
+        renderList({ focus: false });
+      } }));
     return panel;
   }
 

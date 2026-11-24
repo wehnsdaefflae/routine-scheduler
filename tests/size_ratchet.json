@@ -28,7 +28,7 @@
     "static/views/dashboard.js": 383,
     "static/views/library.js": 564,
     "static/views/messages.js": 363,
-    "static/views/questions.js": 446,
+    "static/views/questions.js": 403,
     "static/views/run.js": 578,
     "tests/conftest.py": 616,
     "tests/test_actions.py": 376,

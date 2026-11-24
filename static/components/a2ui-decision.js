@@ -129,3 +129,35 @@ export function a2uiDecision(qid, { onAnswered = null } = {}) {
   host.teardown = () => renderer?.destroy();
   return host;
 }
+
+/** The decision's A2UI rendering as a FOLD, mounted the first time it is opened.
+ *
+ * This is how the Decisions page offers it: closed by default, because the card above it is what
+ * the operator answers real work on and swapping that for a rendering he has not seen would be
+ * the wrong order. Not a replacement — an addition, one click away.
+ *
+ * It lives HERE rather than in the view for the reason the fold exists at all: the lifecycle is
+ * this module's business. The renderer subscribes to its surface store, so a fold opened on every
+ * card of a long page leaks one subscription each unless the node is torn down — and the mount
+ * must be LAZY, because a page of decisions must not fetch an envelope per card.
+ *
+ * `onAnswered` is the host's, passed straight through.
+ */
+export function a2uiFold(qid, { onAnswered = null } = {}) {
+  const fold = el("details", { class: "q-a2ui" },
+    el("summary", { class: "faint small" }, "render through A2UI"));
+  let node = null;
+  fold.addEventListener("toggle", () => {
+    if (fold.open && !node) {
+      node = a2uiDecision(qid, { onAnswered });
+      fold.append(node);
+      return;
+    }
+    if (!fold.open && node) {
+      node.teardown?.();
+      node.remove();
+      node = null;
+    }
+  });
+  return fold;
+}

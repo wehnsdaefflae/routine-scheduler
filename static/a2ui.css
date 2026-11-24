@@ -38,6 +38,17 @@
   font-size: var(--t-xs);
 }
 
+/* The fold under a decision card that renders the same decision through A2UI (D310 step 5,
+ * views/questions.js). Quiet by default: the card above it is what the operator answers real
+ * work on, and this is the richer rendering one click away — a loud affordance would read as the
+ * card being deprecated, which it is not yet. */
+.q-a2ui {
+  margin-top: var(--s3);
+  padding-top: var(--s2);
+  border-top: 1px dashed var(--rule);
+}
+.q-a2ui > summary { cursor: pointer; }
+
 /* The console's own mount point for a served surface (components/a2ui-decision.js): it bounds
  * the width so a decision rendered through the protocol reads as a column of prose rather than
  * stretching the page, and gives the fetch-failure and answered notes somewhere to sit. */
