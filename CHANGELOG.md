@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.606.0] — 2026-11-24
+
+**The subscription surface leaves routine-scheduler; the Routines page gains a token pace.** The
+operator, after the CLIProxyAPI management panel was repaired: *"the health read is on
+[the proxy's panel] so i don't see why we need anything in routine-scheduler besides the
+endpoints. we don't need any mention of subscriptions in routine-scheduler. what would be helpful
+would be a token count on the routine overview page so we can anticipate our token budget running
+out."* Asked whether to keep a minimal login-dead signal, he chose the full removal including the
+credential watch; asked which ceiling the new readout should count against, he chose *"tokens/month
+per routine + the trend (this month vs last, and a projection to month end) — no ceiling claimed"*.
+
+An endpoint in this product is now a TRANSPORT and nothing else. Removed:
+`endpoints/{cliproxy_login,cliproxy_mgmt,cliproxy_quota,subscription_quota,endpoint_health}.py`,
+`daemon/endpoint_watch.py`, the six proxy/quota/credits-adjacent routes on
+`settings/endpoint_probe.py` (the pay-per-use CREDITS read stays — a balance is not a
+subscription), the `endpoint_needs_reauth` blocked-work condition across `health_vocab`,
+`blocked_kinds`, `operator_blocks`, `health_stream` and `operator_conditions`, the
+`quota_source` / `quota_key_var` / `quota_auth_index` endpoint fields, the dashboard's Claude-quota
+chip, `static/components/{proxy-accounts,quota}.js`, and the `.warn-line` rule they were the only
+users of. The `cliproxy-mgmt` endpoint is gone from `config.yaml`; `CLIPROXY_MANAGEMENT_KEY` no
+longer reaches this product. `gateways.<name>.plans` STAYS — `endpoints/routes.py` reads it to size
+a model's window by its route, which is not a subscription fact.
+
+**What this gives up, on the record.** The credential watch read the proxy's account list every ten
+minutes and filed a standing blocked-work row when a subscription login died, because one expiring
+claude-proxy token failed eight routines at turn 0 within two minutes and nothing detected it.
+That failure mode is now visible as those runs failing, not as a warning beforehand;
+`docs/contracts.md` retires the guarantee in those terms rather than deleting it silently.
+
+In its place, the question the operator actually wanted answered: `readmodels/token_pace.py` adds
+the token COUNT and a month-end PROJECTION over the series `monthly_spend` already parses — per
+routine on its card, and for the whole instance as a header chip
+(`GET /api/routines-token-pace`), since a subscription window is spent by every routine at once.
+No ceiling is claimed: per-routine `max_total_tokens` defaults to -1 and nothing sets it, so a
+"% of budget" would divide by a number that does not exist. A projection is withheld until the
+month is 15% gone and `elapsed_frac` always rides beside the figure. Proven on the live usage
+stream: November read 153,563,448 tokens at 77.9% of the month, projecting ~197,043,069 by month
+end ($8,079.52 notional → ~$10,367).
+
 ## [0.605.0] — 2026-11-24
 
 **Hook activity moved off the Routines page onto Messages, on the operator's order.** He wrote:
