@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.604.0] — 2026-11-24
+
+**F944: `cd <own dir> &&` no longer flips a shell call from process to task.** The overhead
+classifier's `_relative` compared a path against `routine_dir + "/"`, so a token EQUAL to the
+routine's own directory — which is exactly how `cd /home/mark/routines/<slug> && …` names it —
+did not match, returned `None`, and was booked to the task. The filter at `_call_is_process`
+was already written to drop such tokens (it tests for `"."` or `""`); it simply never fired.
+One token of shell STYLE therefore decided a run's whole classification: `cd <dir> && grep -n
+… state/shows.json` read as task while the same command bare, or with a trailing slash on the
+`cd` target, read as process.
+
+Reported by `routine-improver` and narrowed by `scheduler-builder` (the trailing-slash
+asymmetry is theirs). The consequences were both real: it HID overhead, and it MANUFACTURED
+regressions between runs whose only difference was whether their shells carried the prefix —
+one such comparison read a measured improvement (≈0.40 → ≈0.33) as a 34% → 44% rise and was
+one step from reverting the change that worked.
+
+`_relative` now returns `"."` for the own directory named absolutely, with or without a
+trailing slash, so every caller (`is_process_path`, `_bucket`, `_in_state`,
+`_call_is_process`) sees what they were written to expect.
+
+**The calibration table was re-run, as the module's docstring requires, and `THRESHOLD` does
+not move.** Over all 28 routines' newest five measured runs, the corrected classifier raises
+eight medians — self-audit 0.145 → 0.196, rules-review 0.344 → 0.394, tv-show-tracker 0.403 →
+0.424, drawerrr 0.112 → 0.175, scheduler-builder 0.173 → 0.182, routine-improver 0.142 →
+0.147, fau 0.196 → 0.215, feeld-android 0.120 → 0.121 — and leaves every other median
+unchanged. No routine crosses the bar in either direction, so the 0.27 midpoint still separates
+11 of 12 flagged from 0 of 8 healthy. Shares RECORDED before this fix for a routine that used
+the prefix were measured on the old classifier and are not comparable with ones taken after it.
+
 ## [0.603.0] — 2026-11-23
 
 **D299: what a backup ATTEMPT cost, recorded where a run can read it.** The operator answered

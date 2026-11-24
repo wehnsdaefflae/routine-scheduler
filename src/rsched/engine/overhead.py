@@ -41,9 +41,13 @@ the invariant reads it):
 (library-sync's row predates a fix; its runs now land four actions — see `MIN_ACTIONS`.)
 
 `THRESHOLD` = 0.27, the midpoint of the gap between the highest healthy median (0.263) and the
-lowest flagged one (0.277): 11 of 12 flagged, 0 of 8 healthy. Never move it without re-running
-the calibration. The miss (self-audit) is a known LIMIT: bookkeeping on a DOMAIN-named store,
-through the routine's own tooling or as reports, reads as task here; the outcome series
+lowest flagged one (0.277): 11 of 12 flagged, 0 of 8 healthy. Re-run after `_relative` learned
+to resolve the own dir NAMED (`cd <dir> &&`): eight medians rose, none crossed the bar either
+way, so the midpoint stands — but a share recorded by the earlier classifier for a routine
+whose shells carried that prefix is not comparable with one taken since. Never move it
+without re-running the calibration. The miss (self-audit) is a known LIMIT: bookkeeping on a
+DOMAIN-named store, through the routine's own tooling or as reports, reads as task here; and
+the outcome series
 (readmodels/outcome_series.py) is the complementary net. Measured and rejected: counting
 `report`/`ask_user` as process, counting every `state/` read, not counting the finish, and
 `changelog` outside the own dir — each put a healthy routine over the bar. Treating
@@ -126,8 +130,10 @@ def _relative(path: str, routine_dir: str) -> str | None:
         return None
     if not p.startswith(("/", "~")):
         return str(PurePosixPath(p))
-    root = routine_dir.rstrip("/") + "/"
-    return str(PurePosixPath(p[len(root):])) if p.startswith(root) else None
+    root = routine_dir.rstrip("/")
+    if p.rstrip("/") == root:   # the own dir NAMED, as `cd <dir> &&` names it
+        return "."
+    return str(PurePosixPath(p[len(root) + 1:])) if p.startswith(root + "/") else None
 
 
 def is_record_name(name: str, words: frozenset[str] = _RECORD_WORDS) -> bool:
