@@ -74,6 +74,13 @@ class ServerConfig(_Config):
     # cannot list or screens it cannot open.
     desktop_broker_url: BlankableStr = ""
     desktop_view_url: BlankableStr = ""
+    # The PLAYGROUND (the operator's order): a Conversations-shaped page where experimental
+    # features are tried before anything of them reaches production. Off by default and gated
+    # like the two addresses above — the page ships in every build, its nav entry appears only
+    # where this is on, and nothing in the engine acts on an experiment unless a conversation
+    # itself carries `playground: true`. Turning it off hides the surface; it does not disarm a
+    # conversation already flagged, which is the operator's to unflag.
+    playground_enabled: bool = False
     # The run semaphore's size: 0 would start no run ever, and a negative one cannot be built.
     max_concurrent_runs: int = Field(2, ge=1)
     registry_rescan_s: int = Field(30, ge=1)

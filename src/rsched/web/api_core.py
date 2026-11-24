@@ -75,6 +75,9 @@ def status(request: Request) -> dict:
             "desktop_broker_url": server.desktop_broker_url,
             "desktop_view_url": server.desktop_view_url,
             "desktops": server.desktops_configured,
+            # Whether the Playground page and its nav entry exist in this console
+            # (config `playground_enabled`) — experimental features, off by default.
+            "playground_enabled": server.playground_enabled,
             "action_limits": actionlimits.LIMITS,   # web/actionlimits.py — D252
             "meta_routines": meta_routines, **state.scheduler.snapshot()}
 

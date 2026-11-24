@@ -35,14 +35,11 @@ from . import (
     loopend,
     loopnudge,
     loopsetup,
-    loopshape,
     mediaops,
     obstails,
-    recall,
     remind,
-    requests,
     sidefields,
-    turnwindow,
+    tails,
 )
 from .actionschema import brief_value
 from .boot import boot
@@ -333,52 +330,12 @@ class EngineLoop:
 
     def _tails(self, action: dict, obs: dict, fired: list[Assist], *, held: bool,
                streak: int) -> str:
-        """Everything that rides an observation, in the order the model reads it
-        (docs/prompt-anatomy.md §3b). Each tail is free and appears only when it applies.
+        """Everything that rides an observation — composed in `engine/tails.py`, which owns
+        the ORDER the model reads them in (docs/prompt-anatomy.md §3b) and is where a new
+        free layer is added, so this file stops growing by a line per layer.
         """
-        # `remind` side fields, applied AFTER the hold check so a reminder authored this turn
-        # can never hold the action it rode on.
-        text = remind.apply_ops(self, action, poll_s=POLL_S)
-        # Reminders on non-action triggers (`result`, `prose`, `turn:*`) cannot hold; they ride.
-        text += remind.at_observation(self, action, obs)
-        text += assist.tail(fired)   # observation-moment assists, asked in `_observe`
-        text += recall.at_observation(self, action, obs)   # an overlapping archived topic
-        # D65: an `allow once` grant is spent by USE, not attempt — a HELD action never reached
-        # the executor, and re-emitting it is the confirmation to proceed.
-        if not held and (spent := requests.consume_once_grants(self, action, obs)):
-            text += requests.spent_notice(spent, action)
-        if REPEAT_WARN <= streak < REPEAT_FAIL:
-            text += self._repeat_warning(streak)
-        text += loopshape.after(self, action, obs)   # a cycle, varied failures, a same result
-        if warning := self.ctx.budget_warning():
-            text += turnwindow.converge(warning)
-        # D227: what is LEFT, as a fact — here, since the contract is composed once.
-        text += turnwindow.budget_tail(self.ctx)
-        if self._history_active:
-            self._hist_note_countdown -= 1
-            if self._hist_note_countdown <= 0:
-                text += self._history_note
-                self._hist_note_countdown = 10
-        return text
+        return tails.compose(self, action, obs, fired, held=held, streak=streak, poll_s=POLL_S)
 
-    def _repeat_warning(self, streak: int) -> str:
-        """The repeat-streak tail, and its escape hatch: the next reply runs schema-free; after
-        two sheds the provider schema stays off for the rest of the run.
-        """
-        self._shed_schema_turns = 1   # re-arms on every further repeat
-        self._sheds += 1
-        if self._sheds >= 2 and not self._schema_off:
-            self._schema_off = True
-            self.ctx.transcript.event("error", {
-                "where": "schema", "attempt": 0,
-                "message": "provider response-format disabled for the rest of the "
-                           "run: repeat-streak shedding rescued it twice — the "
-                           "grammar is suppressing fields for this model"})
-        return (f"\n[ENGINE WARNING: this exact action has now run "
-                f"{streak} times in a row — {REPEAT_FAIL} identical "
-                "actions fail the run. Change course. The structured-output "
-                "constraint is lifted for your next reply: emit ONE JSON object "
-                "and include every field the action needs (args, content, …).]")
 
     # --- ending ------------------------------------------------------------------
 

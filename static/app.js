@@ -28,6 +28,8 @@ const routes = [
   // #/routines. One pattern keeps the render arg shape (box, slug, query) correct at root.
   [/^(?:#?\/?|#\/conversations(?:\/([a-z0-9-]+))?)$/, () => import("/static/views/conversations.js")],
   [/^#\/routines$/, () => import("/static/views/dashboard.js")],
+  // The Playground: experimental features, tried on a conversation before production
+  [/^#\/playground(?:\/([a-z0-9-]+))?$/, () => import("/static/views/playground.js")],
   [/^#\/messages$/, () => import("/static/views/messages.js")],
   [/^#\/stats$/, () => import("/static/views/stats.js")],
   // DEVELOPMENT: did a change help — the fleet, then one routine (rail group Develop)
@@ -94,6 +96,7 @@ function updateLocation(path) {
   // Routines moved to #/routines; #/ (and #/conversations) is the Conversations landing.
   const key = path.startsWith("#/routines") || path.startsWith("#/routine/")
       || path.startsWith("#/run/") ? "dashboard"
+    : path.startsWith("#/playground") ? "playground"
     : path.startsWith("#/questions") ? "questions"
     : path.startsWith("#/browser") ? "browser"
     : path.startsWith("#/desktops") ? "desktops"
@@ -124,27 +127,16 @@ function crumbsFor(path) {
     case "questions": return [{ label: "Decisions" }];
     case "messages": return [{ label: "Messages" }];
     case "stats": return [{ label: "Stats" }];
-    case "changes": {
-      const c = [{ label: "Changes", href: parts.length > 1 ? "#/changes" : null }];
-      if (parts[1]) c.push({ label: parts[1] });
-      return c;
-    }
     case "settings": return [{ label: "Settings" }];
     case "browser": return [{ label: "Browser" }];
-    case "help": {
-      const c = [{ label: "Help", href: parts.length > 1 ? "#/help" : null }];
-      if (parts[1]) c.push({ label: parts[1] });
-      return c;
-    }
-    case "library": {
-      const c = [{ label: "Library", href: parts.length > 1 ? "#/library" : null }];
-      if (parts[1]) c.push({ label: parts[1] });
-      if (parts[2]) c.push({ label: parts[2] });
-      return c;
-    }
-    case "conversations": {
-      const c = [{ label: "Conversations", href: parts.length > 1 ? "#/conversations" : null }];
-      if (parts[1]) c.push({ label: parts[1] });
+    // One shape for every section whose sub-segments are plain names under a linked-back top:
+    // Changes, Help, Conversations, Playground and Library were five copies of this, which is
+    // how a new page used to mean another copy. `depth` is how many segments it shows.
+    case "changes": case "help": case "conversations": case "playground": case "library": {
+      const titles = { changes: "Changes", help: "Help", conversations: "Conversations",
+        playground: "Playground", library: "Library" };
+      const c = [{ label: titles[top], href: parts.length > 1 ? `#/${top}` : null }];
+      for (const seg of parts.slice(1, top === "library" ? 3 : 2)) c.push({ label: seg });
       return c;
     }
     case "routine": return [{ label: "Routines", href: "#/routines" }, { label: parts[1] || "" }];
@@ -234,6 +226,11 @@ async function refreshStatus() {
     renderMetaBanner(s.meta_routines);
     renderSkewBanner(s);
     renderVersion(s);
+    // The Playground's nav entry ships hidden and appears only where the instance enabled it
+    // (config `playground_enabled`) — the Browser/Desktops pattern, done on the status this
+    // function already fetched rather than in a dock of its own.
+    const pg = document.getElementById("nav-playground");
+    if (pg) pg.hidden = !s.playground_enabled;
     if (clock && s.server_tz) clock.title = `server tz: ${s.server_tz}`;
     dot.classList.add("on");
     // A pending self-update restart no longer blocks work — it waits for a quiet gap (restart.py) —

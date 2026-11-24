@@ -82,6 +82,12 @@
   <nav id="nav" aria-label="sections">
     <span class="nav-group">Work</span>
     <a href="#/conversations" data-nav="conversations"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-4.5A8 8 0 0 1 13 4a8 8 0 0 1 8 8Z"/></svg>Conversations</a>
+    <!-- The PLAYGROUND: a Conversations-shaped surface for features that are not production
+         yet (operator, 2026-11-24). Hidden until `playground_enabled` is on, the same way
+         Browser and Desktops are gated — an experimental page must not be part of the console
+         everywhere it ships. A FLASK: the one glyph in this rail that reads as "experiment",
+         and nothing else here is round-bottomed, so it stays distinct when labels drop. -->
+    <a href="#/playground" data-nav="playground" id="nav-playground" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6.5L5.6 17a3.2 3.2 0 0 0 2.8 4.8h7.2A3.2 3.2 0 0 0 18.4 17L14 9.5V3"/><path d="M7.4 14h9.2"/></svg>Playground</a>
     <!-- An INBOX TRAY, not a question mark: Decisions and Help both drew a circled "?" with a
          dot, and below 1180px the rail drops its labels — so the bottom bar offered two
          identical glyphs and the one destination the palette calls SUMMONS was

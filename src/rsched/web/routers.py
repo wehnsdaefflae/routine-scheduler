@@ -44,6 +44,7 @@ def include_api_routers(app: FastAPI, deps: list) -> None:
         api_patch_applied,
         api_pending,
         api_playbooks,
+        api_playground,
         api_push,
         api_question_decline,
         api_question_deliver,
@@ -103,6 +104,9 @@ def include_api_routers(app: FastAPI, deps: list) -> None:
                    api_traces,
                    settings,
                    api_workflows, api_playbooks, api_llm_tasks,
+                   # Every playground path is literal under /playground/, so its position in
+                   # this list is free — nothing here carries a {param} it could shadow.
+                   api_playground,
                    api_lanes, api_search, api_fs, api_debug):
         app.include_router(module.router, prefix="/api", dependencies=deps)
     # The ONE deliberately unauthenticated API route: webhook trigger ingest. Third
