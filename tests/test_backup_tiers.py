@@ -173,12 +173,93 @@ def test_loose_git_objects_are_packed_before_the_snapshot(home, tmp_path):
                         if p.is_file() and len(p.parent.name) == 2])
     assert loose_before > 0, "the fixture repo has no loose objects to pack"
     try:
-        proc = _backup(home, local, "2026-11-05", overrides={"SKIP_OFFBOX": "1"})
+        # The floor is the test's, because the fixture repo is small on purpose: the PROPERTY is
+        # "a repo over the floor ends with fewer loose objects than it began with", and it has to
+        # be asserted on the COUNT. Asserting only that the line was printed is what let a
+        # nightly no-op ship — see the next test.
+        proc = _backup(home, local, "2026-11-05",
+                       overrides={"SKIP_OFFBOX": "1", "GC_LOOSE_FLOOR": "1"})
         _ok(proc)
         assert "git objects:" in proc.stdout, proc.stdout
-        assert f"{loose_before} loose before" in proc.stdout or "none loose" in proc.stdout
+        assert f"{loose_before} loose before" in proc.stdout, proc.stdout
+        loose_after = len([p for p in (repo / ".git/objects").rglob("*")
+                           if p.is_file() and len(p.parent.name) == 2])
+        assert loose_after < loose_before, (
+            f"packing left {loose_after} of {loose_before} loose objects — each one is a file and "
+            f"so one sshfs round trip, which is the whole reason this step exists")
+        assert "1 repo(s) packed" in proc.stdout, proc.stdout
+        # Packed, not PRUNED: the history is still all there.
+        log = subprocess.run([git, "-C", str(repo), "rev-list", "--count", "HEAD"],
+                             check=True, capture_output=True, text=True)
+        assert log.stdout.strip() == "12", "packing lost commits"
     finally:
         shutil.rmtree(base, ignore_errors=True)
+
+
+def test_the_packing_floor_is_ours_because_gits_own_threshold_never_fires_here(home, tmp_path):
+    """THE DEFECT THIS GUARDS. Shipped with git's own `gc.auto` default — 6,700 loose objects in
+    ONE repository — this step packed NOTHING on this host for as long as it existed: the objects
+    are spread over ~30 small repos, the largest holding 4,344. Measured 2026-11-24 from the
+    unit's own journal, "44687 loose before, 44687 after (0 repo(s) packed)", against 45,277 loose
+    objects over 30 repos, while the step's purpose was to remove 38% of the off-box tier's round
+    trips. So the threshold has to be the BACKUP's question (this repo has enough files to be
+    worth packing) and not git's (this repo is big enough to be worth maintaining).
+    """
+    base, local, _ = _tiers(tmp_path)
+    repo = home / "routines/r1"
+    repo.mkdir(parents=True, exist_ok=True)
+    git = shutil.which("git")
+    if git is None:
+        pytest.skip("needs git")
+    subprocess.run([git, "init", "-q", str(repo)], check=True, capture_output=True)
+    for n in range(12):
+        (repo / f"f{n}.txt").write_text(f"{n}", encoding="utf-8")
+        subprocess.run([git, "-C", str(repo), "add", "-A"], check=True, capture_output=True)
+        subprocess.run([git, "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t",
+                        "commit", "-qm", f"c{n}"], check=True, capture_output=True)
+    loose = len([p for p in (repo / ".git/objects").rglob("*")
+                 if p.is_file() and len(p.parent.name) == 2])
+    assert 0 < loose < 6700, "the fixture must sit below git's own default, as every repo here does"
+    try:
+        # A floor ABOVE the repo's count leaves it alone, and the report says so honestly — this
+        # is the behaviour every night had, and it must be reachable only by choosing it.
+        under = _backup(home, local, "2026-11-05",
+                        overrides={"SKIP_OFFBOX": "1", "GC_LOOSE_FLOOR": str(loose + 1)})
+        _ok(under)
+        assert f"{loose} loose before, {loose} after (0 repo(s) packed)" in under.stdout, under.stdout
+        still = len([p for p in (repo / ".git/objects").rglob("*")
+                     if p.is_file() and len(p.parent.name) == 2])
+        assert still == loose
+        # The DEFAULT floor must be low enough to fire on the repos this host actually has: the
+        # largest holds 4,344 loose objects and the median around 1,650.
+        source = (DEPLOY / "backup.sh").read_text(encoding="utf-8")
+        default = int(source.split('GC_LOOSE_FLOOR="${GC_LOOSE_FLOOR:-')[1].split("}")[0])
+        assert 0 < default <= 1000, (
+            f"a default floor of {default} would not pack this host's repos, which is the no-op "
+            f"this test exists to prevent")
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_the_packing_never_detaches_never_prunes_and_never_estimates():
+    """Three measured hazards, all in the invocation itself. `gc.autoDetach` defaults to TRUE, so
+    a gc that finds work FORKS and returns — leaving it rewriting the object directories while
+    rsync walks them, which is worse than not packing at all. A backup is the last thing that
+    should decide an unreferenced object a run just wrote is garbage, so `--no-prune`: measured
+    2026-11-24, it still empties the loose directories (4,344 → 0) while deleting nothing. And
+    `--auto` must be GONE: it does not count loose objects but samples `objects/17` and
+    multiplies by 256, so a repo with 36 loose objects estimates 0 and is never packed at any
+    threshold — half of why this step was a nightly no-op. The count is ours; the gc after it is
+    unconditional.
+    """
+    source = (DEPLOY / "backup.sh").read_text(encoding="utf-8")
+    invocation = source[source.index("if ! git -c "):source.index("could not be packed")]
+    assert "gc.autoDetach=false" in invocation, (
+        "a detached gc races the snapshot it is supposed to precede")
+    assert "--no-prune" in invocation, "a backup may pack history, never prune it"
+    assert "--auto" not in invocation, (
+        "`gc --auto` is an estimator over one sampled fanout directory, not a count: it packs "
+        "nothing on a repo whose objects/17 is empty, at any threshold")
 
 
 def test_packing_can_be_switched_off_and_a_failure_never_fails_the_night(home, tmp_path):

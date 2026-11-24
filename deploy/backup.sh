@@ -107,9 +107,39 @@ OFFBOX_EXCLUDES=(
 # — which `git gc` turns into a handful of packfiles while losing nothing: the history is packed,
 # not pruned. The operator's (a), from the same answer.
 #
-# `--auto` deliberately: it packs only a repo whose loose count is over git's own threshold, so a
-# nightly run costs nothing on a repo nobody touched. Every failure is swallowed and reported —
-# a repo that cannot be packed is a repo that gets snapshotted as it is, never a failed backup.
+# A repo whose loose count is over OUR OWN floor is packed, so a nightly run costs nothing on a
+# repo nobody touched. Every failure is swallowed and reported — a repo that cannot be packed is
+# a repo that gets snapshotted as it is, never a failed backup.
+#
+# THE DECISION IS OURS, NOT `gc --auto`'S, and that is what makes this step do anything at all.
+# Shipped as `gc --auto`, it packed NOTHING on this host for as long as it existed — measured
+# 2026-11-24 from the unit's own journal, "44687 loose before, 44687 after (0 repo(s) packed)",
+# against 45,277 loose objects spread over 30 repos. TWO independent reasons, both measured:
+#   - git's `gc.auto` default is 6,700 loose objects in ONE repository, and the largest repo here
+#     holds 4,344. The count that costs sshfs round trips is the SUM over the homes being
+#     snapshotted; git's threshold asks about one repository at a time. Only our question is
+#     about the backup.
+#   - and `gc --auto` does not COUNT loose objects at all: it samples one fanout directory
+#     (`objects/17`) and multiplies by 256. A repo with 36 loose objects has an empty `objects/17`
+#     and so an estimate of 0, which packs nothing at ANY threshold — `gc.auto=1` included. An
+#     estimator cannot be tuned into a count.
+# So the floor is read against the count we already have from `find`, and the gc that follows is
+# unconditional. GC_LOOSE_FLOOR is that floor: a repo holding more than this many loose objects is
+# packed, because each one is a file and so one round trip over the share. Measured the same day:
+# the largest repo packed 4,344 -> 0 loose in 10 s, a median one 1,653 -> 0 in 5.5 s, so packing
+# every repo over the floor costs minutes on the local disk once and saves ~45,000 round trips on
+# every off-box mirror afterwards.
+GC_LOOSE_FLOOR="${GC_LOOSE_FLOOR:-200}"
+#
+# Two more settings, each for a measured hazard rather than for taste:
+#   gc.autoDetach=false — git's default is TRUE, so a gc --auto that finds work to do FORKS and
+#     returns immediately. The one thing this step must guarantee is that the packing is finished
+#     before rsync walks the objects, and a detached gc rewriting them mid-walk is worse than not
+#     packing at all: it is the snapshot reading a directory while its files are replaced.
+#   --no-prune — packing loses no history, and pruning could: a routine's run may have just
+#     written an object nothing references yet, and a BACKUP is the last place that should decide
+#     such an object is garbage. --no-prune still empties the loose directories (measured), so the
+#     round trips go away without anything being deleted.
 GC_REPOS="${GC_REPOS:-1}"
 
 # shellcheck source=deploy/state-paths.sh
@@ -279,10 +309,21 @@ pack_loose_objects() {
     local loose
     loose=$(find "${repo}/objects" -type f -path '*/??/*' 2>/dev/null | wc -l)
     before=$(( before + loose ))
-    # `--auto` packs only past git's own threshold, so an untouched repo costs nothing. A failure
-    # is reported and forgotten: the snapshot that follows does not depend on it.
-    if ! git --git-dir="${repo}" gc --auto --quiet 2>/dev/null; then
+    # Under the floor: nothing to win here, and the repo is left completely alone.
+    if [ "${loose}" -le "${GC_LOOSE_FLOOR}" ]; then
+      after=$(( after + loose ))
+      continue
+    fi
+    # NOT `--auto`, and that is the second half of the same defect. `gc --auto` does not COUNT
+    # loose objects: it samples ONE fanout directory (`objects/17`) and multiplies by 256, so it
+    # is an estimator for "has this repo been used a lot lately". Measured 2026-11-24: a repo
+    # holding 36 loose objects has an empty `objects/17`, so the estimate is 0 and `--auto` packs
+    # nothing at ANY threshold — gc.auto=1 included. We already know the real count (`loose`
+    # above, from `find`), so the decision is ours and the gc is unconditional once it is made.
+    # Still never pruning and never detaching, for the two reasons above.
+    if ! git -c gc.autoDetach=false --git-dir="${repo}" gc --no-prune --quiet 2>/dev/null; then
       echo "  git objects: ${repo#"${HOME}/"} could not be packed — snapshotting it as it is" >&2
+      after=$(( after + loose ))
       continue
     fi
     local now
@@ -487,7 +528,46 @@ with open(path, "a", encoding="utf-8") as fh:
 PY
 }
 
+# THE OUTCOME THAT HAPPENS MOST OFTEN IS THE ONE WITH NO RECORD SITE, and the three above are
+# all reached by a script that runs to its own end. On this host the off-box tier's usual ending
+# is neither: the unit bounds the night with TimeoutStartSec, systemd sends SIGTERM when it
+# expires, and bash dies at the rsync without reaching any `record_attempt` line at all. Measured
+# 2026-11-24 — `Result=timeout, ExecMainStatus=15`, started 01:13:20, killed 07:13:20, and
+# `backup-attempts.jsonl` holding exactly one row for that night: `local complete`. So the record
+# D299 exists for was blind to the very failure D299 was filed about, and reading the file alone
+# could not tell "the off-box tier was killed at its bound" from "the off-box tier never ran".
+#
+# A trap fixes it, and it has to be a trap: no amount of checking after rsync returns helps when
+# the process is gone. ATTEMPT_IN_FLIGHT_* is the one piece of state it needs — which tier is
+# inside its rsync right now, and when that attempt began — set at each attempt's start and
+# cleared the moment its own `record_attempt` has run, so the trap writes a row exactly when the
+# ordinary sites did not. SIGKILL cannot be trapped; nothing can record that, and the stamps
+# remain the evidence for it.
+ATTEMPT_IN_FLIGHT_TIER=""
+ATTEMPT_IN_FLIGHT_AT=""
+
+# `record_attempt` is `|| true`-guarded throughout and the cleanup cannot change our status, so
+# the handler cannot turn a killed night into some other kind of failure. It then re-raises the
+# signal with the handler removed, which is what makes the script die OF the signal (exit 143 for
+# TERM) rather than exit 0 and report a successful night to systemd.
+on_terminated() {
+  local signal="$1"
+  if [ -n "${ATTEMPT_IN_FLIGHT_AT}" ]; then
+    record_attempt "${ATTEMPT_IN_FLIGHT_TIER}" killed "${ATTEMPT_IN_FLIGHT_AT}" "" \
+                   "SIG${signal} — the attempt was cut short, not finished (the unit's own bound)"
+    ATTEMPT_IN_FLIGHT_TIER=""
+    ATTEMPT_IN_FLIGHT_AT=""
+  fi
+  cleanup_runs_exclude_file
+  trap - "${signal}"
+  kill -"${signal}" "$$"
+}
+trap 'on_terminated TERM' TERM
+trap 'on_terminated INT' INT
+
 LOCAL_STARTED_AT=$(date +%s)
+ATTEMPT_IN_FLIGHT_TIER="local"
+ATTEMPT_IN_FLIGHT_AT="${LOCAL_STARTED_AT}"
 
 rsched_collect_state_paths
 mkdir -p "${SNAPS}"
@@ -635,6 +715,9 @@ mv -T "${WORK}" "${SNAPS}/${TODAY}"
 point_latest_at "${TODAY}"
 date -Iseconds > "${ROOT}/.rsched-backup-completed"
 record_attempt local complete "${LOCAL_STARTED_AT}"
+# This tier has its row now, so a signal arriving later must not write a second one for it.
+ATTEMPT_IN_FLIGHT_TIER=""
+ATTEMPT_IN_FLIGHT_AT=""
 
 # What the snapshot cost the share — rsync's OWN figure, and the share's used space as the check
 # on it. This used to be a `du -sh prev today`, counting a hard-linked file once per invocation so
@@ -688,7 +771,14 @@ mirror_offbox() {
   # guard is what catches the case where that access created a plain directory instead.
   mkdir -p "$(dirname "${root}")" 2>/dev/null || true
   ls "$(dirname "${root}")" >/dev/null 2>&1 || true
-  refuse_unless_mounted "${root}" "off-box tier" || return 1
+  # A REFUSED target is a failed attempt and needs its own row: without one the record reads the
+  # same as a night where this tier never ran, which is the distinction D299 was filed to make.
+  # It is recorded before the return rather than by the caller, because this is the only place
+  # that knows WHY the tier produced nothing.
+  if ! refuse_unless_mounted "${root}" "off-box tier"; then
+    record_attempt offbox refused "$(date +%s)" "" "${root} is not on a mounted disk of its own"
+    return 1
+  fi
   mkdir -p "${root}"
   chmod 700 "${root}" 2>/dev/null || true
   local snaps="${root}/snapshots" base
@@ -703,6 +793,10 @@ mirror_offbox() {
   fi
   date -Iseconds > "${root}/.rsched-backup-started" 2>/dev/null || true
   started_at=$(date +%s)
+  # From here to one of this function's two record sites, a SIGTERM belongs to THIS tier — which
+  # on this host is how most nights end (the unit's TimeoutStartSec expires inside this rsync).
+  ATTEMPT_IN_FLIGHT_TIER="offbox"
+  ATTEMPT_IN_FLIGHT_AT="${started_at}"
   local excludes=()
   if [ -n "${RUNS_EXCLUDE_FILE}" ]; then
     # The paths in the list are HOME-relative, which is also how they sit inside a snapshot.
@@ -719,6 +813,8 @@ mirror_offbox() {
     echo "                     unaffected; only the off-box copy is behind." >&2
     echo "${out}" | grep -E '^rsync|^IO error|cannot ' | head -6 | sed 's/^/      /' >&2
     record_attempt offbox "failed" "${started_at}" "" "rsync exit ${rc}"
+    ATTEMPT_IN_FLIGHT_TIER=""
+    ATTEMPT_IN_FLIGHT_AT=""
     return 1
   fi
   if [ -e "${snaps}/${newest}" ]; then
@@ -734,6 +830,8 @@ mirror_offbox() {
   sent=$(echo "${out}" | awk -F': *' '/Total transferred file size/ {print $2}')
   echo "  off-box ${root}: ${newest} mirrored (${sent:-0})   elapsed: ${elapsed}s"
   record_attempt offbox complete "${started_at}" "${sent:-}"
+  ATTEMPT_IN_FLIGHT_TIER=""
+  ATTEMPT_IN_FLIGHT_AT=""
   ROOT="${root}" SNAPS="${snaps}" DISCARD="${snaps}/.discard" prune_snapshots
   return 0
 }

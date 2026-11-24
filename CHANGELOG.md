@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.607.0] — 2026-11-24
+
+**D299/F931: the backup outcome that actually HAPPENS is now the one that gets recorded, and the
+packing step that was supposed to make the off-box tier fast was doing nothing at all.** 0.603.0
+shipped the record D299 asked for, and this run read it for the first time. It held exactly one
+row for the night of 2026-11-24 — `local complete`, 86 s — and nothing about the off-box tier.
+That silence was the defect, in two independent places.
+
+**The record was blind to the ending that happens nightly.** Its three record sites are all
+reached only by a script that runs to its own end; on this host the off-box tier ends at the
+unit's `TimeoutStartSec`, where systemd sends SIGTERM and bash dies inside rsync without reaching
+any of them. Measured from the unit itself: `Result=timeout`, `ExecMainStatus=15`, started
+01:13:20, killed 07:13:20. So `deploy/backup.sh` now carries a TERM/INT trap over an in-flight
+marker (which tier is inside its rsync, and since when), and a cut-short night records
+`outcome: "killed"` with its elapsed seconds and its cause. The handler re-raises the signal it
+handled, so systemd still sees a failed unit and its `OnFailure=` push still fires — a trap that
+returned normally would turn a killed night into a reported success. A REFUSED off-box target
+(an unmounted share) records `outcome: "refused"`, which previously also produced nothing. SIGKILL
+cannot be trapped and is not claimed: the share's stamps remain the evidence for that case.
+
+**And the packing step packed nothing — for two separate reasons, both measured.** It exists to
+remove loose git objects before the mirror, because on sshfs each one is a file and so one round
+trip, and F931 measured them at 38% of the transferred set. Last night's own journal line was
+`git objects: 44687 loose before, 44687 after (0 repo(s) packed)`. First, git's `gc.auto`
+default is 6,700 loose objects in ONE repository, while this host's 45,277 are spread over ~30
+repos whose largest holds 4,344 — so no repo ever crossed it. Second, and worse, `gc --auto`
+does not count loose objects at all: it samples one fanout directory (`objects/17`) and
+multiplies by 256, so a repo with 36 loose objects estimates 0 and is never packed at ANY
+threshold, `gc.auto=1` included. The script already counts them itself, so the decision is now
+its own (`GC_LOOSE_FLOOR`, default 200) and the gc that follows is unconditional —
+`gc.autoDetach=false` because git's default is to FORK, which would leave a gc rewriting the
+object directories while rsync walks them, and `--no-prune` because a backup may pack history
+but must never decide an object a run just wrote is garbage. Measured: 4,344 → 0 loose in 10 s
+on the largest repo, 1,653 → 0 in 5.5 s on a median one, history intact.
+
+The cost this is aimed at, from the same journal: off-box mirrors that COMPLETE take
+5,926–15,897 s (1.6–4.4 h), and 6 of the last 15 attempts have a start line and no completion
+line. Nine guards proven red-first; the tenth is named in its own docstring as unprovable by
+that test and proven by the structural guard beside it.
+
 ## [0.606.0] — 2026-11-24
 
 **The subscription surface leaves routine-scheduler; the Routines page gains a token pace.** The

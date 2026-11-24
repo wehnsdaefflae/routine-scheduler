@@ -20,6 +20,22 @@ A row looks like:
 
 `transferred` carries rsync's own figure when the attempt completed. Nothing here raises: a
 backup diagnosis must never be the thing that stops the scheduler's tick.
+
+FIVE OUTCOMES, and which ones exist is the lesson of this record's first night. `complete` and
+`failed` (a non-zero rsync) were the only ones the first version could write, and both are
+reached only by a script that runs to its own end — so the file recorded `local complete` and
+nothing else for the one night it covered, while the unit said `Result=timeout`,
+`ExecMainStatus=15`, 01:13:20 to 07:13:20. The off-box tier's usual ending on this host is a
+SIGTERM at the unit's own bound, which is why `killed` exists; `refused` is the unmounted share,
+which also produced nothing before. A reader must be able to tell those apart:
+
+  complete  the tier finished; `transferred` says what it moved
+  failed    rsync returned non-zero; `note` carries the exit code
+  killed    the attempt was cut short at the unit's bound (SIGTERM), not finished
+  refused   the target was not on a mounted disk of its own, so no rsync ran
+
+SIGKILL is not among them and cannot be: nothing can record it. The share's own stamps remain
+the evidence for that case, which is what `backup_watch`'s stamp arithmetic reads.
 """
 
 from __future__ import annotations
