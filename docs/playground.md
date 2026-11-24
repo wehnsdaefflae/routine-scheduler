@@ -126,6 +126,29 @@ One practical cost the numbers also exposed: a per-turn dense query is a network
 A 150-turn serial replay timed out and had to be batched 32 at a time — which is why the live
 `util-hint` layer stays lexical and the dense comparison lives on the page.
 
+### Both indexes are built, and the local model's speed was mis-measured once
+
+| model | conditions | time | rate |
+|---|---|---|---|
+| `qwen3-embedding-8b` (cloud) | 775 → **775 vectors** | 50.3 s | ~0.065 s/text |
+| `qwen3-embedding-8b-local` (omen) | 775 → **774 vectors** | ~19 min | **~1.5 s/text warm** |
+
+The local model is the default: no condition text leaves the network to be indexed. Its first
+batch measured **163.8 s for 16 texts (~10 s each)**, which predicted a 2.2-hour build — that
+was **cold start, not throughput**. Warm, the same work ran ~7× faster. Never quote a local
+model's rate from its first batch.
+
+It is still ~23× slower than the cloud model, and that is the number design should use: fine for
+a one-off index build, **unusable on a per-turn query path**.
+
+Why **774 vectors for 775 conditions**: the store is keyed by (model, condition text), so two
+items whose condition text is byte-identical share one vector. Two `rules-review` reminders carry
+the same description, so `held` one short of `conditions` is correct rather than a gap.
+
+Verified on the local index — the hand-rolled SMTP turn ranks `mail` first at **0.540**, against
+the cloud model's 0.532 on the same query, so the two backends agree about the ranking as well as
+about their vectors.
+
 ## The bench
 
 `POST /api/playground/bench` and the panel on the page: fill in any components, pick stores, and
