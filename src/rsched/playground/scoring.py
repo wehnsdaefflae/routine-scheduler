@@ -110,12 +110,18 @@ class EmbeddingBackend:
 
     def __init__(self, cache_dir: Path, *, url: str = "", model: str = "",
                  key_env: str = "") -> None:
-        self.url = (url or os.environ.get("RSCHED_PLAYGROUND_EMBED_URL", "")).strip()
-        self.model = (model or os.environ.get("RSCHED_PLAYGROUND_EMBED_MODEL", "")).strip()
-        self.key_env = (key_env
-                        or os.environ.get("RSCHED_PLAYGROUND_EMBED_KEY_ENV", "")).strip()
+        # ENV WINS over the caller's value: the caller passes the instance DEFAULT (the otari
+        # gateway, api_playground.OTARI_EMBED_*), and the point of the env vars is to try
+        # another provider without a code change. The other way round they could never apply.
+        self.url = (os.environ.get("RSCHED_PLAYGROUND_EMBED_URL") or url).strip()
+        self.model = (os.environ.get("RSCHED_PLAYGROUND_EMBED_MODEL") or model).strip()
+        self.key_env = (os.environ.get("RSCHED_PLAYGROUND_EMBED_KEY_ENV") or key_env).strip()
         self.cache_dir = Path(cache_dir)
         self.why = ""
+        # The key is resolved env-FIRST, then from the instance secret store — the web process
+        # does not carry that store in its environment, so an env-only lookup would report a
+        # provisioned key as missing. Nothing here ever logs or returns the value.
+        self._resolved_key = _resolve_key(self.key_env)
         if not self.url or not self.model:
             self.why = ("no embeddings endpoint configured — set an OpenAI-compatible "
                         "/v1/embeddings URL, a model and the env var holding its key")
@@ -123,8 +129,9 @@ class EmbeddingBackend:
             # The URL is operator-supplied config, and urllib would honour `file:` or a custom
             # scheme — which would turn this backend into a local-file reader. Only HTTP(S).
             self.why = f"embeddings URL must be http:// or https:// — got {self.url[:40]!r}"
-        elif self.key_env and not os.environ.get(self.key_env):
-            self.why = f"{self.key_env} is not set in this process"
+        elif self.key_env and not self._resolved_key:
+            self.why = (f"{self.key_env} is not in the environment or the instance secret "
+                        f"store")
         self.available = not self.why
 
     # ---- cache ---------------------------------------------------------------------------
@@ -158,8 +165,8 @@ class EmbeddingBackend:
         # here, because the backend reports itself unavailable instead.
         req = urllib.request.Request(self.url, data=body, method="POST")  # noqa: S310
         req.add_header("Content-Type", "application/json")
-        if self.key_env and (key := os.environ.get(self.key_env)):
-            req.add_header("Authorization", f"Bearer {key}")
+        if self._resolved_key:
+            req.add_header("Authorization", f"Bearer {self._resolved_key}")
         with urllib.request.urlopen(req, timeout=EMBED_TIMEOUT_S) as resp:  # noqa: S310
             payload = json.loads(resp.read().decode("utf-8", "replace"))
         rows = payload.get("data") or []
@@ -203,6 +210,25 @@ class EmbeddingBackend:
                            condition=item.condition, owner=item.owner, detail=item.detail))
         out.sort(key=lambda h: (-h.score, h.ident))
         return out[:limit]
+
+
+def _resolve_key(name: str) -> str:
+    """The value of secret `name`: the process environment first, then the instance store.
+
+    Env first so a test or a one-off export wins; the store second because the web process
+    that serves the bench is not given the secrets as environment variables. Returns "" when
+    the name is empty or unknown — the caller turns that into a stated reason, never a crash.
+    """
+    if not name:
+        return ""
+    if value := os.environ.get(name):
+        return value
+    try:
+        from .. import secrets
+
+        return str(secrets.load_secrets().get(name) or "")
+    except Exception:
+        return ""
 
 
 def _normalize(vec: list[float]) -> list[float]:

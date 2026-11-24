@@ -28,6 +28,10 @@ import json
 import logging
 import shutil
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:       # the store is imported lazily in `_store` (web boot stays light)
+    from ..playground.vectorstore import VectorStore
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -58,8 +62,33 @@ def _cache_dir(server) -> Path:
     return Path(server.routines_home) / CACHE_SUBDIR
 
 
+#: The instance's own OpenAI-compatible gateway (docs/model-gateway.md): the `otari-openai`
+#: endpoint's base plus `/embeddings`, keyed by the same `OTARI_API_KEY` every otari endpoint
+#: uses. Used when the three RSCHED_PLAYGROUND_EMBED_* env vars name nothing, so the bench has
+#: a working backend on this instance without anything to export; the env vars still override
+#: it, which is how another provider is tried without a code change.
+OTARI_EMBED_URL = "http://172.17.0.1:4000/api/v1/embeddings"
+#: The embedding model, named as the gateway names it. The instance serves TWO (measured
+#: 2026-11: `qwen3-embedding-8b` and `qwen3-embedding-8b-local`, the only embedders among its
+#: 809 models), and they share an index — tag-fs measured cosine min 0.9921 / median 0.9973
+#: between them, which is why it treats `-local` as the private-file substitute for the same
+#: vectors.
+#:
+#: The CLOUD one is the default here because it is the one that answers: `-local` is served by
+#: omen's local-model-server through decision-balancer's EMBED_BACKENDS pool, and that service
+#: is currently down (the gateway returns 502 for it). Switching to the local model once it is
+#: up needs no code change — set RSCHED_PLAYGROUND_EMBED_MODEL=qwen3-embedding-8b-local — and
+#: the vector store re-embeds rather than mixing spaces, because its keys carry the model.
+OTARI_EMBED_MODEL = "qwen3-embedding-8b"
+#: The local substitute, for when omen's embedder is running. Same family, same index.
+OTARI_EMBED_MODEL_LOCAL = "qwen3-embedding-8b-local"
+OTARI_KEY_ENV = "OTARI_API_KEY"
+
+
 def _embedding_backend(server) -> EmbeddingBackend:
-    return EmbeddingBackend(_cache_dir(server))
+    """The embeddings backend, defaulting to the instance's otari gateway."""
+    return EmbeddingBackend(_cache_dir(server), url=OTARI_EMBED_URL,
+                            model=OTARI_EMBED_MODEL, key_env=OTARI_KEY_ENV)
 
 
 @router.get("/playground/features")
@@ -194,6 +223,52 @@ def firings(request: Request, slug: str, limit: int = 200) -> dict:
     return {"slug": slug, "count": len(rows), "by_kind": kinds, "firings": rows[-limit:]}
 
 
+def _store(server) -> VectorStore:
+    """The persisted vector index for the configured model."""
+    from ..playground.vectorstore import VectorStore
+
+    return VectorStore(_cache_dir(server) / "index", _embedding_backend(server).model)
+
+
+@router.get("/playground/vectors")
+def vectors(request: Request) -> dict:
+    """The vector index's state: how many conditions are embedded, and how many are missing.
+
+    The honest read for a page whose whole point is being checkable — `missing` is what a sync
+    would cost in provider calls, and `held` is what a query can actually reach.
+    """
+    server = _server(request)
+    backend = _embedding_backend(server)
+    conditions = load_all(server.libraries_home, server.routines_home)
+    store = _store(server)
+    held = store.load()
+    return {"model": backend.model, "backend_available": backend.available,
+            "why": backend.why, "conditions": len(conditions), "held": held,
+            "missing": len(store.missing(conditions)), "dim": store.dim(),
+            "path": str(store.path)}
+
+
+@router.post("/playground/vectors/sync")
+def sync_vectors(request: Request) -> dict:
+    """Embed every condition the index is missing, and prune the ones that no longer exist.
+
+    Idempotent: a second call with nothing changed makes no provider call at all, because the
+    index is keyed by (model, condition text) — see `playground/vectorstore.py`.
+    """
+    server = _server(request)
+    backend = _embedding_backend(server)
+    if not backend.available:
+        raise HTTPException(503, backend.why)
+    conditions = load_all(server.libraries_home, server.routines_home)
+    store = _store(server)
+    try:
+        report = store.sync(conditions, backend.embed)
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    report["pruned"] = store.prune(conditions)
+    return report
+
+
 @router.post("/playground/bench")
 async def bench(request: Request) -> dict:
     """One situation, every store, both backends — the interactive comparison.
@@ -220,9 +295,22 @@ async def bench(request: Request) -> dict:
         out["results"]["embeddings"] = None
         out["embeddings_why"] = embed.why
     else:
+        # Search the PERSISTED index: one embedding call for the query, then an exact scan of
+        # stored vectors. Re-embedding all 774 conditions per bench query would be the thing
+        # the store exists to avoid.
         try:
-            out["results"]["embeddings"] = [h.as_dict() for h in
-                                            embed.rank(query, items, BENCH_LIMIT)]
+            store = _store(server)
+            store.load()
+            qvec = embed.embed([query]).get(query) or []
+            hits = store.search(qvec, stores=wanted_stores, limit=BENCH_LIMIT)
+            out["results"]["embeddings"] = [
+                {"ident": r.ident, "store": r.store, "score": round(score, 4),
+                 "condition": r.condition, "owner": r.owner, "detail": r.detail}
+                for score, r in hits]
+            out["indexed_vectors"] = store.count(wanted_stores)
+            if not hits and not store.count(wanted_stores):
+                out["embeddings_why"] = ("the vector index is empty for these stores — POST "
+                                         "/api/playground/vectors/sync to build it")
         except RuntimeError as exc:
             out["results"]["embeddings"] = None
             out["embeddings_why"] = str(exc)

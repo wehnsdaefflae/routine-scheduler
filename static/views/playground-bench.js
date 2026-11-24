@@ -12,7 +12,7 @@
 // than argued about.
 
 import { api } from "/static/api.js";
-import { chip, el, emptyState, toastError } from "/static/util.js";
+import { chip, el, emptyState, toast, toastError } from "/static/util.js";
 
 const STORE_LABEL = {
   utils: "utils", memory: "memory notes", reminders: "reminders", rules: "rules",
@@ -65,6 +65,40 @@ export function benchPanel(meta) {
       "embeddings column unavailable — ", embeddings.why,
       ". The lexical column is the baseline either way; it is what the engine runs today."));
   }
+
+  // THE VECTOR INDEX. Its state is shown rather than assumed, because an embeddings column
+  // that silently searches an empty index looks exactly like one that found nothing relevant —
+  // and those two mean opposite things about the proposal under test.
+  const idx = el("div", { class: "faint small", style: "margin:8px 0" }, "index: …");
+  const sync = el("button", { class: "btn small" }, "build / refresh index");
+  const refreshIndex = async () => {
+    try {
+      const v = await api("/api/playground/vectors");
+      idx.replaceChildren(el("span", {},
+        `index: ${v.held} of ${v.conditions} conditions embedded`,
+        v.missing ? ` · ${v.missing} missing` : " · complete",
+        v.dim ? ` · ${v.dim} dims` : "",
+        ` · model ${v.model}`,
+        v.backend_available ? "" : ` · unavailable: ${v.why}`));
+      sync.disabled = !v.backend_available || !v.missing;
+    } catch {
+      idx.replaceChildren(el("span", {}, "index: could not be read"));
+    }
+  };
+  sync.onclick = async () => {
+    sync.disabled = true;
+    idx.replaceChildren(el("span", {}, "embedding the library — this calls the provider once "
+      + "per missing condition…"));
+    try {
+      const r = await api("/api/playground/vectors/sync", { method: "POST" });
+      toast(`index: ${r.added} embedded, ${r.held} held${r.pruned ? `, ${r.pruned} pruned` : ""}`);
+    } catch (err) {
+      toastError(err);
+    }
+    await refreshIndex();
+  };
+  box.append(el("div", { class: "row", style: "gap:8px;align-items:center" }, sync, idx));
+  refreshIndex();
 
   const run = el("button", { class: "btn small primary" }, "compare");
   const out = el("div", { style: "margin-top:12px" });
