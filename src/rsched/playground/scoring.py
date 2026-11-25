@@ -34,7 +34,11 @@ from pathlib import Path
 from .stores import Condition
 
 #: Tokens too common to carry signal — `engine/recall.py`'s list, kept in step deliberately so
-#: the baseline is the engine's own behaviour rather than a variant of it.
+#: the baseline is the engine's own behaviour rather than a variant of it. The engine already
+#: imports this package (`engine/tails.py` → `playground.runtime`), so the copy avoids an import
+#: cycle; what makes it safe is the pin:
+#: tests/test_playground.py::test_the_lexical_baseline_is_the_engines_own_tokenizer reds if the
+#: two drift, because a drifted copy would silently stop being the baseline it claims to be.
 STOPWORDS = frozenset({
     "the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with", "from", "at", "by",
     "is", "it", "this", "that", "what", "when", "read", "file", "files", "run", "turn", "md",

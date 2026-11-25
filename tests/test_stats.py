@@ -235,8 +235,10 @@ def test_monthly_spend_without_stream(tmp_path):
 
 
 # The three D33 `claude_usage` tests lived here until 0.295.0. The local token tally they covered
-# is gone: it could not express "% remaining" in principle, so the console now reads the account's
-# own usage API instead (tests/test_cliproxy_quota.py).
+# is gone: it could not express "% remaining" in principle. The account-usage surface that
+# replaced it was itself removed on the operator's instruction — the scheduler keeps the model
+# endpoints and nothing about subscriptions — so what the console shows now is a token PACE with
+# no ceiling claimed (`readmodels/token_pace.py`, `tests/test_token_pace.py`).
 
 
 def test_recipe_sizes(tmp_path):

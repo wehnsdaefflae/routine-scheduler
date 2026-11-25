@@ -1253,11 +1253,13 @@ and the capabilities digest's catalog listing):
   the Basic Catalog's fourteen functions, `render.js` the walk and catalog resolution,
   `widgets-layout.js` + `widgets-input.js` the eighteen components — with NO bundler and no
   `node_modules`, which is what keeps the browser gate driving files served straight from
-  `static/`. Catalogs are MIXABLE and resolve per component via `@catalogId`: the Basic Catalog
-  plus this instance's own (`static/a2ui/scheduler-catalog.json` — a run-transcript block, a
-  diff view, a gate-verdict panel, which the protocol has no equivalent for), and a component
+  `static/`. Catalogs are MIXABLE and resolve per component via `@catalogId`, and a component
   that resolves to NO catalog is refused rather than falling back to the only one registered,
-  which the spec forbids. The point of adopting it is element types the console's cards do not
+  which the spec forbids. Registered today: the Basic Catalog alone. This instance's own
+  catalog (`static/a2ui/scheduler-catalog.json` — a run-transcript block, a diff view, a
+  gate-verdict panel, which the protocol has no equivalent for) is DECLARED and schema-checked
+  but not yet registered by any renderer, so a surface naming one of its three components is
+  refused: the extension is staged work, not a capability to build on. The point of adopting it is element types the console's cards do not
   have — a filterable chip picker instead of a row of buttons, a validated long-text field, the
   without-an-answer sentence in a modal — and the ANSWER still travels one route: the surface's
   submit is an A2UI agent event that `static/components/a2ui-decision.js` posts to

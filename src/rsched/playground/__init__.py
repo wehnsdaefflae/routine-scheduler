@@ -3,9 +3,12 @@
 Why this package exists apart from `engine/`: the proposal under test is that the four helper
 stores (utils, memory notes, reminders, rules) can be served by ONE retrieval layer queried with
 a turn's own components, instead of the three hand-rolled scorers the engine carries today
-(`engine/recall._score`, `utils_lib.search_utils`, and the reminder regexes). Nothing here is
-wired into a live run: the engine does not import this package, so an experiment cannot change
-what a production run is shown. Promotion to production is the operator's call, made on the page.
+(`engine/recall._score`, `utils_lib.search_utils`, and the reminder regexes). The engine reaches
+this package through exactly ONE guarded entry point — `engine/tails.py` imports
+`playground.runtime` and calls `at_observation` on every observation — and that call returns an
+empty string unless the conversation itself carries `playground: true`, so an experiment cannot
+change what a production run is shown. Promotion to production is the operator's call, made on
+the page.
 
 The vocabulary, fixed here because every module and the page share it:
 
@@ -21,8 +24,9 @@ The vocabulary, fixed here because every module and the page share it:
   overlap, the baseline that must be beaten) or an embedding backend.
 
 Modules: `stores.py` reads the four libraries into conditions; `scoring.py` holds the backends;
-`replay.py` labels real transcripts; `labels.py` owns the scratch dir. The HTTP surface is
-`web/api_playground.py` and the page `static/views/playground.js`.
+`vectorstore.py` persists the embeddings; `features.py` and `runtime.py` are the guarded
+in-run surface. The HTTP surface is `web/api_playground.py` and the page
+`static/views/playground.js`.
 """
 
 from __future__ import annotations

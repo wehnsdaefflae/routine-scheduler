@@ -129,7 +129,7 @@ def apply(loop, action: dict) -> None:
     if not target:
         # `strong` with no recorded main climbs back out of a swap on a routine that configures
         # no `main`: REMOVING the override restores the instance default, as before the swap.
-        if want == "strong" and hasattr(ctx, "configured_main") and "main" in models:
+        if want == "strong" and "main" in models:
             models.pop("main")
             enginenote.append(
                 loop, "role_swap=strong: your turns are answered by this instance's default "

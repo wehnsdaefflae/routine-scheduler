@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.611.0] — 2026-11-25
+
+**The deep sweep's self-evident half: four pieces of prose that described code that is not
+there, and one invariant nothing enforced.** Every item carries a path and a reference proof
+from the read-only sweep that found it.
+
+- `playground/__init__.py` claimed "the engine does not import this package, so an experiment
+  cannot change what a production run is shown". The engine DOES import it — `engine/tails.py`
+  calls `playground.runtime.at_observation` on every observation. The isolation is real but it
+  is a GUARD, not an absence: the call returns an empty string unless the conversation carries
+  `playground: true`. A reader who trusted the old sentence would have looked for the wrong
+  property, and a reviewer checking it would have found an import and concluded the guarantee
+  was broken.
+- The same docstring's module list named `replay.py` and `labels.py`, neither of which exists;
+  it now names the modules that do.
+- `playground/scoring.py` keeps a deliberate copy of `engine/recall`'s stopword list and
+  tokenizer so the lexical baseline IS the engine's behaviour — and nothing held the two
+  together, so editing recall's list would have quietly turned the baseline into a variant of
+  itself, which is the single reading the whole embedding comparison rests on. Pinned by
+  `tests/test_playground.py::test_the_lexical_baseline_is_the_engines_own_tokenizer`, and the
+  docstring now names that test, the way this repo's other deliberate duplicate does. The copy
+  stays rather than becoming an import: the engine already imports this package.
+- `engine/roleswap.py`: a `hasattr(ctx, "configured_main")` conjunct that cannot be false — the
+  attribute is set unconditionally six lines above it.
+- `docs/architecture.md` presented this instance's own A2UI catalog (a run-transcript block, a
+  diff view, a gate-verdict panel) as mixable today. All ten references to those three
+  components live inside the catalog JSON; no renderer registers it, so a surface naming one is
+  refused. Restated as declared-and-schema-checked but not registered — staged work, not a
+  capability to build on.
+- `tests/test_stats.py` pointed at `tests/test_cliproxy_quota.py` and claimed the console reads
+  an account usage API: both describe the subscription surface removed on 2026-11-24. It
+  survived because `test_prose_paths.py` walks `src/` and `static/`, never `tests/`.
+
 ## [0.610.0] — 2026-11-24
 
 **D288 step 1 — a util's model spend is booked against the run that called it.** The

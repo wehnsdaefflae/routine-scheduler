@@ -10,8 +10,22 @@ import json
 
 import yaml
 
-from rsched.playground import features, stores
+from rsched.engine import recall
+from rsched.playground import features, scoring, stores
 from rsched.playground.scoring import EmbeddingBackend, LexicalBackend
+
+
+def test_the_lexical_baseline_is_the_engines_own_tokenizer():
+    """`scoring.STOPWORDS`/`tokens` are a deliberate copy of `engine/recall`'s, so the lexical
+    backend measures the engine's behaviour rather than a variant of it — and that claim is only
+    true while the two stay identical. Nothing enforced it, so editing recall's list would have
+    silently turned the baseline into something production does not do, which is the one reading
+    the whole comparison rests on; this pins them together the way the repo's other deliberate
+    duplicate names its own pinning test."""
+    assert scoring.STOPWORDS == recall._STOPWORDS
+    assert scoring.MIN_TOKEN == recall._MIN_TOKEN
+    for text in ("read the state file", "A utIl-call: write_file json.py", "", "a an the"):
+        assert scoring.tokens(text) == recall._tokens(text)
 
 
 class _Ctx:
