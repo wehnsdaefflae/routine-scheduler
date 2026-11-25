@@ -98,10 +98,37 @@ def _remind_problems(op: object, grants) -> list[str]:
     return problems
 
 
+def feedback_entries(written: object) -> list:
+    """`remind_feedback`'s entries — one object reads as a list of one (F925).
+
+    One definition, because three places iterate it and each settles ONE label against one owed
+    hold: the dispatch point (`remind.apply_ops`) and the two replay ledgers that rebuild those
+    owed counts from a transcript. A reader that handled only the object left the other labels
+    of a multi-fire turn unsettled, which is the same turn being nudged for labels it carried.
+    """
+    return list(written) if isinstance(written, list) else [written]
+
+
 def _feedback_problems(fb: object) -> list[str]:
+    """One entry, or a LIST of them when several reminders fired on the same turn (F925).
+
+    A turn has no cap on concurrent fires and the engine asks for every one to be labelled, so
+    the single-object field made a run with one action and two holds drop evidence or spend a
+    turn being refused. Each entry is judged exactly as one object was; two entries for the SAME
+    id stay refused, because a label answers one hold once and the second would be evidence
+    about nothing.
+    """
+    if isinstance(fb, list):
+        problems = [p for entry in fb for p in _feedback_problems(entry)]
+        ids = [str(e.get("id") or "") for e in fb if isinstance(e, dict)]
+        if len(set(ids)) != len(ids):
+            problems.append("`remind_feedback` names the same reminder twice — a label answers "
+                            "one hold once; one entry per reminder that fired")
+        return problems
     if not isinstance(fb, dict):
-        return [('`remind_feedback` must be an object: {"id": "<reminder id>", '
-                 '"label": "could_not|would_have|did|didnt"}')]
+        return [('`remind_feedback` must be an object — {"id": "<reminder id>", '
+                 '"label": "could_not|would_have|did|didnt"} — or a LIST of them when several '
+                 'reminders fired on this turn')]
     problems = []
     if not str(fb.get("id") or "").strip():
         problems.append("`remind_feedback.id` must name the reminder whose fire you are "

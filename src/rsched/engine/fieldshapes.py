@@ -15,8 +15,8 @@ repair is LOSSLESS: the canonical value says exactly what the written one did; n
 - a `remind` with no `op` and no `id` can only be an add;
 - a `remind_feedback` written as a one-element list, as `{<id>: <label>}`, or with its label under
   another key (`verdict`, `outcome`, `feedback`, or a label value in `disposition`) is the one
-  `{id, label}` object. Several labels in one field stay REFUSED (`remindfields`): the canonical
-  field is one label, and each further one rides another action of the reply.
+  `{id, label}` object. SEVERAL labels are no longer repaired away: the field takes a list of
+  entries (F925), because a turn has no cap on concurrent fires and one action can meet two.
 
 The call site is `actions.normalize_action`, the seam that already strips grammar debris; the
 storage never sees a second convention.
@@ -98,9 +98,18 @@ def _is_hook_id(key: object) -> bool:
 
 
 def _feedback(fb: object) -> object:
-    """One label as `{id, label[, disposition]}`; anything else is returned as written."""
-    if isinstance(fb, list) and len(fb) == 1:
-        fb = fb[0]
+    """One label as `{id, label[, disposition]}`; anything else is returned as written.
+
+    A LIST is a valid field since F925 (several reminders firing on one turn), so each ENTRY is
+    repaired on its own — a run that writes one entry in shorthand beside one in full would
+    otherwise lose the repair for both. A one-element list still collapses to the object: the
+    two spell the same thing, and the storage sees one convention.
+    """
+    if isinstance(fb, list):
+        if len(fb) == 1:
+            fb = fb[0]
+        else:
+            return [_feedback(entry) for entry in fb]
     if not isinstance(fb, dict):
         return fb
     if "id" not in fb and len(fb) == 1:

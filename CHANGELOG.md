@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.615.0] — 2026-11-25
+
+**A turn on which SEVERAL reminders fired can now label every fire** (F925). `remind_feedback`
+takes one `{id, label}` object or a LIST of them. There is no cap on how many reminders match a
+single action and the engine asks for every fire to be labelled — "an unlabelled fire is a turn
+spent for no evidence" — while the field accepted a label for exactly one, so a run with one
+action and two holds had to drop evidence or spend a turn being refused. Measured as 9 wrong
+turns in 14 days across five routines, each rejected with `... is not of type 'object'`; five
+routines reached for the list form independently, which is the shape the contract implies.
+
+- Each entry is judged exactly as a lone object was, and **two entries naming the same reminder
+  are refused**: a label answers one hold once, and counting a second would inflate the tally
+  the pattern is tuned against.
+- `fieldshapes` repairs the `{<id>: <label>}` shorthand **per entry** inside a list (a run
+  writing one entry in shorthand beside one in full would otherwise lose both), and a
+  one-element list still collapses to the object so the storage sees one convention.
+- `remindfields.feedback_entries` is the one definition of "one entry, or several", used by the
+  single dispatch point and by **both replay ledgers** — a replay that counted only the first
+  entry would leave the others owed, and the run would be nudged for labels it had carried.
+  Neutering that helper reds 21 tests across the reminder layer.
+- `docs/reminders.md` documents both shapes.
 ## [0.614.0] — 2026-11-25
 
 **A model that ANSWERED WITH NOTHING is now distinguishable from one that answered** (F921,
@@ -746,7 +767,6 @@ view answers for all of them, not only for the item that touched it.
   declared (following the `owner` precedent) and are therefore in `TOP_KEYS`, so neither reads as
   an unknown key. Paying for it line-neutrally moved the two run-gate models to
   `config/rungate.py`, re-exported under the names callers already import.
-
 
 ## [0.589.0] — 2026-11-22
 
@@ -3805,7 +3825,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their own); a contended run waits `LOCK_WAIT_S` (1800 s) and exits 75, so `OnFailure` pushes.
   The same tests mirrored fake homes into the LIVE off-box NAS share whenever they named no
   `MIRROR_ROOT` (since 2026-11-05); the helper now defaults to local-only and refuses `/mnt/`.
-
 
 ## [0.525.0] — 2026-11-09
 
@@ -8584,7 +8603,6 @@ R2196 (2026-10-03) and R2426 (2026-10-10).
   the same split F746 made for `abort`/`drain`. The decision card's lifecycle controls moved out
   of `static/views/questions.js` (493 → 460) into `static/components/decision-lifecycle.js`, so
   the decline button cost that file no line.
-
 
 ## Earlier releases
 

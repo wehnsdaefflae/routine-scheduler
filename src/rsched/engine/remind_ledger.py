@@ -51,6 +51,9 @@ def _label(loop, action: dict) -> None:
     owed, or not at all.
     """
     fb = action.get("remind_feedback")
-    rid = str(fb.get("id") or "") if isinstance(fb, dict) else ""
-    if loop.reminder_owed.get(rid, 0) >= 1:
-        loop.reminder_owed[rid] -= 1
+    from .remindfields import feedback_entries  # one definition of "one entry, or several"
+
+    for entry in feedback_entries(fb):
+        rid = str(entry.get("id") or "") if isinstance(entry, dict) else ""
+        if loop.reminder_owed.get(rid, 0) >= 1:
+            loop.reminder_owed[rid] -= 1

@@ -348,7 +348,9 @@ and what stays unlabelled is visible in the tally.
 `engine/remind.py` is the runtime — interception, the ops, the approval gate — with
 `engine/remindfields.py` holding the write gate's own checks, which need no run state. The two side fields
 are `remind` (`{op: add|revise|delete|dead, id?, regex?, description?, scope?, reach?, target?}`) and `remind_feedback`
-(`{id, label}`), both modelled on `note`: optional on ANY kind, no turn cost, filed by the engine.
+(`{id, label}`, or a LIST of those when several reminders fired on one turn — F925: there is no cap
+on concurrent fires and every one is asked for its own label), both modelled on `note`: optional on
+ANY kind, no turn cost, filed by the engine.
 The normalize seam (`engine/fieldshapes.py`) puts the shapes runs evidently MEANT into those
 canonical ones before the validator sees them: a `remind` with neither `op` nor `id` is an add,
 and ONE label written as a one-element list, as `{<id>: <label>}`, or under `verdict` / `outcome` /

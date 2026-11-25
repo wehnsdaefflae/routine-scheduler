@@ -25,7 +25,7 @@ from pathlib import Path
 from .. import remind_dead
 from .. import reminders as store
 from ..reminders import LABEL_HELP, Reminder
-from . import assist_label, hookmirror, remind_points, remind_write
+from . import assist_label, hookmirror, remind_points, remind_write, remindfields
 from . import hold as hold_seam
 
 #: This layer's name in the shared hold ledger, which this layer keys by REMINDER ID (one
@@ -224,9 +224,9 @@ def apply_ops(loop, action: dict, poll_s: float, *, replayable: bool = False) ->
         if not fields:
             return ""
         loop.reminder_replayed.update(replay_key(f, action[f]) for f in fields)
-    notes = []
-    if "remind_feedback" in fields:
-        notes.append(assist_label.apply(loop, action["remind_feedback"], _apply_feedback))
+    labels = action["remind_feedback"] if "remind_feedback" in fields else []
+    notes = [assist_label.apply(loop, e, _apply_feedback)          # one entry or a LIST (F925)
+             for e in remindfields.feedback_entries(labels) if e]
     if "remind" in fields:
         notes.append(_apply_op(loop, action["remind"], poll_s))
     notes.append(_label_nudge(loop, action))

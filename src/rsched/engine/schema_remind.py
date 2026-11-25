@@ -85,8 +85,11 @@ REMIND_FIELD = {
                    "retires a row already in that routine's store (`op=dead`).",
 }
 
-#: The `remind_feedback` object — how a hold turned out, the only evidence that tunes a pattern.
-REMIND_FEEDBACK_FIELD = {
+#: One `remind_feedback` entry — how a hold turned out, the only evidence that tunes a pattern.
+#: The field itself takes this object OR a LIST of them (F925): there is no cap on how many
+#: reminders fire on one turn and the engine asks for EVERY fire to be labelled, so a run whose
+#: single action met two holds had to drop one piece of evidence or spend a turn being refused.
+_FEEDBACK_ENTRY = {
     "type": "object", "additionalProperties": False,
     "properties": {
         "id": {"type": "string", "description": "the reminder that fired"},
@@ -106,9 +109,17 @@ REMIND_FEEDBACK_FIELD = {
                                        "that pattern on you again). Your decision "
                                        "outranks the routine that set it"},
     },
-    "description": "OPTIONAL, on any action: label how ONE reminder's HOLD turned out. "
-                   "Costs no turn and is the only evidence that tunes the pattern — "
-                   "carry it as soon as you know the outcome. For a hook another "
-                   "routine set on you, `disposition` is where you keep, mute or "
-                   "remove it.",
+    "description": "one fire's outcome: the reminder's `id` and how its hold turned out",
+}
+
+#: The field: one entry, or a LIST of them when several reminders fired on the same turn.
+REMIND_FEEDBACK_FIELD = {
+    "oneOf": [_FEEDBACK_ENTRY, {"type": "array", "items": _FEEDBACK_ENTRY,
+                                "minItems": 1, "maxItems": 8}],
+    "description": "OPTIONAL, on any action: label how a reminder's HOLD turned out — one "
+                   "{id, label} object, or a LIST of them when SEVERAL fired on the same "
+                   "turn (every fire wants its own label). Costs no turn and is the only "
+                   "evidence that tunes the pattern — carry it as soon as you know the "
+                   "outcome. For a hook another routine set on you, `disposition` is where "
+                   "you keep, mute or remove it.",
 }

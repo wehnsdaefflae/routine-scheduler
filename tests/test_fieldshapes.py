@@ -84,13 +84,26 @@ def test_a_foreign_hooks_disposition_stays_beside_its_label():
                       "remind_feedback": [fb]})["remind_feedback"] == fb
 
 
-@pytest.mark.parametrize("written", [
-    [{"id": RID, "label": "would_have"}, {"id": "rem-20261115-005415-2", "label": "didnt"}],
-    {RID: "didnt", "rem-20261115-005415-2": "did"},
-])
-def test_several_labels_in_one_field_stay_refused(written):
+def test_several_labels_as_a_list_are_accepted():
+    """F925 changed this: a turn has no cap on concurrent fires and the engine asks for every
+    one to be labelled, so a run with one action and two holds had to drop evidence or spend a
+    turn being refused (9 such turns in 14 days across five routines). The list is the shape the
+    contract implies, and each entry is judged on its own."""
+    written = [{"id": RID, "label": "would_have"},
+               {"id": "rem-20261115-005415-2", "label": "didnt"}]
     out = normalize_action({"say": "x", "kind": "read_file", "path": "a.txt",
                             "remind_feedback": written})
+    assert not validate(out, ACTION_SCHEMA)
+    assert out["remind_feedback"] == written
+
+
+def test_several_labels_as_one_mapping_still_stay_refused():
+    """The shorthand `{<id>: <label>}` is repaired only for a SINGLE pair. With several, the
+    object is ambiguous — any of its keys could be `id`, `label` or `disposition` — so repairing
+    it would guess at which, and the canonical form is the list."""
+    out = normalize_action({"say": "x", "kind": "read_file", "path": "a.txt",
+                            "remind_feedback": {RID: "didnt",
+                                                "rem-20261115-005415-2": "did"}})
     assert validate(out, ACTION_SCHEMA)
 
 

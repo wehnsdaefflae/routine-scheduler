@@ -23,6 +23,7 @@ from collections.abc import Callable
 
 from .. import assist_stats
 from ..reminders import LABELS
+from .remindfields import feedback_entries
 
 
 def is_assist_key(rid: object) -> bool:
@@ -42,9 +43,10 @@ def rebuild_owed(loop, events: list[dict]) -> None:
         payload = ev.get("payload") or {}
         if ev.get("type") == "assistant_action":
             fb = payload.get("remind_feedback")
-            rid = str(fb.get("id") or "") if isinstance(fb, dict) else ""
-            if loop.assist_owed.get(rid, 0) >= 1:
-                loop.assist_owed[rid] -= 1
+            for entry in feedback_entries(fb):                  # one or several (F925)
+                rid = str(entry.get("id") or "") if isinstance(entry, dict) else ""
+                if loop.assist_owed.get(rid, 0) >= 1:
+                    loop.assist_owed[rid] -= 1
         elif ev.get("type") == "observation" and payload.get("kind") == "assist_hold":
             for key in payload.get("assists") or []:
                 loop.assist_owed[str(key)] = loop.assist_owed.get(str(key), 0) + 1
