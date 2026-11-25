@@ -21,6 +21,7 @@ routines reached for the list form independently, which is the shape the contrac
   entry would leave the others owed, and the run would be nudged for labels it had carried.
   Neutering that helper reds 21 tests across the reminder layer.
 - `docs/reminders.md` documents both shapes.
+
 ## [0.614.0] — 2026-11-25
 
 **A model that ANSWERED WITH NOTHING is now distinguishable from one that answered** (F921,
