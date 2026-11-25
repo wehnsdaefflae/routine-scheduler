@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.612.0] — 2026-11-25
+
+**Five predefined conversation playbooks, each stating the access it needs** (operator,
+2026-11-25: *"we need more predefined conversation playbooks. at least (find suitable names):
+self code revision, mail questions, website interactions, dev laptop bash work…. check what else
+we used conversations for before… make sure playbook definitions cover grants, permissions, and
+everything else that must be configured for particular playbooks"*).
+
+The instance had **two** playbooks, one of them a one-off with corrupted tags. The four the
+operator named, plus two more taken from what the 143 conversations on this instance were
+actually used for:
+
+- `self-code-revision` — a change in one of his own repos, built, gated and landed: baseline
+  before editing, a disposable branch, red-first test for a defect, gate the tree you changed,
+  land through the repo's own path, leave no branch behind.
+- `mail-question` — a question that lives in a mailbox, with the reply drafted or sent. Reads the
+  real message and its attachments before answering; `draft` is the default and a send is read
+  back from the sent folder.
+- `website-interaction` — a portal, a form, a signed-in page. Cheapest route first (a fetch
+  before the shared browser), one field at a time read back, and a stop before the irreversible
+  click.
+- `machine-shell-task` — shell work here or on a bound remote: prove the host first, read before
+  writing, dry-run anything destructive, diagnose to a cause.
+- `new-routine-from-a-need` — from the ~8 conversations that exist to create a routine. Settles
+  every open point as a CHOICE before materializing anything, access questions included.
+- `chat-history-review` — from the ~6 that review a messenger thread: sync the mirror first,
+  state the real bounds, count rather than impress, send nothing.
+
+**Each carries a `setup:` block** — the half the operator insisted on: the permissions, held
+rules, folder roots and connections a conversation made from it must be given, each with a note
+saying why it is load-bearing (shell bypasses the file-action gates; a repo must be both workdir
+and write root; each messenger is its own permission; mail's sending half is `outbound-mail`, so
+a draft-only conversation is created without it). It is documentation a person acts on at
+creation — the composer does not read it yet, and the format already allowed extra front-matter
+keys, so no format change was needed.
+`tests/test_seeds.py::test_seed_playbook_setup_names_entities_that_exist` makes it trustworthy:
+every permission and rule named must be a seed doc that exists, and no root may be a credential
+store. A slug naming nothing is worse than no block, because it reads as authoritative.
+
+Seed playbooks reach a running instance by themselves (`bootstrap.sync_seed_library_docs` copies
+whole playbook subfolders missing from the live library at every boot, and respects a deletion),
+so these land without a migration.
+
 ## [0.611.0] — 2026-11-25
 
 **The deep sweep's self-evident half: four pieces of prose that described code that is not

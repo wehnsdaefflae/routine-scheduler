@@ -116,6 +116,35 @@ def test_seed_pattern_grants_no_credential_store(pattern):
     assert guarded_roots(roots) == []
 
 
+PLAYBOOK_SEEDS = sorted((LIBRARY_SEED / "playbooks").glob("*/MAIN.md"))
+
+
+@pytest.mark.parametrize("pb", PLAYBOOK_SEEDS, ids=_ids(PLAYBOOK_SEEDS))
+def test_seed_playbook_setup_names_entities_that_exist(pb):
+    """A playbook's optional `setup:` block states what a conversation made from it must be
+    GIVEN — its permissions, its held rules, its folder roots — because the brief alone cannot
+    say it and a person seeding a conversation otherwise discovers the missing access at reply
+    one. The block is prose a person reads and acts on, so a slug in it that names nothing is
+    worse than an absent block: it reads as authoritative. Every permission and rule named here
+    must be a seed doc that exists, and no root may be a credential store (the hazard
+    `entities.guarded_roots` refuses on every other path into a routine's config)."""
+    meta = yaml.safe_load(pb.read_text(encoding="utf-8").split("---")[1])
+    setup = meta.get("setup")
+    if setup is None:
+        pytest.skip(f"{pb.parent.name} declares no setup block")
+    assert isinstance(setup, dict), f"{pb.parent.name}: setup: must be a mapping"
+    perms = set(library_docs.slugs(LIBRARY_SEED / "permissions"))
+    rules = set(library_docs.slugs(LIBRARY_SEED / "rules"))
+    unknown = ([f"permission {p!r}" for p in (setup.get("permissions") or []) if p not in perms]
+               + [f"rule {r!r}" for r in (setup.get("rules") or []) if r not in rules])
+    assert not unknown, f"{pb.parent.name}: setup: names {', '.join(unknown)} — no such seed doc"
+    roots = [r for r in (*(setup.get("fs_read_roots") or []),
+                         *(setup.get("fs_write_roots") or []),
+                         *([setup["workdir"]] if setup.get("workdir") else []))
+             if not str(r).startswith("{{")]
+    assert guarded_roots(roots) == [], f"{pb.parent.name}: setup: grants a guarded root"
+
+
 @pytest.mark.parametrize("perm", PERMISSION_SEEDS, ids=_ids(PERMISSION_SEEDS))
 def test_seed_permission_note_reaches_the_prompt_whole(perm):
     """A held permission's body is its whole contribution to the prompt, cut on a line
