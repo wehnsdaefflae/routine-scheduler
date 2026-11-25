@@ -19,7 +19,7 @@ from routine.params import (
 
 # The engine actions the orchestrator may take — exactly one per turn, each answered by an
 # OBSERVATION the next turn reasons about. Shown as ordinary calls for readability.
-from routine.actions import (read_file, write_file, util, write_util, llm, child, children,
+from routine.actions import (read_file, write_file, util, write_util, child, children,
                              wait, ask_user, finish)
 from routine.state import phase    # the cross-run lifecycle phase (state/phase.json)
 
@@ -199,7 +199,8 @@ def execute(item):
     persistent tooling — written once, called thereafter — while a capability other routines
     would share too belongs in the shared library, authored with a selftest before first use.
     Read/write files with read_file/write_file; verify external facts by searching, not from
-    memory (web-research); use `llm` for a scoped one-shot judgment."""
+    memory (web-research); reach a model through the model-completion
+    capability for a scoped one-shot judgment."""
 
 
 def verify(result):

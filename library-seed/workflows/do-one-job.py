@@ -37,7 +37,7 @@ from routine.params import (
 
 # The engine actions the orchestrator may take — exactly one per turn, each answered by an
 # OBSERVATION the next turn reasons about. Shown as ordinary calls for readability.
-from routine.actions import read_file, write_file, util, llm, view_image, ask_user, report, finish
+from routine.actions import read_file, write_file, util, view_image, ask_user, report, finish
 
 META = {
     "name": "Do one job",

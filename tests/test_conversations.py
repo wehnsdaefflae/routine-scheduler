@@ -1154,7 +1154,7 @@ def test_commands_catalog_and_command_flagged_message(client):
 
     catalog = c.get(f"/api/conversations/{slug}/commands").json()
     kinds = {k["kind"] for k in catalog["kinds"]}
-    assert {"util", "read_file", "write_file", "llm"} <= kinds
+    assert {"util", "read_file", "write_file", "edit_file"} <= kinds
     assert all(k["usage"].startswith("/") for k in catalog["kinds"])
     # conversations hold the memory permission by default → memory commands offered
     assert "memory_read" in kinds

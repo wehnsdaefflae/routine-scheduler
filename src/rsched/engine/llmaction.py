@@ -1,6 +1,6 @@
 """The `list_models` action — what models this run can name, and where each one lives.
 
-Its companion `llm` left with D288 (2026-11-25): reaching a model is a util capability, so no
+Its companion `llm` left with D288: reaching a model is a util capability, so no
 action buys inference any more. This surface stayed, because choosing a model still has to be
 possible against the REAL catalog — a child's `model`, or a role and model named in a
 model-call capability's own arguments — rather than against a remembered name.

@@ -540,9 +540,8 @@ def test_a_background_calls_wall_clock_is_the_runs_own_wall_clock(make_routine, 
 
 
 def test_every_add_usage_in_the_engine_goes_through_the_one_booking_point():
-    """The structural guard: a per-handler deferral would be edits the NEXT handler to book
-    forgets, and since D288 a model call is a UTIL call whose spend arrives through
-    `engine/utilspend.py` here. So `RunContext.add_usage` decides parked-or-booked."""
+    """The structural guard: a per-handler deferral is edits the NEXT handler to book forgets,
+    and a model call is now a UTIL call whose spend arrives via `engine/utilspend.py` here."""
     import pathlib
 
     import rsched.engine.run_context as rc_mod
@@ -813,8 +812,7 @@ def test_the_stoppable_kinds_are_exactly_the_subprocess_ones():
     assert set(STOPPABLE_KINDS) == {"util", "script", "shell"}
     assert set(STOPPABLE_KINDS) <= set(BACKGROUNDABLE_KINDS), (
         "a kind that cannot be backgrounded cannot be cancelled either")
-    # The reads: what still runs inside the interpreter since D288. NOT websearch/code_search,
-    # which SPELL a util call (D290) and so stop with its subprocess.
+    # The reads: in-interpreter since D288 (websearch/code_search SPELL a util call, D290).
     for kind in ("read_file", "view_image", "memory_read", "read_rule"):
         assert kind not in STOPPABLE_KINDS, (
             f"{kind} runs in the interpreter — claiming its work can be stopped would be the "
@@ -897,19 +895,21 @@ def test_cancelling_a_backgrounded_shell_actually_kills_the_subprocess(
 
 def test_cancelling_an_in_interpreter_call_stops_only_the_delivery_and_says_so(
         make_routine, scripted, monkeypatch):
-    """The other half, and it must NOT overclaim. A READ runs inside the interpreter, which
-    Python cannot interrupt, so the cancel frees the slot and drops the result while the call
-    finishes unread — and says so rather than claiming a stop it did not perform."""
+    """The other half, and it must NOT overclaim: a READ runs in the interpreter, which Python
+    cannot interrupt, so the cancel drops the result and says so, claiming no stop."""
     import rsched.engine.executor as executor_mod
     ran: list[str] = []
+    finished = threading.Event()
 
     def slow_read(action, ctx):
-        time.sleep(1.5)
+        time.sleep(0.5)
         ran.append(str(action.get("path")))
+        finished.set()
         return {"kind": "read_file", "path": action.get("path"), "content": "nobody reads it"}
 
     monkeypatch.setitem(executor_mod.DISPATCH, "read_file", slow_read)
     d = make_routine(slug="bgkillread")
+    (d / "state" / "slow.md").write_text("slow", encoding="utf-8")
     scripted([
         {"say": "Backgrounding a slow read.", "kind": "read_file", "path": "state/slow.md",
          "background": True},
@@ -927,7 +927,7 @@ def test_cancelling_an_in_interpreter_call_stops_only_the_delivery_and_says_so(
     assert cancel["stopped_work"] is False, (
         "an in-interpreter call's work cannot be stopped — claiming it was would be the same "
         "overclaim as 0.404.0's, pointing the other way")
-    assert ran, "the call never ran, so this test proves nothing about an unstoppable one"
+    assert finished.wait(10) and ran, "it never ran (an EVENT: the turns can finish first)"
     # …and the result still never reached the run
     delivered = [e for e in events if e["type"] == "observation"
                  and e["payload"].get("handle") == "bg1"

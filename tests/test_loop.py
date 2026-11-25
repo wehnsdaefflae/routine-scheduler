@@ -1583,10 +1583,10 @@ def test_wait_yields_to_a_pending_user_message(make_routine, scripted):
 
 
 def test_a_retired_kind_is_refused_and_teaches_the_capability(make_routine, scripted):
-    """D288 end to end: a recipe still saying `llm` is told where the capability went, since a
-    bare schema refusal names no replacement and a run then re-sends it (F637)."""
+    """D288 end to end: a recipe still saying `llm` is told where the capability went (F637)."""
     _d, ep, status, _run_dir, events = _run(make_routine, scripted, [
-        {"say": "Scoped call.", "kind": "llm", "prompt": "Summarize: hello world"}, finish()])
+        {"say": "Scoped call.", "kind": "llm", "prompt": "Summarize: hello world"},
+        util("list", say="The correction's route; the refusal cost its own turn."), finish()])
     assert status == "ok"
     retry = "\n".join(m.get("content") or "" for call in ep.calls for m in call["messages"])
     assert "RETIRED" in retry and "util" in retry, retry[-600:]

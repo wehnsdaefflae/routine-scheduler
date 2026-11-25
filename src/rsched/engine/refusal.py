@@ -4,7 +4,7 @@ A refusal is a fact of that endpoint, not a verdict on the run: a routine config
 `uncensored` role so refused requests still get processed.
 
 ONE seam reaches a model here: the TURN LOOP. The `llm` action had a second — a refused
-sub-call was re-issued whole on the uncensored model — and D288 (2026-11-25) retired that kind
+sub-call was re-issued whole on the uncensored model — and D288 retired that kind
 into a util capability, which took the seam with it: the back-off EPISODE is RunContext state
 (`refusal_level`, `takeover_left`, `referrals`) shared with the turn loop, and a util cannot
 join it, so a util-side retry would be a weaker behaviour wearing the same name — no `refusal`

@@ -21,7 +21,7 @@ from routine.params import (
     WORKDIR,     # str — optional project directory among the fs roots ("" = none)
 )
 
-from routine.actions import (read_file, write_file, edit_file, util, write_util, llm,
+from routine.actions import (read_file, write_file, edit_file, util, write_util,
                              child, detach, wait, ask_user, goal, finish)
 
 META = {

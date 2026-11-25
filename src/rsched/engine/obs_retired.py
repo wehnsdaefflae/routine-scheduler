@@ -9,7 +9,7 @@ there is no date after which an old transcript stops being read, which is why th
 carry no expiry marker.
 
 Here because the subject is "what a retired kind's observation says", not "what the action
-does": D288 (2026-11-25) deleted the `llm` and `decide` handlers with their kinds — reaching a
+does": D288 deleted the `llm` and `decide` handlers with their kinds — reaching a
 model is a util capability now — and their wording would otherwise have been the one reason to
 keep two modules of dead action code alive.
 """

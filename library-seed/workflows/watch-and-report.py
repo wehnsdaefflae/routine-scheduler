@@ -44,7 +44,7 @@ from routine.params import (
 
 # The engine actions the orchestrator may take — exactly one per turn, each answered by an
 # OBSERVATION the next turn reasons about. Shown as ordinary calls for readability.
-from routine.actions import (read_file, write_file, util, script, llm, view_image,
+from routine.actions import (read_file, write_file, util, script, view_image,
                              schedule_run, ask_user, report, finish)
 from routine.state import phase    # the cross-run lifecycle phase (state/phase.json)
 
