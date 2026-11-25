@@ -285,7 +285,6 @@ def _observation_body(obs: dict) -> str:  # noqa: PLR0911
         return f"{head}:\n{body}"
     # Each domain module keeps EVERY string for its own kinds; this only owns the order and
     # the fallback, so a kind's wording is still in exactly one place.
-    from .decideaction import format_decide
     from .goalops import format_goal
     from .jobops import format_job
     from .llmaction import format_models
@@ -293,8 +292,9 @@ def _observation_body(obs: dict) -> str:  # noqa: PLR0911
     from .obs_children import format_children
     from .obs_files import format_files
     from .obs_library import format_library
+    from .obs_retired import format_retired
     from .unknownoutcome import format_unknown
-    for fmt in (format_files, format_library, format_children, format_admin, format_decide,
+    for fmt in (format_files, format_library, format_children, format_admin, format_retired,
                 format_models, format_job, format_goal, format_unknown):
         if (out := fmt(obs, str(kind or ""))) is not None:
             return out

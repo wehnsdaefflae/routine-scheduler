@@ -1,4 +1,8 @@
-"""A cancelled background model call's spend BOOKS — the behaviour, not the wording (F722)."""
+"""A cancelled background model call's spend BOOKS — the behaviour, not the wording (F722).
+
+The call is a UTIL call since D288 retired the `llm` kind; `engine/utilspend.py` is what makes
+a util's model spend reach `ctx.add_usage`, so the claim is unchanged and the vehicle is real.
+"""
 
 from __future__ import annotations
 
@@ -35,24 +39,40 @@ PROVIDER_S = 0.3
 TURN_S = 0.5
 
 
+#: The util this run buys inference through. Since D288 a model call IS a util call, and since
+#: 0.610.0 such a util reports its spend to the engine (`engine/utilspend.py`), which folds it
+#: through `ctx.add_usage` — the same seam the retired `llm` action used directly. So the
+#: vehicle below is not a stand-in for the real case any more; it IS the real case.
+MODEL_UTIL = "llm-complete"
+
+
 @pytest.fixture
-def slow_booking_llm(monkeypatch):
-    """An `llm` that answers slowly and books WHEN IT ANSWERS — the provider's real order."""
+def slow_booking_model_util(monkeypatch):
+    """A model-call UTIL that answers slowly and books WHEN IT ANSWERS — the provider's order.
+
+    Dispatched by NAME so the negative case below stays a real contrast: a util that buys no
+    inference reports no spend, and must therefore owe no late booking.
+    """
     import rsched.engine.executor as executor_mod
 
-    def slow_llm(action, ctx):
-        time.sleep(PROVIDER_S)
-        ctx.add_usage(dict(PARKED))
-        return {"kind": "llm", "text": "an answer nobody reads"}
-
     def slow_util(action, ctx):
+        name = action.get("name")
+        if name == MODEL_UTIL:
+            time.sleep(PROVIDER_S)
+            ctx.add_usage(dict(PARKED))
+            return {"kind": "util", "name": name, "exit": 0,
+                    "stdout": "an answer nobody reads", "stderr": ""}
         time.sleep(TURN_S)
-        return {"kind": "util", "name": action.get("name"), "exit": 0,
-                "stdout": "slow", "stderr": ""}
+        return {"kind": "util", "name": name, "exit": 0, "stdout": "slow", "stderr": ""}
 
-    monkeypatch.setitem(executor_mod.DISPATCH, "llm", slow_llm)
     monkeypatch.setitem(executor_mod.DISPATCH, "util", slow_util)
-    return slow_llm
+    return slow_util
+
+
+def _model_call(say: str) -> dict:
+    """One backgrounded model call, as a run makes it now."""
+    return {"say": say, "kind": "util", "name": MODEL_UTIL,
+            "args": ["think slowly"], "background": True}
 
 
 def _late_bookings(events: list[dict]) -> list[dict]:
@@ -60,8 +80,8 @@ def _late_bookings(events: list[dict]) -> list[dict]:
             and e["payload"].get("late_booking")]
 
 
-@pytest.mark.usefixtures("slow_booking_llm")
-def test_a_cancelled_llm_books_the_spend_that_arrives_after_the_cancel(
+@pytest.mark.usefixtures("slow_booking_model_util")
+def test_a_cancelled_model_call_books_the_spend_that_arrives_after_the_cancel(
         make_routine, scripted):
     """THE claim this file exists for. The call is cancelled a turn after it starts, while the
     fake provider is still sleeping; its reading lands during a later turn, and the engine
@@ -69,8 +89,7 @@ def test_a_cancelled_llm_books_the_spend_that_arrives_after_the_cancel(
     """
     d = make_routine(slug="bgbooklate")
     scripted([
-        {"say": "Backgrounding a slow llm.", "kind": "llm", "prompt": "think slowly",
-         "background": True},
+        _model_call("Backgrounding a slow model call."),
         {"say": "Dropping it.", "kind": "kill", "handle": "bg1"},
         util("list", say="A turn while it finishes unread."),
         util("list", say="And another, by which time it has parked."),
@@ -92,7 +111,7 @@ def test_a_cancelled_llm_books_the_spend_that_arrives_after_the_cancel(
         "ordinary collection could not tell a dropped answer from a delivered one")
 
 
-@pytest.mark.usefixtures("slow_booking_llm")
+@pytest.mark.usefixtures("slow_booking_model_util")
 def test_the_run_total_carries_a_cancelled_calls_tokens(
         make_routine, scripted):
     """The number that matters: the run's own usage, which is what a budget is judged against
@@ -101,8 +120,7 @@ def test_the_run_total_carries_a_cancelled_calls_tokens(
     """
     d = make_routine(slug="bgbooktotal")
     scripted([
-        {"say": "Backgrounding a slow llm.", "kind": "llm", "prompt": "think slowly",
-         "background": True},
+        _model_call("Backgrounding a slow model call."),
         {"say": "Dropping it.", "kind": "kill", "handle": "bg1"},
         util("list", say="A turn while it finishes unread."),
         util("list", say="And another."),
@@ -122,7 +140,7 @@ def test_the_run_total_carries_a_cancelled_calls_tokens(
         "observation note")
 
 
-@pytest.mark.usefixtures("slow_booking_llm")
+@pytest.mark.usefixtures("slow_booking_model_util")
 def test_a_cancelled_call_books_at_most_once(
         make_routine, scripted):
     """A ledger swept at every boundary must not book the same reading twice: `take_deferred_usage`
@@ -131,8 +149,7 @@ def test_a_cancelled_call_books_at_most_once(
     """
     d = make_routine(slug="bgbookonce")
     scripted([
-        {"say": "Backgrounding a slow llm.", "kind": "llm", "prompt": "think slowly",
-         "background": True},
+        _model_call("Backgrounding a slow model call."),
         {"say": "Dropping it.", "kind": "kill", "handle": "bg1"},
         util("list", say="One."),
         util("list", say="Two."),

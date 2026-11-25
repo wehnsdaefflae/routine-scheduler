@@ -10,7 +10,7 @@ model is doing, so it is chosen per role (a routine's `efforts:`, a conversation
 server's `system_effort` — see *Effort* below), never on the catalog entry. You configure
 endpoints and models once (Settings → Endpoints, or
 `~/.config/routine-scheduler/config.yaml`), then every routine and the system model **picks a
-model by name** — except one `llm` call, which may also name an endpoint plus a raw model id
+model by name** — except a model call, which may also name an endpoint plus a raw model id
 (see *Reaching a model the catalog does not carry*, below).
 
 This instance sends every call through a separate gateway (Otari, with CLIProxyAPI holding the
@@ -66,13 +66,13 @@ OpenAI chat-completions dialect, cloud or local.
    work: routine creation and workflow generation) by picking a catalog model (plus an optional **effort** for it — blank is the provider's
    default), and per
    routine the model roles — **main** (the orchestrator loop; spawned children run it by
-   default, and a call may override per child), **tool_call** (the `llm` action), and the
+   default, and a call may override per child), **tool_call** (a scoped model call), and the
    optional **uncensored** (the refusal-clarification harness — see below — and, in a
    conversation, the model a reply flagged ⚑ as a refusal is handed to) — on the
    routine's page, each a catalog model name.
    An unset **main** falls back to the system model. An unset **tool_call** falls back to
    `system_tool_call_model` — the fleet-wide default for the cheap half of the work (the
-   `llm` action, a turn a run swaps down with `role_swap: cheap`, the claim verifier's second
+   scoped model calls, a turn a run swaps down with `role_swap: cheap`, the claim verifier's second
    opinion) — and, while THAT is unset, to the system model exactly as main does. Setting it
    is what makes a cheap turn actually cheaper: with no default for the role, every routine
    that named no `tool_call` of its own resolved both roles to one model and saved nothing.
@@ -209,7 +209,7 @@ default. Routines and the system model reference a model by its catalog **name**
 - `temperature` — sampling temperature; inherits the endpoint's when unset. Leave it blank on a
   current Claude model — see the endpoint field above.
 - `max_tokens` — the requested **output** cap per completion, sent on every engine call
-  (turns and `llm` actions). Leave it blank: it resolves through the same chain as the window
+  (turns and scoped model calls). Leave it blank: it resolves through the same chain as the window
   (*Windows and output caps are DISCOVERED* below) — the route's published maximum, then the
   endpoint's `max_tokens`, then a generous engine default (16,384). Settings flags a model still riding
   that default with a **⚠ max_tokens** chip — implausible hand values (below 4,096, or larger
@@ -218,7 +218,7 @@ default. Routines and the system model reference a model by its catalog **name**
 - `fallbacks` — the ordered **failover chain**: catalog model names tried in order when this
   model fails hard. See *Failover & cooldowns* below.
 - `note` — **when to use this model**, one line, in your words (D279(a)). A run choosing a
-  `model` for `child`/`llm`, or a `role_swap` position, otherwise sees a catalog of
+  `model` for `child`, or a `role_swap` position, otherwise sees a catalog of
   NAMES: nothing told it that one model is cheap and blunt, that another is the only one here
   with vision, or that a third is rate-limited to uselessness before noon. The `list_models`
   action returns it as `when_to_use` beside the name — only when set, because an empty line
@@ -304,7 +304,7 @@ engine instead **fails over**:
   (Fable/Mythos-class), give it a `fallbacks:` entry** (e.g. an Opus-class model — the
   provider's own recommendation) so a refusal costs one switch, not the run.
 - **Cooldown**: a hard-failed (endpoint, model) is marked *cooling* for 5 minutes — every
-  later resolution in the same run process (main turns, `llm` actions, compaction, spawned
+  later resolution in the same run process (main turns, scoped model calls, compaction, spawned
   children) skips it instead of hammering a flapping provider. When every remaining member
   is cooling, the one already serving is used anyway (a run never stalls on bookkeeping).
   Cooldowns are process-local: a fresh run probes the primary once and re-marks it if the
@@ -408,7 +408,7 @@ Who caches how:
   top-level `cache_control` marker. Without it the metered Opus fallback re-sent its whole
   prefix at full price every turn — twelve turns of one live run, ~100–117k input each,
   `cached_in` 0, **$6.63**.
-- **One-shot calls** (an `llm` action, an archival digest, the refusal classifier) are not
+- **One-shot calls** (a scoped model call, an archival digest, the refusal classifier) are not
   written to the cache: their prefix is never sent again, so the write would buy a read that never
   comes. On the OpenAI-compatible wire that means no marker. On the `anthropic` wire it means ONE
   marker on the smallest prefix the request has — the tool definition, else a leading slice of at
@@ -417,7 +417,7 @@ Who caches how:
   instance's gateway (CLIProxyAPI, v7.2.156 when measured) places its OWN breakpoints on the
   tools, the system prompt and the last message of any request that carries none, with no setting
   to stop it. Before the claim, 100% of the archival calls' input (2.94M tokens over four calls)
-  and 95% of 190 `llm` subcalls' was billed as cache writes in the week to 2026-10-08. A ~150-token
+  and 95% of 190 subcalls' was billed as cache writes in the week to 2026-10-08. A ~150-token
   tool definition, like a 1,000-char slice, is below the minimum prefix the API caches, so the
   claim itself writes nothing
   there.
@@ -479,12 +479,7 @@ need for its streaming helper either. Net: one more dependency stack, zero speci
 
 ## Reaching a model the catalog does not carry (F868)
 
-An `llm` action's `model` field takes a role, a catalog name — or **`<endpoint>/<model id>`**:
-
-```json
-{"kind": "llm", "prompt": "transcribe this invoice", "model": "omen/qwen3-vl-8b-instruct"}
-```
-
+A model-call capability's model takes a role, a catalog name — or **`<endpoint>/<model id>`**.
 The **endpoint** half must be a name from `endpoints:` (`list_models` lists them with their
 base URLs); the **model id** half is sent verbatim and needs no catalog entry. Per-model
 attributes come from the endpoint's own defaults with the provider's published window and
@@ -492,16 +487,19 @@ output cap in between — the same precedence a catalog model gets, minus its pe
 and the resolved ref carries **no catalog name**, so an unregistered model is never reported as
 a registered one.
 
-**Why not a URL.** The `llm` action runs in the engine, not in the util jail, so an endpoint
-named by a model would be a network destination nothing reviewed. The endpoint set stays the
-operator's; what opens is the model id, which is the half the catalog actually made impossible.
-A URL in the field fails as the unconfigured endpoint name it is, and the error names the
-configured ones.
+**Why not a URL.** `EndpointRegistry.for_endpoint` resolves the spec against the configured
+set, so an endpoint named by a raw URL would be a network destination nothing reviewed. The
+endpoint set stays the operator's; what opens is the model id, which is the half the catalog
+actually made impossible. A URL fails as the unconfigured endpoint name it is, and the error
+names the configured ones.
 
-**`llm` only.** A child run (`child`) is configured with `models["main"] = <catalog
+**Not for a child run.** A child (`child`) is configured with `models["main"] = <catalog
 name>` and resolves everything through the catalog, so an endpoint spec is refused there with a
-reason naming the action that does take one. A DECISION endpoint named here is refused too, and
-points at the `decide` action instead: it is a different wire (one typed answer, no free text).
+reason naming where one is taken. A DECISION endpoint named here is refused too: it is a
+different wire (one typed answer, no free text), reached as its own capability.
+
+Since D288 this route is the UTIL's, not an action's — see *What a util gets* below, which is
+how the endpoint set and its keys reach the call.
 
 **What a util gets.** The same knowledge reaches a util as `RSCHED_LLM` (the configured
 endpoints plus which one each model role resolves to) and `RSCHED_LLM_KEYS` ({endpoint: api
@@ -807,8 +805,13 @@ window 1 again). A refusal BY the uncensored model is an honest dead end - recor
 never a back-off rung - so the two models never ping-pong a refusal between them.
 
 When a model refuses, the engine runs the **refusal-takeover process**
-(engine/refusal.py + engine/turntakeover.py), at both seams - the `llm` action and the
-agent turn loop (children run the same loop and are covered identically):
+(engine/refusal.py + engine/turntakeover.py) at the agent turn loop (children run the same
+loop and are covered identically). Until D288 there was a second seam — the `llm` action
+re-issued a refused SUB-CALL — and it went with that kind: the back-off episode below is
+RunContext state the turn loop owns, so a util buying inference cannot join it, and a
+util-side retry would record no `refusal` event, tick no window and count no referral. A
+routine that wants refused work done on a different model names that model in the call
+itself, which is a choice rather than an escalation. The one surviving seam:
 
 1. **Detect - reliably, not by a marker list.** A provider classifier stop
    (`stop_reason: "refusal"` / `"content_filter"`, see *Failover & cooldowns* above) is
@@ -823,16 +826,13 @@ agent turn loop (children run the same loop and are covered identically):
 2. **Flag.** A first-class `refusal` transcript event records the seam, the refusing
    model, the refusal message, and the takeover verdict (takeover true/false, the
    episode level, the window, the takeover model) - what the transcript UI renders.
-3. **Take over.** The refused REQUEST is re-driven WHOLE on the uncensored model: the
-   turn loop re-runs the turn on it (its output IS the turn's action); the `llm` seam
-   re-issues the sub-call (same messages, same schema) and its reply IS the
-   observation's answer. A takeover window opens (the back-off above); when it closes,
-   the regular model is handed the next request. When NO takeover can serve - no
+3. **Take over.** The refused TURN is re-driven WHOLE on the uncensored model, and its
+   output IS the turn's action. A takeover window opens (the back-off above); when it
+   closes, the regular model is handed the next request. When NO takeover can serve - no
    `models.uncensored` configured, or the uncensored model itself refused - the refusal
-   stands and the normal path applies: the `llm` observation carries the original
-   refusal with the `refusal` record beside it; a loop turn takes the ordinary
-   fallback-chain path (a classifier refusal still cools the refusing model and advances
-   `fallbacks:`; with no usable fallback the run fails honestly, naming the category).
+   stands and the normal path applies: the turn takes the ordinary fallback-chain path (a
+   classifier refusal still cools the refusing model and advances `fallbacks:`; with no
+   usable fallback the run fails honestly, naming the category).
 
 - **Opt-in takeover, always-on flagging.** Without `models.uncensored` the engine still
   detects and flags - only the takeover is skipped (the event says so). The role has no

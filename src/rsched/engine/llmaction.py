@@ -1,8 +1,9 @@
-"""The `llm` and `list_models` actions — a run reaching for a model directly.
+"""The `list_models` action — what models this run can name, and where each one lives.
 
-`llm` is the one action whose side effect is another model call — deliberately a single
-completion with no tools and no turns, never a nested agent loop. `list_models` lets a per-call
-`model` override be chosen against the real catalog.
+Its companion `llm` left with D288 (2026-11-25): reaching a model is a util capability, so no
+action buys inference any more. This surface stayed, because choosing a model still has to be
+possible against the REAL catalog — a child's `model`, or a role and model named in a
+model-call capability's own arguments — rather than against a remembered name.
 """
 
 from __future__ import annotations
@@ -11,94 +12,9 @@ import json
 
 from ..config.base import supervisor_role
 from ..endpoints.base import EndpointError
-from . import outputs, refusal
 from .observations import truncate
 from .run_context import RunContext
 
-
-def do_llm(action: dict, ctx: RunContext) -> dict:
-    messages = []
-    if action.get("system"):
-        messages.append({"role": "system", "content": action["system"]})
-    messages.append({"role": "user", "content": action["prompt"]})
-    schema = action.get("response_schema")
-    purpose = ("llm · " + str(action.get("say") or "sub-call"))[:80]
-    # The optional `model` field: a ROLE (main/tool_call/uncensored), a CATALOG name, or
-    # `<endpoint>/<model id>` (F868) — default tool_call; an unknown value is a teaching error.
-    # The ENDPOINT must be one the operator configured (never a bare URL: this runs in the
-    # engine, not the util jail); only the model id is free, e.g. for a local model.
-    role = str(action.get("model") or "tool_call")
-    try:
-        if role == "uncensored":
-            target = ctx.registry.for_uncensored(ctx.routine.models, ctx.routine.efforts)
-            if target is None:
-                return {"kind": "llm",
-                        "error": "model role 'uncensored' is not configured for this routine "
-                                 "— it needs a models.uncensored catalog entry (routine page "
-                                 "→ Models). Use the default role, or ask the user to set one."}
-            endpoint, ref = target
-        elif role in ("main", "tool_call"):
-            endpoint, ref = ctx.registry.for_model(role, ctx.routine.models, ctx.routine.efforts)
-        elif role in ctx.server.models:
-            endpoint, ref = ctx.registry.for_name(role)
-        elif "/" in role:
-            endpoint, ref = ctx.registry.for_endpoint(role)
-        else:
-            avail = ", ".join(sorted(ctx.server.models)) or "none configured"
-            eps = ", ".join(sorted(ctx.server.endpoints)) or "none configured"
-            return {"kind": "llm",
-                    "error": f"model {role!r} is neither a role (main/tool_call/uncensored), "
-                             f"a catalog model name, nor '<endpoint>/<model id>'. Catalog "
-                             f"models: {avail}. Configured endpoints: {eps}. The list_models "
-                             "action shows each model's endpoint and attributes."}
-        completion = endpoint.complete(messages, model=ref.model, schema=schema,
-                                       effort=ref.effort, temperature=ref.temperature,
-                                       max_tokens=ref.max_tokens, purpose=purpose,
-                                       kind="llm_action")
-    except EndpointError as exc:
-        return {"kind": "llm", "error": str(exc)}
-    ctx.add_usage(completion.usage)
-
-    reply = completion.text
-    if completion.parsed is not None:
-        reply = json.dumps(completion.parsed, ensure_ascii=False, indent=1)
-    # An EMPTY completion is not an answer: it reads like "nothing to add" (or a silent
-    # refusal the text classifier below cannot see), so it fails LOUDLY instead.
-    if not str(reply).strip():
-        return {"kind": "llm", "endpoint": ref.endpoint, "model": ref.model,
-                "usage": completion.usage,
-                "error": f"{ref.name or ref.model} returned an EMPTY completion (no text, no "
-                         "error). That is not an answer: a blank reply and a silent refusal "
-                         "look identical, so this is surfaced rather than passed on. Retry "
-                         "with the prompt reworded, or with a different `model` — and do not "
-                         "read the silence as agreement."}
-    full_reply = reply
-    reply, truncated = truncate(reply)
-    out = {"kind": "llm", "endpoint": ref.endpoint, "model": ref.model,
-           "reply": reply, "usage": completion.usage, "truncated": truncated}
-    # D246: an oversized reply SPILLS to `.util_outputs/` like a util's output (same pointer),
-    # since a model's answer is the least reproducible thing a run buys.
-    if truncated and (pointer := outputs.spill(ctx, "llm", full_reply, "",
-                                               out_truncated=True, err_truncated=False)):
-        out["full_output"] = pointer
-    # Refusal takeover (engine/refusal.py): a free-text reply judged a content REFUSAL is
-    # re-issued WHOLE on the uncensored model and its reply IS the answer. A schema'd reply and
-    # an explicit `model: uncensored` call are never taken over; a sub-call is not a turn.
-    if role != "uncensored" and completion.parsed is None \
-            and refusal.is_refusal(ctx, completion.text):
-        record, takeover_reply = refusal.reissue_on_uncensored(
-            ctx, messages=messages, schema=schema, purpose=(purpose + " - re-issued")[:80],
-            refusal=completion.text, where="llm", model=ref.name or ref.model)
-        out["refusal"] = record
-        if takeover_reply is not None:
-            r2 = (takeover_reply["text"] if takeover_reply["parsed"] is None
-                  else json.dumps(takeover_reply["parsed"], ensure_ascii=False, indent=1))
-            reply_text, truncated = truncate(r2)
-            out.update({"reply": reply_text, "truncated": truncated,
-                        "takeover": True, "endpoint": takeover_reply["endpoint"],
-                        "model": takeover_reply["model"],
-                        "usage": takeover_reply["usage"]})
-    return out
 
 def do_list_models(ctx: RunContext) -> dict:
     """The model DISCOVERY surface: what this run's role bindings resolve to now, plus every
@@ -139,25 +55,24 @@ def do_list_models(ctx: RunContext) -> dict:
             models.append(row)
         except EndpointError as exc:
             models.append({"name": name, "error": str(exc)})
-    # F868: the configured ENDPOINTS, which `llm`'s `<endpoint>/<model id>` route needs and
-    # the catalog does not reveal. Non-secret: name, kind and base_url, never a key.
+    # F868: the configured ENDPOINTS, which an off-catalog `<endpoint>/<model id>` target needs
+    # and the catalog does not reveal. Non-secret: name, kind and base_url, never a key.
     endpoints = [{"name": name, "kind": cfg.kind, "base_url": cfg.base_url}
                  for name, cfg in sorted((ctx.server.endpoints or {}).items())]
     out: dict = {"kind": "list_models", "roles": roles, "models": models,
                  "endpoints": endpoints,
-                 "note": ("a child/llm action's `model` field takes one of these "
-                          "catalog names, or a role (main/tool_call/uncensored/supervisor); "
-                          "children default to main, llm to tool_call. An `llm` call may also "
-                          "name '<endpoint>/<model id>' from `endpoints` to reach a model the "
-                          "catalog does not carry (llm only — a child run's model must be a "
-                          "catalog name)")}
+                 "note": ("a child's `model` field takes one of these catalog names, or a role "
+                          "(main/tool_call/uncensored/supervisor), and defaults to main. The "
+                          "model-call capability takes the same names and roles, plus an "
+                          "'<endpoint>/<model id>' from `endpoints` to reach a model the "
+                          "catalog does not carry — which a child run's model may not be")}
     if ctx.server.decision_models:
         # The DECISION catalog is a different contract (endpoints/decisions.py) — listed apart
-        # so a name from it is never passed to llm/spawn, nor a chat model's to decide.
+        # so a name from one is never passed where the other is meant.
         from ..endpoints.decisions import decision_catalog
         out["decision_models"] = decision_catalog(ctx.server, ctx.routine.models)
-        out["note"] += ("; a decide action's `model` takes a decision_models name instead "
-                        "(default: the one marked default for its payload)")
+        out["note"] += ("; a TYPED question takes a decision_models name instead (default: the "
+                        "one marked default for its payload)")
     return out
 
 

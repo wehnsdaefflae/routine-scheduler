@@ -35,8 +35,19 @@ def test_parse_edit_file_quoted_anchor_replacement():
         parse_command("/edit_file f.md anchor=only")
 
 
-def test_parse_llm_view_image_and_memory():
-    assert parse_command("/llm summarize this file")["prompt"] == "summarize this file"
+def test_a_retired_command_says_where_the_capability_went():
+    """D288: `/llm` was a command because `llm` was a kind. Both retired into a util
+    capability, so the error points at `/util` instead of refusing the word blankly — the
+    operator types this, and "unknown command" would send him to the help panel for nothing.
+    """
+    with pytest.raises(CommandError) as exc:
+        parse_command("/llm summarize this file")
+    said = str(exc.value)
+    assert "retired" in said and "/util" in said, said
+    assert "unknown command" not in said
+
+
+def test_parse_view_image_and_memory():
     view = parse_command("/view_image shots/a.png what changed?")
     assert (view["path"], view["prompt"]) == ("shots/a.png", "what changed?")
     assert parse_command("/memory_read env-quirks")["name"] == "env-quirks"

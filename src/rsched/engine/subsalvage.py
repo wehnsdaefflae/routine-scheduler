@@ -158,6 +158,9 @@ def spend_reached(child_dir: Path) -> dict:
                 etype = ev.get("type")
                 if etype == "assistant_action":
                     usage = ev.get("usage")
+                # The two RETIRED kinds (D288) booked their spend in the observation payload;
+                # a transcript recorded before that retirement is still summed here, or a
+                # resumed child's usage would silently drop what it really spent.
                 elif ((etype == "observation"
                        and (ev.get("payload") or {}).get("kind") in ("llm", "decide"))
                       or etype in ("compaction", "child_end")):

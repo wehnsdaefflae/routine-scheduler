@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.613.0] — 2026-11-25
+
+**`llm` and `decide` are no longer action kinds** (D288, the operator's *"Convert fully"*, and
+both kinds go in one commit as he required). The capability did not go anywhere: it is a util
+call, and since 0.610.0 a util's model spend books against the calling run's own meter — which
+was the prerequisite that made this removal honest rather than a hole in every run's books.
+
+- `KINDS` is 35 → 33. The four fields exclusive to the two kinds (`system`, `answer_type`,
+  `files`, `response_schema`) leave the schema with them, and `questions`, `options`, `question`,
+  `model`, `handle` and `background` lose their kind-specific clauses.
+- **The always-on prompt contract is 58,130 → 56,277 characters** (−1,853 on every turn of every
+  run: −1,532 schema, −321 harness prose), re-locked in `tests/prompt_budget.json`.
+- **A retired kind now has its own vocabulary.** `renamedkinds.RETIRED` maps a kind to the
+  CAPABILITY that carries it, with a correction that deliberately does NOT promise a resend —
+  `RENAMED`'s promise is false when the replacement is a different call. A recipe still saying
+  `llm` is refused before dispatch and told where the capability went, which `test_loop.py`
+  proves end to end.
+- **Recorded transcripts still render.** `engine/obs_retired.py` owns the observation formatters
+  for both kinds, because a resumed leg, `runsearch` and the console read history forever.
+  `test_retired_kinds.py`'s sweep now covers `RENAMED` and `RETIRED` across `src/` *and*
+  `static/`, counts every file it reads, and exempts the record-renderers by name with a reason.
+- The `/llm` slash command is gone; an unknown command now teaches the retirement.
+- Deleted: `engine/decideaction.py`, `llmaction.do_llm`, `refusal.reissue_on_uncensored`.
+  `engine/decisioncatalog.py` keeps the CAPABILITIES decision-model line, now gated on the
+  `util` kind rather than on the retired one.
+
+**Two behaviours are deliberately GONE with the sub-call, not silently dropped:**
+
+1. **The SUB-CALL refusal takeover.** A refused free-text *sub-call* reply is no longer re-issued
+   on the uncensored model. `do_llm` was its only caller, and the back-off episode it joined is
+   `RunContext` state the turn loop owns, so a util cannot take part. **The TURN-LOOP takeover —
+   a refused turn of the run itself — is untouched.**
+2. **R1611's empty-completion guard** ("a blank reply and a silent refusal must not read alike")
+   went with `do_llm`, and the util path exits 0 on empty content (F921). No layer carries it
+   today; filed to `self-audit`.
+
 ## [0.612.0] — 2026-11-25
 
 **Five predefined conversation playbooks, each stating the access it needs** (operator,

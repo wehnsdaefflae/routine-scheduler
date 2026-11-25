@@ -17,7 +17,6 @@ from . import fieldshapes, notemeta, thenscript
 from .actionschema import KINDS, PSEUDO_UTILS
 from .askfields import ASK_OPTIONS_MAX
 from .askfields import field_problems as ask_field_problems
-from .decideaction import field_problems as decide_field_problems
 from .goalops import field_problems as goal_field_problems
 from .jobfields import field_problems as job_field_problems
 from .kindaliases import rewrite as alias_rewrite
@@ -38,7 +37,7 @@ ALWAYS_KINDS = ("finish", "report", "list_models")
 # could read state it has not written yet), and the control kinds, which steer the run or are
 # already asynchronous (children). `shell` and `util` CAN write and declare no target, so a
 # writing command stays the caller's ordering hazard.
-BACKGROUNDABLE_KINDS = ("util", "websearch", "code_search", "script", "shell", "llm", "decide",
+BACKGROUNDABLE_KINDS = ("util", "websearch", "code_search", "script", "shell",
                         "read_file", "view_image", "memory_read", "read_rule")
 
 # kind → (required fields, allowed extra fields beyond say/kind). `background` is appended below
@@ -73,9 +72,6 @@ _OWN_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
                                  "stale_after", "verified")),   # D268: notemeta
     "read_rule": (("name",), ()),
     "write_rule": (("name",), ("content", "anchor", "replacement", "all")),
-    "llm": (("prompt",), ("system", "response_schema", "model")),
-    "decide": ((), ("question", "answer_type", "options", "questions", "evidence", "files",
-                    "model")),
     # D241: ONE kind for a child run, its scheduling in a flat `mode` (childfields.py)
     "child": (("prompt",), ("mode", "workflow", "label", "turns", "model")),
     "detach": (("prompt",), ("workflow", "label")),
@@ -230,11 +226,9 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
             if not str(obj.get("reason") or "").strip():
                 problems.append("kind=schedule_run requires 'reason' (why the one-shot fires) "
                                 "unless cancel: true")
-    if kind == "decide":
-        problems += decide_field_problems(obj)
     if kind == "ask_user":   # D212: the whole shape lives in `askfields`
         problems += ask_field_problems(obj)
-    # the schema's `options` cap is decide's; a pick-list the OPERATOR reads stays short
+    # a pick-list the OPERATOR reads stays short
     if kind == "report" and len(obj.get("options") or []) > ASK_OPTIONS_MAX:
         problems.append(f"kind={kind}: at most {ASK_OPTIONS_MAX} 'options' — a longer list "
                         "is a question to rephrase, not a menu")

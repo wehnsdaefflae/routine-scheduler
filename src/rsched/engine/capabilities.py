@@ -149,11 +149,15 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
     kinds = effective_kinds(allowed_kinds, g)
     parts.append("Action kinds usable this run: " + ", ".join(kinds) + ". Anything else is "
                  "rejected by the engine before it becomes a turn.")
-    if "decide" in kinds:
-        from .decideaction import catalog_line
+    # The DECISION models this run reaches. Since D288 that capability travels by util rather
+    # than by a kind of its own, so the line is gated on `util` — the route to it — and names
+    # what it is rather than how to spell the call, which the util's own usage states.
+    if "util" in kinds:
+        from .decisioncatalog import catalog_line
         if line := catalog_line(ctx.server, ctx.routine.models):
-            parts.append(line + " — a decide call's `model` picks one; without it the default "
-                         "for its payload answers.")
+            parts.append(line + " — a typed question put to one of these returns "
+                         "probabilities rather than prose; naming none, the default for the "
+                         "payload answers.")
     if g is not None:
         cap_bits = []
         # Each line keys on `kinds` (grant ∩ the workflow's `tools:`), never the grant alone.

@@ -154,8 +154,8 @@ turn, and its REAL observation is appended at a later turn boundary, tagged with
 context is unchanged — same run, same budget, same conversation — which is precisely what `detach`
 cannot offer.
 
-- **Which kinds.** `engine/actions.BACKGROUNDABLE_KINDS`: `util`, `script`, `shell`, `llm`,
-  `decide`, `read_file`, `view_image`, `memory_read`, `read_rule` — each a read or a fetch whose
+- **Which kinds.** `engine/actions.BACKGROUNDABLE_KINDS`: `util`, `script`, `shell`,
+  `websearch`, `code_search`, `read_file`, `view_image`, `memory_read`, `read_rule` — each a read or a fetch whose
   only effect is its observation. A control kind (`finish`, `ask_user`, `report`, `child`, `wait`, `kill`) is refused — it either steers the run or is already asynchronous in
   its own right. So is every WRITE (`write_file`, `edit_file`, `memory_write`, `delete`, `move`,
   `mkdir`, `write_util`, `write_rule`): a later action must not read state a deferred write has
@@ -310,7 +310,7 @@ load, where its spend lands, and who gets it.
   - **`stopped_work` rides both observations** — the cancel's own and the collector's — so a real
     stop and a dropped delivery are never conflated by whoever reads them back.
 
-  For `llm`, `decide` and the reads the original ceiling stands unchanged: the work runs to its own
+  For the reads the original ceiling stands unchanged: the work runs to its own
   end unread. Both promises are stated in the `handle` field's own schema description, because that
   field is the only documentation a run meets at the moment it decides to cancel. Either way the
   call is recorded with `cancelled: true` (and `had_landed`, when a finished result was thrown away)

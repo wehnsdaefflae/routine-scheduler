@@ -3,8 +3,9 @@
 DISPATCH covers the EFFECT kinds: util and shell (the util runner and the one-off command
 live here), the file kinds (read_file / write_file / edit_file — fileops.py; delete / move /
 mkdir — fsops.py), view_image (mediaops.py), the name-addressed stores (memory_read /
-memory_write / read_rule — memops.py), llm and list_models (llmaction.py), decide
-(decideaction.py). `script`, the third way a run executes code, is here but reached through
+memory_write / read_rule — memops.py) and list_models (llmaction.py, whose `llm` handler left
+with D288: reaching a model is a util capability, so no EFFECT kind buys inference any more).
+`script`, the third way a run executes code, is here but reached through
 actionroute.py, which puts the call-time secret gate in front of it and of `util`. Every other
 kind has its own handler there — the child-run kinds in subruns.py (`wait` in waitop.py),
 ask_user in interact.py, the library authoring kinds in authoring.py — and `finish` never leaves
@@ -20,12 +21,11 @@ from ..ids import is_slug
 from ..paths import expand
 from ..utils_lib import USAGE_ERROR_EXIT
 from .control import cancelled_for_turn
-from .decideaction import do_decide
 from .exec_env import _extra_secrets, _unbound_connection_request
 from .fileops import UTIL_DEFAULT_TIMEOUT_S, do_edit_file, do_read_file, do_write_file
 from .fsops import do_delete, do_mkdir, do_move
 from .jailnotes import jail_notes as _jail_notes
-from .llmaction import do_list_models, do_llm
+from .llmaction import do_list_models
 from .mediaops import do_view_image
 from .memops import do_memory_read, do_memory_write, do_read_rule
 from .observations import truncate
@@ -380,8 +380,6 @@ DISPATCH = {
     "memory_read": do_memory_read,
     "memory_write": do_memory_write,
     "read_rule": do_read_rule,
-    "llm": do_llm,
-    "decide": do_decide,
     "list_models": lambda _action, ctx: do_list_models(ctx),
 }
 

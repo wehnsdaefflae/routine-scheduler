@@ -119,7 +119,11 @@ def test_the_conduct_that_lives_nowhere_else_survives():
     for conduct in (
         "Ask sparingly",                                   # ask_user
         "write the util (or a scripts/ helper)",            # shell: promote what you repeat
-        "it gives no reasons, so ask `llm` when you need one",   # decide
+        # NOT "it gives no reasons, so ask `llm` when you need one": that was `decide`'s
+        # conduct, and D288 retired both model-call KINDS into a util capability (2026-11-25),
+        # so the sentence has no kind to be the conduct OF. The choice it taught — a typed
+        # probability where a step is a classification, prose where the reason matters — is
+        # now the util's to teach at its own call site, which is where a caller reads it.
         "guessing wrong sends the work to someone who will bounce it",   # report
         "never because it got hard",                       # goal: dropping one
         "Children never outlive you",                      # kill/wait

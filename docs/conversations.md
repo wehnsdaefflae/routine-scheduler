@@ -232,7 +232,7 @@ every global util with its usage line).
 /write_file notes/todo.md - call the bank
 /edit_file notes/todo.md anchor="call the bank" replacement="called ✓"
 /view_image shots/screen.png what changed here?
-/llm summarize the pasted text in two lines
+/util llm-complete summarize the pasted text in two lines
 /memory_read env-quirks
 /memory_write env-quirks about="server quirks" the NAS mounts read-only after backup
 ```

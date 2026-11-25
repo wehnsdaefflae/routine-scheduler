@@ -116,12 +116,6 @@ say what evidence made the current wording wrong. A rule states a principle and 
 no routine and no file — mechanism belongs in a recipe or a conduct doc. The library linter \
 gates the write and your approval level decides whether the user confirms it. There is no \
 delete: a rule that should go is a report or a deferred ask_user naming it."""),
-    (("llm",), """- llm: one scoped, stateless subcall. It sees ONLY \
-your prompt/system — include everything it needs."""),
-    (("decide",), """- decide: put a typed question to a DECISION model and get probabilities \
-back, never prose. Use it where a \
-step is a classification — route, gate, screen, rate — and act on the probability with a \
-threshold you can name; it gives no reasons, so ask `llm` when you need one."""),
     (("child",), """- child: start a CHILD RUN — its own run, with its own fresh context, \
 working for you. It sees NOTHING of your conversation beyond the "prompt" you give it, and \
 relative paths resolve in ITS directory, so name absolute paths for anything it must read. \
@@ -195,8 +189,9 @@ goal — "yes, do it", "you fix all of that" answering work you proposed: set it
 answer. Every open goal is answered at your finish; one a routine run leaves open is CARRIED to \
 its next run until a run meets it."""),
     (("list_models",), """- list_models: the model catalog + this run's resolved role \
-bindings (main / tool_call / uncensored / supervisor), read-only — consult it BEFORE a `model` \
-override on llm/child so the name you pass is one the catalog actually carries."""),
+bindings (main / tool_call / uncensored / supervisor), read-only — consult it BEFORE naming a \
+model anywhere (a child's `model`, a model-call capability's role or model) so the name you \
+pass is one the catalog actually carries."""),
     (("children",), """- children: a status table of your child runs, whatever mode each was \
 started in (state, turns, elapsed)."""),
     (("kill", "wait"), """- kill: terminate child run "n". wait: block until a child exits or a \

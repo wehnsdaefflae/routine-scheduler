@@ -421,7 +421,7 @@ def test_a_background_threads_spend_is_parked_and_booked_once_on_collection(
     meter_while_running: list[int] = []
 
     def spender(action, ctx):
-        # Exactly what a backgrounded `llm` does: the handler books through add_usage from
+        # Exactly what a backgrounded model call does: it books through add_usage from
         # inside the thread, knowing nothing about being backgrounded.
         ctx.add_usage({"in": 700, "out": 300})
         time.sleep(0.3)
@@ -540,11 +540,9 @@ def test_a_background_calls_wall_clock_is_the_runs_own_wall_clock(make_routine, 
 
 
 def test_every_add_usage_in_the_engine_goes_through_the_one_booking_point():
-    """The structural guard, and the reason this fix is one edit rather than six. A backgrounded
-    `llm` reaches `add_usage` at five sites (two in llmaction, three in refusal) and a `decide`
-    at one; a per-handler deferral would be six edits that the NEXT handler to book forgets. So
-    `RunContext.add_usage` is the single place that decides parked-or-booked, and nothing may
-    fold into `ctx.usage` around it."""
+    """The structural guard: a per-handler deferral would be edits the NEXT handler to book
+    forgets, and since D288 a model call is a UTIL call whose spend arrives through
+    `engine/utilspend.py` here. So `RunContext.add_usage` decides parked-or-booked."""
     import pathlib
 
     import rsched.engine.run_context as rc_mod
@@ -815,7 +813,9 @@ def test_the_stoppable_kinds_are_exactly_the_subprocess_ones():
     assert set(STOPPABLE_KINDS) == {"util", "script", "shell"}
     assert set(STOPPABLE_KINDS) <= set(BACKGROUNDABLE_KINDS), (
         "a kind that cannot be backgrounded cannot be cancelled either")
-    for kind in ("llm", "decide", "read_file", "view_image", "memory_read", "read_rule"):
+    # The reads: what still runs inside the interpreter since D288. NOT websearch/code_search,
+    # which SPELL a util call (D290) and so stop with its subprocess.
+    for kind in ("read_file", "view_image", "memory_read", "read_rule"):
         assert kind not in STOPPABLE_KINDS, (
             f"{kind} runs in the interpreter — claiming its work can be stopped would be the "
             "same overclaim in the other direction")
@@ -825,7 +825,7 @@ def test_the_handle_field_states_both_promises_not_one_ceiling():
     """0.404.0's description said "it stops the DELIVERY, not the work" for every kind. The
     operator read that and said: *that sounds like a detach, not like a kill* — correctly, because
     for the three kinds worth cancelling (a ten-minute test run reaches the host through `shell` or
-    `script`, never through `llm`) the engine CAN stop the work. The field is the only
+    `script`, never through a read) the engine CAN stop the work. The field is the only
     documentation a run meets at the moment it decides, so it carries both cases."""
     text = ACTION_SCHEMA["properties"]["handle"]["description"]
     low = text.lower()
@@ -895,24 +895,23 @@ def test_cancelling_a_backgrounded_shell_actually_kills_the_subprocess(
         "the command ran to completion anyway — it was undelivered, not stopped")
 
 
-def test_cancelling_an_llm_stops_only_the_delivery_and_says_so(
+def test_cancelling_an_in_interpreter_call_stops_only_the_delivery_and_says_so(
         make_routine, scripted, monkeypatch):
-    """The other half, and it must NOT overclaim. An `llm` runs inside the interpreter, so the
-    cancel frees the slot and drops the result while the call finishes unread — and the
-    observation says that, rather than claiming a stop it did not perform."""
+    """The other half, and it must NOT overclaim. A READ runs inside the interpreter, which
+    Python cannot interrupt, so the cancel frees the slot and drops the result while the call
+    finishes unread — and says so rather than claiming a stop it did not perform."""
     import rsched.engine.executor as executor_mod
-
     ran: list[str] = []
 
-    def slow_llm(action, ctx):
+    def slow_read(action, ctx):
         time.sleep(1.5)
-        ran.append(str(action.get("prompt")))
-        return {"kind": "llm", "text": "an answer nobody reads"}
+        ran.append(str(action.get("path")))
+        return {"kind": "read_file", "path": action.get("path"), "content": "nobody reads it"}
 
-    monkeypatch.setitem(executor_mod.DISPATCH, "llm", slow_llm)
-    d = make_routine(slug="bgkillllm")
+    monkeypatch.setitem(executor_mod.DISPATCH, "read_file", slow_read)
+    d = make_routine(slug="bgkillread")
     scripted([
-        {"say": "Backgrounding a slow llm.", "kind": "llm", "prompt": "think slowly",
+        {"say": "Backgrounding a slow read.", "kind": "read_file", "path": "state/slow.md",
          "background": True},
         {"say": "Dropping it.", "kind": "kill", "handle": "bg1"},
         util("list", say="A turn while it finishes unread."),
@@ -926,15 +925,16 @@ def test_cancelling_an_llm_stops_only_the_delivery_and_says_so(
     cancel = next(e["payload"] for e in events if e["type"] == "observation"
                   and e["payload"].get("kind") == "kill" and e["payload"].get("cancelled"))
     assert cancel["stopped_work"] is False, (
-        "an llm's work cannot be stopped — claiming it was would be the same overclaim as "
-        "0.404.0's, pointing the other way")
+        "an in-interpreter call's work cannot be stopped — claiming it was would be the same "
+        "overclaim as 0.404.0's, pointing the other way")
+    assert ran, "the call never ran, so this test proves nothing about an unstoppable one"
     # …and the result still never reached the run
     delivered = [e for e in events if e["type"] == "observation"
                  and e["payload"].get("handle") == "bg1"
                  and e["payload"].get("background")
                  and not e["payload"].get("started")
                  and not e["payload"].get("cancelled")]
-    assert delivered == [], f"a cancelled llm delivered its observation anyway: {delivered}"
+    assert delivered == [], f"a cancelled read delivered its observation anyway: {delivered}"
 
 
 def test_the_cancel_check_is_keyed_by_handle_not_by_the_turn_that_started_it():

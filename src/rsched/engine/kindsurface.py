@@ -2,8 +2,8 @@
 projection of ACTION_SCHEMA onto them.
 
 `actions.py` stays the source of truth; this module only NARROWS what the model is shown to
-what the engine would accept anyway (a run permitted 8 of the 35 kinds was once sent
-all 35 in the schema). Derived from `actions.KIND_FIELDS` — the map `validate_action` uses — so
+what the engine would accept anyway (a run permitted 8 of the 33 kinds was once sent
+all 33 in the schema). Derived from `actions.KIND_FIELDS` — the map `validate_action` uses — so
 the shown schema and the enforced contract cannot drift.
 
 Two consumers: the composed prompt and the constrained-decoding schema

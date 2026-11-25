@@ -32,7 +32,7 @@ KINDS = ("util", "websearch", "code_search", "write_util", "remove_util",
          "read_file", "view_image", "write_file", "delete", "move", "mkdir", "edit_file",
          "memory_read", "memory_write", "read_rule", "write_rule",
          "script", "shell",
-         "llm", "decide", "child", "detach",
+         "child", "detach",
          "schedule_run", "create_routine", "manage_lane",
          "job", "goal",
          "list_models", "children", "kill", "wait", "ask_user", "report", "do_nothing", "finish")
@@ -309,44 +309,24 @@ ACTION_SCHEMA: dict = {
         "delete": notemeta.DELETE_FIELD,
         "stale_after": notemeta.STALE_AFTER_FIELD,   # D268: a note's expiry, as data
         "verified": notemeta.VERIFIED_FIELD,         # D268: who last checked it, and when
-        # llm / child / detach / view_image
+        # child / detach / view_image
         "prompt": {"type": "string",
-                   "description": "llm: the prompt · child/detach: the child's full "
+                   "description": "child/detach: the child's full "
                                   "self-contained instruction (sequential: fold in the previous "
                                   "one's result) · view_image: what to look for (if the file "
                                   "falls back to the vision util) · create_routine: the "
                                   "clarified task instruction, decomposed into the new routine's "
                                   "stages (say WHAT it should do, not when it runs)"},
-        "system": {"type": "string", "description": "llm: optional system prompt"},
-        # decide — a typed question to a DECISION model (engine/decideaction.py); `question`,
-        # `options` and `model` are shared with ask_user / llm
-        "answer_type": {"type": "string", "enum": ["yes_no", "choice", "score"],
-                        "description": "decide: yes_no (the answer is P(yes); no options) · "
-                                       "choice (one of `options`) · score (a position on "
-                                       "`options` read as ordered levels, LOWEST first). "
-                                       "Default: choice when options are given, else yes_no"},
-        "questions": schema_questions.QUESTIONS_FIELD,   # D212: shared with ask_user
+        "questions": schema_questions.QUESTIONS_FIELD,   # D212: ask_user's batch
         "evidence": {"type": ["string", "object", "array"],
-                     "description": "decide: what the answer depends on — text, or a JSON "
-                                    "object/array of the facts. Self-contained: the model "
-                                    "sees nothing else of your context · goal check: what "
+                     "description": "goal check: what "
                                     "shows the goal is met — the observation or artefact, as "
                                     "text"},
-        "files": {"type": "array", "items": {"type": "string"}, "maxItems": 16,
-                  "description": "decide: files whose CONTENT is evidence — images "
-                                 "(png/jpeg/webp/gif) are shown to a decision model that takes "
-                                 "them (several judged together), text files are read in"},
-        "response_schema": {"type": "object",
-                            "description": "llm: optional JSON schema constraining the reply"},
         "model": {"type": "string",
-                  "description": "llm/child: OPTIONAL model override — a ROLE (main, "
+                  "description": "child: OPTIONAL model override — a ROLE (main, "
                                  "tool_call; uncensored for a step the default refuses, rejected "
-                                 "if unset), a catalog model NAME from `list_models`, or (llm "
-                                 "only) `<endpoint>/<model id>` for an off-catalog model. "
-                                 "Defaults: children run the routine's MAIN model, llm runs "
-                                 "tool_call · decide: OPTIONAL — a DECISION model's name "
-                                 "(list_models shows them; default: the instance's decision "
-                                 "model, its image default when the call carries images)"},
+                                 "if unset) or a catalog model NAME from `list_models`. "
+                                 "Default: children run the routine's MAIN model"},
         "workflow": {"type": "string",
                      "description": "child/detach: library workflow slug for the child "
                                     "(default general-task) — pick the pattern matching its "
@@ -366,7 +346,7 @@ ACTION_SCHEMA: dict = {
                                   "started observation named) instead of `n`. What it stops "
                                   "depends on the kind: a backgrounded `util`, `script` or "
                                   "`shell` runs as a subprocess, so its whole process group is "
-                                  "TERMINATED — the work really stops; an `llm`, `decide` or a "
+                                  "TERMINATED — the work really stops; a "
                                   "read runs inside the interpreter, which Python gives no way "
                                   "to interrupt, so only the DELIVERY stops and that call runs "
                                   "to its own end unread. Either way the observation never "
@@ -381,14 +361,11 @@ ACTION_SCHEMA: dict = {
         # ask_user
         "question": {"type": "string",
                      "description": "ask_user: the question, self-contained (simple Markdown "
-                                    "renders in the UI) · decide: what to decide, phrased as "
-                                    "the question the options answer"},
+                                    "renders in the UI)"},
         "mode": MODE_FIELD_SHARED,   # two kinds' enums cannot share one property (childfields)
         "options": {
             "type": "array", "items": {"type": "string"}, "maxItems": 26,
-            "description": "ask_user: optional pick-one choices (at most 5) · decide: the "
-                           "answers to choose between, or a score's levels LOWEST first — "
-                           "each 'value: what it means' (the value is what the answer names) · "
+            "description": "ask_user: optional pick-one choices (at most 5) · "
                            "report: OPTIONAL — the choices that make this report a DECISION "
                            "FOR THE USER as well as work for its target (at most 5): an open "
                            "question from YOU on his Decisions page, answered into YOUR inbox "
@@ -517,7 +494,7 @@ BRIEF_FIELD = {"util": "name", "websearch": "args", "code_search": "args",
                "write_file": "path", "delete": "path", "move": "src",
                "mkdir": "path", "edit_file": "path", "memory_read": "name",
                "memory_write": "name", "read_rule": "name", "write_rule": "name",
-               "llm": "prompt", "decide": "question", "child": "label",
+               "child": "label",
                "detach": "label", "schedule_run": "target", "create_routine": "target",
                "manage_lane": "verb", "job": "id", "goal": "id", "kill": "n", "wait": "n",
                "ask_user": "question", "report": "title", "finish": "status"}

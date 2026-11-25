@@ -128,7 +128,7 @@ This scheduler holds none of that and no management key — an endpoint here is 
 
 ## Decisions through the gateway
 
-The `decide` action's catalog has a gateway route too. Otari serves TypeSafe's System One wire at
+The decision catalog has a gateway route too. Otari serves TypeSafe's System One wire at
 `/api/v1/systemone`, so a decision endpoint there takes the gateway's key and a normalised id:
 
 ```yaml

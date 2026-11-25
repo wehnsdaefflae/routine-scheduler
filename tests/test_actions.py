@@ -39,22 +39,9 @@ def test_timeout_s_ceiling_raised_for_long_jobs():
         v.validate({"say": "s", "kind": "util", "name": "pytest-run", "timeout_s": 1801})
 
 
-def test_transcript_js_brief_field_mirrors_python():
-    """The web transcript keeps its own copy of BRIEF_FIELD (static/ is no-build, so it
-    cannot import the Python map); a kind missing there silently renders an EMPTY turn
-    brief — the 2026-08-21 hygiene sweep found the copy 10 kinds behind. Parse the JS
-    literal and hold the two in lockstep."""
-    import re
-    from pathlib import Path
-
-    from rsched.engine.actionschema import BRIEF_FIELD
-
-    js = (Path(__file__).resolve().parents[1] / "static" / "components"
-          / "transcript.js").read_text(encoding="utf-8")
-    m = re.search(r"const BRIEF_FIELD = \{(.*?)\};", js, re.DOTALL)
-    assert m, "transcript.js lost its BRIEF_FIELD map"
-    parsed = dict(re.findall(r'(\w+): "(\w+)"', m.group(1)))
-    assert parsed == BRIEF_FIELD
+# The console's copy of BRIEF_FIELD is held in lockstep by tests/test_brief_field_mirror.py —
+# its own module since D288, because reading `static/` to check a Python table is a different
+# responsibility from the action contract this file covers.
 
 
 @pytest.mark.parametrize(
@@ -79,9 +66,6 @@ def test_transcript_js_brief_field_mirrors_python():
         {"say": "s", "kind": "script", "name": "poll-inbox", "args": ["--json"]},
         {"say": "s", "kind": "shell", "command": "git log --oneline -5", "timeout_s": 60,
          "path": "state"},
-        {"say": "s", "kind": "llm", "prompt": "p", "system": "sys", "response_schema": {"type": "object"}},
-        {"say": "s", "kind": "decide", "question": "Which queue?",
-         "options": ["access: account access", "billing: payments"], "evidence": "locked out"},
         {"say": "s", "kind": "child", "prompt": "do x", "label": "research", "workflow": "general-task"},
         {"say": "s", "kind": "detach", "prompt": "scrape it", "label": "scrape", "workflow": "general-task"},
         {"say": "s", "kind": "schedule_run", "target": "r", "fire_at": "+3d", "reason": "x"},
@@ -129,7 +113,7 @@ def test_valid_actions_pass_both_layers(action):
         ({"say": "s", "kind": "write_file", "path": "x"}, "content"),
         ({"say": "s", "kind": "finish", "status": "ok"}, "summary"),
         ({"say": "s", "kind": "ask_user", "question": "q?", "args": ["ls"]}, "do not belong"),
-        ({"say": "s", "kind": "llm", "prompt": "p", "path": "x"}, "do not belong"),
+        ({"say": "s", "kind": "child", "prompt": "p", "path": "x"}, "do not belong"),
         # .memory/ is fenced off from the generic file actions …
         ({"say": "s", "kind": "read_file", "path": ".memory/INDEX.md"}, "memory_read"),
         ({"say": "s", "kind": "write_file", "path": "./.memory/x.md", "content": "y"}, "memory_write"),

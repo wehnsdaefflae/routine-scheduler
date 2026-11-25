@@ -1,4 +1,4 @@
-# Decision models and the `decide` action
+# Decision models and the typed-question capability
 
 A **decision model** answers a typed question with **probabilities over the answers it was
 offered** — never text. Give it some evidence and a question; it returns P(yes) for a yes/no
@@ -11,15 +11,15 @@ runs on predator.
 Most decisions a routine makes are small — route this, screen that, is this evidence enough. A
 chat model answers them by writing a sentence the run then parses back into an `if`. A decision
 model *is* the `if`: there is no reply text, so there is no empty completion that looks like
-agreement, no refusal hidden in prose and no malformed JSON — the failure modes `llm` spends most
-of its handler on (`engine/llmaction.py`). It is also fast and cheap: one reading of the evidence
+agreement, no refusal hidden in prose and no malformed JSON — the failure modes a free-text
+model call has to defend against. It is also fast and cheap: one reading of the evidence
 answers every question asked of it, and output tokens are free or nonexistent.
 
 ## The catalog
 
 Decision models have their own catalog beside the LLM one, in Settings → **Decision endpoints**
-(or `config.yaml`). It is separate on purpose: no chat role can resolve into a decision model, and
-`decide` can never be handed a chat model — the two contracts are different.
+(or `config.yaml`). It is separate on purpose: no chat role can resolve into a decision model, and a typed
+question can never be handed a chat model — the two contracts are different.
 
 ```yaml
 decision_endpoints:
@@ -51,16 +51,18 @@ loader reports a model bound to a missing endpoint, a default that is not in the
 image default that does not take images (`config/decisionconf.py`). Each model card has a **test** button: one yes/no question with
 an obvious answer, showing latency, P(yes) and usage.
 
-**An instance with no decision model never shows a run the `decide` action** — the kind is
-projected out of the schema, the prose and CAPABILITIES (`engine/loopsetup.py`), so configuring
-the first one is what switches it on.
+**An instance with no decision model tells a run nothing about typed questions** — the
+CAPABILITIES line naming them is empty when the catalog is (`engine/decisioncatalog.py`), so
+configuring the first model is what makes the capability visible. Until D288 this was a KIND
+projected out of the schema; since the capability travels by util, what is withheld is the
+knowledge of which models answer, which is the thing a run needs to name one.
 
 ### Per routine
 
 A routine (or a conversation) can pick its own decision models, the way it picks its chat ones:
 the routine page's **Models** group carries two more roles once the instance has a decision
-model — `decision` (the decide action) and `decision_media` (decide calls that carry images,
-offering only the models that take them). A conversation's header carries the `decide` picker.
+model — `decision` (typed questions) and `decision_media` (those that carry images,
+offering only the models that take them). A conversation's header carries the picker.
 They live in the same `models:` map in routine.yaml:
 
 ```yaml
@@ -88,7 +90,7 @@ The engine asks the same model one question of its own: while a run holds a mach
 has root rights, *would this call risk serious harm?* — the call and the five before it as
 evidence (the routine's `root_check` picks which calls: `remote` commands, `any` tool call, or
 `off`), the routine's `decision` role (else the instance default) answering, the spend folded
-into the run like any `decide`. P(risky) ≥ 0.5, or no answer at all, holds the call for the
+into the run like any typed question. P(risky) ≥ 0.5, or no answer at all, holds the call for the
 operator (docs/remote-machines.md § Root command check).
 
 ## The protocol
@@ -108,32 +110,33 @@ env file), auth failures flagged for the UI — and every call is recorded like 
 so it shows in the LLM activity dock while it runs. Usage folds into the run's budget; `cost` is
 booked when the provider reports it (OpenRouter as `cost`, an Otari gateway as `cost_usd`).
 
-## The `decide` action
+## Asking one
 
-```json
-{"kind": "decide", "say": "…",
- "question": "Which team should own this ticket?",
- "options": ["payments: checkout, billing, refunds", "frontend: rendering, browsers"],
- "evidence": "My checkout page shows a blank screen after I click Pay."}
-```
+Until D288 (2026-11-25) this was an action kind of its own, `decide`. The operator's ruling was
+to *convert fully*: reaching a model — free-text or typed — is a util capability, so the engine
+keeps one way of buying inference instead of two. The GRAMMAR below is unchanged, because it is
+the decision wire's, not the action's; what changed is that a run spells it as a util call and
+reads the util's own usage for the exact flags. A retired kind is refused with a correction
+naming the capability (`engine/renamedkinds.RETIRED`), so a recipe still saying `decide` is
+told where to go rather than merely refused.
 
-- `question` + `options` asks a **choice**; each option is `value: what it means` and the answer
-  names the value. No options asks **yes/no** (the answer is P(yes)). `answer_type: "score"`
-  reads the options as ordered levels, **lowest first**, and answers with the probability-weighted
+- a question + options asks a **choice**; each option is `value: what it means` and the answer
+  names the value. No options asks **yes/no** (the answer is P(yes)). A **score** reads the
+  options as ordered levels, **lowest first**, and answers with the probability-weighted
   level index. 2–26 options.
-- `questions` asks **several independent questions over the same evidence in one call** — each
-  with its own snake_case `name`, `question`, `answer_type`, `options`. One reading of the
+- a BATCH asks **several independent questions over the same evidence in one call** — each
+  with its own snake_case name, question, answer type and options. One reading of the
   evidence answers all of them; on predator the encoded images are kept in the cache across them,
   so six questions over five photos cost about one.
-- `evidence` is text or a JSON object/array. `files` adds up to 16 paths: images
+- the EVIDENCE is text or a JSON object/array, and up to 16 files may be attached: images
   (png/jpeg/webp/gif, ≤ 7 MiB each) go to a model that takes them and are judged **together**;
   text files are read in whole as named evidence fields, so a long document is classified without
-  passing through the run's own context first. Paths resolve and gate exactly like `read_file`'s.
-  At most 120,000 characters of text per call.
-- `model` names a decision model; without it the call goes to the routine's own decision role,
-  else the instance default for its payload (see *Per routine* above). Images bound for a
-  text-only model are refused before any request, naming the models that take them.
-- `background: true` defers it like an `llm` call.
+  passing through the run's own context first. At most 120,000 characters of text per call.
+- naming a MODEL picks one from the catalog; without it the call goes to the routine's own
+  decision role, else the instance default for its payload (see *Per routine* above). Images
+  bound for a text-only model are refused, naming the models that take them.
+- `background: true` defers the call like any other util call, and its spend still books
+  against the run (`engine/utilspend.py`).
 
 The observation is numbers only:
 
@@ -144,8 +147,8 @@ OBSERVATION (decide · vl8b over 2 images):
 - build: score 1.99 on 0..2, confidence 0.99 — [0] slight 0.000 · [1] average 0.010 · [2] strong 0.990
 ```
 
-A decision model gives no reasons. Act on the probability with a threshold you can name, and ask
-`llm` when the reason matters. Probabilities from a quantised local model are uncalibrated unless
+A decision model gives no reasons. Act on the probability with a threshold you can name, and
+ask a chat model when the reason matters. Probabilities from a quantised local model are uncalibrated unless
 a temperature was fitted for the workload — the 9B's measured calibration was good, the 4B's was
 not (below).
 

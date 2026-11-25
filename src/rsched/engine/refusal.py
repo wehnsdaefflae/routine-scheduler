@@ -1,16 +1,24 @@
 """Refusal handling — detect reliably, FLAG, and TAKE OVER on the uncensored model.
 
 A refusal is a fact of that endpoint, not a verdict on the run: a routine configures an
-`uncensored` role so refused requests still get processed. Every seam (the turn loop, the
-`llm` action; free-text and classifier refusals alike) follows:
+`uncensored` role so refused requests still get processed.
+
+ONE seam reaches a model here: the TURN LOOP. The `llm` action had a second — a refused
+sub-call was re-issued whole on the uncensored model — and D288 (2026-11-25) retired that kind
+into a util capability, which took the seam with it: the back-off EPISODE is RunContext state
+(`refusal_level`, `takeover_left`, `referrals`) shared with the turn loop, and a util cannot
+join it, so a util-side retry would be a weaker behaviour wearing the same name — no `refusal`
+event, nothing counted, no window. A model a routine wants its refused work done on is that
+capability's own argument now, chosen rather than escalated to.
+
+The one surviving path (free-text and classifier refusals alike) follows:
 
 1. DETECT — a provider classifier stop (completion.REFUSAL_STOPS) is authoritative; free
    text goes through `is_refusal`: a marker in the OPENING SENTENCE may confirm at zero
    cost, only an LLM classification (tool_call model) decides the rest.
 2. FLAG — one `refusal` transcript event naming the seam, the refusing model and message.
-3. TAKE OVER — `engage_takeover` escalates the back-off EPISODE; the turn loop re-drives the
-   turn on the uncensored model, the `llm` seam re-issues the sub-call
-   (`reissue_on_uncensored`) and its reply IS the answer.
+3. TAKE OVER — `engage_takeover` escalates the back-off EPISODE and the turn loop re-drives
+   the turn on the uncensored model.
 
 THE BACK-OFF: each consecutive regular-model refusal doubles the window the uncensored model
 serves — 1 → 2 → 4 → 8 → 16 turns (TAKEOVER_CAP); the refused request is the window's first
@@ -173,46 +181,6 @@ def takeover_turn(ctx):
     ctx.takeover_left -= 1
     ctx.referrals += 1
     return target
-
-
-def reissue_on_uncensored(ctx, *, messages, schema, purpose: str,
-                          refusal: str, where: str,
-                          model: str = "") -> tuple[dict, dict | None]:
-    """The `llm` seam's takeover: a refused sub-call is re-issued WHOLE on the routine's
-    uncensored model — same messages, same schema — and its reply IS the answer. The turn
-    back-off is untouched (a sub-call is not a turn). Returns (record, reply); reply None on a
-    failed takeover, and the original refusal stands.
-    """
-    record: dict = {"where": where, "message": (refusal or "").strip()[:_FRAGMENT_CAP]}
-    if model:
-        record["model"] = model
-    try:
-        target = ctx.registry.for_uncensored(ctx.routine.models, ctx.routine.efforts)
-        if target is None:
-            record["takeover"] = False
-            record["takeover_error"] = ("no uncensored model configured — refusal "
-                                        "recorded, the original refusal stands")
-            ctx.transcript.event("refusal", record)
-            return record, None
-        endpoint, ref = target
-        completion = endpoint.complete(messages, model=ref.model, schema=schema,
-                                       effort=ref.effort,
-                                       temperature=ref.temperature,
-                                       max_tokens=ref.max_tokens,
-                                       purpose=purpose, kind="llm_action")
-    except EndpointError as exc:
-        record["takeover"] = False
-        record["takeover_error"] = str(exc)[:200]
-        ctx.transcript.event("refusal", record)
-        return record, None
-    ctx.add_usage(completion.usage)
-    ctx.referrals += 1
-    record.update({"takeover": True, "takeover_model": ref.name or ref.model,
-                   "reply": (completion.text or "").strip()[:_FRAGMENT_CAP]})
-    ctx.transcript.event("refusal", record)
-    return record, {"text": completion.text, "parsed": completion.parsed,
-                    "endpoint": ref.endpoint, "model": ref.model,
-                    "usage": completion.usage}
 
 
 def is_refusal(ctx, text: str) -> bool:

@@ -113,7 +113,7 @@ the limits (single-writer status.json preserved).
   `util name=list args=["<name>"]`) → **state digest** (phase, `state/` and `artifacts/` — each capped at
   `composer.DIR_LIST_MAX` entries, newest first — stage modules, held rules, last result,
   the LEDGER's earlier entries, open/answered questions, inbox messages). Effect actions (`util`/`read_file`/`write_file`/
-  `edit_file`/`llm`) run through `engine/executor.py`; a `write_file`/`edit_file` may carry
+  `edit_file`/`read_file`) run through `engine/executor.py`; a `write_file`/`edit_file` may carry
   `then_script` — one of the routine's scripts, run the moment the change lands, both results in
   ONE observation (`engine/thenscript.py`, SoL-Pi's Action Fusion: 1,089 of 3,459 writes in 160
   fleet runs were followed straight by a run of the file just changed, each a whole turn). The
@@ -562,7 +562,7 @@ else at `system_effort`. `config.base.EFFORT_LEVELS` is the one vocabulary
 Endpoints hold only transport + auth + those DEFAULTS; `multimodal` is NOT on the endpoint (one
 endpoint serves many models with different windows and vision support). Each **routine
 references models BY NAME** (`routine.yaml` `models:` maps a role → catalog name): `main` (the
-loop — and every spawned child's default), `tool_call` (the `llm` action), optional
+loop — and every spawned child's default), `tool_call` (a scoped model call), optional
 `uncensored` — plus the two DECISION roles `decision` / `decision_media`, which name a decision
 model (below) and fall back to the instance's decision defaults instead. A chat role left unset
 falls back to an INSTANCE DEFAULT, resolved by the one pure rule
@@ -573,7 +573,7 @@ name) — the ONE model for pre-routine machine work (the clarify flow + workflo
 generation/suggestion). `system_tool_call_model` SHIPS EMPTY, so nothing moved at the release:
 before it existed there was no instance default for the role at all, and 31 of 32 routines
 therefore resolved `main` and `tool_call` to one model — a `role_swap: cheap` turn saved exactly
-nothing while the run believed it did. A single `llm`/`child` call may override its model per call
+nothing while the run believed it did. A single `child` call may override its model per call
 (`model:` a role — main|tool_call|uncensored — or a CATALOG model name; D81, extended by
 the 2026-08-22 order retiring the subroutine role. The `list_models` action shows the
 catalog; an unconfigured `uncensored` or an unknown name is rejected with a teaching note). `EndpointRegistry.resolve(name)` /
@@ -609,7 +609,7 @@ fails exactly as before; models without `fallbacks` behave exactly as before.
 transport contract — evidence + typed questions in, probabilities out (`endpoints/decisions.py`,
 one adapter for the one wire protocol: `decisions_systemone.py` for TypeSafe's Jev, direct, through
 OpenRouter or an Otari gateway, and the predator server). No chat role
-resolves into one and the `decide` action (`engine/decideaction.py`) reaches nothing else; an
+resolves into one and a typed question (`endpoints/decisions.py`) reaches nothing else; an
 instance with none configured never shows a run the kind. A call is recorded through
 `instrument.observe_call`, so it shows in the activity dock like a completion, and its usage folds
 into the run's budget. See docs/decision-models.md.
@@ -1126,7 +1126,7 @@ and the capabilities digest's catalog listing):
 - **A SINGLE ACTION in the background (`background: true`, D118)** is the third and smallest unit,
   and the one that keeps the SAME context: not a child run and not a detached job, just one slow
   step the run should not sit through. `engine/actions.BACKGROUNDABLE_KINDS` — `util`, `script`,
-  `shell`, `llm`, `decide`, `read_file`, `view_image`, `memory_read`, `read_rule`, each a read or
+  `shell`, `websearch`, `code_search`, `read_file`, `view_image`, `memory_read`, `read_rule`, each a read or
   a fetch whose only effect is its observation — may carry the flag.
   `actionroute.dispatch_action` runs the kind's CALL-TIME GATE first and synchronously
   (`_gate_for_background` → the D39 secret gate for `util`/`script`, which a thread cannot run
@@ -1154,7 +1154,7 @@ and the capabilities digest's catalog listing):
   `utils_run.run_jailed` ends the command's whole process group through `procgroup.terminate`
   (F586/D160-C). A proxy and not a mutated context because the real one is shared with the live
   turn; a delegate and not a copy because transcript/meter/usage-lock IDENTITY carries the
-  parked-spend booking (D167). For `llm`, `decide` and the reads — inside the interpreter, where
+  parked-spend booking (D167). For the reads — inside the interpreter, where
   Python has no interruption point — only the delivery stops and the call runs to its own end
   unread. Either way the spend books (D167), and `stopped_work` on both observations says which of
   the two happened; both promises are stated in the `handle` field's own schema description,

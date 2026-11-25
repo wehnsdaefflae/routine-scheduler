@@ -13,7 +13,6 @@ Grammar per kind (quotes via shlex where tokenized; <content…> tails are verba
   /view_image <path> [what to look for…]
   /write_file <path> <content…>
   /edit_file <path> anchor="…" replacement="…"
-  /llm <prompt…>
   /memory_read <name>
   /memory_write <name> about="…" <content…>
 """
@@ -22,6 +21,8 @@ from __future__ import annotations
 
 import re
 import shlex
+
+from . import renamedkinds
 
 
 class CommandError(ValueError):
@@ -43,8 +44,6 @@ COMMAND_HELP = (
      "write a file — everything after the path is the content, verbatim"),
     ("edit_file", '/edit_file <path> anchor="…" replacement="…"',
      "replace an exact anchor string in a file, in place"),
-    ("llm", "/llm <prompt…>",
-     "one stateless LLM subcall on this conversation's tool-call model"),
     ("memory_read", "/memory_read <name>",
      "read one persistent memory note"),
     ("memory_write", '/memory_write <name> about="…" <content…>',
@@ -98,12 +97,6 @@ def _edit_file(tail: str) -> dict:
     return {"path": tokens[0], "anchor": pairs["anchor"], "replacement": pairs["replacement"]}
 
 
-def _llm(tail: str) -> dict:
-    if not tail:
-        raise CommandError("usage: /llm <prompt…>")
-    return {"prompt": tail}
-
-
 def _memory_read(tail: str) -> dict:
     tokens = _split(tail, "/memory_read <name>")
     return {"name": tokens[0]}
@@ -133,7 +126,6 @@ _PARSERS = {
     "view_image": _view_image,
     "write_file": _write_file,
     "edit_file": _edit_file,
-    "llm": _llm,
     "memory_read": _memory_read,
     "memory_write": _memory_write,
 }
@@ -151,6 +143,14 @@ def parse_command(text: str) -> dict:
     parser = _PARSERS.get(kind)
     if parser is None:
         known = ", ".join(f"/{k}" for k, _u, _s in COMMAND_HELP)
+        if kind in renamedkinds.RETIRED:
+            # A command whose KIND was retired: say where the capability went, not merely
+            # that the word is unknown. `/util` takes what the util itself takes.
+            capability, _why = renamedkinds.RETIRED[kind]
+            raise CommandError(
+                f"/{kind} is retired — {capability} is a util capability now, so it is "
+                f"reached with /util <name> …; /util list shows the catalog. Available "
+                f"commands: {known}.")
         raise CommandError(
             f"unknown command /{kind} — available: {known}. Loop-control actions "
             "(child, wait, ask_user, finish, …) steer the assistant's run: "

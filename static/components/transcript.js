@@ -59,9 +59,9 @@ import { el, fmtTime, fmtTokens } from "/static/util.js";
 // has a renderer in it).
 
 // Mirror of engine/actionschema.py BRIEF_FIELD (the source of truth; static/ is no-build and
-// cannot import it) — a kind missing here renders its turn line with an EMPTY brief, which is
-// how this map drifted 10 kinds behind before the 2026-08-21 sweep caught it.
-// tests/test_actions.py now holds the two in lockstep.
+// cannot import it) — a kind missing here renders an EMPTY brief, which is how this map drifted
+// 10 kinds behind before the 2026-08-21 sweep. tests/test_brief_field_mirror.py holds the two in
+// lockstep, allowing only a RETIRED kind (D288's llm, decide), which nothing can emit any more.
 const BRIEF_FIELD = { util: "name", websearch: "args", code_search: "args", write_util: "name",
   remove_util: "name", read_file: "path", view_image: "path", script: "name", shell: "command",
   write_file: "path", delete: "path", move: "src", mkdir: "path", edit_file: "path",

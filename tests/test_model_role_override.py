@@ -1,9 +1,13 @@
-"""The optional `model` field on llm/spawn/subtask (D81, extended by the 2026-08-22 user
-order): a ROLE (main/tool_call/uncensored) or a CATALOG model NAME — llm defaults to
-tool_call, children (spawn/subtask) default to the routine's MAIN model (the per-routine
-subroutine role is retired). 'uncensored' is rejected with a teaching observation when the
-routine has no models.uncensored entry; an unknown catalog name is a teaching error naming
-the real catalog; an explicit uncensored llm call is never re-referred.
+"""The optional `model` field on a CHILD run (D81, extended by the 2026-08-22 user order):
+a ROLE (main/tool_call/uncensored) or a CATALOG model NAME, defaulting to the routine's MAIN
+model (the per-routine subroutine role is retired). 'uncensored' is rejected with a teaching
+observation when the routine has no models.uncensored entry; an unknown catalog name is a
+teaching error naming the real catalog.
+
+D288 (2026-11-25) left `child` the only kind taking the field: `llm` and `decide` retired into
+a util capability, where the model is an argument of the call. What `list_models` reports —
+the resolved role bindings and the catalog a name is checked against — is unchanged, and is
+the half of this subject that still lives in the engine.
 """
 
 from types import SimpleNamespace
@@ -11,7 +15,6 @@ from types import SimpleNamespace
 from rsched.config import ModelRef
 from rsched.endpoints.base import Completion
 from rsched.engine.actions import validate_action
-from rsched.engine.llmaction import do_llm
 from rsched.engine.subruns import SubrunManager
 
 
@@ -70,60 +73,25 @@ def _ctx(registry):
 
 
 def test_schema_accepts_roles_and_catalog_names():
-    # the schema no longer enums the field: roles AND catalog names pass, spawn included —
+    # the schema no longer enums the field: roles AND catalog names pass —
     # membership is checked at dispatch, where the teaching error can name the catalog
     for action in (
-        {"say": "s", "kind": "llm", "prompt": "p", "model": "main"},
         {"say": "s", "kind": "child", "mode": "sequential", "prompt": "p", "model": "uncensored"},
-        {"say": "s", "kind": "llm", "prompt": "p", "model": "glm-5"},
         {"say": "s", "kind": "child", "prompt": "p", "model": "main"},
     ):
         assert validate_action(action) == []
 
 
-def test_llm_role_override_resolves_that_role():
-    reg = _Registry()
-    obs = do_llm({"prompt": "p", "model": "main", "say": "s"}, _ctx(reg))
-    # roles[0] is the reply's serving role. Detection is the HARNESS's job now (operator
-    # 2026-08-22): a non-marker free-text reply is classified by the tool_call model,
-    # which always resolves — so every free-text reply costs one classify subcall
-    # regardless of any uncensored role. roles = [serving, classify].
-    assert obs["reply"] == "reply" and reg.roles == ["main", "tool_call"]
-    reg2 = _Registry()
-    do_llm({"prompt": "p", "say": "s"}, _ctx(reg2))
-    assert reg2.roles == ["tool_call", "tool_call"]   # default serving + classify subcall
+def test_only_a_child_run_still_takes_a_model_field():
+    """D288: `llm` and `decide` carried this field too, and both retired into a util
+    capability — where the model is an argument of the call, not of an action. So `child` is
+    the one kind left that takes it, and an action naming it anywhere else is refused.
+    """
+    from rsched.engine.actions import KIND_FIELDS
 
-
-def test_llm_catalog_name_override_resolves_by_name():
-    reg = _Registry()
-    obs = do_llm({"prompt": "p", "model": "glm-5", "say": "s"}, _ctx(reg))
-    assert obs["reply"] == "reply"
-    assert reg.names == ["glm-5"]
-    # detection is the harness's job (operator 2026-08-22): the classify subcall targets
-    # the tool_call model, which always resolves — no honeypot needed for detection
-    assert reg.roles == ["tool_call"]
-
-
-def test_llm_unknown_model_is_a_teaching_error_naming_the_catalog():
-    reg = _Registry()
-    obs = do_llm({"prompt": "p", "model": "nope-9", "say": "s"}, _ctx(reg))
-    assert "nope-9" in obs["error"] and "glm-5" in obs["error"]   # the catalog is taught
-    assert reg.roles == [] and reg.names == []                    # nothing was called
-
-
-def test_llm_uncensored_unconfigured_is_a_teaching_error():
-    reg = _Registry(unc=False)
-    obs = do_llm({"prompt": "p", "model": "uncensored", "say": "s"}, _ctx(reg))
-    assert "uncensored" in obs["error"] and reg.roles == []   # no endpoint call happened
-
-
-def test_llm_explicit_uncensored_is_not_re_referred():
-    reg = _Registry(unc=True)
-    reg.eps["uncensored"] = _Ep(text="I'm sorry, but I can't help with that request.")
-    obs = do_llm({"prompt": "p", "model": "uncensored", "say": "s"}, _ctx(reg))
-    # the refusal-shaped text comes back verbatim: one call, no referral loop
-    assert obs["reply"].startswith("I'm sorry") and reg.roles == ["uncensored"]
-    assert not obs.get("referred")
+    takers = {k for k, (req, opt) in KIND_FIELDS.items() if "model" in (*req, *opt)}
+    assert takers == {"child"}
+    assert validate_action({"say": "s", "kind": "util", "name": "x", "model": "main"}) != []
 
 
 def _child_ctx(registry):
@@ -188,54 +156,10 @@ def test_list_models_reports_an_unresolvable_uncensored_role_instead_of_raising(
     assert obs["roles"]["main"]["model"] == "main-model"
 
 
-class _EmptyEp(_Ep):
-    """An endpoint that returns a zero-length completion with no error — R1611's shape."""
+# R1611's empty-completion guard lived in `do_llm` and went with it (D288). Its two units
+# were deleted here rather than moved, because there is no engine code left to assert against:
+# a model call is a util call now. THE GUARD ITSELF IS OWED BY THE UTIL, and F921 ("a model
+# call returning EMPTY content exits 0 — the caller cannot tell it from a real answer") says
+# the util does not yet have it. That gap is reported, not papered over here: a test asserting
+# engine behaviour nobody can reach would read as coverage while guarding nothing.
 
-    def complete(self, messages, **kw):
-        self.calls.append(kw)
-        return Completion(text="", parsed=None, usage={"in": 7, "out": 0})
-
-
-class _EmptyRegistry(_Registry):
-    def for_model(self, kind, models, efforts):
-        self.roles.append(kind)
-        ep = self.eps.setdefault(kind, _EmptyEp())
-        return ep, ModelRef(f"{kind}-ep", f"{kind}-model")
-
-
-def test_an_empty_llm_completion_is_an_error_not_a_silent_empty_answer():
-    """R1611: three consecutive empty replies across two models, on a prompt quoting a
-    security-disclosure draft, after a near-identical call had answered fully minutes earlier.
-    """
-    reg = _EmptyRegistry()
-    usage: list[dict] = []
-    ctx = SimpleNamespace(registry=reg, routine=SimpleNamespace(models={}, efforts={}),
-                          server=_server(), add_usage=usage.append)
-    obs = do_llm({"prompt": "p", "say": "s"}, ctx)
-
-    assert "reply" not in obs, "an empty completion must not be handed over as a reply"
-    assert "EMPTY completion" in obs["error"]
-    # the error names the model, so a caller can tell WHICH one went silent
-    assert "tool_call-model" in obs["error"]
-    # tokens were still spent and are still accounted for
-    assert usage == [{"in": 7, "out": 0}]
-    # and it never reaches the refusal classifier: exactly one call was made
-    assert reg.roles == ["tool_call"]
-
-
-def test_a_whitespace_only_completion_counts_as_empty():
-    """The same defect wearing a newline. A reply of "\\n  " is not an answer either, and a
-    caller cannot tell it from one.
-    """
-    reg = _EmptyRegistry()
-    reg.eps["tool_call"] = _EmptyEp()
-    reg.eps["tool_call"]._text = "\n  \t "
-
-    class _WsEp(_EmptyEp):
-        def complete(self, messages, **kw):
-            self.calls.append(kw)
-            return Completion(text="\n  \t ", parsed=None, usage={"in": 3, "out": 1})
-
-    reg.eps["tool_call"] = _WsEp()
-    obs = do_llm({"prompt": "p", "say": "s"}, _ctx(reg))
-    assert "reply" not in obs and "EMPTY completion" in obs["error"]

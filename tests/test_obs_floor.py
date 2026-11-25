@@ -47,7 +47,17 @@ def test_a_kind_listed_as_wording_its_own_errors_really_does(kind, monkeypatch):
 
 
 def test_the_own_errors_list_names_only_real_kinds():
-    assert set(KINDS) >= obs_floor.OWN_ERRORS
+    """A live kind, or one that RETIRED into a util capability (D288) — never a typo.
+
+    A retired kind's RECORDED results are still rendered (a resumed leg, past-run search, the
+    console), and floor 1 runs before the per-kind chain, so dropping its name here would make
+    an old error read differently than it did live. The guard keeps its force: the set may hold
+    no name that is not one or the other.
+    """
+    from rsched.engine.renamedkinds import RETIRED
+
+    assert set(KINDS) | set(RETIRED) >= obs_floor.OWN_ERRORS
+    assert obs_floor.OWN_ERRORS & set(RETIRED) == {"llm", "decide"}
 
 
 def test_the_generic_failure_names_what_the_action_was_about():

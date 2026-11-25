@@ -1582,17 +1582,16 @@ def test_wait_yields_to_a_pending_user_message(make_routine, scripted):
                for e in events)
 
 
-def test_llm_subcall(make_routine, scripted):
+def test_a_retired_kind_is_refused_and_teaches_the_capability(make_routine, scripted):
+    """D288 end to end: a recipe still saying `llm` is told where the capability went, since a
+    bare schema refusal names no replacement and a run then re-sends it (F637)."""
     _d, ep, status, _run_dir, events = _run(make_routine, scripted, [
-        {"say": "Scoped call.", "kind": "llm", "prompt": "Summarize: hello world"},
-        "a plain text llm reply",   # ← consumed by the subcall (no schema → text)
-        finish(),
-    ])
+        {"say": "Scoped call.", "kind": "llm", "prompt": "Summarize: hello world"}, finish()])
     assert status == "ok"
-    obs = next(e for e in events if e["type"] == "observation")
-    assert obs["payload"]["kind"] == "llm" and obs["payload"]["reply"] == "a plain text llm reply"
-    assert ep.calls[1]["schema"] is None  # subcall had no response_schema
-    assert ep.calls[1]["messages"][-1]["content"] == "Summarize: hello world"
+    retry = "\n".join(m.get("content") or "" for call in ep.calls for m in call["messages"])
+    assert "RETIRED" in retry and "util" in retry, retry[-600:]
+    assert not [e for e in events if e["type"] == "observation"
+                and (e.get("payload") or {}).get("kind") == "llm"], "it reached a handler"
 
 
 def test_injection_mid_run(make_routine, scripted):
@@ -2029,7 +2028,8 @@ tools: [read_file, write_file]
     assert len(errors) == 2 and all(p.get("error") for p in errors)
     cmd_msgs = [m["content"] for m in ep.calls[0]["messages"]
                 if "USER COMMAND" in m.get("content", "")]
-    assert any("COMMAND ERROR" in m and "/llm say hi" in m for m in cmd_msgs)
+    # `/llm` is RETIRED (D288): its error names where the capability went. `/spawn` never was.
+    assert any("COMMAND ERROR" in m and "/llm say hi" in m and "retired" in m for m in cmd_msgs)
     assert any("unknown command /spawn" in m for m in cmd_msgs)
 
 

@@ -262,10 +262,6 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
         return ("OBSERVATION (report: could NOT write the reports log (I/O error) — the "
                 "report was not filed. Continue your own task; put it in your finish summary "
                 "instead.)")
-    if kind == "llm":
-        if err := obs.get("error"):
-            return f"OBSERVATION (llm subcall FAILED): {err}"
-        return f"OBSERVATION (llm reply):\n{obs['reply']}"
     if kind == "ask_user":
         # D220: a filed proof says what will check it (engine/askproof.note)
         return _ask_user(obs) + ("" if obs.get("error") else obs.get("proof_note") or "")

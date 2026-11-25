@@ -1,7 +1,7 @@
 """Refusal takeover units (engine/refusal.py, operator order 2026-10-16): engage,
-window arithmetic, the uncensored dead end, and the `llm` seam's wholesale re-issue.
+window arithmetic, the uncensored dead end, and the ONE seam that is left.
 The honeypot-era units (essence isolation, harness delivery of a fragment) are retired
-with the premise.
+with the premise; the `llm` seam's wholesale re-issue went with its kind (D288).
 """
 
 from __future__ import annotations
@@ -10,7 +10,6 @@ from helpers import run_context
 from rsched.config import ModelRef
 from rsched.endpoints.base import Completion, EndpointError
 from rsched.engine import refusal
-from rsched.engine.llmaction import do_llm
 
 REFUSAL = "I'm sorry, but I can't help with that request."
 ANSWER_TEXT = "Here is the answer you asked for."
@@ -150,54 +149,16 @@ def test_takeover_turn_closes_window_when_unresolvable(make_routine):
     assert ctx.takeover_left == 0      # the window closed, not skipped
 
 
-def test_llm_refused_call_is_reissued_whole_on_uncensored(make_routine):
-    """The `llm` seam: a refused sub-call is re-issued WHOLE - same messages - and the
-    uncensored reply IS the observation's answer. The turn episode is untouched."""
-    refuse = _Ep([Completion(text=REFUSAL)])
-    unc = _Ep([Completion(text=ANSWER_TEXT)])
+def test_only_the_turn_loop_reaches_a_model_here(make_routine):
+    """D288 removed the second seam, and this is the guard that it stays removed.
 
-    class _LLMReg(_Reg):
-        def __init__(self, main_ep, unc_ep):
-            super().__init__(unc_ep)
-            self.main_ep = main_ep
-
-        def for_model(self, kind, models, efforts):
-            return self.main_ep, ModelRef("main-ep", "main-model")
-
-    d = make_routine(slug="refllm")
-    from rsched.engine.loop import EngineLoop
-    from test_loop import TS, _server
-    loop = EngineLoop(run_context(d, TS, server=_server(d),
-                                  registry=_LLMReg(refuse, unc)),
-                      "## Run flow", "instr")
-    ctx = loop.ctx
-    action = {"kind": "llm", "prompt": "the full question", "say": "ask"}
-    out = do_llm(action, ctx)
-    assert out["takeover"] is True
-    assert out["reply"] == ANSWER_TEXT
-    assert out["model"] == "glm-unc"
-    assert unc.prompts == ["the full question"]     # WHOLE request, not an essence
-    assert out["refusal"]["takeover"] is True
-    assert ctx.takeover_left == 0                    # a sub-call is not a turn
-
-
-def test_llm_refused_without_uncensored_keeps_refusal(make_routine):
-    refuse = _Ep([Completion(text=REFUSAL)])
-    d = make_routine(slug="refllm2")
-    from rsched.engine.loop import EngineLoop
-    from test_loop import TS, _server
-    class _MainReg(_Reg):
-        def __init__(self, main_ep):
-            super().__init__(None)
-            self.main_ep = main_ep
-
-        def for_model(self, kind, models, efforts):
-            return self.main_ep, ModelRef("main-ep", "main-model")
-
-    ctx = EngineLoop(run_context(d, TS, server=_server(d),
-                                 registry=_MainReg(refuse)),
-                     "## Run flow", "instr").ctx
-    out = do_llm({"kind": "llm", "prompt": "q", "say": "ask"}, ctx)
-    assert "takeover" not in out
-    assert out["reply"] == REFUSAL
-    assert out["refusal"]["takeover"] is False
+    The `llm` action re-issued a refused SUB-CALL on the uncensored model
+    (`reissue_on_uncensored`, its only caller). The kind retired into a util capability, and
+    the episode a takeover escalates is RunContext state the turn loop owns — a util cannot
+    join it, so a util-side retry would record no `refusal` event, tick no window and count
+    no referral. Re-adding a second seam here means re-deciding that, not just re-adding code.
+    """
+    assert not hasattr(refusal, "reissue_on_uncensored")
+    arming = [name for name in vars(refusal)
+              if name.startswith(("engage", "takeover", "reissue"))]
+    assert sorted(arming) == ["engage_takeover", "takeover_turn"]

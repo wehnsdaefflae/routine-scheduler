@@ -15,7 +15,7 @@ from rsched.config import EndpointConfig, ModelConfig
 from rsched.endpoints import EndpointRegistry, routine_env
 from rsched.endpoints.base import Completion, EndpointError
 from rsched.engine.exec_env import _extra_secrets, _llm_env
-from rsched.engine.llmaction import do_list_models, do_llm
+from rsched.engine.llmaction import do_list_models
 from rsched.engine.subruns import SubrunManager
 
 DECLARING = '''"""llmish — declares the endpoint vars.
@@ -150,33 +150,10 @@ def _ctx(registry, server=None):
                            server=server or _server(), add_usage=lambda u: None)
 
 
-def test_llm_routes_a_slashed_model_through_the_endpoint_resolver():
-    reg = _Registry()
-    obs = do_llm({"prompt": "read this scan", "model": "omen/qwen3-vl-8b-instruct", "say": "s"},
-                 _ctx(reg))
-    assert obs["reply"] == "reply"
-    assert reg.specs == ["omen/qwen3-vl-8b-instruct"]
-    # the observation reports WHERE the work went, which is what a privacy claim rests on
-    assert obs["endpoint"] == "omen" and obs["model"] == "qwen3-vl-8b-instruct"
-    assert reg.roles == ["tool_call"]              # the classify subcall only
-
-
-def test_llm_unknown_model_teaches_the_endpoint_route_too():
-    reg = _Registry()
-    obs = do_llm({"prompt": "p", "model": "nope-9", "say": "s"}, _ctx(reg))
-    assert "nope-9" in obs["error"] and "opus" in obs["error"]
-    assert "<endpoint>/<model id>" in obs["error"]
-    assert "omen" in obs["error"]                  # the configured endpoints are named
-    assert reg.specs == [] and reg.roles == []     # nothing was called
-
-
-def test_a_resolution_failure_is_an_observation_not_a_raised_run():
-    class _Failing(_Registry):
-        def for_endpoint(self, spec, effort=None):
-            raise EndpointError("endpoint 'ghost' is not configured. Configured endpoints: omen.")
-
-    obs = do_llm({"prompt": "p", "model": "ghost/x", "say": "s"}, _ctx(_Failing()))
-    assert "ghost" in obs["error"] and "reply" not in obs
+# The three units that drove the `llm` ACTION through this resolver went with the kind
+# (D288): the F868 route is the UTIL's to spell now, and the env pair below is how it gets
+# there. What stays here is the resolver's own contract, asserted above against
+# `EndpointRegistry` directly — which is stronger than asserting it through a caller.
 
 
 def test_list_models_names_the_configured_endpoints():

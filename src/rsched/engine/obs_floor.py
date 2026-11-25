@@ -40,6 +40,10 @@ EVENT = "observation_render_failed"
 
 #: The kinds whose OWN renderer words an `error` result (each reads it before any success
 #: field). Every other kind's failure is worded by `failed`.
+#: `llm`/`decide` are RETIRED kinds (D288) and stay here for RECORDED results only: floor 1
+#: runs BEFORE the per-kind chain, so dropping them would make a resumed leg or the past-run
+#: search re-word an old failure the generic way, and `engine/samestub.py`'s contract is that
+#: the replay says what the live turn said. Nothing live can produce one.
 OWN_ERRORS = frozenset({"read_file", "write_file", "edit_file", "memory_write", "util", "script",
                         "llm", "decide", "create_routine", "ask_user", "kill", "wait"})
 

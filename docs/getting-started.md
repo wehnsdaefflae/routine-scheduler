@@ -56,7 +56,7 @@ tinted band, in the palette's violet — is how the system is changing and wheth
   catalog models the engine fails over to when this one's provider fails hard (transitively:
   the named list first, then each entry's own fallbacks), with a
   cooldown so a flapping provider isn't hammered. Each routine picks its models by name —
-  `main` (the loop, and every child run by default), `tool_call` (the `llm` action and the
+  `main` (the loop, and every child run by default), `tool_call` (a scoped model call and the
   engine's own subcalls) and an optional `uncensored` refusal-clarification harness (in a
   conversation, also the model a reply you flag ⚑ as a refusal is handed to) — or falls
   back to an instance default: the **system model**, except `tool_call`, which prefers the

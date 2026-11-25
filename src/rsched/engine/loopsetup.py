@@ -151,12 +151,6 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     # nothing.
     if loop.allowed_tools is not None and ctx.depth == 0:
         loop.allowed_tools |= set(obs_admin.QUEUEABLE_KINDS)
-    # `decide` needs a configured DECISION model; without one the kind is projected out.
-    from .decideaction import available as decide_available
-    if not decide_available(ctx.server):
-        from .actionschema import KINDS
-        loop.allowed_tools = (set(KINDS) if loop.allowed_tools is None
-                              else loop.allowed_tools) - {"decide"}
     # LAST of the kind decisions: a narrow revise leg holds the recipe edit kinds and nothing
     # the widenings above added (engine/reviseleg.py).
     reviseleg.configure(loop, narrow=narrow)
