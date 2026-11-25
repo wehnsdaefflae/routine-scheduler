@@ -95,31 +95,35 @@ _FEEDBACK_ENTRY = {
         "id": {"type": "string", "description": "the reminder that fired"},
         "label": {"type": "string",
                   "enum": ["could_not", "would_have", "did", "didnt"],
-                  "description": "could_not = the consequence was impossible for "
-                                 "that action (the pattern is too broad) · "
-                                 "would_have = it was on track and you avoided it · "
-                                 "did = you went ahead and it happened · didnt = you "
-                                 "went ahead and nothing bad happened"},
+                  "description": "could_not = the consequence was impossible for that "
+                                 "action (the pattern is too broad) · would_have = it was on "
+                                 "track and you avoided it · did = you went ahead and it "
+                                 "happened · didnt = you went ahead and nothing happened"},
         "disposition": {"type": "string", "enum": ["keep", "mute", "remove"],
-                        "description": "only for a hook ANOTHER routine set on you "
-                                       "(the fire says who): your say over its fate — "
-                                       "keep (leave it live), mute (silence it for the "
-                                       "rest of THIS run; its owner still sees it), "
-                                       "remove (delete it, and its owner cannot set "
-                                       "that pattern on you again). Your decision "
-                                       "outranks the routine that set it"},
+                        "description": "only for a hook ANOTHER routine set on you (the fire "
+                                       "says who), and your say outranks it: keep (leave it "
+                                       "live), mute (silence it for the rest of THIS run; its "
+                                       "owner still sees it), remove (delete it, and its owner "
+                                       "cannot set that pattern on you again)"},
     },
-    "description": "one fire's outcome: the reminder's `id` and how its hold turned out",
 }
 
 #: The field: one entry, or a LIST of them when several reminders fired on the same turn.
+#:
+#: ONE schema accepting both types rather than a `oneOf` over two: `properties` applies only to
+#: an object and `items` only to an array, so each shape is still constrained — and the entry's
+#: description prose is emitted ONCE. A `oneOf` rendered it twice, which measured +1,568 chars
+#: on the always-on prompt contract (the shrink-only ratchet caught it) for a field that says
+#: the same thing either way. The entries of a LIST are judged by `remindfields`, which judges
+#: every entry exactly as it judges a lone object.
 REMIND_FEEDBACK_FIELD = {
-    "oneOf": [_FEEDBACK_ENTRY, {"type": "array", "items": _FEEDBACK_ENTRY,
-                                "minItems": 1, "maxItems": 8}],
+    **_FEEDBACK_ENTRY,
+    "type": ["object", "array"],
+    # No `items`/`minItems`/`maxItems`: they render ~46 chars of the always-on schema dump to
+    # say what `remindfields` already enforces better — it judges EVERY entry exactly as it
+    # judges a lone object and refuses a repeated id, which no JSON Schema keyword can express.
     "description": "OPTIONAL, on any action: label how a reminder's HOLD turned out — one "
-                   "{id, label} object, or a LIST of them when SEVERAL fired on the same "
-                   "turn (every fire wants its own label). Costs no turn and is the only "
-                   "evidence that tunes the pattern — carry it as soon as you know the "
-                   "outcome. For a hook another routine set on you, `disposition` is where "
-                   "you keep, mute or remove it.",
+                   "{id, label}, or a LIST of them when SEVERAL fired on one turn (each fire "
+                   "wants its own). Costs no turn and is the only evidence that tunes the "
+                   "pattern: carry it as soon as you know.",
 }

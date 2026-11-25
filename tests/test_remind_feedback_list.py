@@ -117,10 +117,12 @@ def test_the_schema_itself_offers_both_shapes():
     from rsched.engine.actionschema import ACTION_SCHEMA
 
     field = ACTION_SCHEMA["properties"]["remind_feedback"]
-    assert "oneOf" in field, field
-    shapes = {s.get("type") for s in field["oneOf"]}
-    assert shapes == {"object", "array"}, shapes
+    assert set(field["type"]) == {"object", "array"}, field["type"]
     assert "LIST" in field["description"]
+    # ONE schema over both types, never a `oneOf`: that renders the entry's property prose
+    # TWICE into the always-on dump, measured at +1,568 chars against a ceiling the same
+    # release's own work had just lowered.
+    assert "oneOf" not in field
 
 
 def test_normalize_keeps_a_list_through_the_action_seam():
