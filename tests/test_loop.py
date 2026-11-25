@@ -2593,8 +2593,8 @@ def test_failed_archival_degrades_without_error_card(make_routine, monkeypatch):
         raise RuntimeError("proxy: call timed out after 599s")
     # the archival call is what fails, and it now fails inside its own thread — the run
     # carries on with the digest and the reason is recorded, never raised at the loop
-    from rsched.engine import compaction as compaction_mod
-    monkeypatch.setattr(compaction_mod, "archive_middle", _boom)
+    from rsched.engine import historyarchive as archive_mod
+    monkeypatch.setattr(archive_mod, "archive_middle", _boom)
 
     class _Tiny:
         context_tokens = 5000   # wide enough for the archival request to fit (see antithrash)
