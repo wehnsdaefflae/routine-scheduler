@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.614.0] — 2026-11-25
+
+**A model that ANSWERED WITH NOTHING is now distinguishable from one that answered** (F921,
+reported from outside by `llmsectest-weekday`: a voice review retried on `role:uncensored`
+returned rc=0 with empty output, twice, so the pipeline carried on, produced no rewrite, and had
+no error to act on). The turn loop had a guard; it takes the loop, so it covered only a run's
+own turns and nothing else in the instance.
+
+- **The util half.** `llm-complete` exits **6** on an empty reply and prints nothing, so a
+  caller never parses a blank as an answer. The code is documented in its usage block beside
+  2/3/4/5, with three selftest checks driving the real `main()`.
+- **The engine half: one predicate instead of five opinions.** `Completion.is_empty()` covers
+  text, `parsed` *and* `parsed_rest` — the turn loop's inline test could not see the last of
+  those. Every reply-reader now names the case rather than its own parse symptom: history
+  archival said "non-JSON" of a reply that was not JSON because it was not anything;
+  `workflows/suggest` said "malformed" and spent its repair round asking a silent model again
+  (its status vocabulary gains `empty`); `workflows/generate` said "failed lint twice", blaming
+  a draft the model never wrote; the finish verifier logged "answered without a verdict list"
+  while failing open, which made that log line the only place a silent judge could be seen.
+- **`engine/compaction.py` was SPLIT, not shaved**, when the guard pushed it over the 350-line
+  bar — along the seam its own docstring already named. The deterministic window arithmetic
+  (elide, clamp) stays in `compaction.py`; the model-driven path is `engine/historyarchive.py`
+  (schema, prompt, index, atomic swap). One-way dependency, no back-compat alias.
+- Four hand-rolled completion stand-ins in the test suite now use the real `Completion`: they
+  had drifted from the dataclass the moment it grew a member, and the drift read as a defect in
+  the code under test.
+
 ## [0.613.0] — 2026-11-25
 
 **`llm` and `decide` are no longer action kinds** (D288, the operator's *"Convert fully"*, and
