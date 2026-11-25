@@ -199,8 +199,13 @@ def refuted(loop, claims: list[dict], summary: str) -> list[dict]:
     ctx.add_usage(completion.usage)
     verdicts = _verdicts(completion)
     if verdicts is None:
-        log.warning("finish: the claim judge answered without a verdict list — accepting the "
-                    "met claims unchecked")
+        # F921: an EMPTY reply is not "answered without a verdict list" — the judge did not
+        # answer at all. Both fail open (the run's word stands), so the log line is the only
+        # place the difference can be seen, and a silent judge is a fleet fact worth seeing.
+        log.warning("finish: the claim judge %s — accepting the met claims unchecked",
+                    "returned an EMPTY completion (stop_reason=%s)"
+                    % (completion.stop_reason or "unreported") if completion.is_empty()
+                    else "answered without a verdict list")
         return []
     by_id = {c["id"]: c for c in claims}
     out = []

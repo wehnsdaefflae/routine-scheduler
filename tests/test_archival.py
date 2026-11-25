@@ -44,9 +44,9 @@ def _run_to_completion(loop):
 # --- the happy path ---------------------------------------------------------------------
 
 def test_the_run_keeps_its_turn_and_the_archive_lands_behind_it(tmp_path, monkeypatch):
-    from rsched.engine import compaction
+    from rsched.engine import historyarchive
 
-    monkeypatch.setattr(compaction, "archive_middle", _fake_archive(
+    monkeypatch.setattr(historyarchive, "archive_middle", _fake_archive(
         {"mode": "llm-history", "history_files": 3, "elided_messages": 8,
          "usage": {"in": 100, "out": 20}}))
     loop = _loop(tmp_path)
@@ -69,9 +69,9 @@ def test_the_note_is_appended_and_the_digest_is_left_alone(tmp_path, monkeypatch
     """Rewriting the digest would be a SECOND rewrite of the prefix and a second cache
     invalidation for one compaction. Appending costs nothing and keeps the message list
     append-only, which is the contract everywhere else."""
-    from rsched.engine import compaction
+    from rsched.engine import historyarchive
 
-    monkeypatch.setattr(compaction, "archive_middle", _fake_archive(
+    monkeypatch.setattr(historyarchive, "archive_middle", _fake_archive(
         {"mode": "llm-history", "history_files": 1, "elided_messages": 2}))
     head = [{"role": "system", "content": "S"}, {"role": "user", "content": "CONTEXT COMPACTED"}]
     loop = _loop(tmp_path, messages=head)
@@ -83,9 +83,9 @@ def test_the_note_is_appended_and_the_digest_is_left_alone(tmp_path, monkeypatch
 
 
 def test_collect_does_nothing_while_the_archive_is_still_running(tmp_path, monkeypatch):
-    from rsched.engine import compaction
+    from rsched.engine import historyarchive
 
-    monkeypatch.setattr(compaction, "archive_middle", _fake_archive(
+    monkeypatch.setattr(historyarchive, "archive_middle", _fake_archive(
         {"mode": "llm-history", "history_files": 1}, delay=5))
     loop = _loop(tmp_path)
     archival.start(loop, [{"role": "user", "content": "m"}], object(), object(), 1)
@@ -95,9 +95,9 @@ def test_collect_does_nothing_while_the_archive_is_still_running(tmp_path, monke
 
 
 def test_only_one_archival_runs_at_a_time(tmp_path, monkeypatch):
-    from rsched.engine import compaction
+    from rsched.engine import historyarchive
 
-    monkeypatch.setattr(compaction, "archive_middle", _fake_archive(
+    monkeypatch.setattr(historyarchive, "archive_middle", _fake_archive(
         {"mode": "llm-history", "history_files": 1}, delay=5))
     loop = _loop(tmp_path)
     archival.start(loop, [{"role": "user", "content": "m"}], object(), object(), 1)
@@ -111,9 +111,9 @@ def test_only_one_archival_runs_at_a_time(tmp_path, monkeypatch):
 def test_a_failed_archival_is_recorded_and_the_digest_stands(tmp_path, monkeypatch):
     """Exactly where the synchronous path landed on a failure — and visible, because a silent
     degrade is how a broken archival model goes unnoticed."""
-    from rsched.engine import compaction
+    from rsched.engine import historyarchive
 
-    monkeypatch.setattr(compaction, "archive_middle",
+    monkeypatch.setattr(historyarchive, "archive_middle",
                         _fake_archive(RuntimeError("archival model returned non-JSON")))
     loop = _loop(tmp_path)
     archival.start(loop, [{"role": "user", "content": "m"}], object(), object(), 3)
@@ -126,9 +126,9 @@ def test_a_failed_archival_is_recorded_and_the_digest_stands(tmp_path, monkeypat
 
 
 def test_an_empty_archive_is_a_degrade_not_a_success(tmp_path, monkeypatch):
-    from rsched.engine import compaction
+    from rsched.engine import historyarchive
 
-    monkeypatch.setattr(compaction, "archive_middle", _fake_archive(None))
+    monkeypatch.setattr(historyarchive, "archive_middle", _fake_archive(None))
     loop = _loop(tmp_path)
     archival.start(loop, [{"role": "user", "content": "m"}], object(), object(), 3)
     _run_to_completion(loop)
@@ -143,9 +143,9 @@ def test_an_empty_archive_is_a_degrade_not_a_success(tmp_path, monkeypatch):
 def test_a_finishing_run_settles_an_archive_that_is_nearly_done(tmp_path, monkeypatch):
     """Without this a run that ends shortly after compacting drops its archive on the floor —
     and the archive still has readers after the run: the search index covers history/."""
-    from rsched.engine import compaction
+    from rsched.engine import historyarchive
 
-    monkeypatch.setattr(compaction, "archive_middle", _fake_archive(
+    monkeypatch.setattr(historyarchive, "archive_middle", _fake_archive(
         {"mode": "llm-history", "history_files": 2, "usage": {"in": 5, "out": 1}}, delay=0.05))
     loop = _loop(tmp_path)
     archival.start(loop, [{"role": "user", "content": "m"}], object(), object(), 9)
@@ -159,10 +159,10 @@ def test_a_finishing_run_settles_an_archive_that_is_nearly_done(tmp_path, monkey
 def test_a_finishing_run_abandons_an_archive_that_would_stall_it(tmp_path, monkeypatch):
     """Waiting the full archival timeout would put the 180-600s stall back, at the moment a
     conversation's reply is due. The digest and the transcript are what remain."""
-    from rsched.engine import compaction
+    from rsched.engine import historyarchive
 
     monkeypatch.setattr(archival, "SETTLE_SECONDS", 0.05)
-    monkeypatch.setattr(compaction, "archive_middle", _fake_archive(
+    monkeypatch.setattr(historyarchive, "archive_middle", _fake_archive(
         {"mode": "llm-history", "history_files": 1}, delay=5))
     loop = _loop(tmp_path)
     archival.start(loop, [{"role": "user", "content": "m"}], object(), object(), 9)
@@ -178,17 +178,17 @@ def test_a_finishing_run_abandons_an_archive_that_would_stall_it(tmp_path, monke
 def test_abandoning_an_archive_terminates_its_open_llm_record(tmp_path, monkeypatch):
     """F572: the abandoned call must report back, because nothing else ever will."""
     from rsched.endpoints import instrument
-    from rsched.engine import compaction
+    from rsched.engine import historyarchive
 
     records: list[dict] = []
     monkeypatch.setattr(instrument, "_sink", SimpleNamespace(record=records.append))
     monkeypatch.setattr(archival, "SETTLE_SECONDS", 0.05)
-    monkeypatch.setattr(compaction, "archive_middle", _fake_archive(
+    monkeypatch.setattr(historyarchive, "archive_middle", _fake_archive(
         {"mode": "llm-history", "history_files": 1}, delay=5))
     # the archival call has started and cannot report back (its thread is still in flight)
     instrument.note_started(instrument.make_record(
         "started", id="arch01", endpoint="e", model="m",
-        purpose=compaction.ARCHIVAL_PURPOSE, kind="compaction"))
+        purpose=historyarchive.ARCHIVAL_PURPOSE, kind="compaction"))
     # a turn call in flight beside it must be left alone — giving up on the archive says
     # nothing about the run's own turn
     instrument.note_started(instrument.make_record(
@@ -204,7 +204,7 @@ def test_abandoning_an_archive_terminates_its_open_llm_record(tmp_path, monkeypa
     assert [r["id"] for r in records] == ["arch01"]
     assert records[0]["phase"] == "failed"
     assert records[0]["error"] == "the run ended before the archive finished"
-    assert records[0]["purpose"] == compaction.ARCHIVAL_PURPOSE
+    assert records[0]["purpose"] == historyarchive.ARCHIVAL_PURPOSE
 
 
 def test_settling_with_nothing_in_flight_is_a_no_op(tmp_path):
@@ -216,9 +216,9 @@ def test_settling_with_nothing_in_flight_is_a_no_op(tmp_path):
 def test_the_thread_is_a_daemon_so_it_cannot_outlive_the_process(tmp_path, monkeypatch):
     """_swap_in_history is two atomic renames with a restore on failure, so a thread killed
     at process exit cannot leave a half-written archive behind."""
-    from rsched.engine import compaction
+    from rsched.engine import historyarchive
 
-    monkeypatch.setattr(compaction, "archive_middle", _fake_archive(
+    monkeypatch.setattr(historyarchive, "archive_middle", _fake_archive(
         {"mode": "llm-history", "history_files": 1}, delay=5))
     loop = _loop(tmp_path)
     archival.start(loop, [{"role": "user", "content": "m"}], object(), object(), 1)

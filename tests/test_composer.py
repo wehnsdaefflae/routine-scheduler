@@ -506,14 +506,14 @@ def test_format_observation_variants():
 
 
 def _history_endpoint(payload):
-    class _Comp:
-        parsed = payload
-        text, usage = "", {"in": 1, "out": 1}
+    # The REAL Completion, not a duck-type: a hand-rolled stand-in drifts from the dataclass
+    # the moment it grows a member (`is_empty`, F921) and the drift reads as a code defect.
+    from rsched.endpoints.base import Completion
 
     class _Ep:
         def complete(self, messages, **k):
             self.last_prompt = messages[-1]["content"]
-            return _Comp()
+            return Completion(text="", parsed=payload, usage={"in": 1, "out": 1})
 
     return _Ep()
 
@@ -541,7 +541,7 @@ def _history_middle():
 
 def test_archive_middle_writes_navigable_files(tmp_path):
     from rsched.config import ModelRef
-    from rsched.engine.compaction import archive_middle
+    from rsched.engine.historyarchive import archive_middle
 
     ep = _history_endpoint({"files": [
         {"name": "Research Notes!", "about": "what we found", "content": "found X\nfound Y"},
@@ -577,15 +577,12 @@ def test_archive_middle_non_json_reply_names_the_model(tmp_path):
     import pytest
 
     from rsched.config import ModelRef
-    from rsched.engine.compaction import archive_middle
-
-    class _Comp:
-        parsed = None
-        text, usage = "Sorry, I cannot produce JSON.", {}
+    from rsched.endpoints.base import Completion
+    from rsched.engine.historyarchive import archive_middle
 
     class _Ep:
         def complete(self, messages, **k):
-            return _Comp()
+            return Completion(text="Sorry, I cannot produce JSON.", parsed=None, usage={})
 
     run_dir = tmp_path / "runs" / "20260710-070000"
     run_dir.mkdir(parents=True)
@@ -600,7 +597,7 @@ def test_archive_middle_reports_its_own_usage(tmp_path):
     run's usage on the turn the archive lands — full-context calls must never be invisible
     to accounting."""
     from rsched.config import ModelRef
-    from rsched.engine.compaction import archive_middle
+    from rsched.engine.historyarchive import archive_middle
 
     ep = _history_endpoint({"files": [{"name": "n", "about": "c", "content": "c"}]})
     run_dir = tmp_path / "runs" / "20260710-070000"
@@ -613,21 +610,20 @@ def test_archive_middle_timeout_scales_with_middle_size(tmp_path):
     """F376: the archival call's timeout grows with the middle being read — a fixed 180s
     died on a 1.25M-char middle while the digest fallback took every pass. 180s base
     + 60s/200k chars, capped at the endpoint default (600s)."""
-    from typing import ClassVar
 
     from rsched.config import ModelRef
-    from rsched.engine.compaction import archive_middle
+    from rsched.engine.historyarchive import archive_middle
 
     seen = []
 
-    class _Comp:
-        parsed: ClassVar = {"files": [{"name": "n", "about": "c", "content": "c"}]}
-        text, usage = "", {}
+    from rsched.endpoints.base import Completion
 
     class _Ep:
         def complete(self, messages, **k):
             seen.append(k["timeout"])
-            return _Comp()
+            return Completion(
+                text="", parsed={"files": [{"name": "n", "about": "c", "content": "c"}]},
+                usage={})
 
     run_dir = tmp_path / "runs" / "20260710-070000"
     run_dir.mkdir(parents=True)
@@ -662,7 +658,7 @@ def test_archive_middle_second_pass_accumulates_atomically(tmp_path):
     """A later compaction carries the earlier files over, rewrites INDEX.md, and leaves no
     temp/displaced siblings behind — the swap is all-or-nothing."""
     from rsched.config import ModelRef
-    from rsched.engine.compaction import archive_middle
+    from rsched.engine.historyarchive import archive_middle
 
     run_dir = tmp_path / "runs" / "20260710-080000"
     run_dir.mkdir(parents=True)
@@ -690,7 +686,7 @@ def test_every_archived_file_gets_an_index_line(tmp_path):
     """The invariant the engine guarantees: one line per archived file — a file with no
     description still gets an entry rather than vanishing from the map."""
     from rsched.config import ModelRef
-    from rsched.engine.compaction import archive_middle
+    from rsched.engine.historyarchive import archive_middle
 
     run_dir = tmp_path / "runs" / "20260710-100000"
     hist = run_dir / "history"
@@ -712,7 +708,7 @@ def test_the_archival_prompt_asks_for_a_description_not_an_index(tmp_path):
     """The model describes CONTENT; it never names a file. Naming is what made the index a map
     to files that did not exist."""
     from rsched.config import ModelRef
-    from rsched.engine.compaction import archive_middle
+    from rsched.engine.historyarchive import archive_middle
 
     run_dir = tmp_path / "runs" / "20260710-110000"
     run_dir.mkdir(parents=True)
@@ -729,7 +725,7 @@ def test_archive_middle_failure_leaves_prior_history_intact(tmp_path, monkeypatc
     import os
 
     from rsched.config import ModelRef
-    from rsched.engine.compaction import archive_middle
+    from rsched.engine.historyarchive import archive_middle
 
     run_dir = tmp_path / "runs" / "20260710-090000"
     hist = run_dir / "history"
@@ -760,7 +756,7 @@ def test_archive_middle_rejects_unusable_llm_output(tmp_path):
     """Empty files/index → None (the digest stands and the archive is recorded as degraded)
     and nothing lands on disk."""
     from rsched.config import ModelRef
-    from rsched.engine.compaction import archive_middle
+    from rsched.engine.historyarchive import archive_middle
 
     run_dir = tmp_path / "runs" / "20260710-100000"
     run_dir.mkdir(parents=True)

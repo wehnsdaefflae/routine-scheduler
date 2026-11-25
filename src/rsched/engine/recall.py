@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .compaction import parse_index
+from .historyarchive import parse_index
 
 #: Tokens too common in an action string or an index line to carry any signal.
 _STOPWORDS = frozenset({
@@ -50,7 +50,7 @@ def _tokens(text: str) -> set[str]:
 def index_entries(hist_dir: Path) -> list[tuple[str, str]]:
     """(filename, description) for every line of an engine-written INDEX.md.
 
-    Only parses the shape the engine writes, via the same `compaction.parse_index` that carries
+    Only parses the shape the engine writes, via the same `historyarchive.parse_index` that carries
     entries forward — the index being engine-owned is what makes its filenames trustworthy.
     """
     try:

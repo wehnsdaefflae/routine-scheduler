@@ -167,7 +167,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
             # text: clarify, then advance the chain (raises when it is exhausted).
             switched, tk = _handle_refusal(loop, completion, chain, ref, attempt, refstate)
             on_takeover = turntakeover.note_takeover(refstate, on_takeover, tk)
-        elif completion.parsed is None and not completion.text.strip():
+        elif completion.is_empty():
             switched = _handle_empty(loop, completion, chain, ref, attempt, refstate)
             if switched is None:
                 if attempt == MAX_SCHEMA_ATTEMPTS - 1:

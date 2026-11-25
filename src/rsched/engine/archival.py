@@ -23,7 +23,7 @@ from typing import Any
 
 from ..endpoints import instrument
 from . import enginenote
-from .compaction import ARCHIVAL_PURPOSE
+from .historyarchive import ARCHIVAL_PURPOSE
 
 
 @dataclass
@@ -48,7 +48,7 @@ def start(loop, middle: list[dict], endpoint, ref, turn: int) -> None:
     """Archive `middle` in a thread. At most one at a time — the anti-thrash guards already
     keep compactions far apart, and a second would be racing the first's swap.
     """
-    from .compaction import archive_middle
+    from .historyarchive import archive_middle
 
     if getattr(loop, "_archival", None) is not None:
         return

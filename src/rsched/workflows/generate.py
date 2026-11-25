@@ -129,6 +129,12 @@ def generate(server: ServerConfig, instruction: str, hint: str = "",
                                  timeout=180, purpose=purpose, kind="generate")
         if on_usage is not None and getattr(comp, "usage", None):
             on_usage(comp.usage)
+        if comp.is_empty():
+            # F921: "failed lint twice" of an EMPTY reply blames the draft for a model that
+            # said nothing — and the retry below would ask it to fix a file it never wrote.
+            raise RuntimeError(
+                f"{ref.endpoint}/{ref.model} returned an EMPTY completion for {purpose!r} "
+                f"(stop_reason={comp.stop_reason or 'unreported'}) — nothing was drafted")
         return comp
 
     draft = _strip_fence(_complete([{"role": "user", "content": prompt}], "Draft workflow").text)

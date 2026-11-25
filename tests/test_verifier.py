@@ -7,15 +7,16 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from rsched.endpoints.base import EndpointError
+from rsched.endpoints.base import Completion, EndpointError
 from rsched.engine import verifier
 
 
-class _Completion:
-    def __init__(self, parsed, text=""):
-        self.parsed = parsed
-        self.usage = {"in": 10, "out": 5}
-        self.text = text
+def _completion(parsed, text=""):
+    """The REAL Completion. A hand-rolled stand-in drifted from the dataclass the moment it
+    grew a member (`is_empty`, F921) and the drift read as a defect in the code under test.
+    `parsed` is deliberately fed junk by some cases — a dataclass enforces no types, so the
+    shapes the judge must survive are still reachable."""
+    return Completion(text=text, parsed=parsed, usage={"in": 10, "out": 5})
 
 
 def _loop(tmp_path, parsed=None, *, raises=None, text=""):
@@ -27,7 +28,7 @@ def _loop(tmp_path, parsed=None, *, raises=None, text=""):
             calls.append({"messages": messages, **kw})
             if raises is not None:
                 raise raises
-            return _Completion(parsed, text)
+            return _completion(parsed, text)
 
     ctx = SimpleNamespace(
         routine=SimpleNamespace(dir=tmp_path, models={}, efforts={}), phase="",

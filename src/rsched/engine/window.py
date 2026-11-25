@@ -16,13 +16,13 @@ from . import archival, boundary, enginenote, mediaops, promptsegments
 from .compaction import (
     KEEP_HEAD_MSGS,
     KEEP_TAIL_MSGS,
-    archival_fits,
     clamp_to_cap,
     estimate_input_tokens,
     input_cap_tokens,
     maybe_compact,
     window_ceiling_tokens,
 )
+from .historyarchive import archival_fits
 
 #: How close to the HARD ceiling still leaves a turn of slack. Below this the fraction is
 #: binding and a deferred turn is free; above it the ceiling is, and the warning is skipped.

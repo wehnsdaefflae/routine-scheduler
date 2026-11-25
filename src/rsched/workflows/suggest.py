@@ -27,7 +27,9 @@ def _ask_json(server: ServerConfig, prompt: str, schema: dict, *,
     retry, because a model that cannot produce the shape twice will not produce it on a third
     try either, and these calls sit in front of a person waiting on a form.
 
-    `why` is `"unavailable"` (no system model, or the endpoint failed) or `"malformed"` (it
+    `why` is `"unavailable"` (no system model, or the endpoint failed), `"empty"` (the model
+    answered with nothing at all — F921: distinct from a bad answer, since no reworded prompt
+    fixes a silent model) or `"malformed"` (it
     answered twice and neither answer fit the schema). Both mean "pick it yourself", so most
     callers drop it — but they are different facts about the instance, one a configuration
     problem and one a model problem.
@@ -50,6 +52,10 @@ def _ask_json(server: ServerConfig, prompt: str, schema: dict, *,
                                            purpose=purpose, kind="suggest")
         except Exception:
             return None, "unavailable"
+        if completion.is_empty():
+            # F921: nothing came back. Reporting "malformed" would describe a reply that does
+            # not exist, and a caller retrying the PROMPT cannot fix a silent model.
+            return None, "empty"
         try:
             obj = _checked(completion, schema)
         except SchemaViolation as exc:

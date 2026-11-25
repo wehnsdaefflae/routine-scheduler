@@ -84,6 +84,23 @@ class Completion:
     # Diagnostic only: the engine branches on stop_reason, never on this.
     stop_details: dict = field(default_factory=dict)
 
+    def is_empty(self) -> bool:
+        """The model ANSWERED WITH NOTHING — no text, no parsed object, no chained ones.
+
+        One predicate, here where the shape is defined, because every caller that reads a
+        reply has to tell this case from a real answer and each one phrased it differently:
+        compaction reported "non-JSON", `workflows/suggest` "malformed", `workflows/generate`
+        "failed lint" — each naming the symptom its own parse hit rather than the fact that
+        nothing came back (F921). A blank reply and a silent refusal are indistinguishable, so
+        a caller must be able to say which failure it had.
+
+        `parsed_rest` is part of it: a reply whose FIRST object is absent while a later one
+        arrived is not empty, and the turn loop's own inline test (`parsed is None and not
+        text.strip()`) could not see that.
+        """
+        return (not (self.text or "").strip()
+                and self.parsed is None and not self.parsed_rest)
+
 
 class ChatEndpoint(Protocol):
     """What every adapter implements: one stateless completion in, a Completion out.

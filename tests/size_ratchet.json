@@ -35,7 +35,7 @@
     "tests/test_api.py": 2889,
     "tests/test_assists.py": 765,
     "tests/test_background_actions.py": 964,
-    "tests/test_composer.py": 1040,
+    "tests/test_composer.py": 1036,
     "tests/test_config.py": 458,
     "tests/test_conversations.py": 1214,
     "tests/test_create_routine.py": 504,
