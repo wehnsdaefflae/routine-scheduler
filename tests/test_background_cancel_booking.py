@@ -1,8 +1,6 @@
-"""A cancelled background model call's spend BOOKS — the behaviour, not the wording (F722).
-
-The call is a UTIL call since D288 retired the `llm` kind; `engine/utilspend.py` is what makes
-a util's model spend reach `ctx.add_usage`, so the claim is unchanged and the vehicle is real.
-"""
+"""A cancelled background model call's spend BOOKS — the behaviour, not the wording (F722). The
+call is a UTIL call since D288 retired the `llm` kind, and `engine/utilspend.py` is what makes
+a util's model spend reach `ctx.add_usage`, so the claim is unchanged and the vehicle is real."""
 
 from __future__ import annotations
 

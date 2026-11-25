@@ -25,9 +25,6 @@ from .base import EndpointError
 if TYPE_CHECKING:
     from ..config.decisionconf import DecisionEndpointConfig
 
-#: The three answer types the engine speaks — the plain-words names a run writes. Each adapter
-#: maps them onto its protocol's own (`predicate`/`noul`, `choice`, `score`).
-ANSWER_TYPES = ("yes_no", "choice", "score")
 #: Where a protocol is served when `base_url` is blank — each vendor's own API root.
 DEFAULT_BASE_URLS = {"systemone": "https://api.typesafe.ai/v1"}
 #: Prefix announcing structured evidence as text, so no evidence field is refused as a raw JSON

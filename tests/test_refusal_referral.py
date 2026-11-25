@@ -150,14 +150,11 @@ def test_takeover_turn_closes_window_when_unresolvable(make_routine):
 
 
 def test_only_the_turn_loop_reaches_a_model_here(make_routine):
-    """D288 removed the second seam, and this is the guard that it stays removed.
-
-    The `llm` action re-issued a refused SUB-CALL on the uncensored model
-    (`reissue_on_uncensored`, its only caller). The kind retired into a util capability, and
-    the episode a takeover escalates is RunContext state the turn loop owns — a util cannot
-    join it, so a util-side retry would record no `refusal` event, tick no window and count
-    no referral. Re-adding a second seam here means re-deciding that, not just re-adding code.
-    """
+    """D288 removed the second seam, and this is the guard that it stays removed. The `llm` action
+    re-issued a refused SUB-CALL on the uncensored model (`reissue_on_uncensored`, its only caller);
+    the kind retired into a util capability, and the episode a takeover escalates is RunContext
+    state the turn loop owns — a util cannot join it, so a util-side retry would record no
+    `refusal` event, tick no window and count no referral."""
     assert not hasattr(refusal, "reissue_on_uncensored")
     arming = [name for name in vars(refusal)
               if name.startswith(("engage", "takeover", "reissue"))]

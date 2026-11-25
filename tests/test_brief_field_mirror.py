@@ -1,10 +1,7 @@
-"""The console's copy of BRIEF_FIELD, held in lockstep with the engine's.
-
-Its own module because the responsibility is distinct from the action contract: this is the
-only guard that READS `static/` to check a Python table, and it is read whenever either side
-is edited rather than whenever the schema changes. It left `tests/test_actions.py` when D288
-pushed that file over its size ceiling — the seam, not the slack, chose the split.
-"""
+"""The console's copy of BRIEF_FIELD, held in lockstep with the engine's — its own module because
+the responsibility is distinct from the action contract: this is the only guard that READS
+`static/` to check a Python table. It left `tests/test_actions.py` when D288 pushed that file
+over its size ceiling, and the seam, not the slack, chose the split."""
 
 from __future__ import annotations
 

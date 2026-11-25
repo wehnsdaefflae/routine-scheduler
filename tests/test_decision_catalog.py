@@ -1,18 +1,9 @@
-"""What survived the `decide` ACTION: the models a run is told it reaches, and old records.
-
-D288 (2026-11-25) retired `llm` and `decide` as kinds — a model is reached through a util
-capability now — so the action's own contract (its question grammar, its evidence gathering,
-its refusals) left this repo with the handler: it is the util's, tested by the util's selftest.
-
-Two things did NOT leave, and they are what this module holds:
-
-1. The CAPABILITIES line naming this run's DECISION models (`engine/decisioncatalog.py`). A run
-   that is not told which models exist cannot name one, and the line is gated on `util` — the
-   route to them — rather than on a kind.
-2. The rendering of a RECORDED `decide` observation (`engine/obs_retired.py`). Transcripts from
-   before the retirement are read for the rest of the instance's life: a resumed leg replays
-   them, past-run search renders them, the console shows any run anyone opens.
-"""
+"""What survived the `decide` ACTION: the models a run is told it reaches, and old records. D288
+retired `llm` and `decide` as kinds — a model is reached through a util capability now — so the
+action's own contract left this repo with its handler. Two things did not: the CAPABILITIES line
+naming this run's DECISION models (`engine/decisioncatalog.py`), gated on `util` rather than on
+a kind, and the rendering of a RECORDED `decide` observation (`engine/obs_retired.py`), which a
+resumed leg, past-run search and the console still need for the life of the instance."""
 
 from __future__ import annotations
 
@@ -44,11 +35,9 @@ def _with_decision_models(server):
 # --- 1. the models a run is told it reaches ------------------------------------------------
 
 def test_the_prompt_names_the_decision_models_without_naming_a_kind(make_routine, scripted):
-    """The line says WHICH models answer and what each takes — and no longer spells a call.
-
-    It names no util either: the standing order is that a recipe or a contract names the
-    CAPABILITY, so the line survives a library that changes under it.
-    """
+    """The line says WHICH models answer and what each takes — and no longer spells a call. It names
+    no util either: the standing order is that a contract names the CAPABILITY, so the line survives
+    a library that changes under it."""
     d = make_routine(slug="named")
     ep = scripted([write_file("state/probe.txt"), finish()])
     run_routine(d, _with_decision_models(server_for(d)), run_ts=TS)
@@ -83,12 +72,9 @@ def test_an_instance_with_no_decision_model_says_nothing_about_them(make_routine
 # --- 2. a RECORDED decide observation still reads the way it did live ----------------------
 
 def test_a_recorded_observation_reads_as_numbers():
-    """The exact words the deleted handler's renderer produced, byte for byte.
-
-    `engine/samestub.py`'s contract is that a replay says what the live turn said, so this
-    wording is pinned rather than merely non-empty — a transcript that renders differently
-    after an upgrade reads as a different run.
-    """
+    """The exact words the deleted handler's renderer produced, byte for byte. `engine/samestub.py`'s
+    contract is that a replay says what the live turn said, so this wording is pinned rather than
+    merely non-empty — a transcript that renders differently after an upgrade reads as another run."""
     text = format_retired({"kind": "decide", "model": "vl8b",
                            "files": [{"path": "a.png", "as": "image"}],
                            "answers": [

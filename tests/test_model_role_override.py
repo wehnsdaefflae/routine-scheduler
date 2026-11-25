@@ -1,14 +1,10 @@
-"""The optional `model` field on a CHILD run (D81, extended by the 2026-08-22 user order):
-a ROLE (main/tool_call/uncensored) or a CATALOG model NAME, defaulting to the routine's MAIN
-model (the per-routine subroutine role is retired). 'uncensored' is rejected with a teaching
-observation when the routine has no models.uncensored entry; an unknown catalog name is a
-teaching error naming the real catalog.
-
-D288 (2026-11-25) left `child` the only kind taking the field: `llm` and `decide` retired into
-a util capability, where the model is an argument of the call. What `list_models` reports —
-the resolved role bindings and the catalog a name is checked against — is unchanged, and is
-the half of this subject that still lives in the engine.
-"""
+"""The optional `model` field on a CHILD run (D81, extended by the 2026-08-22 user order): a ROLE
+(main/tool_call/uncensored) or a CATALOG model NAME, defaulting to the routine's MAIN model (the
+per-routine subroutine role is retired). 'uncensored' is rejected with a teaching observation
+when the routine has no models.uncensored entry; an unknown catalog name is a teaching error
+naming the real catalog. D288 left `child` the only kind taking the field, and what
+`list_models` reports — the resolved role bindings and the catalog a name is checked against —
+is unchanged, the half of this subject still living in the engine."""
 
 from types import SimpleNamespace
 
