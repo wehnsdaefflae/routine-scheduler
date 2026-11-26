@@ -7,6 +7,7 @@ import pytest
 
 import rsched.endpoints.anthropic_api as anth_mod
 import rsched.endpoints.openai_compat as oai_mod
+import rsched.endpoints.usage as usage_mod
 from helpers import tmp_server
 from rsched.config import EndpointConfig, ModelConfig
 from rsched.endpoints import catalogs, decisions_systemone, prices
@@ -137,16 +138,76 @@ def test_the_openai_adapter_survives_a_malformed_cost(monkeypatch):
 
 
 def test_a_decision_through_the_gateway_reads_cost_usd(monkeypatch):
+    out = _decide(monkeypatch, {"input_tokens": 4, "output_tokens": 2, "cost_usd": "0.000020"})
+    assert out.usage == {"in": 4, "out": 2, "cost": 0.00002}
+
+
+# --- one implementation, three callers ----------------------------------------------------------
+
+def _decide(monkeypatch, usage: dict):
+    """One systemone decision whose wire reports `usage`."""
     def fake(url, payload, headers, timeout, *, name):
         return httpx.Response(200, request=httpx.Request("POST", url), json={
-            "answers": {"q": {"type": "noul", "noul": 0.9}},
-            "usage": {"input_tokens": 4, "output_tokens": 2, "cost_usd": "0.000020"}})
+            "answers": {"q": {"type": "noul", "noul": 0.9}}, "usage": usage})
     monkeypatch.setattr(decisions_systemone, "post_json", fake)
     from rsched.config.decisionconf import DecisionEndpointConfig
     endpoint = decisions_systemone.SystemOneDecisions(DecisionEndpointConfig(
         name="otari", protocol="systemone", base_url=f"{GATEWAY}/v1", api_key="k"))
-    out = endpoint.decide("x", [], [DecisionQuestion("q", "yes_no", "?")], model="m", timeout=5)
-    assert out.usage == {"in": 4, "out": 2, "cost": 0.00002}
+    return endpoint.decide("x", [], [DecisionQuestion("q", "yes_no", "?")], model="m", timeout=5)
+
+
+def test_every_adapter_normalises_its_usage_through_the_one_implementation(monkeypatch):
+    """The usage-dict vocabulary is `endpoints/usage.py`'s, and each adapter spelled the same
+    assembly out for itself: `in`/`out`, cache traffic omitted when zero, `cost` exactly when
+    the provider reported a bill. Three copies of one rule drift one at a time — the key a
+    fourth adapter forgets is invisible until a budget reads short. So the assembly has ONE
+    implementation and every caller reaches it: break `usage.reading` and all three go red.
+    """
+    seen: list[str] = []
+    real = usage_mod.reading
+
+    def spy(raw, **counts):
+        seen.append(str(counts))
+        return real(raw, **counts)
+
+    for module in (anth_mod, oai_mod, decisions_systemone):
+        monkeypatch.setattr(module, "usage_reading", spy)
+    monkeypatch.setattr(anth_mod.httpx, "post", _post(_anth_reply(ANTHROPIC_USAGE)))
+    _anth().complete(MESSAGES, model="claude-opus-5-metered", schema={"type": "object"})
+    monkeypatch.setattr(oai_mod.httpx, "post", _post(_oai_reply(OPENAI_USAGE)))
+    _oai().complete(MESSAGES, model="m")
+    _decide(monkeypatch, {"input_tokens": 3, "output_tokens": 1, "cost_usd": "0.000005"})
+    assert len(seen) == 3, f"an adapter assembled its own usage dict: {seen}"
+
+
+def test_a_usage_reading_means_the_same_thing_whichever_endpoint_produced_it(monkeypatch):
+    """Equivalent wire blocks — three fresh input tokens, one output, a reported five-microdollar
+    bill — reduce to ONE reading. Each wire's own arithmetic stays its adapter's (Anthropic
+    reports fresh input, the OpenAI shape a prompt total to subtract from); the dict they hand
+    on does not vary by endpoint.
+    """
+    expected = {"in": 3, "out": 1, "cost": 0.000005}
+    monkeypatch.setattr(anth_mod.httpx, "post", _post(_anth_reply(ANTHROPIC_USAGE)))
+    anthropic = _anth().complete(MESSAGES, model="claude-opus-5-metered",
+                                 schema={"type": "object"}).usage
+    monkeypatch.setattr(oai_mod.httpx, "post", _post(_oai_reply(OPENAI_USAGE)))
+    openai = _oai().complete(MESSAGES, model="m").usage
+    decision = _decide(monkeypatch, {"input_tokens": 3, "output_tokens": 1,
+                                     "cost_usd": "0.000005"}).usage
+    assert anthropic == openai == decision == expected
+
+
+def test_the_one_implementation_keeps_the_rules_each_copy_had_to_remember():
+    """What the three copies each spelled out, now pinned once: zero cache traffic adds no key
+    (absent and zero are the same reading), an unreported bill adds no `cost` rather than a
+    zero, and a breakdown exceeding its own total cannot make `in` negative.
+    """
+    assert usage_mod.reading({}, fresh_in=3, out=1) == {"in": 3, "out": 1}
+    assert usage_mod.reading({}, fresh_in=3, out=1, cached_in=0, cache_write=0) == {
+        "in": 3, "out": 1}
+    assert usage_mod.reading({"cost": 0.25}, fresh_in=3, out=1, cached_in=2) == {
+        "in": 3, "out": 1, "cached_in": 2, "cost": 0.25}
+    assert usage_mod.reading({}, fresh_in=-5, out=1)["in"] == 0
 
 
 # --- the `-metered` route is the same model -----------------------------------------------------

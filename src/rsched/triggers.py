@@ -2,11 +2,11 @@
 
 A trigger fires a routine on an EXTERNAL EVENT, alongside cron: routine.yaml grows one
 canonical `triggers:` list (user config — created/deleted on the routine page, never by a
-run), each entry `{id, type, ...}` carrying its type's own keys. One type is
-implemented: `webhook` (POST /api/webhooks/<slug>/<token>). `imap` (mail
-arrival) and `watch_path` (file drop) are reserved names in the SAME shape so they slot
-in later without reshaping anything — their watchers will drop the same spool events a
-webhook does and everything downstream is already type-agnostic.
+run), each entry `{id, type, ...}` carrying its type's own keys. One type exists:
+`webhook` (POST /api/webhooks/<slug>/<token>). Everything downstream of the spool is
+type-agnostic, so another type is a daemon-side watcher that drops the same spool events
+a webhook does — it arrives WITH its watcher, in the same envelope, and no name is held
+in the vocabulary before one can fire it.
 
 Ownership mirrors restart.request and the background .requests/ idiom: the WEB layer
 (api_hooks) only RECORDS events — one JSON file per event under the spool
@@ -31,7 +31,7 @@ from . import spool
 from .ids import now_iso
 from .paths import read_json
 
-TRIGGER_TYPES = ("webhook", "imap", "watch_path")
+TRIGGER_TYPES = ("webhook",)
 # Minimum seconds between trigger-initiated fires of one routine — the budget backstop
 # that makes a leaked hook URL boring: however hard it is hammered, at most one run per
 # window, everything else coalesces (docs/triggers.md § Coalescing).
@@ -86,8 +86,8 @@ def validate_triggers(raw: object) -> tuple[list[dict], list[str]]:
     """Canonicalize a routine.yaml `triggers:` value. Returns (entries, problems):
     invalid entries are reported and DROPPED (fail closed — a malformed webhook must
     never be token-matchable), valid ones pass through verbatim so per-type keys and
-    future fields survive. Reserved-but-unimplemented types are kept, with a problem
-    line saying nothing fires them yet.
+    future fields survive. A type outside `TRIGGER_TYPES` is unknown, reported and dropped:
+    a type nothing can fire is not config to preserve.
     """
     if raw is None:
         return [], []
@@ -127,9 +127,6 @@ def validate_triggers(raw: object) -> tuple[list[dict], list[str]]:
             problems.append(f"{where}: webhook trigger without a token — dropped "
                             "(recreate it on the routine page)")
             continue
-        if ttype in ("imap", "watch_path"):
-            problems.append(f"{where}: trigger type {ttype!r} is reserved but not "
-                            "implemented yet — the entry is kept, nothing fires it")
         seen.add(tid)
         out.append(entry)
     return out, problems

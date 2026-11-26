@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from rsched.engine.actions import KIND_FIELDS, validate_action
+from rsched.engine.actions import KIND_FIELDS
 from rsched.engine.actionschema import ACTION_SCHEMA, KINDS
 from rsched.engine.completion import diagnose
-from rsched.engine.renamedkinds import RENAMED, RETIRED, hint
+from rsched.engine.renamedkinds import RETIRED, hint
 from rsched.schema_guard import validate
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -24,6 +24,13 @@ STATIC = ROOT / "static"
 NOT_THE_KIND = frozenset({("gatekit/__init__.py", "task"), ("jobs_compat.py", "task")})
 #: Files whose whole job is the retired spelling: the register itself and the D241 migration.
 REGISTERS = frozenset({"engine/renamedkinds.py", "migrate_child_kind.py"})
+
+#: Kind names that were RENAMED away (D174, D241) and must never key a table or a comparison
+#: again. They live HERE and not in a src register: the register existed to CORRECT a run
+#: spelling one of them, and no recipe, library pattern or seed does — while the sweep below
+#: is about the code, where a resurrected word would silently decide something. A dead word
+#: needs no runtime presence to stay forbidden.
+RENAMED_AWAY = frozenset({"task", "spawn", "subtask", "subruns"})
 
 #: Where naming a retired kind is CORRECT, with the reason — never a silent exemption.
 #: A kind that retired into a util capability (`RETIRED`, D288) leaves RECORDS behind, and
@@ -64,13 +71,19 @@ _JS_WORD = re.compile(r"""["']([a-z_]+)["']""")
 
 # ── the register ───────────────────────────────────────────────────────────────────────────
 
-def test_every_entry_maps_a_retired_kind_to_a_live_one():
-    for old, (new, why, added) in RENAMED.items():
-        assert old not in KINDS, f"{old!r} is still a live kind — it is not retired"
-        assert new in KINDS, f"{old!r} → {new!r}, which is not a kind either"
-        assert why.strip(), old
-        fields = set().union(*KIND_FIELDS[new])
-        assert set(added) <= fields, f"{old!r} adds {set(added) - fields} that {new!r} lacks"
+@pytest.mark.parametrize("old", sorted(RENAMED_AWAY))
+def test_a_word_renamed_away_is_no_kind_and_gets_no_correction(old):
+    """The rename register that used to turn one of these into "it is `child` now" is gone:
+    nothing on disk spelled them, so it corrected a mistake nobody was making. What must stay
+    true is that the word is dead — refused by the schema, declaring no fields, and NOT
+    quietly answered by the retirement register, whose promise ("a util carries it now") would
+    be false for a word that was only renamed.
+    """
+    assert old not in KINDS, f"{old!r} is a live kind again — this list is about dead words"
+    assert old not in KIND_FIELDS, f"{old!r} still declares action fields"
+    assert old not in RETIRED, f"{old!r} was renamed, not retired into a capability"
+    assert validate({"say": "s", "kind": old}, ACTION_SCHEMA) != []
+    assert hint({"say": "s", "kind": old}) == ""
 
 
 @pytest.mark.parametrize("kind", sorted(RETIRED))
@@ -78,16 +91,16 @@ def test_a_kind_retired_into_a_capability_is_not_a_kind_and_has_no_fields(kind):
     """D288's shape: the replacement is a CAPABILITY, so there is no kind to fall back on."""
     assert kind not in KINDS, f"{kind!r} is still live — it is not retired"
     assert kind not in KIND_FIELDS, f"{kind!r} still declares action fields"
-    assert kind not in set(RENAMED), f"{kind!r} is in both registers — they must be disjoint"
+    assert kind not in RENAMED_AWAY, f"{kind!r} was renamed, not retired — keep them disjoint"
     capability, why = RETIRED[kind]
     assert len(capability.strip()) >= 12 and why.strip()
 
 
 @pytest.mark.parametrize("kind", sorted(RETIRED))
 def test_the_correction_never_promises_a_resend_that_cannot_work(kind):
-    """The F637 shape, in its one dangerous variant: RENAMED's hint says "send the SAME action
-    again with kind=X", which is true only when X is a kind. Promising it for a capability
-    would cost a run a turn per attempt forever — there is no action to resend.
+    """The F637 shape, in its one dangerous variant: a correction saying "send the SAME action
+    again with kind=X" is true only when X is a kind. Promising it for a capability would cost
+    a run a turn per attempt forever — there is no action to resend.
     """
     said = hint({"say": "s", "kind": kind})
     assert "RETIRED" in said and "util" in said
@@ -100,39 +113,6 @@ def test_a_retired_kind_is_refused_by_the_schema_itself():
     """Belt and braces: the hint teaches, but the schema is what makes it unemittable."""
     for kind in RETIRED:
         assert validate({"say": "s", "kind": kind, "prompt": "x"}, ACTION_SCHEMA) != []
-
-
-@pytest.mark.parametrize(("old", "new"), [("spawn", "child"), ("subtask", "child"),
-                                          ("subruns", "children")])
-def test_a_d241_kind_is_told_its_new_name(old, new):
-    stale = {"say": "s", "kind": old}
-    said = hint(stale)
-    assert f"`{new}` now" in said and f"kind={new!r}" in said
-    assert "D241" in said and "recipe" in said
-    assert said in diagnose(stale)   # it reaches the model through the retry's diagnosis
-
-
-def test_a_subtask_is_told_to_add_its_mode_or_it_would_become_a_parallel_child():
-    """`subtask` meant SEQUENTIAL. "Every other field unchanged" alone would turn it into a
-    parallel child — and refuse its `turns`, which only a sequential child takes."""
-    assert "mode='sequential'" in hint({"kind": "subtask"})
-    assert "mode=" not in hint({"kind": "spawn"})
-
-
-@pytest.mark.parametrize("stale", [
-    {"say": "s", "kind": "spawn", "prompt": "do x", "label": "x", "workflow": "general-task"},
-    {"say": "s", "kind": "subtask", "prompt": "do y", "label": "y", "turns": 6},
-    {"say": "s", "kind": "subruns"},
-    {"say": "s", "kind": "task", "verb": "list"},
-])
-def test_following_the_correction_yields_a_valid_action(stale):
-    """The hint is a promise: send the same action with the new kind (and the named fields)
-    and it is accepted. A correction that leads to a second refusal is the F637 shape again."""
-    assert validate(stale, ACTION_SCHEMA) != []
-    new, _why, added = RENAMED[stale["kind"]]
-    fixed = {**stale, "kind": new, **added}
-    assert validate(fixed, ACTION_SCHEMA) == []
-    assert validate_action(fixed) == []
 
 
 def test_an_ordinary_action_gets_no_hint():
@@ -158,7 +138,7 @@ def _strings(node: ast.AST) -> set[str]:
 
 
 def test_no_python_table_or_comparison_names_a_retired_kind():
-    live, dead = set(KINDS), set(RENAMED) | set(RETIRED)
+    live, dead = set(KINDS), RENAMED_AWAY | set(RETIRED)
     tables, bad = 0, []
     for path in sorted(SRC.rglob("*.py")):
         rel = path.relative_to(SRC).as_posix()
@@ -183,7 +163,7 @@ def test_no_python_table_or_comparison_names_a_retired_kind():
 
 
 def test_no_console_module_names_a_retired_kind():
-    live, dead = set(KINDS), set(RENAMED) | set(RETIRED)
+    live, dead = set(KINDS), RENAMED_AWAY | set(RETIRED)
     comparisons, bad = 0, []
     for path in sorted(STATIC.rglob("*.js")):
         rel = path.relative_to(ROOT).as_posix()

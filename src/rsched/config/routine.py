@@ -137,8 +137,8 @@ class RoutineConfig(_Config):
     # STORE this routine shares with every other routine naming it (rsched/sharedstores.py).
     fs_write_roots: list[HomePath] = Field(default_factory=list)
     # Event triggers — fire the routine on an external event, alongside cron. One
-    # canonical list of {id, type, …} entries (webhook implemented; imap/watch_path
-    # reserved in the same shape); validated in triggers.py, fired by the daemon's
+    # canonical list of {id, type, …} entries (one type exists: webhook; a later one arrives
+    # with its watcher, in the same shape); validated in triggers.py, fired by the daemon's
     # TriggerManager (docs/triggers.md). User config like everything in this file:
     # created/deleted on the routine page, never by a run.
     triggers: list[dict] = Field(default_factory=list)

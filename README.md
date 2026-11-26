@@ -180,8 +180,9 @@ Besides cron and the run-now button, a routine can fire on an **external event**
 server-generated token is the only auth — no console bearer for third parties — and the
 payload reaches the run verbatim as an injected message. Bursts coalesce: events arriving
 while a run is active (or within the trigger's cooldown) queue into **one** follow-up run
-that receives every payload, so a noisy or leaked URL can't burn budget. `imap` and
-`watch_path` trigger types are reserved in the same config shape. See `docs/triggers.md`
+that receives every payload, so a noisy or leaked URL can't burn budget. A webhook is the
+one trigger type; another would be a daemon-side watcher dropping the same spool events,
+and arrives with it rather than as a reserved name. See `docs/triggers.md`
 (also on the Help tab).
 
 ## OAuth connections

@@ -770,8 +770,8 @@ and the capabilities digest's catalog listing):
   budgets/fs-roots/schedules are resources, never capabilities; `improve: false` opts the routine
   out of the routine-improver's passes (default: included); `triggers:` — event-driven fires
   alongside cron (docs/triggers.md): one canonical list of `{id, type, cooldown_s, …}` entries
-  (`webhook` implemented — server-generated URL token IS the auth; `imap`/`watch_path` reserved
-  in the same shape), validated in `rsched/triggers.py`, added, edited and removed in the routine
+  (`webhook` is the one type — server-generated URL token IS the auth; a later type arrives with
+  its watcher, never as a reserved name), validated in `rsched/triggers.py`, added, edited and removed in the routine
   page's Triggers section and saved by its one accept (never by a run; the library-sync
   routine's export REDACTS trigger tokens).
   `ladder:` — the ESCALATION LADDER's user half (`engine/ladder.py`, `engine/oversight.py`):

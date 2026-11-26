@@ -62,13 +62,21 @@ def test_validate_triggers_reports_and_drops_invalid():
     assert any("duplicate id" in p for p in problems)
 
 
-def test_validate_triggers_reserved_types_kept_but_flagged():
+def test_a_type_nothing_can_fire_is_unknown_not_reserved():
+    """The vocabulary holds only types that can fire. `imap` and `watch_path` were names
+    reserved for watchers that were never written, and every load of a config naming one
+    emitted a problem line whose only job was to say nothing fires it — so they are gone and
+    such an entry is now an ordinary unknown type: reported and DROPPED, fail closed, like
+    any other word a load does not know.
+    """
+    assert triggers.TRIGGER_TYPES == ("webhook",)
     raw = [{"id": "t-mail", "type": "imap", "host": "imap.example.org"},
            {"id": "t-drop", "type": "watch_path", "path": "~/drop"}]
     out, problems = triggers.validate_triggers(raw)
-    assert [t["id"] for t in out] == ["t-mail", "t-drop"]      # same shape, kept verbatim
-    assert out[0]["host"] == "imap.example.org"
-    assert all("not implemented yet" in p for p in problems) and len(problems) == 2
+    assert out == []
+    assert len(problems) == 2
+    assert all("unknown type" in p for p in problems)
+    assert any("'imap'" in p for p in problems) and any("'watch_path'" in p for p in problems)
 
 
 def test_load_routine_canonicalizes_triggers(tmp_path):

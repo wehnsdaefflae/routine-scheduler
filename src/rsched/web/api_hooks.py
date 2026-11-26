@@ -140,8 +140,9 @@ async def receive_hook(request: Request, slug: str, token: str) -> dict:
 
 # -- the trigger list (the settings page's Triggers field) --------------------------------
 
-#: What the Triggers card can CREATE. `imap` and `watch_path` are reserved shape with no
-#: watcher yet (rsched/triggers.py): kept when a file already names one, never minted here.
+#: What the Triggers card can CREATE — today every type there is (`triggers.TRIGGER_TYPES`).
+#: Kept as its own name because the two lists answer different questions: what a config may
+#: NAME and what this card may MINT, and a type arrives fireable before it is offered here.
 CREATABLE_TRIGGERS = ("webhook",)
 _BOUNDS = ("cooldown_s",)
 

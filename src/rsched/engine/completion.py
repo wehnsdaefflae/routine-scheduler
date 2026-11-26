@@ -51,7 +51,7 @@ REFUSAL_STOPS = frozenset({"refusal", "content_filter"})
 
 def diagnose(obj: dict, loop=None) -> str:
     """Everything we can say about an INVALID action beyond the schema's lines, in reading
-    order: a renamed kind, a kind that is really a field or a util, then a field shift
+    order: a retired kind, a kind that is really a field or a util, then a field shift
     (`shiftedfields.unkind_diagnosis` records why these three cannot overlap, and what `loop`
     buys the util branch: the live catalog instead of a heuristic).
     """

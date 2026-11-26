@@ -99,7 +99,7 @@ def unkind_diagnosis(obj: dict, loop=None) -> str:
     """What a `kind` that is NOT a kind really was — "" when nothing specific can be said.
 
     `kind` is the one field whose rejection the enum cannot answer, so the correction names
-    the OTHER place that word belongs (`renamedkinds.hint` covers a renamed kind):
+    the OTHER place that word belongs (`renamedkinds.hint` covers a retired kind):
 
     * a FIELD used as a kind (`kind: "note"`) — the intent was a rider, not an action.
     * a UTIL used as a kind (`kind: "code-search"`) — the shape is `kind="util", name=…`.
@@ -111,7 +111,7 @@ def unkind_diagnosis(obj: dict, loop=None) -> str:
     anything else.
 
     The three diagnoses cannot overlap, so `completion.diagnose` composes them in reading
-    order: a renamed kind is in `renamedkinds.RENAMED`, an unkind is NOT in `KINDS`, and a
+    order: a retired kind is in `renamedkinds.RETIRED`, an unkind is NOT in `KINDS`, and a
     field shift requires `kind == "util"`.
     """
     kind = str(obj.get("kind") or "").strip()

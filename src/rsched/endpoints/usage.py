@@ -6,6 +6,10 @@ REPORTED it billed (`reported_cost`); "notional" ($ at list price, stamped by
 endpoints/prices.py). Adapters keep cache traffic OUT of "in", so a token budget keeps its
 meaning.
 
+`reading` is where an adapter ASSEMBLES one of these dicts: each wire reads its own key names
+and does its own cache arithmetic, then hands the counts here, so the shape, the zero-is-absent
+rule and the reported bill have one implementation instead of one per adapter.
+
 `dollars_spent` is the one reading of those keys AS MONEY — what a cost budget meters
 (`budgets.max_cost`) and any live dollar figure reads; the budget check is not a second
 definition of it.
@@ -69,6 +73,31 @@ def reported_cost(raw: dict) -> float | None:
         if amount.is_finite() and amount >= 0:
             return float(amount)
     return None
+
+
+def reading(raw: dict, *, fresh_in: int, out: int, cached_in: int = 0,
+            cache_write: int = 0) -> dict:
+    """ONE completion's usage in the vocabulary above, from the counts its wire reported.
+
+    Every adapter calls this: a reading is the same dict whichever endpoint produced it, so a
+    budget, a cache-health figure and a cost all mean one thing across the fleet. What stays
+    the adapter's own job is reading its wire's key NAMES and its cache arithmetic — Anthropic
+    reports fresh input already excluding cache traffic, the OpenAI shape reports a prompt
+    TOTAL the adapter subtracts from. What this owns is the shape: `in`/`out` always, cache
+    traffic kept OUT of `in` and omitted when zero (absent and zero are the same thing here),
+    and `cost` exactly when the provider reported a bill (`reported_cost` over `raw`).
+
+    `fresh_in` is clamped at zero: a wire whose breakdown exceeds its own total must not
+    produce a negative token count.
+    """
+    usage: dict = {"in": max(int(fresh_in), 0), "out": int(out)}
+    if cached_in:
+        usage["cached_in"] = int(cached_in)
+    if cache_write:
+        usage["cache_write"] = int(cache_write)
+    if (cost := reported_cost(raw)) is not None:
+        usage["cost"] = cost
+    return usage
 
 
 def dollars_spent(usage: dict | None) -> float:

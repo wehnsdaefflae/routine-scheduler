@@ -113,9 +113,11 @@ Long form: `docs/contracts.md` § Core contracts.
 - **Actions** (`engine/actions.py`, `actionschema.KINDS`; flat schema on purpose). A reply's
   actions run IN ORDER in one turn and stop at the first failure; what did not run is named NOT
   EXECUTED with the reason (`engine/replyactions.py`, `engine/chain.py`, D203). Never let a parser
-  keep a later action over an earlier one, or drop one silently. A RETIRED kind name (`task`,
-  `spawn`/`subtask`/`subruns`) lives only in `engine/renamedkinds.RENAMED`;
-  `tests/test_retired_kinds.py` refuses it in every kind table under `src/` and `static/`
+  keep a later action over an earlier one, or drop one silently. A kind that RETIRED into a util
+  capability (`llm`, `decide`) is corrected by `engine/renamedkinds.RETIRED`; a kind merely
+  RENAMED away (`task`, `spawn`/`subtask`/`subruns`) gets no correction at all — nothing on disk
+  spells one, so the register was removed. `tests/test_retired_kinds.py` refuses every one of
+  those words in every kind table under `src/` and `static/`
 - `finish` and `report` are ALWAYS_KINDS. **The engine never ends a run the model could have ended
   itself**: the first budget violation spends one RESERVED FINISH TURN; only a second force-finishes.
   Budgets are a runaway BACKSTOP, never a pace; what is LEFT rides every observation as a fact

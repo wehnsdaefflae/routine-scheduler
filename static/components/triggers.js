@@ -75,12 +75,12 @@ export function triggersEditor({ value, described = [], set }) {
       el("span", {}, `fired events · ${live.events || 0}`),
       el("span", { title: "events recorded but not yet turned into a run (coalescing)" },
         `pending · ${live.pending || 0}`)) : null;
-    const urlLine = t.type === "webhook"
-      ? (live ? webhookUrl(live)
-        : el("div", { class: replaced ? "tr-warn small" : "muted small" }, replaced
-            ? "accepting this change mints a NEW hook URL — the current one stops working"
-            : "its hook URL is minted when you accept"))
-      : el("div", { class: "muted small" }, "reserved trigger type — nothing fires it yet");
+    // Every trigger a config can name is a webhook (rsched/triggers.TRIGGER_TYPES): a type
+    // the validator does not know is dropped at load, so no other row shape reaches here.
+    const urlLine = live ? webhookUrl(live)
+      : el("div", { class: replaced ? "tr-warn small" : "muted small" }, replaced
+          ? "accepting this change mints a NEW hook URL — the current one stops working"
+          : "its hook URL is minted when you accept");
     return el("div", { class: "trigger-row", "data-trigger": live?.id || "new" },
       el("div", { class: "row spread", style: "margin-bottom:6px" },
         el("div", { class: "row", style: "gap:10px" },

@@ -5,8 +5,7 @@ while it is set: docs/lanes-tags.md, D71), manually — or on an
 **external event**. A trigger is a routine.yaml
 config entry that lets the outside world start a run: today that means an authenticated
 **webhook** URL a third party POSTs to (CI finished, a form was submitted, a monitor
-alerted); `imap` (mail arrival) and `watch_path` (file drop) are reserved trigger types in
-the same config shape, to be implemented as daemon-side watchers later. Event triggers are
+alerted) — the one trigger type there is. Event triggers are
 what let a radar-style routine stop polling on a schedule and burn tokens only when
 something actually happened.
 
@@ -24,15 +23,12 @@ triggers:
     token: "kJ8…32-url-safe-chars…Qw"   # server-generated URL secret — the hook's auth
     cooldown_s: 60           # min seconds between trigger-initiated fires (coalescing window)
     created: "2026-07-17T09:00:00+02:00"
-  # reserved types — same envelope, own keys; nothing fires them yet:
-  # - {id: t-…, type: imap, host: imap.example.org, mailbox: INBOX, cooldown_s: 300}
-  # - {id: t-…, type: watch_path, path: ~/drop/incoming, glob: "*.csv", cooldown_s: 60}
 ```
 
 Validation lives in `rsched/triggers.py` (`validate_triggers`, called from
 `config.load_routine`): malformed entries are reported as routine problems and dropped
-(fail closed — a webhook without a token can never be matched); reserved-type entries are
-kept verbatim and flagged as inert.
+(fail closed — a webhook without a token can never be matched), and so is an entry whose
+`type` is not in `TRIGGER_TYPES` — a type nothing can fire is not config to preserve.
 
 ## The webhook
 
@@ -133,8 +129,7 @@ These are the trigger analog of the schedule's overrun rule:
   trigger by its cooldown: a row whose cooldown changed stands for a NEW trigger, and
   accepting it replaces the old one — its URL with it, which the row says before you
   accept. `0` means *no wait* — fire on every event. The accept refuses (`422`) a type it
-  cannot create (`imap`/`watch_path` are reserved) and a cooldown that is not a whole
-  number `≥ 0`.
+  cannot create (`CREATABLE_TRIGGERS`) and a cooldown that is not a whole number `≥ 0`.
 - **Durability.** An accepted event survives restarts: it is either in the spool (fired at
   a later tick) or already injected into the routine's inbox (drained by the routine's
   next run, whoever starts it). Injection uses deterministic filenames, so a crash between
@@ -165,11 +160,14 @@ immediately at kickoff for a fresh trigger-fired run):
 Recipes that expect webhook input should say so in a stage ("runs may start from a
 webhook event message — parse its payload before polling anything").
 
-## Later trigger types
+## Another trigger type
 
-`imap` and `watch_path` slot in WITHOUT reshaping config: each becomes a daemon-side
-watcher that drops the same `evt-*.json` spool files a webhook does (payload = the mail /
-the dropped file's path), and everything downstream — coalescing, cooldown, inbox
-injection, the fire ledger, the UI card — is already type-agnostic. Their entries carry
-their own keys in the same `triggers:` list; until a watcher exists, such entries are
-accepted but flagged inert on the routine page.
+A new type slots in WITHOUT reshaping config: it is a daemon-side watcher that drops the
+same `evt-*.json` spool files a webhook does (payload = the mail, the dropped file's path,
+whatever it watched), and everything downstream — coalescing, cooldown, inbox injection,
+the fire ledger, the UI card — is already type-agnostic. Its entries carry their own keys
+in the same `triggers:` list. What it does NOT get is a NAME held in the vocabulary before
+it can fire: a type in `TRIGGER_TYPES` with no watcher is a config value that validates,
+renders and never does anything, and the house rule against backwards-compatibility
+placeholders applies to forwards-compatible ones too. The type and its watcher land
+together; until then such an entry is an unknown type, reported and dropped.

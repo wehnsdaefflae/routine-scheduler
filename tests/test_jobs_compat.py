@@ -106,17 +106,21 @@ def test_the_retired_kind_is_gone_from_the_schema():
     assert validate(stale, ACTION_SCHEMA) != []
 
 
-def test_a_run_emitting_the_retired_kind_is_told_its_new_name():
+def test_the_retired_kind_gets_no_correction_because_nothing_spells_it():
+    """D174's rename register pointed `task` at `job`. It was removed once a sweep of every
+    recipe, library pattern and seed on disk found the kind spelled nowhere — the correction
+    had never fired, and a shim nothing reaches is what the no-backwards-compatibility rule
+    is about. The CONFIG key `task` keeps its own compatibility above; the ACTION KIND is
+    simply refused, with no promise of a resend.
+    """
     stale = {"say": "s", "kind": "task", "verb": "checkpoint", "id": "nanogeofeld",
              "outcome": "advanced", "summary": "x"}
-    said = hint(stale)
-    assert "`job` now" in said and "kind='job'" in said
-    assert "D174" in said and "recipe" in said
-    # it reaches the model through the retry's diagnosis channel
-    assert said in diagnose(stale)
+    assert validate(stale, ACTION_SCHEMA) != []
+    assert hint(stale) == ""
+    assert "job" not in diagnose(stale)
 
 
-def test_an_ordinary_invalid_action_gets_no_renamed_kind_hint():
+def test_an_ordinary_invalid_action_gets_no_retired_kind_hint():
     assert hint({"kind": "util", "name": "codemap"}) == ""
     assert hint({"kind": "job", "verb": "list"}) == ""
     assert hint({}) == ""

@@ -63,7 +63,8 @@ from .base import (
     with_retries,
 )
 from .media_types import supports_media_type
-from .usage import reported_cost, summed
+from .usage import reading as usage_reading
+from .usage import summed
 
 log = logging.getLogger("rsched.endpoints.anthropic")
 
@@ -91,20 +92,18 @@ _AUTO = {"type": "auto"}
 
 
 def _usage(raw: dict) -> dict:
-    """The Messages API's usage block → our usage dict. `input_tokens` EXCLUDES cache traffic
-    on this API; cache reads/writes are surfaced as `cached_in` / `cache_write`, kept OUT of
-    "in" so token budgets keep their meaning. A billed figure the wire REPORTS (an Otari
-    gateway's `cost_usd`) is the usage's `cost` — `usage.reported_cost` reads it.
+    """The Messages API's usage block → our usage dict, via the one `usage.reading`.
+
+    This wire's own fact, and all this function adds: `input_tokens` already EXCLUDES cache
+    traffic here, so it IS the fresh input — unlike the OpenAI shape, where the prompt count is
+    a total the adapter subtracts from. The shape of the result, the zero-is-absent rule and
+    the reported bill are `endpoints/usage.py`'s, which owns that vocabulary.
     """
-    usage: dict = {"in": int(raw.get("input_tokens") or 0),
-                   "out": int(raw.get("output_tokens") or 0)}
-    if raw.get("cache_read_input_tokens"):
-        usage["cached_in"] = int(raw["cache_read_input_tokens"])
-    if raw.get("cache_creation_input_tokens"):
-        usage["cache_write"] = int(raw["cache_creation_input_tokens"])
-    if (cost := reported_cost(raw)) is not None:
-        usage["cost"] = cost
-    return usage
+    return usage_reading(raw,
+                         fresh_in=int(raw.get("input_tokens") or 0),
+                         out=int(raw.get("output_tokens") or 0),
+                         cached_in=int(raw.get("cache_read_input_tokens") or 0),
+                         cache_write=int(raw.get("cache_creation_input_tokens") or 0))
 
 
 def _describe(blocks: list[dict]) -> str:

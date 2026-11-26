@@ -47,7 +47,7 @@ from .decisions import (
     evidence_text,
 )
 from .media_types import read_media_b64
-from .usage import reported_cost
+from .usage import reading as usage_reading
 
 #: The most images one request may carry — the limit the gateway and llama-server enforce.
 MAX_IMAGES = 16
@@ -138,10 +138,11 @@ class SystemOneDecisions:
             raise EndpointError(f"{self.name}: no answer came back for {', '.join(missing)}: "
                                 f"{json.dumps(data)[:300]}")
         usage_raw = data.get("usage") or {}
-        usage: dict = {"in": int(usage_raw.get("input_tokens") or 0),
-                       "out": int(usage_raw.get("output_tokens") or 0)}
-        if (cost := reported_cost(usage_raw)) is not None:
-            usage["cost"] = cost
+        # This protocol reports no cache traffic; the shape and the reported bill are
+        # `endpoints/usage.py`'s, so a decision's reading means what a completion's does.
+        usage = usage_reading(usage_raw,
+                              fresh_in=int(usage_raw.get("input_tokens") or 0),
+                              out=int(usage_raw.get("output_tokens") or 0))
         return Decision([_answer(q, answers[q.name], self.name) for q in questions], usage,
                         model=str(data.get("model") or ""),
                         provider=str(data.get("provider") or ""))

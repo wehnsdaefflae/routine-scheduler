@@ -41,7 +41,7 @@ from .base import (
 )
 from .media_types import supports_media_type
 from .openai_media import render_media
-from .usage import reported_cost
+from .usage import reading as usage_reading
 
 log = logging.getLogger("rsched.endpoints.openai")
 
@@ -215,21 +215,17 @@ class OpenAICompatEndpoint:
             # the qwen3 / GLM thinking models NanoGPT serves).
             text = message.get("reasoning") or message.get("reasoning_content") or ""
         usage = data.get("usage") or {}
-        # On this wire `prompt_tokens` is the TOTAL and cached/written tokens are its
-        # breakdown: subtract both so "in" is fresh input only, the convention the anthropic
-        # adapter reports. Reporting `cache_write` is what lets `cache_read_degraded` fire.
+        # This wire's own fact: `prompt_tokens` is the TOTAL and cached/written tokens are its
+        # breakdown, so both are subtracted to leave fresh input — the convention every reading
+        # keeps. Reporting `cache_write` is what lets `cache_read_degraded` fire. The dict's
+        # SHAPE is `usage.reading`'s, one implementation for every adapter.
         details = usage.get("prompt_tokens_details") or {}
         cached = int(details.get("cached_tokens") or 0)
         written = int(details.get("cache_write_tokens") or 0)
-        out: dict[str, int | float] = {
-            "in": max(int(usage.get("prompt_tokens") or 0) - cached - written, 0),
-            "out": int(usage.get("completion_tokens") or 0)}
-        if cached:
-            out["cached_in"] = cached
-        if written:
-            out["cache_write"] = written
-        if (cost := reported_cost(usage)) is not None:   # OpenRouter's `cost`, Otari's `cost_usd`
-            out["cost"] = cost
+        out = usage_reading(usage,
+                            fresh_in=int(usage.get("prompt_tokens") or 0) - cached - written,
+                            out=int(usage.get("completion_tokens") or 0),
+                            cached_in=cached, cache_write=written)
         stop = str(data["choices"][0].get("finish_reason") or "")
         stop_details: dict = {}
         refusal = message.get("refusal")
