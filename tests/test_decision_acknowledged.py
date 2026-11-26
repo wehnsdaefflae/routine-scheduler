@@ -75,14 +75,18 @@ def test_the_receipt_survives_the_run_that_consumes_his_answer(api_client):
 
 
 def test_a_newer_report_re_asking_the_decision_is_open_again(api_client):
-    """The re-ask must still work: self-audit deliberately lists a decision open again in a
-    NEWER report, and that outranks the receipt — otherwise the acknowledgement would silence
-    a question the routine means to ask a second time."""
+    """The re-ask must still work: once a run has READ the answer (consumed it from the
+    inbox), a NEWER report listing the decision open outranks the receipt. While the answer
+    still waits unread, a newer report is a live run's rewrite, not a re-ask."""
     c, tmp = _audit_client(api_client)
     assert c.post("/api/questions/audit:D157/answer",
                   json={"text": "B — name it"}).status_code == 200
-    _audit(tmp, {**REPORT, "generated": "2099-01-01T00:00:00+00:00"})
+    rdir = _audit(tmp, {**REPORT, "generated": "2099-01-01T00:00:00+00:00"})
+    assert _metas(c)["audit:D157"].get("answered") is True, "an unread answer was re-asked"
 
+    for p in (rdir / "inbox").glob("msg-*.json"):     # a run reads it, then re-asks
+        p.unlink()
+    memo.reset()
     row = _metas(c)["audit:D157"]
     assert not row.get("answered"), "a newer report re-asking it must read as OPEN again"
     assert row["options"] == ["A — drain it", "B — name it"]
