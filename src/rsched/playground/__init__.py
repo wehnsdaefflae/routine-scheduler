@@ -11,7 +11,7 @@ change what a production run is shown.
 
 There was a console subpage on top of this: a Conversations-shaped page listing the flagged
 conversations with their firings, plus a retrieval bench comparing a lexical and an embeddings
-backend over the same situation. The operator removed it (F959, 2026-11-25: "Remove the
+backend over the same situation. The operator removed it (F959: "Remove the
 playground subpage. We don't need it after all"), and everything only that page reached went
 with it — the HTTP surface, the bench's embeddings backend and its vector store. What remains is
 the half a RUN uses, which no page was ever needed for: a flagged conversation still runs its

@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.619.0] — 2026-11-26
+
+**A report whose `closes` completes nothing is now corrected instead of refused, and told so**
+(D314, the operator's own wording). 8 refused calls across 4 routines in the retained window;
+not one was trying to answer or settle a row — every one wanted to say its notice owes no
+answer, and two successive wordings of the prose failed to prevent it. The call is accepted,
+`closes` is dropped, and the run is told in its observation that the notice was filed owing no
+reply and settling no row. D196's objection stands: the drop is never silent. The correction
+happens once, in the value object, so the action layer and an out-of-band caller cannot
+disagree; the delivery is marked `no_reply` rather than as a closure, because a closure is
+excluded from the run gate's inbox predicate and marking one would have hidden the notice from
+its recipient.
+
+**The uncensored turn-takeover converts a turn's images to vision-util text BEFORE its
+request** (D315). Every routine binds a non-multimodal uncensored model, so a refused image
+turn posted its images, collected the provider's "does not support image inputs" 400, and only
+then converted on the post-error path. Same conversion, same transcript record, one request
+earlier — and the transcript now says why before the attempt instead of after a failure.
+Selection is deliberately unchanged: with no uncensored model multimodal, selecting on fit
+would leave a refused image turn with no takeover at all.
+
+**The Playground console subpage is removed** (F959, directly ordered). Its page, bench, HTTP
+surface, embeddings backend, vector store and the `playground_enabled` flag that gated only
+that page go with it. Stored conversations, run history and the shared firings reader ordinary
+run components consume are untouched; the engine's in-run playground layer stays.
+
+**The one-shot spool and the hook stream are compared on every week-strip read** (D305/D152,
+report-only). The strip still serves the SPOOL — what the daemon actually fires — while the
+stream's fold of the same question is compared against it by request id, and either-direction
+disagreement files `hook_stream_diverged`: the spool ahead means an arming row never landed, so
+switching the read would lose a real fire; the stream ahead means a terminal row never landed,
+so it would draw a fire that cannot happen. The switch that entry orders was staged behind a
+week of exactly this check, which did not exist until now.
+
 ## [0.618.0] — 2026-11-26
 
 **An answered self-audit decision is no longer re-asked while its answer waits in the inbox.**

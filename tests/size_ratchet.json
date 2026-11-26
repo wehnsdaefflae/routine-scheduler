@@ -19,7 +19,7 @@
     "src/rsched/utils_run.py": 520,
     "src/rsched/web/api_questions.py": 373,
     "src/rsched/web/api_routine_patch.py": 387,
-    "static/app.js": 383,
+    "static/app.js": 375,
     "static/base.css": 1197,
     "static/components/transcript.js": 459,
     "static/util.js": 381,

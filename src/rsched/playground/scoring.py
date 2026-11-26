@@ -5,9 +5,9 @@ It is deliberately the engine's own arithmetic, not a better lexical scorer: it 
 WHAT IS RUNNING TODAY rather than a variant of it.
 
 An embeddings backend lived here beside it, for the console subpage's retrieval bench — the
-head-to-head comparison that page existed to run. The operator removed that subpage (F959,
-2026-11-25), and with it went its only caller, so the embeddings half and the vector store it
-filled were removed in the same change: nothing in a run ever reached them. The in-run layer
+head-to-head comparison that page existed to run. The operator removed that subpage (F959),
+and with it went its only caller, so the embeddings half and the vector store it filled were
+removed in the same change: nothing in a run ever reached them. The in-run layer
 never could — `runtime._rank` ranks lexically on purpose, because a live turn must not wait on a
 provider call.
 """
