@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.622.0] — 2026-11-26
+
+**A playbook's setup is now SHOWN pre-filled when you start a conversation from it, and
+applied only after you confirm it** (D313, the operator's own option b). The six seeded
+playbooks declared a `setup:` block and nothing anywhere read it — the creation path saw
+instruction content only. Now the proposal is composed server-side, shown under the picked
+card, and merged into the composer's existing form fields at send.
+
+Three boundaries, each a property of what the proposal RETURNS rather than a rule someone has
+to remember. No credential material: `connections` comes back as provider NAMES, never the
+`{provider: account}` map the form takes, so a confirmed proposal cannot bind an identity —
+an account is picked in the composer's own card, from accounts actually connected. Nothing
+outside an allowlist of `setup:` keys survives, and everything else is dropped and NAMED, so a
+`capabilities:` or `secrets:` key in a hand-edited playbook reaches nothing. And a slug naming
+no library document is dropped rather than proposed, because a pre-fill that cannot be
+submitted is worse than an empty one.
+
+Nothing takes effect before the confirmation, and that is measured rather than argued: a
+browser test starts a shell-bearing playbook WITHOUT confirming and reads the config back —
+the brief is seeded while `shell` is absent from both the permissions and the actions, the
+proposed rule is absent, and the workdir is in neither root list. A confirmed value then passes
+exactly the same validator a hand-typed one does; no second door was added.
+
+**Three more starter playbooks ship** (D312): grant/LaTeX writing (a document against a call's
+mandated sections, limits and template, which must compile), AI-detection evaluation — written
+for reproducible measurement, with a frozen held-out corpus, recorded prompts and settings, a
+declared threshold and both error rates rather than accuracy, explicitly not for altering text
+so a detector scores it differently — and research-paper work. Each lands in a live library
+through the daemon's add-only boot sync.
+
 ## [0.621.0] — 2026-11-26
 
 **Four compatibility arms and two trigger types that nothing could reach are gone** (F878,

@@ -7,7 +7,7 @@ and which OAuth providers it needs bound. Until D313 the creation path read only
 instruction body, so a playbook naming `shell` seeded a conversation that could not run a shell
 command and said nothing about it.
 
-THE SHAPE OF THE ANSWER THE OPERATOR CHOSE (2026-11-25, option b — "pre-fill and show them at
+THE SHAPE OF THE ANSWER THE OPERATOR CHOSE (option b — "pre-fill and show them at
 creation; one click to confirm"), over applying them silently (a) and over pre-filling only the
 harmless ones (c). So this module's whole job is to compose a PROPOSAL — a thing to be READ —
 and it has no apply path at all. Choosing a playbook calls `proposal`, and `proposal` touches no
