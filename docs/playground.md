@@ -7,7 +7,8 @@ layer what to add to each turn, and that every addition is logged for you to jud
 There was a console subpage on top of this — a Conversations-shaped page listing the flagged
 conversations with their firings, plus a retrieval bench comparing a lexical and an embeddings
 backend side by side. The operator removed it (F959, 2026-11-25: *"Remove the playground subpage.
-We don't need it after all"*), and with it went its HTTP surface (`web/api_playground.py`), the
+We don't need it after all"*), and with it went its HTTP surface (the `api_playground` router,
+deleted — so it is deliberately not cited as a path here), the
 embeddings backend, the vector store, and the `playground_enabled` instance flag that gated
 nothing else. **Nothing about a run changed**: the seam below is untouched, and the firings of a
 conversation that already ran are still on disk beside its runs.
