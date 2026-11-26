@@ -16,6 +16,7 @@ import { rootsEditor } from "/static/components/fsroots.js";
 import { connectionsCard } from "/static/components/connections.js";
 import { abilitiesPanel } from "/static/components/abilities.js";
 import { playbookPicker } from "/static/components/playbook-picker.js";
+import { playbookSetup } from "/static/components/playbook-setup.js";
 import { rulePicker } from "/static/components/rulepicker.js";
 import { settingsSection } from "/static/components/settings-section.js";
 import { forgetField } from "/static/formpersist.js";
@@ -42,13 +43,22 @@ export function mountComposerOnly(main) {
   // know playbooks exist can still see what they are for. The selection is the same value the
   // `<select>` held and is posted as the same `playbook` field; the empty-library case mounts
   // nothing at all (components/playbook-picker.js).
+  // D313: a picked playbook's `setup:` is PRE-FILLED AND SHOWN here, and applies only when the
+  // person confirms it (components/playbook-setup.js holds that rule: its `value()` is empty
+  // until then, so selecting a playbook cannot change a setting). The confirmed values are
+  // merged into the ORDINARY form fields below — the same validators, the same permission
+  // cascade, no second door.
+  const pbSetup = playbookSetup();
+  let catalog = [];
   const pbSel = playbookPicker(() => {
     text.placeholder = pbSel.value
       ? "Optional — anything specific for this run? The playbook is the brief…"
       : "What should the agent do? The first message becomes the conversation's task…";
+    pbSetup.render(catalog.find((p) => p.slug === pbSel.value)?.setup);
   });
   api("/api/playbooks").then((r) => {
-    pbSel.render(r.playbooks || []);
+    catalog = r.playbooks || [];
+    pbSel.render(catalog);
   }).catch(() => { /* library unreachable — no list, plain conversation still works */ });
   const workdir = el("input", { type: "text", placeholder: "~/path/to/project (optional)",
     style: "width:100%;max-width:420px" });
@@ -167,9 +177,19 @@ export function mountComposerOnly(main) {
       const levels = Object.fromEntries(Object.entries(efforts)
         .filter(([, sel]) => sel.value).map(([role, sel]) => [role, sel.value]));
       if (Object.keys(levels).length) fd.append("efforts", JSON.stringify(levels));
-      if (workdir.value.trim()) fd.append("workdir", workdir.value.trim());
-      if (readRoots.value().length) fd.append("fs_read_roots", JSON.stringify(readRoots.value()));
-      if (writeRoots.value().length) fd.append("fs_write_roots", JSON.stringify(writeRoots.value()));
+      // D313: what the person CONFIRMED on the playbook's setup panel, merged into the fields
+      // the composer already posts — never a field of its own. `pbSetup.value()` is empty
+      // unless the confirmation was clicked, so an unconfirmed (or unticked, or deselected)
+      // proposal adds nothing here; and because the values ride the ordinary fields they pass
+      // the ordinary validators server-side, grant enforcer and permission cascade included.
+      const confirmedSetup = pbSetup.value();
+      const union = (a, b) => [...new Set([...(a || []), ...(b || [])])];
+      const wd = workdir.value.trim() || confirmedSetup.workdir || "";
+      if (wd) fd.append("workdir", wd);
+      const reads = union(readRoots.value(), confirmedSetup.fs_read_roots);
+      const writes = union(writeRoots.value(), confirmedSetup.fs_write_roots);
+      if (reads.length) fd.append("fs_read_roots", JSON.stringify(reads));
+      if (writes.length) fd.append("fs_write_roots", JSON.stringify(writes));
       if (turnsIn.value.trim()) fd.append("max_turns", turnsIn.value.trim());
       if (totalTurnsIn.value.trim()) fd.append("max_total_turns", totalTurnsIn.value.trim());
       if (minsIn.value.trim()) fd.append("max_wall_clock_min", minsIn.value.trim());
@@ -177,8 +197,17 @@ export function mountComposerOnly(main) {
       if (costIn.value.trim()) fd.append("max_cost", costIn.value.trim());
       if (askIn.value.trim()) fd.append("ask_timeout_min", askIn.value.trim());
       fd.append("deliberation", delib.value);
-      if (permPanel) fd.append("permissions", JSON.stringify(permPanel.value()));
-      if (rulePick) fd.append("rules", JSON.stringify(rulePick.selected));
+      if (permPanel) {
+        // The confirmed permission docs join the panel's `active` list and nothing else: the
+        // SERVER raises the capabilities each held doc requires and floors them back to those
+        // docs (resolve_permission_layers). So confirming `shell` grants exactly what holding
+        // the shell permission grants — the validator is untouched and remains the only door.
+        const layers = permPanel.value();
+        layers.active = union(layers.active, confirmedSetup.permissions);
+        fd.append("permissions", JSON.stringify(layers));
+      }
+      if (rulePick) fd.append("rules",
+        JSON.stringify(union(rulePick.selected, confirmedSetup.rules)));
       if (Object.keys(pickedConnections).length)
         fd.append("connections", JSON.stringify(pickedConnections));
       for (const f of files()) fd.append("files", f);
@@ -279,6 +308,9 @@ export function mountComposerOnly(main) {
       // the playbooks first, where a person looks before writing: picking one makes the
       // message box optional, which is what its placeholder then says
       pbSel.node,
+      // what the picked playbook needs, under the card that was just clicked and above the
+      // message box: it is read before the conversation is started, not after (D313)
+      pbSetup.node,
       text,
       el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" }, picker, admin.node, send)),
     setup);

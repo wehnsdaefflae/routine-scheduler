@@ -1,5 +1,7 @@
 """Playbook library API: list (catalog), read MAIN.md + its on-demand detail files, lint-gated
-MAIN edits, delete. Playbooks are captured from conversations (Save/Update-playbook — see
+MAIN edits, delete. The catalog carries each playbook's PROPOSED setup (playbook_setup) — read
+for confirmation at creation; proposing applies nothing.
+Playbooks are captured from conversations (Save/Update-playbook — see
 api_conversations.py) and reused to seed new ones; here they are browsed and hand-edited like any
 library doc. Git lives at the library root: reads through `workflows.library`, writes through
 `libgit.commit` (C1.10).
@@ -10,7 +12,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import libgit, playbooks
+from .. import libgit, playbook_setup, playbooks
 from ..ids import is_slug
 from ..readmodels import library_reads
 from ..workflows import library
@@ -50,7 +52,16 @@ def list_playbooks(request: Request) -> dict:
     """
     home = _home(request)
     lint = library_reads.lint(home)
-    items = [{**it, "problems": lint.get(f"playbooks/{it['slug']}/MAIN.md", [])}
+    server = request.app.state.server
+    # D313: each entry carries the SETUP its playbook proposes, sanitized here (the one place
+    # that knows which rules and permissions the library actually holds) and credential-free by
+    # construction — `connections` is provider NAMES, never an account. The picker renders it
+    # for confirmation and the Library tab shows it; neither applies anything, and a confirmed
+    # value travels the ordinary create form through the ordinary validators.
+    known = {"rules": library_reads.doc_slugs(server.rules_home),
+             "permissions": library_reads.doc_slugs(server.permissions_home)}
+    items = [{**it, "problems": lint.get(f"playbooks/{it['slug']}/MAIN.md", []),
+              "setup": playbook_setup.proposal(it, **known)}
              for it in playbooks.list_playbooks(home)]
     return {"playbooks": items, "head": library.head_commit(home)}
 

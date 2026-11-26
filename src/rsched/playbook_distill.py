@@ -245,12 +245,22 @@ def revise_playbook(server, conv_dir: Path, existing_main: str, slug: str) -> di
     return out
 
 
-def materialize(pb: dict) -> tuple[str, dict]:
-    """(full MAIN.md text, details dict) from a distilled/revised playbook — stamps today's date."""
+def materialize(pb: dict, *, setup: dict | None = None) -> tuple[str, dict]:
+    """(full MAIN.md text, details dict) from a distilled/revised playbook — stamps today's date.
+
+    `setup` is the credential-free settings block the conversation actually ran with
+    (`playbook_setup.from_config`), so the next conversation seeded from this playbook is
+    offered what this one NEEDED instead of nothing (F954). It carries provider names and never
+    an account: a playbook is a library document anyone reading the library can read, and an
+    account label in one is a standing record of whose mailbox the work was done in. Omitted or
+    empty, no `setup:` key is written at all.
+    """
     from . import playbooks
 
     meta = {"slug": pb["slug"], "title": pb["title"], "when": pb["when"],
             "tags": pb["tags"], "axis": pb["axis"],
             # user-facing doc metadata: the LOCAL calendar date, made timezone-explicit
             "updated": datetime.now().astimezone().date().isoformat()}
+    if setup:
+        meta["setup"] = setup
     return playbooks.compose_main(meta, pb["main_body"]), pb["details"]

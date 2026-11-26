@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
-from .. import playbook_distill
+from .. import playbook_distill, playbook_setup
 from .conversations_common import conversation_info
 
 router = APIRouter(tags=["conversations"])
@@ -28,7 +28,11 @@ def save_playbook(request: Request, slug: str) -> dict:
     except Exception as exc:
         raise HTTPException(502, f"could not distil a playbook: {exc}") from exc
     pb["slug"] = playbooks.unique_slug(home, pb["slug"])
-    main_text, details = playbook_distill.materialize(pb)
+    # F954: the settings this conversation actually ran with travel with the playbook, so the
+    # next one seeded from it is OFFERED them (playbook_setup) instead of starting bare. The
+    # block is credential-free by construction — provider names, never an account label.
+    main_text, details = playbook_distill.materialize(
+        pb, setup=playbook_setup.from_config(info.cfg))
     playbooks.write_playbook(home, pb["slug"], main=main_text, details=details)
     libgit.commit(home, f"save playbook {pb['slug']} (from conversation {slug})",
                   routines_home=server.routines_home, paths=[f"playbooks/{pb['slug']}"])
@@ -58,7 +62,8 @@ def update_playbook(request: Request, slug: str) -> dict:
         pb = playbook_distill.revise_playbook(server, info.cfg.dir, existing["content"], bound)
     except Exception as exc:
         raise HTTPException(502, f"could not revise the playbook: {exc}") from exc
-    main_text, details = playbook_distill.materialize(pb)
+    main_text, details = playbook_distill.materialize(
+        pb, setup=playbook_setup.from_config(info.cfg))
     playbooks.write_playbook(home, bound, main=main_text, details=details)
     libgit.commit(home, f"update playbook {bound} (from conversation {slug})",
                   routines_home=server.routines_home, paths=[f"playbooks/{bound}"])

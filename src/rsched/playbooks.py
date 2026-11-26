@@ -62,7 +62,7 @@ def list_playbooks(home: Path) -> list[dict]:
     d = playbooks_dir(home)
     if not d.is_dir():
         return []
-    out = []
+    out: list[dict] = []
     # a folder whose name is no slug is nothing the store can open, so the catalog omits it
     for sub in sorted(p for p in d.iterdir() if p.is_dir() and is_slug(p.name)):
         main = sub / MAIN
@@ -78,6 +78,11 @@ def list_playbooks(home: Path) -> list[dict]:
                     "axis": str(meta.get("axis") or "").strip(),
                     "tags": meta.get("tags") or [],
                     "updated": str(meta.get("updated") or ""),
+                    # The RAW `setup:` declaration, exactly as the document wrote it. This is
+                    # storage, so it neither validates nor sanitizes: the web layer turns it
+                    # into the credential-free proposal a person confirms, against the live
+                    # library, in one place (playbook_setup.proposal — D313).
+                    "setup": meta.get("setup") if isinstance(meta.get("setup"), dict) else {},
                     "details": details})
     return out
 

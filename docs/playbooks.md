@@ -37,11 +37,22 @@ gate — you edit or roll back afterwards (every save is a git commit).
    and its tags, so you can see what is there before clicking anything. Click a card to pick it;
    the picked card says so, and **start fresh instead** undoes it. With no playbooks in the
    library there is no list.
-3. Optionally type a first message to **specialize** it — the topic, the file, the specific ask.
+3. If the playbook declares a **setup** (see below), it appears under the card you picked:
+   everything it needs — the permissions it is about, the general rules it practises, the project
+   directory and folder access — **pre-filled and ticked, and applied to nothing yet**. Read it,
+   untick anything you do not want, then click **confirm this setup**. Until you do, selecting
+   the playbook has changed no setting: it seeds the brief and nothing else. Unticking a value
+   leaves it out entirely, and "start fresh instead" takes the whole proposal away with the
+   selection. A playbook names the **provider** a connection needs and never an account — bind
+   the account yourself under *Connections*.
+4. Optionally type a first message to **specialize** it — the topic, the file, the specific ask.
    You can leave it empty; the playbook's brief is enough, and the agent will ask you for any
    parameters it needs.
-4. Start. The playbook's brief becomes the conversation's working instruction, and your first
-   message is layered on as "this conversation's specific request".
+5. Start. The playbook's brief becomes the conversation's working instruction, and your first
+   message is layered on as "this conversation's specific request". What you confirmed travels
+   the composer's own fields, so it passes exactly the checks any other conversation's settings
+   pass — confirming a `shell` playbook grants what *holding the shell permission* grants, no
+   more.
 
 The conversation remembers which playbook it came from, which is what enables **Update playbook**
 later.
@@ -125,6 +136,16 @@ updated: 2026-07-14
 
 - **`when`** is the one-line catalog entry — it's what you see in the picker and the Library list.
 - **`axis`** states the generalization axis.
+- **`setup`** (optional) declares what the procedure presumes: `permissions` and `rules` by
+  library slug, `workdir`, `fs_write_roots`, `fs_read_roots`, `connections` (provider names) and
+  a `note` explaining the risky part. It is a **proposal a person confirms**, never an
+  application: pick the playbook and it is shown pre-filled; nothing lands until the
+  confirmation, and only what is still ticked. A `{{placeholder}}` path is listed as yours to
+  fill rather than pre-filled, a slug the library does not hold is named as not offered, and a
+  key outside that list is dropped — a playbook cannot switch a capability on, because the only
+  door to one is holding the permission doc that requires it. A playbook **never carries
+  credential material**: `connections` names providers, and a playbook saved from a conversation
+  records its providers with the accounts stripped.
 - **Parameters** use `{{named}}` placeholders for what varies; everything else stays concrete.
 - **Instructions** are imperative steps for a future agent, not a narrative of what happened.
 - **Detail files** (optional) hold long material — examples, schemas, references — that `MAIN.md`

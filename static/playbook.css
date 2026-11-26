@@ -132,3 +132,90 @@
   font-size: var(--t-m);
   color: var(--ink);
 }
+
+/* D313's panel: the setup a picked playbook PROPOSES, read before it is confirmed
+   (components/playbook-setup.js). It sits between the cards and the message box, describing the
+   card just clicked, so it reads as that card's consequence rather than as a settings section —
+   the pre-start settings are a separate disclosure further down the page.
+
+   The affirmative tint the selected card wears, for the same reason: this block belongs to the
+   selection. Nothing here is a severity, because nothing has gone wrong — an unconfirmed
+   proposal is the ordinary state of the panel, and the sentence beside the button says so. */
+.pb-setup {
+  margin-bottom: var(--s3);
+  padding: var(--s2) var(--s3);
+  background: var(--signal-dim);
+  border: 1px solid color-mix(in srgb, var(--signal) 38%, transparent);
+  border-radius: var(--r2);
+}
+
+/* "This playbook needs" — the same quiet caption the picker's own head uses. */
+.pb-setup-head {
+  margin-bottom: var(--s2);
+  font-size: var(--t-s);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* One proposed field: its label above, its values below. */
+.pb-setup-field { margin-bottom: var(--s2); }
+
+.pb-setup-label {
+  font-size: var(--t-s);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Why the field matters, on the label's own line: a reader deciding whether to untick
+   `permissions: shell` needs to know what the row is before the slug means anything. */
+.pb-setup-why {
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.pb-setup-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+  margin-top: var(--s1);
+}
+
+/* A value and its tick — a real checkbox, so unticking is the refusal the option rules in. */
+.pb-setup-item {
+  display: flex;
+  gap: var(--s1);
+  align-items: center;
+  font-size: var(--t-m);
+  font-family: var(--f-mono);
+  color: var(--ink);
+}
+
+/* The playbook's own note, the parameters it left unresolved, and anything the library does not
+   hold: prose about the proposal, never a control. */
+.pb-setup-note {
+  margin-top: var(--s1);
+  font-size: var(--t-s);
+  color: var(--ink-2);
+}
+
+/* The confirmation line: the button and the sentence that says what has and has not happened. */
+.pb-setup-foot {
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: var(--s2);
+}
+
+/* The one explicit confirmation the operator chose — a plain small button, already styled. */
+.pb-setup-confirm { flex: 0 0 auto; }
+
+/* "nothing is applied yet", and after the click what the ticked settings will do. The whole
+   guarantee of this panel is in this sentence, so it is as readable as the values above it. */
+.pb-setup-state {
+  flex: 1 1 auto;
+  font-size: var(--t-s);
+  color: var(--ink-2);
+}
