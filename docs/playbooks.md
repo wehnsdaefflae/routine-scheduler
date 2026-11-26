@@ -143,9 +143,12 @@ section) and commits to the library. Delete removes the subfolder — recoverabl
 ## Where playbooks live and how they travel
 
 Playbooks are part of the one library repo (`~/.local/share/routine-scheduler-libraries/`), so
-they're git-versioned and ride the same instance sync as everything else. A playbook shipped with
-the app (there's a starter, *Research a topic and deliver a cited report*) lands in an existing
-instance automatically at the next daemon restart.
+they're git-versioned and ride the same instance sync as everything else. The app ships a set of
+starter playbooks for the kinds of work conversations are actually used for — research and
+reporting, mail, chat history, websites, machine jobs, code revision, building a routine, grant
+and LaTeX writing, evaluating an AI-text detector, and working through a research paper. Each one
+that an instance's library does not already hold lands there automatically at the next daemon
+restart; a playbook already present is never overwritten, so your edits stand.
 
 ## See also
 
