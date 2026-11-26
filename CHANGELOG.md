@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.615.1] — 2026-11-26
+## [0.616.0] — 2026-11-26
 
 The run prompt no longer advertises child slots to a run already at its depth
 limit (R3737). Below the limit it still reports the remaining shared allowance;
