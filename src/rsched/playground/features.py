@@ -11,7 +11,7 @@ Two invariants make this safe to ship inside the live process:
 1. **A conversation without the flag never reaches this code**, and a flagged one with no
    features enabled gets "" — so production runs are byte-identical to today.
 2. **Every firing is logged** to the conversation's own `playground/firings.jsonl` before it is
-   handed back, so the page can show what the run was actually shown and the operator can judge
+   handed back, so the record says what the run was actually shown and the operator can judge
    precision from real turns rather than from a bench.
 
 The features, each one a claim from the design thread made testable:
@@ -50,7 +50,7 @@ MANUAL_KINDS = frozenset({"shell", "script", "write_util"})
 #: the word "search" inside a heredoc). A true positive measured on a hand-rolled SMTP call
 #: scored 1.26 — i.e. BELOW the median of the noise. No single floor separates the two, which
 #: is the first real result the playground produced and the reason the floor is tunable per
-#: conversation: the page exists to find out whether any value works, not to assume one does.
+#: conversation: the lab exists to find out whether any value works, not to assume one does.
 MIN_SCORE = 1.4
 
 

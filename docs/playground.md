@@ -1,11 +1,20 @@
 # The Playground
 
-A Conversations-shaped page for features that are not production yet. You talk to a playground
-conversation exactly as you talk to any other; what the flag buys is that the engine asks an
-experimental layer what to add to each turn, and that every addition is logged for you to judge.
+An experimental retrieval layer that runs INSIDE a flagged conversation. You talk to a playground
+conversation exactly as you talk to any other; what the flag buys is that the engine asks the
+layer what to add to each turn, and that every addition is logged for you to judge.
 
-Off by default. `playground_enabled: true` in the instance config makes the page and its nav
-entry appear (the same gate `browser_view_url` and the desktop addresses use).
+There was a console subpage on top of this — a Conversations-shaped page listing the flagged
+conversations with their firings, plus a retrieval bench comparing a lexical and an embeddings
+backend side by side. The operator removed it (F959, 2026-11-25: *"Remove the playground subpage.
+We don't need it after all"*), and with it went its HTTP surface (`web/api_playground.py`), the
+embeddings backend, the vector store, and the `playground_enabled` instance flag that gated
+nothing else. **Nothing about a run changed**: the seam below is untouched, and the firings of a
+conversation that already ran are still on disk beside its runs.
+
+There is therefore no page and no API. A playground conversation is started like any other
+conversation, and it is turned into one by its `routine.yaml` (below); its firings are read from
+the file the run wrote.
 
 ## What is isolated, and what deliberately is not
 
@@ -20,6 +29,19 @@ Not isolated, on purpose: **the same engine, the same code path, the same stores
 experiment that ran on a fork of the loop would be testing the fork. The layer reads the real
 utils, the real `.memory/` notes, the real reminders and rules — read-only — because retrieval
 judged against toy data tells you nothing.
+
+## Turning it on for one conversation
+
+In that conversation's own `routine.yaml`:
+
+```yaml
+playground:
+  on: true
+  features: [util-hint, memory-hint]
+  min_score: 1.1          # optional; else features.MIN_SCORE
+```
+
+Absent, malformed, or `on` missing = off, i.e. exactly production behaviour.
 
 ## The experiments
 
@@ -39,7 +61,8 @@ The evidence is the command it just ran, not its plan.
 
 ## Reading the results
 
-Each conversation's runs write `playground-firings.jsonl` beside the run. Two kinds matter:
+Each conversation's runs write `playground-firings.jsonl` beside the run
+(`features.firings_path`). Two kinds matter:
 
 * `fired` — this text was appended to that turn's observation. The run saw it.
 * `below_floor` — a hit was found and **withheld** because it did not clear the score floor.
@@ -49,9 +72,8 @@ and the floor is where this proposal currently fails (below).
 
 ## The floor, and the first real finding
 
-Set per conversation: `playground: {on: true, min_score: 1.1}`, or on the page when you start
-one. It exists as a dial rather than a constant because the measurement did not find a value
-that works.
+Set per conversation (`min_score` above). It is a dial rather than a constant because the
+measurement did not find a value that works.
 
 Measured over **6,731 real `shell`/`script`/`write_util` turns** from 138 run transcripts,
 ranking the 56-util catalog on `A+O` with token overlap:
@@ -65,109 +87,45 @@ ranking the 56-util catalog on `A+O` with token overlap:
 So no single threshold separates signal from coincidence on the lexical backend. The cause is
 visible: shell boilerplate (`cd`, `python3`, paths, `EOF`) dominates the overlap. Two repairs
 are worth testing — shell-specific stopwords, or narrowing the evidential query to the command's
-verb rather than its whole text — and both are cheap to try from the bench.
+verb rather than its whole text.
 
 A second brittleness is pinned as a test: `email` does not match `mail`, and `smtplib` does not
-match `smtp`. That is the strongest case for the embedding comparison, which is what the bench
-is for.
+match `smtp`.
 
-## The vector index, and what it measured
+## What the removed embeddings comparison measured
 
-`playground/vectorstore.py` is the real store: one `vectors.jsonl` per model under
-`<routines_home>/.control/playground-embed-cache/index/<model>/`, keyed by a hash of
-**(model, condition text)**. That key is what makes it self-maintaining — an edited summary gets
-a new key and is re-embedded, an unchanged one is never re-embedded, a deleted item is dropped
-by `prune()`, and two models never share a space. `POST /api/playground/vectors/sync` builds it;
-a second call with nothing changed makes **no provider call at all**.
-
-Search is an exact scan: at 774 conditions × 4096 dims a full cosine pass is milliseconds, and
-an ANN index (faiss, hnswlib, qdrant) would add a dependency and an approximation to a search
-that is already exact. `search()` is the only method that scans, so that swap stays local.
-
-**The embedding model is the instance's own, through otari.** The gateway serves exactly two
-embedders among its 809 models: `qwen3-embedding-8b` (cloud, 4096 dims) and
-`qwen3-embedding-8b-local` (omen's local-model-server, via decision-balancer's `EMBED_BACKENDS`
-pool). tag-fs already reaches them the same way — all four of its roles point at
-`http://127.0.0.1:4000/api/v1` — and holds **671,679** vectors of the cloud model at 256 dims.
-The cloud one is the default here because the local one's backend is currently down (the gateway
-returns 502 for it); `RSCHED_PLAYGROUND_EMBED_MODEL=qwen3-embedding-8b-local` switches over once
-it is up, and the store re-embeds rather than mixing spaces.
-
-### Dense beats lexical at RANKING, and neither can GATE
-
-Built: **774 conditions, 4096 dims, 50 seconds.** Then ten hand-labelled cases — seven real
-manual-re-implementation turns plus three negatives nothing in the library covers
-(`scripts/compare-backends.py cases`):
+Kept here as the record, because the conclusion outlives the bench that produced it. Over 774
+indexed conditions, ten hand-labelled cases (seven real manual-re-implementation turns, three
+negatives nothing in the library covers):
 
 | | top-1 correct (of 7) |
 |---|---|
 | lexical (token overlap) | **1** |
 | dense (qwen3-embedding-8b) | **7** |
 
-Dense fixes lexical's worst failures outright: the `cp …voice-rewrite-new.py` turn that scored
-lexical's highest false positive (14.46 for `voice-rewrite`, matched on the filename) returns
-`fs-ops`; the hand-rolled `smtplib` call returns `mail`; `pdftotext` returns `doc-read`.
+Dense fixed lexical's worst failures outright — the `cp …voice-rewrite-new.py` turn that scored
+lexical's highest false positive (14.46 for `voice-rewrite`, matched on the filename) returned
+`fs-ops`; the hand-rolled `smtplib` call returned `mail`; `pdftotext` returned `doc-read`.
 
-But the gating question is separate, and the answer is no — for both:
+But the gating question was separate, and the answer was no — for both backends:
 
-* dense's weakest true positive **0.558** sits *below* its strongest false positive **0.630**;
-* over 150 real `shell`/`script`/`write_util` turns, dense's median top score is **0.618** with
-  p10 0.539 and p90 0.697 — so the true positives land *inside* the noise band;
-* lexical is worse on both counts (median 1.061, p90 1.206, true positives from 0.707).
+* dense's weakest true positive **0.558** sat *below* its strongest false positive **0.630**;
+* over 150 real turns, dense's median top score was **0.618** (p10 0.539, p90 0.697) — the true
+  positives land *inside* the noise band;
+* lexical was worse on both counts (median 1.061, p90 1.206, true positives from 0.707).
 
 **So a fixed floor cannot carry a push channel on either backend.** What the measurement
 supports is dense retrieval for *ranking* — "which util is this about" — not for *deciding
-whether to interrupt*. Three routes worth testing from here: a margin test (top-1 minus top-2)
-rather than an absolute floor; a cheap classifier over the top few candidates; or restricting
-the channel to the moment a run is about to *author* a util, where a list is useful and a false
-positive is cheap.
+whether to interrupt*. Three routes worth testing: a margin test (top-1 minus top-2) rather than
+an absolute floor; a cheap classifier over the top few candidates; or restricting the channel to
+the moment a run is about to *author* a util, where a list is useful and a false positive is
+cheap.
 
-One practical cost the numbers also exposed: a per-turn dense query is a network round trip.
-A 150-turn serial replay timed out and had to be batched 32 at a time — which is why the live
-`util-hint` layer stays lexical and the dense comparison lives on the page.
-
-### Both indexes are built, and the local model's speed was mis-measured once
-
-| model | conditions | time | rate |
-|---|---|---|---|
-| `qwen3-embedding-8b` (cloud) | 775 → **775 vectors** | 50.3 s | ~0.065 s/text |
-| `qwen3-embedding-8b-local` (omen) | 775 → **774 vectors** | ~19 min | **~1.5 s/text warm** |
-
-The local model is the default: no condition text leaves the network to be indexed. Its first
-batch measured **163.8 s for 16 texts (~10 s each)**, which predicted a 2.2-hour build — that
-was **cold start, not throughput**. Warm, the same work ran ~7× faster. Never quote a local
-model's rate from its first batch.
-
-It is still ~23× slower than the cloud model, and that is the number design should use: fine for
-a one-off index build, **unusable on a per-turn query path**.
-
-Why **774 vectors for 775 conditions**: the store is keyed by (model, condition text), so two
-items whose condition text is byte-identical share one vector. Two `rules-review` reminders carry
-the same description, so `held` one short of `conditions` is correct rather than a gap.
-
-Verified on the local index — the hand-rolled SMTP turn ranks `mail` first at **0.540**, against
-the cloud model's 0.532 on the same query, so the two backends agree about the ranking as well as
-about their vectors.
-
-## The bench
-
-`POST /api/playground/bench` and the panel on the page: fill in any components, pick stores, and
-see lexical and embedding rankings over the same input, side by side, with the floor drawn on
-every row. Embeddings run **here only**, never inside a conversation's turn — a live turn must
-not wait on a provider.
-
-Configure a backend with three env vars (any OpenAI-compatible `/v1/embeddings`):
-
-```
-RSCHED_PLAYGROUND_EMBED_URL=https://<provider>/v1/embeddings
-RSCHED_PLAYGROUND_EMBED_MODEL=<model id>
-RSCHED_PLAYGROUND_EMBED_KEY_ENV=<NAME_OF_THE_SECRET_ENV_VAR>
-```
-
-Only `http(s)` is accepted (a `file:` URL would make the backend a local-file reader). Vectors
-are cached on disk under `<routines_home>/.control/playground-embed-cache`, keyed by model and
-text, so a condition is embedded once however often you query it. Unconfigured, the page says
-what is missing and shows the lexical column alone.
+One practical cost the numbers exposed, and the reason the in-run layer is lexical: a per-turn
+dense query is a network round trip. A 150-turn serial replay timed out and had to be batched 32
+at a time, and the local embedder measured ~1.5 s/text warm — fine for a one-off index build,
+unusable on a per-turn query path. (Also learned there: a local model's first batch is cold
+start, not throughput — it ran ~7× faster warm. Never quote a rate from the first batch.)
 
 ## What gets indexed
 
@@ -186,13 +144,12 @@ routine slug for a local one. A promotion decision about a global row is not the
 ## Promotion
 
 Not a button. When an experiment earns production, that is a deliberate code change: move the
-layer's call out of the playground seam, delete the flag check, and give it real tests. This
-page exists to tell you whether it earned it.
+layer's call out of the playground seam, delete the flag check, and give it real tests.
 
 ## Where the code is
 
 `src/rsched/playground/` — `stores.py` (the four libraries as conditions), `scoring.py` (the
-backends), `features.py` (the experiments and their config), `runtime.py` (the one function the
-engine calls). `src/rsched/web/api_playground.py` is the HTTP surface,
-`static/views/playground.js` + `playground-bench.js` the page, `tests/test_playground.py` the
-tests — whose first concern is that a production run is unchanged.
+lexical backend), `features.py` (the experiments and their config), `runtime.py` (the one
+function the engine calls). `tests/test_playground.py` holds the tests — whose first concern is
+that a production run is unchanged — and `tests/test_playground_subpage_removed.py` holds the
+absence of the removed subpage.

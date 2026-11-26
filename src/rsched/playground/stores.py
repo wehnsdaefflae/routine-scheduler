@@ -14,15 +14,14 @@ Each item is reduced to the text that states WHEN IT APPLIES, never its payload:
   the regex is the current mechanism being compared against, so indexing it would be circular.
 * **rules** — `effect.when` plus each assist's `line`. `when` is literally the rule's moment.
 
-Everything is read-only here; writes live in `labels.py` (the scratch dir) and in the page's
-own authoring calls.
+Everything is read-only here: the in-run layer only ever reads these stores.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -34,12 +33,7 @@ class Condition:
     ident: str              # the item's own handle (util name, note name, rem id, rule slug)
     condition: str          # the text that says WHEN this item applies — what gets indexed
     owner: str = ""         # the routine a note/local reminder belongs to ("" = global/shared)
-    detail: str = ""        # what the page shows when a hit is expanded
-    meta: dict = field(default_factory=dict)
-
-    def as_dict(self) -> dict:
-        return {"store": self.store, "ident": self.ident, "condition": self.condition,
-                "owner": self.owner, "detail": self.detail, **self.meta}
+    detail: str = ""        # the one line a firing quotes beside the hit
 
 
 def _usage_block(doc: str) -> str:
@@ -85,7 +79,7 @@ def utils(libraries_home: Path) -> list[Condition]:
         out.append(Condition(
             store="utils", ident=name,
             condition=f"{name} {summary} {tags} {usage}".strip(),
-            detail=summary, meta={"tags": tags, "usage": usage}))
+            detail=summary))
     return out
 
 
@@ -121,9 +115,8 @@ def memory(routines_home: Path) -> list[Condition]:
 def reminders(libraries_home: Path, routines_home: Path) -> list[Condition]:
     """Consequence reminders from BOTH stores, each keeping its blast radius.
 
-    `owner` is "" for a global reminder and the routine slug for a local one — the page shows
-    it, because a promotion decision about a global row is not the same decision as about a
-    local one (a bad global row taxes every routine it reaches, silently).
+    `owner` is "" for a global reminder and the routine slug for a local one — a firing records
+    it, because a global row taxes every routine it reaches while a local one does not.
     """
     out: list[Condition] = []
 
@@ -133,10 +126,7 @@ def reminders(libraries_home: Path, routines_home: Path) -> list[Condition]:
         if not ident or not desc:
             return None
         return Condition(
-            store="reminders", ident=ident, owner=owner, condition=desc, detail=desc,
-            meta={"regex": str(payload.get("regex") or ""),
-                  "trigger_kind": str(payload.get("kind") or "action"),
-                  "reach": str(payload.get("reach") or "")})
+            store="reminders", ident=ident, owner=owner, condition=desc, detail=desc)
 
     gdir = Path(libraries_home) / "reminders"
     if gdir.is_dir():
@@ -184,7 +174,7 @@ def rules(libraries_home: Path) -> list[Condition]:
         out.append(Condition(
             store="rules", ident=slug,
             condition=" ".join([slug.replace("-", " "), when, *lines]).strip(),
-            detail=when, meta={"assist_lines": lines}))
+            detail=when))
     return out
 
 

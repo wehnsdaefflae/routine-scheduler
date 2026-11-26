@@ -1,4 +1,4 @@
-"""The one function the ENGINE calls — everything else here is the page's.
+"""The one function the ENGINE calls — `at_observation`; everything else here serves it.
 
 `engine/loop.EngineLoop._tails` asks this once per observation. The contract is deliberately
 narrow, because this is experimental code inside the live process:
@@ -126,9 +126,9 @@ def _render(feature, hit) -> str:
 def _rank(loop, feature, query: str):
     """Rank the feature's stores, loading the index once per run.
 
-    Lexical only in the engine path, deliberately: a live turn must not wait on a network call
-    to a provider, and the embedding comparison is the PAGE's job, where latency is the
-    operator's to spend rather than a conversation's.
+    Lexical only, deliberately: a live turn must not wait on a network call to a provider. The
+    embeddings comparison ran on the console subpage, where latency was the operator's to spend
+    rather than a conversation's — and it went when that subpage did (F959).
     """
     from .scoring import LexicalBackend
     from .stores import load_all

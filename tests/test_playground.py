@@ -12,7 +12,7 @@ import yaml
 
 from rsched.engine import recall
 from rsched.playground import features, scoring, stores
-from rsched.playground.scoring import EmbeddingBackend, LexicalBackend
+from rsched.playground.scoring import LexicalBackend
 
 
 def test_the_lexical_baseline_is_the_engines_own_tokenizer():
@@ -173,7 +173,7 @@ def test_reminder_conditions_are_the_consequence_not_the_regex(tmp_path):
     assert len(got) == 1
     assert got[0].condition == "a move can orphan a file"
     assert "fs-ops" not in got[0].condition
-    assert got[0].owner == ""      # global: the blast radius the page must show
+    assert got[0].owner == ""      # global: the blast radius a firing records
 
 
 def test_lexical_ranking_normalizes_by_query_length():
@@ -199,7 +199,7 @@ def test_the_floor_is_per_conversation(tmp_path):
 
 
 def test_a_true_positive_lands_below_the_default_floor():
-    """THE finding the page exists to expose. A hand-rolled SMTP call does rank `mail` first —
+    """THE finding the lab exists to expose. A hand-rolled SMTP call does rank `mail` first —
     the retrieval is right — and still scores under the default floor, so the layer would
     withhold it. Measured against the live catalog the same case scored 1.26 against a floor of
     1.4; the property, not that number, is what is pinned, because the score moves with how
@@ -216,24 +216,12 @@ def test_a_true_positive_lands_below_the_default_floor():
 
 
 def test_lexical_matching_is_brittle_on_morphology():
-    """Pinned because it is the case FOR the embedding comparison: `email` does not match
-    `mail` and `smtplib` does not match `smtp`, so a condition written with one spelling
-    misses a query written with the other, however relevant it is."""
+    """Pinned because it is the lexical baseline's known ceiling — the finding the embeddings
+    comparison was built to weigh (that bench went with the console subpage, F959): `email` does
+    not match `mail` and `smtplib` does not match `smtp`, so a condition written with one
+    spelling misses a query written with the other, however relevant it is."""
     from rsched.playground.stores import Condition
 
     conditions = [Condition(store="utils", ident="mail",
                             condition="mail everything about a mailbox account: send smtp")]
     assert LexicalBackend().rank("sending email with smtplib", conditions, 3) == []
-
-
-def test_the_embedding_backend_refuses_a_non_http_url(tmp_path):
-    """An operator-supplied URL must not be able to turn the backend into a file reader."""
-    backend = EmbeddingBackend(tmp_path, url="file:///etc/passwd", model="m")
-    assert not backend.available
-    assert "http" in backend.why
-
-
-def test_the_embedding_backend_says_what_is_missing(tmp_path):
-    backend = EmbeddingBackend(tmp_path, url="", model="")
-    assert not backend.available
-    assert "no embeddings endpoint configured" in backend.why
