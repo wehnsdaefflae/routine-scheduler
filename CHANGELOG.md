@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.620.0] — 2026-11-26
+
+**A relative path now says WHERE it landed, and a jailed path says it was the jail** (F962).
+A run created `tmp/pr49-review/` with `mkdir`, wrote a file into it, handed the same relative
+path to a util and got `FileNotFoundError` — on the absolute path too. It reported that as a
+sandbox defect, and it is not one: measured three ways, a mid-run-created directory IS mounted
+at the next util dispatch, a real jailed subprocess reads it fine, and a Landlock denial raises
+EACCES rather than ENOENT, so that error could never have been a jail denial.
+
+The cause is the resolver doing exactly what it promises: a relative path whose parent the
+working directory does not hold resolves in the first granted root that DOES, and that routine
+had written into a `tmp/` inside one of its granted roots a turn earlier. So the files were
+real and in another root, while the observation echoed only the relative path — and a util,
+launched with the working directory as its cwd, correctly found nothing. Every file action now
+carries the absolute path whenever a relative one left the working directory, annotated once at
+the routing funnel, with the sentence that says what to hand a util.
+
+And the reporter's fallback is delivered for the case that IS the jail: a failed call's output
+is read against the jail, and any path it named that exists on the host but no mounted root
+covers is reported as a jail denial in words, because Landlock's EACCES names the path and not
+the reason. A path that is simply absent is never blamed on the jail — that distinction is what
+keeps the note from sending a reader after the wrong repair.
+
 ## [0.619.0] — 2026-11-26
 
 **A report whose `closes` completes nothing is now corrected instead of refused, and told so**
