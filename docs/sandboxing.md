@@ -25,6 +25,26 @@ jailed) plus **scoped secrets injection**. Three cooperating layers:
   and lacks the ABI-4 network rules; evaluated 2026-07-17.)
 - `rsched/sandbox.py` — the policy layer: derives the visible filesystem from the run,
   decides strict/permissive/off, assembles the spec, wraps the command.
+- `rsched/toolchainroots.py` — the HOST paths every jailed command gets whatever the routine
+  was granted (the system trees it needs to execute, temp space, the HOME-scoped toolchain),
+  plus `mounted_roots`, the ONE reading of "can a command under this policy reach that path
+  at all?". It is deliberately wider than the real ruleset and never narrower, because its
+  only consumer is a diagnostic that says a path was outside the jail: a false accusation
+  sends a reader after the wrong repair, a missing note costs nothing.
+- `rsched/engine/jailnotes.py` — what the jail decided, as the fields a call's observation
+  carries: the refused run dirs and the depth, the unstat-able granted roots that were
+  dropped, and `blocked_paths` — the paths a FAILED call NAMED that exist on the host and no
+  mounted root covers. The last one exists because Landlock has no diagnostics: a refused
+  read raises EACCES with the path and no reason, so "the jail does not contain this" is
+  indistinguishable from "its permissions forbid it", and a run that just wrote the file
+  concludes neither and doubts the path instead.
+- `rsched/engine/pathecho.py` — the other half of that confusion, and the more common one: a
+  RELATIVE action path can resolve into a granted root rather than the working directory
+  (`paths.resolve_rel(prefer_existing=True)`), and the observation used to echo the relative
+  string back unchanged. A util is launched with the working directory as its cwd, so the same
+  string then resolves somewhere else and the util reports the file MISSING — a
+  `FileNotFoundError` that is not a jail denial at all. Every file action now names the
+  absolute path whenever it left the working directory.
 - `rsched/utils_stage.py` — WHERE a util candidate is when its selftest runs (F584/D161):
   staged in the library under a throwaway `staging--<name>-<pid>-<token>` slug and installed
   at `utils/<name>` only on green, so no routine's `gu <name>` reaches an untested script.

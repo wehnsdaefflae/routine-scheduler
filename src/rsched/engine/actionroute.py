@@ -20,6 +20,7 @@ from . import (
     interact,
     jobops,
     manage_lane,
+    pathecho,
     secretgate,
     thenscript,
 )
@@ -49,7 +50,13 @@ def dispatch_action(loop, action: dict, ctx) -> dict:
             if gated is not None:
                 return gated
             return background.start(loop, action, ctx)
-        return _route(loop, action, ctx)
+        # A relative path can resolve into a GRANTED ROOT rather than the working directory
+        # (`paths.resolve_rel(prefer_existing=True)`), and the observation echoed the relative
+        # string back unchanged — so a util handed that same string, launched with the working
+        # directory as its cwd, reported the file missing. `pathecho` says where it landed;
+        # here rather than in each handler, and here rather than in `executor.dispatch`,
+        # because this is the one return every routed action passes through.
+        return pathecho.annotate(action, _route(loop, action, ctx), ctx)
     except RunAborted:
         raise
     except Exception as exc:

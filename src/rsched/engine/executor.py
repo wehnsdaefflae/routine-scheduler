@@ -231,8 +231,8 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — many sm
         ctx.count_util(name, "ok" if code == 0
                        else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))
     obs = {"kind": "util", "name": name, "args": args, "exit": code,
-           **command_output(ctx, name, out, err, code), **withheld.note(ctx),
-           **withheld_verb_scoped(ctx, name, args), **_jail_notes(policy), **killed}
+           **command_output(ctx, name, out, err, code), **withheld.note(ctx), **killed,
+           **withheld_verb_scoped(ctx, name, args), **_jail_notes(policy, out, err, code)}
     if ended is not None:
         obs[ended] = True   # not a failure, so no repair route
     elif code != 0:
@@ -308,9 +308,9 @@ def do_script(action: dict, ctx: RunContext) -> dict:
         env_secrets=env_secrets, aborted=ctx.aborted,
         cancelled=cancelled_for_turn(ctx), seal_dir=ctx.routine.dir)
     killed = _note_if_killed(ctx, "script", name, code)
-    obs = {"kind": "script", "name": name, "args": args, "exit": code,
+    obs = {"kind": "script", "name": name, "args": args, "exit": code, **killed,
            **command_output(ctx, f"script-{name}", out, err, code),
-           **withheld.note(ctx), **_jail_notes(policy), **killed}
+           **withheld.note(ctx), **_jail_notes(policy, out, err, code)}
     if ended := _ended_by_a_person(ctx, code):
         obs[ended] = True
     elif code != 0 and (usage := scripts.usage(home, name)):
@@ -343,14 +343,14 @@ def do_shell(action: dict, ctx: RunContext) -> dict:
         cwd = candidate if candidate.is_absolute() else (work_dir(ctx) / candidate)
     policy = sandbox.policy_for_ctx(ctx)   # the jail AND the dead-root note (R2260)
     result = shellrun.run_shell(
-        command, policy=policy,
-        libraries_home=ctx.server.libraries_home, cwd=cwd,
+        command, policy=policy, libraries_home=ctx.server.libraries_home, cwd=cwd,
         timeout=int(action.get("timeout_s") or shellrun.SHELL_DEFAULT_TIMEOUT_S),
         aborted=ctx.aborted, cancelled=cancelled_for_turn(ctx))
-    killed = _note_if_killed(ctx, "shell", command[:60], int(result["exit"]))
-    obs = {"kind": "shell", "command": command, "exit": result["exit"],
-           **command_output(ctx, "shell", result["stdout"], result["stderr"], result["exit"]),
-           **_jail_notes(policy), **killed}
+    out, err, code = result["stdout"], result["stderr"], int(result["exit"])
+    killed = _note_if_killed(ctx, "shell", command[:60], code)
+    obs = {"kind": "shell", "command": command, "exit": code,
+           **command_output(ctx, "shell", out, err, code),
+           **killed, **_jail_notes(policy, out, err, code)}
     obs["truncated"] = obs["truncated"] or result["truncated"]
     if marks_a_write(command):
         # D158: no gate saw this write, so the record (and one health event) is all there is.

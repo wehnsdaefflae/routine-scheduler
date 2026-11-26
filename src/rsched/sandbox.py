@@ -31,35 +31,20 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
 import sys
-import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from . import entities, landlock, ownseal, privatestores, rundepth
+from . import entities, landlock, ownseal, privatestores, rundepth, toolchainroots
 from .paths import expand, within
 
 log = logging.getLogger("rsched.sandbox")
 
-# System trees every util needs to EXECUTE at all (read+execute): interpreters, libraries,
-# /etc (DNS, SSL certs, locale), /proc + /sys (uv, headless chromium), /run (resolved DNS),
-# /var/log (host service logs, read through a `shell` command). DAC still applies underneath —
-# Landlock only ever
-# SUBTRACTS access. The daemon-user's HOME is deliberately NOT here: the high-value targets
-# (~/.config/routine-scheduler/secrets.env, ~/.credentials, ~/.ssh) stay invisible.
-_SYSTEM_RO = ("/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/etc", "/opt",
-              "/run", "/sys", "/proc", "/var/log")
-_SYSTEM_RW = ("/tmp", "/var/tmp", "/dev")  # noqa: S108 — jail roots, not temp-file handling
-# HOME-scoped toolchain, read-only: launchers, the git/gh identity utils need to push with,
-# and the host `claude` CLI install (a symlink into .local/share/claude on host installs; in
-# the container it lives under /usr, already covered). The price of utils doing git/LLM work;
-# documented in docs/sandboxing.md.
-_HOME_RO = (".local/bin", ".local/share/claude", ".gitconfig", ".config/git", ".config/gh")
-# HOME-scoped tool state, read-write: uv's script envs + managed pythons, XDG cache/state
-# (playwright browsers, tool caches), and the claude CLI's session state — sanctioned tools
-# of the system (used by independent Claude CLI utilities).
-_HOME_RW = (".cache", ".local/share/uv", ".local/state", ".claude", ".claude.json")
+# The HOST paths every jailed command gets whatever the run was granted — the system trees it
+# needs to execute, temp space, and the HOME-scoped toolchain — live in `toolchainroots`, with
+# the one reading of "is this path inside the jail at all?" that the engine's diagnostic asks.
+# They are not about a run's grants, which is all this module composes.
+mounted_roots = toolchainroots.mounted_roots
 
 
 class SandboxRefusal(Exception):  # noqa: N818 — a refusal decision, not an error condition
@@ -147,14 +132,7 @@ def _warn_once(key: str, message: str) -> None:
         log.warning("%s", message)
 
 
-def _toolchain() -> tuple[list[str], list[str]]:
-    home = Path.home()
-    ro = [*_SYSTEM_RO, sys.prefix, sys.base_prefix,
-          *(str(home / rel) for rel in _HOME_RO)]
-    if uv := shutil.which("uv"):
-        ro.append(str(Path(uv).resolve().parent))
-    rw = [*_SYSTEM_RW, tempfile.gettempdir(), *(str(home / rel) for rel in _HOME_RW)]
-    return ro, rw
+_toolchain = toolchainroots.toolchain
 
 
 def _unreadable(root: Path | str) -> bool:
