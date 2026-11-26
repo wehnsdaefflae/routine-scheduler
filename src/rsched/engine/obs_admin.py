@@ -245,6 +245,13 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                        "on your routine card, and his answer arrives in YOUR inbox for your "
                        "next run — so do not also ask it as an ask_user."
                        if obs.get("decision_qid") else "")
+            # The `closes` was dropped because it completed nothing. Said HERE, in the turn
+            # that filed it: the filing stands, so the only thing that makes this a correction
+            # rather than a silent no-op is that the run reads what became of the field.
+            dropped = (" Your `closes` was DROPPED — it completes a disposal, and this report "
+                       "names none: the notice is filed as owing NO reply back, and it settled "
+                       "no row. Name the row in `answers` or `settles` if you meant to dispose "
+                       "of one." if obs.get("closes_dropped") else "")
             # The prose claims a disposal no FIELD performs: the row stays open. Not a
             # refusal — the prose may be a citation this check read as a claim.
             said = (" Your text says it disposes of "
@@ -257,8 +264,8 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                     "Re-file with the id in the right field if you meant it."
                     if obs.get("claimed_not_disposed") else "")
             return (f"OBSERVATION (report filed as {obs.get('id')}: {obs.get('title')!r} — "
-                    f"{where}.{took}{cut}{decided}{said} Refer to it by that id if you mention "
-                    "it again. Continue your own task.)")
+                    f"{where}.{took}{cut}{dropped}{decided}{said} Refer to it by that id if "
+                    "you mention it again. Continue your own task.)")
         return ("OBSERVATION (report: could NOT write the reports log (I/O error) — the "
                 "report was not filed. Continue your own task; put it in your finish summary "
                 "instead.)")

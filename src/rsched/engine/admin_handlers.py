@@ -168,20 +168,23 @@ def handle_report(loop, action: dict) -> dict:
                     "elsewhere": [(rid, report_threads.owner_of(rows, rid) or "")
                                   for rid in elsewhere],
                     "unrouted": unrouted}
+    # Built here rather than in the call: a `closes` with nothing to complete is DROPPED by the
+    # value object, and the run has to be told that in this turn's observation — the correction
+    # is only explicit if the filer reads it.
+    disposal = reports.Disposal(answers=answers, closes=bool(action.get("closes")),
+                                settles=tuple(settles))
     try:
         filed = reports.file_report(home, routine=ctx.routine.slug, run_id=ctx.run_id,
                                     title=title, detail=detail, target=target,
-                                    target_dir=target_dir,
-                                    disposal=reports.Disposal(
-                                        answers=answers,
-                                        closes=bool(action.get("closes")),
-                                        settles=tuple(settles)),
+                                    target_dir=target_dir, disposal=disposal,
                                     supersedes=tuple(folded))
     except report_threads.ThreadCapError as cap:
         return {"kind": "report", "target": target, "thread_cap": report_threads.OPEN_THREAD_CAP,
                 "open_to_target": cap.open_ids, "oldest": cap.open_ids[0]}
     out = {"kind": "report", "title": title, "filed": filed is not None,
            "id": filed[1] if filed else ""}
+    if filed and disposal.closes_dropped:
+        out["closes_dropped"] = True
     # tell the filer the detail cap bit, while it can still re-file the rest
     if filed and (dropped := reports.clip_detail(detail)[1]):
         out["detail_truncated"] = dropped

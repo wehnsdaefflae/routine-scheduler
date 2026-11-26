@@ -223,12 +223,17 @@ unclosable). Those 273 rows stay as they are — the text is gone from before th
 re-cut would only make it look recoverable.
 
 **The terminal acknowledgment.** A reply row may set `closes: true` beside `answers` (a bare
-`closes` is rejected at BOTH entrances — the action layer for a run, and `reports.Disposal`
-for an out-of-band caller, whose refusal names what a closure needs; D196, the operator
-2026-10-18, who accepted the break for existing callers explicitly. `supersedes` is NOT one of
-those faces: folding rows makes this report their thread, which is the opposite of ending it,
-and normalizing such a closure to False used to accept the filing while its sender believed a
-thread was closed that was not): it settles its target as any answer does AND is itself
+`closes` is ACCEPTED and CORRECTED in one place — `reports.Disposal`, so the action layer and
+an out-of-band caller cannot disagree: the field is dropped, the notice is filed owing no reply
+and settling no row, and the filing observation says exactly that. D196, the operator
+2026-10-18, first had it refused loudly at both entrances; what he rejected then — and what the
+correction is still built to avoid — was dropping `closes` SILENTLY, which accepted the filing
+while its sender believed a thread was closed that was not, so the drop is now always
+reported. `supersedes` is NOT one of those faces: folding rows makes this report their thread,
+which is the opposite of ending it. A corrected notice is still delivered as freight the run
+gate admits, marked "no reply needed — settles no row": the sender asked for no answer, not for
+no reader, and marking it a closure would have hidden it): a real closure settles its target as
+any answer does AND is itself
 born settled — it asks nothing back, so the exchange ENDS there instead of ratcheting (every
 answer otherwise being a new open report waiting for one more reply). A closure is still
 delivered when addressed, with the message marked "no reply needed"; answering a closure
@@ -243,7 +248,8 @@ both were measured on this ledger as F497 (D134, operator-selected 2026-09-18):
   *and* R1328 in its own title, carried `answers: "R1527"`, and left both at 11 and 12 days with
   an empty `answered_by` — a day after they had been genuinely answered.
 - **A report that asks nothing back could not be settled at all.** A fold-carrier, or a plain
-  FYI, answers no single row, so `closes` was refused and the row was born `open` forever. Seven
+  FYI, answers no single row, so `closes` had nothing to attach to and the row was born `open`
+  forever (today `settles` carries that claim, and a bare `closes` is corrected, not lost). Seven
   such carriers sat open on 2026-09-16, four of them saying "no reply needed" in their own prose.
   Because folding empties triage while minting one open carrier per fold, `live` could not fall
   below the number of folds — which is why a flat `live` beside `triage: 0` puzzled three runs.

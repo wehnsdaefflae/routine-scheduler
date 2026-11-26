@@ -133,8 +133,10 @@ Long form: `docs/contracts.md` § Core contracts.
   paths); collection happens once, in `subruns._collect`
 - **`report` is the ONE channel for work that is not the run's own task** — ungated; addressed
   reports wait in the target's `inbox/` for its next scheduled run (they start no run).
-  `answers`/`closes`, `supersedes`, `settles`, the open-thread cap (D110). A shared store's
-  `notes/` is the lighter coordination channel, not a ledger
+  `answers`/`closes`, `supersedes`, `settles`, the open-thread cap (D110). A `closes` with
+  neither `answers` nor `settles` is CORRECTED, never refused and never silently dropped
+  (`report_disposal`): filed owing no reply, settling no row, and the observation says so.
+  A shared store's `notes/` is the lighter coordination channel, not a ledger
 - `create_routine` / `manage_lane` are conversation-INITIATED: without a user they queue a
   PROPOSAL (`.control/pending-creations/`), judged against the live vocabulary in the queue writer
   (`pendingvocab.problem`). `revises: true` proposes another routine's recipe revision (D198),

@@ -214,10 +214,10 @@ ACTION_SCHEMA: dict = {
                            "With `settles` a reply needs no `answers` to carry `closes`"},
         "closes": {"type": "boolean",
                    "description": "report: with `answers` or `settles` (NOT `supersedes` — a "
-                                  "fold is not a closure, and that pairing is REFUSED) — this "
-                                  "reply COMPLETES the exchange: it settles its target(s) AND "
-                                  "is itself born settled, asking nothing back. Set it when "
-                                  "your answer needs no reply; only a NEW report reopens it"},
+                                  "fold is not a closure) — this reply COMPLETES the exchange: "
+                                  "it settles its target(s) AND is itself born settled, asking "
+                                  "nothing back. ALONE it is DROPPED: your notice is filed "
+                                  "owing no reply and settling no row, and you are told so"},
         "supersedes": {
             "type": "array", "items": {"type": "string"}, "maxItems": SUPERSEDES_MAX,
             "description": "report: OPTIONAL — existing report ids (R<n>) this one TAKES OVER. "

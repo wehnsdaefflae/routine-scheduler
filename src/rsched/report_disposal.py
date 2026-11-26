@@ -1,4 +1,4 @@
-"""What a report DISPOSES OF — the value object, its normalization, and its one refusal.
+"""What a report DISPOSES OF — the value object, its normalization, and its one correction.
 
 A pure value with rules and no I/O, which is why it is its own module beside `report_detail`
 (the delivered bound) rather than part of `reports` (identity, locking, lifecycle): the three
@@ -24,13 +24,17 @@ class Disposal:
 
     - `answers` — the ONE report id this reply belongs to, the exchange record. Unchanged.
     - `settles` — every id this reply terminally disposes of (D134, operator-selected option C).
-    - `closes` — this reply is itself born settled. Valid beside EITHER disposal, and REFUSED
-      with neither (D196; see `__post_init__`).
+    - `closes` — this reply is itself born settled. Valid beside EITHER disposal, and DROPPED
+      with neither — explicitly, never silently (see `__post_init__`).
+    - `closes_dropped` — a `closes` this value refused to keep, so every surface downstream can
+      SAY it was dropped. Derived, never passed by a caller: it is the correction's record, and
+      a correction nobody is told about is the silent no-op D196 rejected.
     """
 
     answers: str = ""
     closes: bool = False
     settles: tuple[str, ...] = ()
+    closes_dropped: bool = False
 
     def __post_init__(self) -> None:
         # Normalize once, here, so every reader downstream compares like with like: the ledger
@@ -41,20 +45,21 @@ class Disposal:
         object.__setattr__(self, "settles",
                            tuple(str(i).strip().upper() for i in self.settles if str(i).strip()))
         # `closes` is a property OF a disposal: with neither face there is nothing to complete.
-        # REFUSED, not normalized away (D196, the operator 2026-10-18: "Refuse it loudly — a
-        # report carrying closes with supersedes but no answers/settles is rejected with a
-        # message naming what closes needs, which changes behaviour for existing callers").
-        # Dropping it to False accepted the filing and left the sender believing a thread was
-        # closed that was not — a silent no-op on a CLOSURE claim is the one that leaves a
-        # thread open while its sender has moved on. The action layer already refused the shape
-        # for a run; this is the other entrance. He accepted the break for existing callers
-        # explicitly, so a caller that starts failing here is intended, not a regression.
+        # It is DROPPED here and the drop RECORDED, so every surface downstream can say what
+        # happened to it. D196 (the operator 2026-10-18) refused this shape loudly instead:
+        # "Refuse it loudly — a report carrying closes with supersedes but no answers/settles
+        # is rejected with a message naming what closes needs". What he rejected there was
+        # dropping it to False SILENTLY, which accepted the filing and left the sender
+        # believing a thread was closed that was not. He later chose the self-applying form:
+        # "accept the call, drop `closes`, and tell the run in the observation that the notice
+        # was filed as owing nothing back but settled no row". Measured, every one of the eight
+        # refusal events wanted exactly that — to declare that its notice owes no answer — and
+        # none was trying to settle a row, so the refusal was costing a turn to teach a field
+        # nobody wanted. `closes_dropped` is what keeps this from being the silent no-op: the
+        # correction is carried, not swallowed, and the run is told.
         if self.closes and not (self.answers or self.settles):
-            raise ValueError(
-                "closes needs a disposal to complete: pass `answers` (the ONE exchange this "
-                "reply belongs to) or `settles` (every row it terminally disposes of). "
-                "`supersedes` is not one of them — folding rows makes this report their "
-                "thread, which is the opposite of ending it. Filing a notice that asks "
-                "nothing back, rather than replying to one: leave `closes` out — an "
-                "originating report completes no exchange, and the row is then its "
-                "recipient's to dispose of.")
+            object.__setattr__(self, "closes", False)
+            object.__setattr__(self, "closes_dropped", True)
+        elif self.closes_dropped:
+            # Derived, never a caller's to assert: a closure that stands was not corrected.
+            object.__setattr__(self, "closes_dropped", False)

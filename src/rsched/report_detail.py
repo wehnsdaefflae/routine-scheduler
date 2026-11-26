@@ -45,6 +45,11 @@ class Disposed(Protocol):
     @property
     def settles(self) -> tuple[str, ...]: ...
 
+    #: Whether a `closes` with nothing to complete was dropped — the head says so, because a
+    #: correction the recipient cannot see is the silent drop the rule exists to prevent.
+    @property
+    def closes_dropped(self) -> bool: ...
+
 
 #: The cap on a DELIVERED detail. A prompt-budget decision, unchanged by D177 — what changed is
 #: that it no longer governs the stored row.
@@ -111,6 +116,10 @@ def message_text(item_id: str, sender: str, title: str, detail: str,
     closes = bool(getattr(disposal, "closes", False))
     settles = tuple(getattr(disposal, "settles", ()) or ())
     head = f"REPORT {item_id} from routine `{sender}`"
+    if bool(getattr(disposal, "closes_dropped", False)):
+        # A notice whose `closes` was dropped: it asks nothing back, and says so — but it
+        # claims no closure either, so the head must not let a reader infer a settlement.
+        head += " (no reply needed — settles no row)"
     if answers and closes:
         head += f" (answering {answers} — closes the exchange, no reply needed)"
     elif answers:

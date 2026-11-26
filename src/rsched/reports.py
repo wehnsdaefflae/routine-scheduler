@@ -69,7 +69,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from . import report_detail, report_disposal
+from . import report_detail, report_disposal, report_marks
 from .engine import inbox
 from .hooks import reportproj
 from .hooks import reportread as _reportread
@@ -113,8 +113,8 @@ def next_id(path: Path) -> str:
 
 #: WHAT A REPORT DISPOSES OF — the value object lives in `report_disposal` (a pure value with
 #: rules and no I/O, beside `report_detail`'s pure formatting), re-exported because
-#: `reports.Disposal` is the name every caller already knows. Its one refusal is D196: a
-#: `closes` with neither `answers` nor `settles` is rejected, not quietly dropped.
+#: `reports.Disposal` is the name every caller already knows. Its one correction: a `closes`
+#: with neither `answers` nor `settles` is dropped and the drop RECORDED, never swallowed.
 Disposal = report_disposal.Disposal
 
 
@@ -134,8 +134,10 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
 
     `disposal` carries what this report disposes of (see `Disposal`): the one exchange it
     answers, the rows it settles, and whether it is itself terminal. `closes` is recorded only
-    beside one of those two disposals — `Disposal.__post_init__` enforces that for every caller,
-    in-band or out, so the action validator and a direct call cannot disagree.
+    beside one of those two disposals — `Disposal.__post_init__` drops it otherwise, for every
+    caller in-band or out, so the action validator and a direct call cannot disagree. A dropped
+    one is DELIVERED marked `no_reply`: it owes its reader no answer, and unlike a closure it is
+    still freight for the run gate's inbox predicate, because the notice has to be READ.
 
     `settles` is the many-rows terminal claim (D134): every id listed reads `settled` with this
     report as what settled it. It answers two shapes `answers` could not express, both measured
@@ -163,7 +165,7 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
     would vanish into it.
     """
     disposal = disposal or Disposal()
-    answers, closes = disposal.answers, disposal.closes
+    answers = disposal.answers
     path = reports_path(routines_home)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -202,11 +204,9 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
                 message_text(item_id, routine, title[:TITLE_MAX], kept_detail,
                              disposal),
                 via="report", name=f"rep-{item_id}",
-                # A closure asks nothing, so it must not BUY the target a run: the report
-                # trigger skips it (daemon/triggers) and it is read by the next run that
-                # happens anyway. Delivery is unchanged — only the waking is.
-                extra={"report": item_id, "from": routine,
-                       **({"closes": True} if closes else {})})
+                # The marks, and what each says about who owes a reply, live in one place
+                # (`report_marks`) because `stamp_delivered` reads back what this writes.
+                extra=report_marks.delivery_marks(item_id, routine, disposal))
     except OSError:
         return None
     return path, item_id, folded
@@ -218,12 +218,12 @@ def stamp_delivered(routines_home: Path, msgs: list[dict], *, run_id: str) -> li
     anything that is not a delivered report is ignored. Best-effort — a missing stamp costs
     visibility, never the delivery itself.
 
-    A CLOSURE is delivered but owed nothing back: it says so in its own text, and asking the
-    run to answer "thanks, done" is the ratchet `closes` exists to stop. So it is stamped like
-    any other delivery and left out of what comes back.
+    A delivery MARKED as owing nothing back — a closure, or a notice whose `closes` was
+    dropped — is stamped like any other and left out of what comes back (`report_marks`).
     """
     ids = [str(m["report"]) for m in msgs if m.get("report")]
-    owed = [str(m["report"]) for m in msgs if m.get("report") and not m.get("closes")]
+    owed = [str(m["report"]) for m in msgs
+            if m.get("report") and report_marks.owes_reply(m)]
     if not ids:
         return []
     ts = now_iso()

@@ -28,8 +28,9 @@ ROWS = [
     {"id": "R1", "event": "superseded", "ts": "2026-07-24T10:00:00+02:00", "by": "R4",
      "to": "b"},
     {"id": "R5", "event": "retracted", "ts": "2026-07-25T10:00:00+02:00"},
-    # The one live shape today's Disposal REFUSES (D196): closes with nothing to complete.
-    # History must read back as what it says, so the inverse may not route through Disposal.
+    # The one live shape today's Disposal CORRECTS: closes with nothing to complete, which the
+    # write path drops. History must read back as what it says, so the inverse may not route
+    # through Disposal.
     {"id": "R1062", "ts": "2026-08-29T13:39:33+02:00", "routine": "a", "run_id": "a:9",
      "title": "t", "detail": "d", "closes": True},
 ]
@@ -44,13 +45,14 @@ def test_every_ledger_row_shape_survives_the_round_trip(row):
     assert rows_for(hook_of_row(row)) == row
 
 
-def test_the_refused_closes_shape_reads_back_without_raising():
-    """A pre-D196 row (`closes` with neither answers nor settles) is history and must read, so
-    the inverse assembles the payload directly instead of through `Disposal`, whose refusal
-    belongs on the write path.
+def test_the_corrected_closes_shape_reads_back_as_what_it_says():
+    """A historical row (`closes` with neither answers nor settles) must read back as written,
+    so the inverse assembles the payload directly instead of through `Disposal`, whose
+    correction belongs on the write path: there, that shape is accepted and the field dropped,
+    which would rewrite history if the reader routed through it.
     """
-    with pytest.raises(ValueError):
-        Disposal(closes=True)                       # the write path still refuses it
+    assert Disposal(closes=True).closes is False    # the write path corrects it
+    assert Disposal(closes=True).closes_dropped is True
     hook = hook_of_row({"id": "R1062", "ts": "t", "title": "x", "detail": "y",
                         "closes": True})
     assert hook.payload["closes"] is True

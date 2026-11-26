@@ -885,7 +885,7 @@ finished `partial` quoting the number it had been promised.
 - report: raise something that needs doing and is NOT your task — a defect, friction, a
 missing or broken tool, a recipe or config that is wrong. Available to EVERY routine, always.
 A report with an owner is delivered into that routine's inbox, which it reads on its NEXT SCHEDULED RUN — nothing is started and nobody is interrupted. Naming no owner is always allowed; guessing wrong sends the work to someone who will bounce it.
-A report addressed to YOU arrives in its own prompt section — act on it, or close it by reporting back to the sender, IN THIS RUN: once you finish, only a person reading the ledger can close it. A reply that completes the exchange sets `closes: true` BESIDE its `answers`/`settles` — alone it is refused, an originating notice completing nothing; without it your answer is a new open report awaiting one more reply; a message marked "no reply needed" gets none.
+A report addressed to YOU arrives in its own prompt section — act on it, or close it by reporting back to the sender, IN THIS RUN: once you finish, only a person reading the ledger can close it. A reply that completes the exchange sets `closes: true` BESIDE its `answers`/`settles` — alone it is DROPPED, the notice filed as owing no answer back; without it your answer is a new open report awaiting one more reply; a message marked "no reply needed" gets none.
 FOLD a row rather than naming it: naming leaves it to be routed again next pass, and a fold also adds to a thread you already have open instead of opening a second one. Make a report a DECISION FOR THE USER (at most 5 choices) the moment you are blocked on a call only he can make: a question parked in a plain report reaches no surface of his, so a run that writes "waiting on the operator" without options is waiting on nobody. Do not also file an ask_user about it.
 Past a few open threads to one owner a new report is REFUSED and the open ids are named — fold them. Use this for problems you notice in passing, not for your own task's outcome (that belongs in your finish summary).
 - finish: end the run with status ok (the ordinary ending, including a run with a shortfall of its own: do what you can, then name what remains), partial (ONLY when something you cannot unblock yourself stopped work you could otherwise have done) or failed (the job could not be done) — the only part of this conversation that survives, so the facts have to be in it; a long artefact is a file it names. Decisions are asks, never summary prose: one you cannot work without when you meet it (`blocks_work`), the rest in one batch before the finish.
@@ -1037,7 +1037,7 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
   },
   "closes": {
    "type": "boolean",
-   "description": "report: with `answers` or `settles` (NOT `supersedes` \u2014 a fold is not a closure, and that pairing is REFUSED) \u2014 this reply COMPLETES the exchange: it settles its target(s) AND is itself born settled, asking nothing back. Set it when your answer needs no reply; only a NEW report reopens it"
+   "description": "report: with `answers` or `settles` (NOT `supersedes` \u2014 a fold is not a closure) \u2014 this reply COMPLETES the exchange: it settles its target(s) AND is itself born settled, asking nothing back. ALONE it is DROPPED: your notice is filed owing no reply and settling no row, and you are told so"
   },
   "supersedes": {
    "type": "array",

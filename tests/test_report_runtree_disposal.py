@@ -35,24 +35,23 @@ def test_a_disposal_field_on_a_run_tree_message_costs_no_turn(target, fields):
     {"settles": ["R1"]},
     {"supersedes": ["R7"]},
 ])
-def test_a_routine_target_still_refuses_exactly_as_it_did(fields):
-    """D196 is untouched. A slug target has a real ledger row behind it, so the grammar bites:
-    a bare `closes` is still refused, and `supersedes` still needs the target it hands rows to.
+def test_a_routine_target_refuses_no_disposal_field_on_its_own(fields):
+    """A slug target has a real ledger row behind it, so the grammar bites where two fields
+    contradict each other — but none of these single fields is such a pair. A bare `closes` is
+    not refused at all any more: it is accepted and corrected where the disposal is built
+    (tests/test_report_closes_correction.py), and `supersedes` still needs the target it hands
+    rows to, which this action gives it.
     """
     action = {"say": "s", "kind": "report", "title": "t", "target": "scheduler-builder",
               "detail": "d", **fields}
-    problems = validate_action(action)
-    if "closes" in fields:
-        assert any("closes" in p and "answers" in p and "settles" in p for p in problems), problems
-    else:
-        assert problems == [] or all("closes" not in p for p in problems), problems
+    assert validate_action(action) == [], action
 
 
-def test_a_bare_closes_with_no_target_is_still_refused():
-    """Triage is a ledger row too — only a run-tree address is exempt."""
-    problems = validate_action({"say": "s", "kind": "report", "title": "t", "detail": "d",
-                                "closes": True})
-    assert any("answers" in p for p in problems), problems
+def test_a_bare_closes_with_no_target_is_not_refused_either():
+    """Triage is a ledger row too, and the correction reaches it the same way: the grammar says
+    nothing, and the drop happens when the disposal is constructed."""
+    assert validate_action({"say": "s", "kind": "report", "title": "t", "detail": "d",
+                            "closes": True}) == []
 
 
 # -- the observation: what was ignored, and what to do instead -------------------------------

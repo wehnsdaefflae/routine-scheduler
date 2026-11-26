@@ -215,8 +215,8 @@ Naming no owner is always allowed; guessing wrong sends the work to someone who 
 A report addressed to YOU arrives in its own prompt section — act on it, or close it by \
 reporting back to the sender, IN THIS RUN: once you finish, \
 only a person reading the ledger can close it. A reply that completes the \
-exchange sets `closes: true` BESIDE its `answers`/`settles` — alone it is refused, an \
-originating notice completing nothing; without it your answer is a new open report awaiting one \
+exchange sets `closes: true` BESIDE its `answers`/`settles` — alone it is DROPPED, the notice \
+filed as owing no answer back; without it your answer is a new open report awaiting one \
 more reply; a message marked "no reply needed" gets none.
 FOLD a row rather than naming it: naming leaves it to be routed \
 again next pass, and a fold also adds to a thread you already have open instead of \

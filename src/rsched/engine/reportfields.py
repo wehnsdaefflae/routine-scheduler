@@ -3,7 +3,8 @@
 `answers` records the ONE exchange a reply belongs to, `settles` the other rows it declares
 finished, `supersedes` the rows it TAKES OVER (they stay live under this report), and `closes`
 says the reply itself is born settled. The contradictions refused here are the pairs that say
-opposite things about who holds the work next. The refusal wording is a surface runs read.
+opposite things about who holds the work next. A `closes` with nothing to complete is not one
+of them: it is accepted and corrected in `report_disposal`. The wording is a surface runs read.
 """
 
 from __future__ import annotations
@@ -23,20 +24,13 @@ def field_problems(obj: dict) -> list[str]:
     if is_runtree(obj.get("target") or ""):
         return []
     # `closes` is a property OF a disposal (`answers` one exchange, `settles` several); with
-    # neither there is nothing to complete. The refusal tells an ORIGINATING notice what to do
-    # (drop `closes`): a closure is kept out of the run gate's inbox predicate
-    # (`daemon/gate_builtin`), so marking one would hide the notice rather than deliver it
-    # quietly.
-    if (obj.get("closes")
-            and not str(obj.get("answers") or "").strip()
-            and not obj.get("settles")):
-        problems.append(
-            "kind=report: 'closes' is valid only together with 'answers' (the ONE exchange "
-            "this reply belongs to) or 'settles' (every row it finishes) — it marks a disposal "
-            "as complete, and a report that originates something completes none. Filing a "
-            "notice that asks nothing back: leave 'closes' out. The row is then the recipient's "
-            "to dispose of, which is what puts it in front of them — a closure does not admit "
-            "a gated fire on purpose, so it is not the quiet way to be heard.")
+    # neither there is nothing to complete — and that shape is NOT refused here. It is accepted
+    # and CORRECTED where the disposal is built (`report_disposal.Disposal`): the field is
+    # dropped, the notice is filed owing no reply and settling no row, and the observation says
+    # so (`obs_admin`). The refusal that used to live here cost a turn per occurrence to teach
+    # a field nobody wanted — every measured sender meant "this notice needs no answer" — and
+    # the notice is still delivered as freight, since a closure is kept OUT of the run gate's
+    # inbox predicate (`daemon/gate_builtin`) and marking one would hide it.
     # `answers` is ONE report id: the ledger matches ids, so free text would dispose of
     # nothing while the run believed the exchange answered.
     if ((answered := str(obj.get("answers") or "").strip())

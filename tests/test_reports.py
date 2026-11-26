@@ -25,6 +25,7 @@ from rsched.grantpolicy import GrantPolicy
 from rsched.grants import GATED_KINDS
 from rsched.readmodels import item_reports, items
 from rsched.reports import (
+    Disposal,
     next_id,
     read_reports,
     reports_path,
@@ -79,13 +80,12 @@ def test_validate_action_report():
     assert validate_action({"say": "s", "kind": "report", "title": "   "})
 
 
-def test_validate_action_closes_needs_answers():
-    """`closes` marks an ANSWER as terminal — without `answers` there is no exchange to
-    complete, so a bare closes is rejected rather than silently ignored."""
+def test_validate_action_closes_is_corrected_not_refused():
+    """A bare `closes` is accepted and the field dropped — test_report_closes_correction.py."""
     assert validate_action({"say": "s", "kind": "report", "title": "t",
                             "answers": "R3", "closes": True}) == []
-    problems = validate_action({"say": "s", "kind": "report", "title": "t", "closes": True})
-    assert any("closes" in p and "answers" in p for p in problems)
+    assert validate_action({"say": "s", "kind": "report", "title": "t", "closes": True}) == []
+    assert Disposal(closes=True).closes_dropped is True
 
 
 def test_report_bypasses_allowlist_and_capability_gate():
@@ -495,9 +495,9 @@ def test_a_closure_is_born_settled_and_ends_the_exchange(tmp_path):
     assert _items(home, audit)["R2"]["status"] == "settled"
 
 
-# A bare `closes` out of band is now REFUSED rather than dropped (D196) — see
-# tests/test_report_closes_refusal.py, which owns that rule and the fold shape it was
-# raised about.
+# A bare `closes` out of band is ACCEPTED and the field dropped, with the drop recorded and
+# reported — see tests/test_report_closes_correction.py, which owns that rule, the fold shape
+# it was raised about, and the delivery it must not hide.
 
 
 def test_a_reply_settles_every_row_it_names_not_just_one(tmp_path):

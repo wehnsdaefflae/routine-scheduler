@@ -117,7 +117,8 @@ def _drain_locked(inbox: Path, consumed_dir: Path, vias: tuple[str, ...] | None)
                            if isinstance(obj.get("refusal_flag"), dict) else {}),
                         **({"report": str(obj["report"]),
                             "from": str(obj.get("from") or ""),
-                            **({"closes": True} if obj.get("closes") is True else {})}
+                            **({"closes": True} if obj.get("closes") is True else {}),
+                            **({"no_reply": True} if obj.get("no_reply") is True else {})}
                            if obj.get("report") else {})})
         else:
             # every writer produces {"text": …} JSON (web layer, daemon managers) — a
@@ -218,7 +219,7 @@ def file_message(routine_dir: Path, text: str, *, source: str = "",
 
     `extra` is merged into the record for the keys ONE channel adds on top of that shape — a
     conversation message's `attachments`/`command`/`refusal_flag`, a report delivery's
-    `report`/`from`/`closes`, the audit editor's feedback fields.
+    `report`/`from`/`closes`/`no_reply`, the audit editor's feedback fields.
 
     `name` is the message's STEM without the `msg-` prefix, for channels whose filename is an
     idempotency KEY: a report delivery is `msg-rep-<id>` (the sender can retract it while

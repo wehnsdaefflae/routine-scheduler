@@ -283,6 +283,11 @@ entry for what you are about to touch.
   `inbox/`, which its NEXT SCHEDULED RUN drains — it starts no run and wakes nobody. The target
   closes it by reporting back with `answers: "<R id>"`, adding `closes: true` when the reply ends
   the exchange — a closure is born settled; without it the reply is itself a new open report.
+  A `closes` carrying NEITHER `answers` nor `settles` completes nothing, so `reports.Disposal`
+  drops it and says so: the notice is filed owing no reply (delivered marked `no_reply`, which
+  keeps it freight the gate admits) and settling no row, and the filing observation names the
+  drop. One correction, in the value object, so the action layer and an out-of-band caller
+  cannot disagree — and never a silent one, which is what D196 refused.
   An addressed report is also how an OPERATOR-ACCEPTED PROPOSAL reaches a builder: a `DECIDED:`
   title marks the body as already-authorized work rather than a suggestion, so the receiving
   routine's queue tells authorization from suggestion without re-surfacing the decision. It keeps
