@@ -249,4 +249,6 @@ def prior_legs(status: dict) -> list[dict]:
                                         "max_total_turns", "total_turns", "turns_left")}
     if all(v is None for v in window.values()):
         return kept[-MAX_PRIOR_LEGS:]
+    if isinstance(measured := block.get("finished_window"), dict):
+        window["finished_window"] = dict(measured)
     return [*kept, window][-MAX_PRIOR_LEGS:]

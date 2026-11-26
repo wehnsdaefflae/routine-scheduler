@@ -28,6 +28,19 @@ A fifth measures the runs that never happened. Work the fleet owed and did not d
 run behind, so it leaves nothing on any of the four layers above; the health stream is where
 it lands, and [Blocked work](#blocked-work-apihealthblocked) is where it is read.
 
+## Completed budget windows
+
+A root task or recipe-edit finish freezes its active window before post-run review and closeout.
+The finish event's `budget_window` and `status.json`'s `budgets.finished_window` carry the
+leg's own kind and verdict, turn base and effective ceilings, wall ceiling and active seconds,
+and the resource and limit that armed the reserved finish, if it was armed. The stop limit uses
+the budget meter's units (including minutes for a wall-clock stop). An explicit null wall
+ceiling means unlimited. This is not the cumulative elapsed time or the run's original task
+verdict after an edit. A resume carries the measured record into the bounded `budgets.legs`
+view; each finish event keeps its record for the life of the transcript. Older or interrupted
+windows without a finish snapshot stay unknown; neither the current config nor wall time left
+can reconstruct them.
+
 ## Recipe versions
 
 A routine's recipe is `main.md` + `stages/` + `tuning.yaml` — exactly the

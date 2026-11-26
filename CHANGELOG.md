@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.616.1] — 2026-11-26
+
+Completed task and recipe-edit legs now retain their own wall ceiling, active
+elapsed time, and budget stop evidence across resumes (F912). The finish record
+preserves the measurement without backfilling legacy or interrupted windows.
+
 ## [0.616.0] — 2026-11-26
 
 The run prompt no longer advertises child slots to a run already at its depth

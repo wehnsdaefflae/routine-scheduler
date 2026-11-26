@@ -6,7 +6,6 @@ Wall-clock accrual excludes time spent paused or waiting for a blocking answer.
 
 from __future__ import annotations
 
-import os
 import threading
 import time
 from collections.abc import Callable
@@ -17,11 +16,10 @@ from typing import TYPE_CHECKING, Any
 from ..config import RoutineConfig, ServerConfig
 from ..endpoints import EndpointRegistry
 from ..endpoints.usage import dollars_spent, fold_usage
-from ..ids import now_iso
 from ..ids import run_id as make_run_id
-from ..paths import atomic_write_json, read_json, resolve_rel
-from . import turnwindow
-from .budgets_config import Budgets, _vm_hwm_kb
+from ..paths import read_json, resolve_rel
+from . import status_snapshot
+from .budgets_config import Budgets
 from .transcript import Transcript
 
 if TYPE_CHECKING:
@@ -151,6 +149,7 @@ class RunContext:
     # The finish outcome (ok|partial|failed|aborted), stamped once at run end: status.json's
     # `state` folds partial into "finished". None while live.
     outcome: str | None = None
+    finished_window: dict | None = None
     question: dict | None = None
     main_model: str = ""              # "<endpoint>/<model>" resolved each turn (in status.json)
     # The model the ROUTINE WAS GIVEN — its chain head, never re-pointed. `main_model` follows
@@ -438,48 +437,4 @@ class RunContext:
             self.question = question
         if self.depth > 0:
             return
-        atomic_write_json(self.run_dir / "status.json", {
-            "run_id": self.run_id,
-            "pid": os.getpid(),
-            "state": self.state,
-            "outcome": self.outcome,
-            "started": self.run_ts,
-            "updated": now_iso(),
-            "turn": self.turn,
-            # active wall clock across ALL legs; the final write freezes the run's duration
-            "elapsed_s": int(self.elapsed_total_s()),
-            "phase": self.phase,
-            # the PATH through the recipe: declared stages entered and never entered
-            "stages": self.stage_coverage(),
-            "question": self.question,
-            "usage": self.usage_total(),
-            "model": self.main_model,
-            "deliberation": self.deliberation,
-            "schema_retries": self.schema_retries,
-            "schema_forcefails": self.schema_forcefails,
-            "referrals": self.referrals,
-            "refusal_level": self.refusal_level, "takeover_left": self.takeover_left,
-            # the recipe version that produced this run (null: unversioned dir)
-            "recipe_commit": self.recipe_commit,
-            "utils": self.util_stats, "prompt_segments": getattr(self, "prompt_segments", {}),
-            "asks_deferred": self.asks_deferred,
-            "claims_challenged": self.claims_challenged,
-            "claims_disputed": self.claims_disputed,
-            "holds": self.holds,
-            "interventions": self.interventions,
-            "reports_open": self.reports_open,
-            # the finish's own accounting (engine/accounting.py)
-            "accounting": self.accounting,
-            **({"brief": self.brief} if self.brief else {}),
-            **({"goals": self.goals} if self.goals else {}),
-            **({"final": self.final} if self.final is not None else {}),
-            **({"outcome_measures": self.outcome_measures} if self.outcome_measures else {}),
-            **({"overhead": self.overhead} if self.overhead else {}),
-            # the job being worked on right now (engine/jobops.py): the live tail's "where is it"
-            **({"job": self.job_id} if self.job_id else {}),
-            # peak resident memory of the engine process (kB), read at close-out for an OOM
-            "vm_hwm_kb": _vm_hwm_kb(),
-            # THIS WINDOW's remainders (`turn` above is cumulative). The same reading renders
-            # the per-turn BUDGET LEFT tail (D227), so prompt and file cannot disagree.
-            "budgets": turnwindow.budget_block(self),
-        })
+        status_snapshot.write(self)

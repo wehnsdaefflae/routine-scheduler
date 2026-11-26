@@ -10,7 +10,7 @@
     "src/rsched/engine/create_routine.py": 359,
     "src/rsched/engine/executor.py": 388,
     "src/rsched/engine/remind.py": 496,
-    "src/rsched/engine/run_context.py": 485,
+    "src/rsched/engine/run_context.py": 440,
     "src/rsched/grantpolicy.py": 377,
     "src/rsched/grants.py": 374,
     "src/rsched/lanes.py": 388,

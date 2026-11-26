@@ -105,6 +105,26 @@ def budget_block(ctx) -> dict:
         legs=getattr(ctx, "prior_legs", None))
 
 
+def finished_window(ctx, *, kind: str, status: str, spent: dict | None) -> dict:
+    """Freeze the active window at the finish boundary, before review and closeout.
+
+    A budget stop is the cap that armed the reserved finish, not a guess from the
+    final remainder. A null wall limit is explicitly unlimited for this window.
+    """
+    b = ctx.budgets
+    return {
+        "kind": kind,
+        "status": status,
+        "base_turn": ctx.budget_base_turn,
+        "window_turns": ctx.turn - ctx.budget_base_turn,
+        "max_turns": b.max_turns,
+        "max_total_turns": b.max_total_turns,
+        "wall_limit_s": b.max_wall_clock_min * 60 if b.max_wall_clock_min >= 0 else None,
+        "elapsed_s": round(ctx.elapsed_s(), 3),
+        "budget_stop": {"resource": spent["resource"], "limit": spent["limit"]} if spent else None,
+    }
+
+
 def budget_left(block: dict, *, wall_ceiling_min: int, token_ceiling: int,
                 tokens_left: int | None) -> str:
     """What is LEFT, as a FACT, for the observation tail — or "" when nothing is limited.

@@ -29,6 +29,7 @@ from . import (
     reviewleg,
     reviseleg,
     runkind,
+    turnwindow,
 )
 from .autocommit import autocommit
 from .finish_guard import normalize_escaped_newlines
@@ -140,6 +141,9 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
     ctx = loop.ctx
     leg = reviseleg.active(loop)
     run_status = reviseleg.run_status(loop, status)
+    window = (turnwindow.finished_window(ctx, kind="edit" if leg else "task",
+                                         status=status, spent=loop._budget_spent)
+              if ctx.depth == 0 else None)
     # repair a summary whose newlines were double-escaped (literal ``\n``, no real newline)
     summary = normalize_escaped_newlines(summary)
     archival.settle(loop)   # an archive already in flight gets a moment to land
@@ -170,7 +174,8 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
         if card := recipeproposal.maybe_propose(ctx, summary):
             summary += ("\n[Recipe revision(s) proposed to the operator — he applies them on "
                         f"the Decisions page ({card}).]")
-    finish_payload = {"status": run_status, "summary": summary, "authored": authored}
+    finish_payload = {"status": run_status, "summary": summary, "authored": authored,
+                      **({"budget_window": window} if window is not None else {})}
     if leg:
         finish_payload["revise_leg"] = {"status": status}
     # D212: the run's open CLOSING asks ride the finish, so they reach the person reading what
@@ -212,6 +217,7 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
         state = {"ok": "finished", "partial": "finished", "failed": "failed",
                  "aborted": "aborted"}.get(run_status, "finished")
         ctx.outcome = run_status   # `state` folds partial into finished — this keeps it visible
+        ctx.finished_window = window
         ctx.write_status(state, question=None)
     return run_status
 
