@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.621.0] — 2026-11-26
+
+**Four compatibility arms and two trigger types that nothing could reach are gone** (F878,
+F916) — in this repo a fallback nothing can take is a defect rather than a safety net, and each
+removal's premise was re-measured on the live instance before anything was deleted.
+
+`jobs_compat.py` kept four pre-rename spellings alive on a premise that had half expired: all
+19 installed routines spell the capability `jobs:`, zero spell `tasks:`, and the one store that
+ever carried the old name has written the canonical one since its first save after the rename —
+so the legacy store file, its list key and the `capabilities:` alias were unreachable for every
+routine. They are deleted; the module is 85 lines down to 36, holding the one alias that is
+still real: a hand-maintained config names the job a run-gate check watches `task:`, and
+deleting that would make 13 checks stop watching their jobs. Its migration marker keeps its date
+with a reason that is now accurate, and the docstring states only the live premise. Stripping
+the dead halves left three pass-through compat seams with nothing to do, so the job layer reads
+its own store directly.
+
+`engine/renamedkinds.RENAMED` is deleted too — an undated alias table the marker policy
+structurally could not see (it reads `LEGACY_*`/`*_ALIAS` names and string constants, never a
+dict), whose premise was dead: the kinds it aliased are spelled by no live recipe, pattern or
+seed, and its hint has never fired on this instance.
+
+The usage-normalising dict shape now has ONE owner in `endpoints/usage.py` instead of being
+duplicated at two more call sites, so a usage dict is normalised identically whichever endpoint
+produced it.
+
+And `triggers.TRIGGER_TYPES` no longer ships `imap` and `watch_path`, names reserved for
+watchers nobody wrote, whose only effect was a problem line on every load of a config that named
+one saying nothing fires it. Such an entry is now an ordinary unknown type — reported and
+dropped, fail closed — which is stricter than keeping it verbatim. No installed routine declares
+either as a trigger type, so no config load changes behaviour.
+
 ## [0.620.0] — 2026-11-26
 
 **A relative path now says WHERE it landed, and a jailed path says it was the jail** (F962).
