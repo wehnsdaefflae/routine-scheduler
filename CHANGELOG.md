@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.618.0] — 2026-11-26
+
+**An answered self-audit decision is no longer re-asked while its answer waits in the inbox.**
+A live self-audit run rewrites its report during the run, and the Decisions page read any
+report newer than the answer as a deliberate re-ask, so D315 and D316 came back as open cards
+two minutes after they were answered. An answer still queued is now answered whatever the
+report's age: no run has read it, so no report can be re-asking it. Once a run consumes the
+answer, a newer report listing the decision open still re-asks it, as before.
+
 ## [0.617.0] — 2026-11-26
 
 Completed task and recipe-edit legs now retain their own wall ceiling, active

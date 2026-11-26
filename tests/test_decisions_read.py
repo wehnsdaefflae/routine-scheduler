@@ -239,3 +239,27 @@ def test_an_answer_across_a_dst_change_is_not_re_asked(tmp_path, make_routine, m
                       {"D216": "2026-10-25T02:07:19+01:00"})
     reopened = {q["qid"]: q for q in decisions_read.open_decisions(server)}
     assert reopened["audit:D216"].get("answered") is not True
+
+
+def test_a_queued_answer_is_not_re_asked_by_a_newer_report(tmp_path, make_routine, monkeypatch):
+    """A live self-audit run rewrites its report while the operator's answer still waits in
+    its inbox; that newer report has not read the answer, so it must not re-ask it.
+    """
+    make_routine(slug="apir")
+    server = _server(tmp_path)
+    _Walks(monkeypatch)
+    home = tmp_path / "routines" / SELF_AUDIT_SLUG
+    atomic_write_json(home / "audit" / "report.json",
+                      {"generated": "2026-11-26T08:56:08+01:00",
+                       "decisions": [{"id": did, "title": "Pick", "options": ["a", "b"],
+                                      "status": "open"} for did in ("D315", "D316")]})
+    atomic_write_json(home / "audit" / "decisions-answered.json",
+                      {"D315": "2026-11-26T08:54:32+01:00", "D316": "2026-11-26T08:54:26+01:00"})
+    atomic_write_json(home / "inbox" / "msg-audit-decision-a.json",
+                      {"text": "[AUDIT decision · D315] selected: a", "kind": "decision",
+                       "target": "D315", "choice": "a", "via": "web-audit",
+                       "ts": "2026-11-26T08:54:32+01:00"})
+
+    rows = {q["qid"]: q for q in decisions_read.open_decisions(server)}
+    assert rows["audit:D315"].get("answered") is True, "a queued answer was re-asked"
+    assert rows["audit:D316"].get("answered") is not True

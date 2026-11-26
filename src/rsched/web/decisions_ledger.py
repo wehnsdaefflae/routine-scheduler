@@ -105,7 +105,8 @@ def _audit_decisions_fresh(rdir: Path) -> list[dict]:
     # so `queued` alone cannot keep an answered decision out of the inbox while the report
     # still lists it open — the user would be asked the same decision again and again.
     # A decision answered at-or-after this report's `generated` stays hidden until a NEWER
-    # report explicitly lists it open again.
+    # report explicitly lists it open again. An answer still QUEUED is answered whatever the
+    # report's age: no run has read it, so a report written since cannot be re-asking it.
     answered = read_json(rdir / "audit" / "decisions-answered.json")
     if not isinstance(answered, dict):
         answered = {}
@@ -142,7 +143,7 @@ def _audit_decisions_fresh(rdir: Path) -> list[dict]:
         # as INSTANTS, never as text (F771): both stamps are host-local with their offset, and
         # text ordering reverses across a DST change — on 2026-10-25 six answers 27-38 minutes
         # NEWER than the report all sorted below it, so every one was re-asked.
-        was_answered = stamps.at_or_after(marker, generated) if marker else did in queued
+        was_answered = did in queued or (bool(marker) and stamps.at_or_after(marker, generated))
         # A PROOF-CARRYING `in_progress` row is answered by the ledger's own record of it, and
         # the marker gate cannot see that: an answer recorded in the report is OLDER than the
         # report that records it, so `at_or_after` reads False and the row would render as an
