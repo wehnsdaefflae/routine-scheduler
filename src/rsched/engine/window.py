@@ -1,18 +1,18 @@
-"""Making the turn FIT — the context window, compaction, and the media fallback.
+"""Making the turn FIT — the context window and compaction.
 
 This is the module allowed to rewrite the message list. The composed prompt is a CACHING
 CONTRACT — appended-to, never mutated — and compaction and the media fallback are sanctioned
 exceptions that invalidate the provider cache deliberately. Recovering from a provider's
-overflow 400 lives in `overflow.py`, which builds on this file.
+overflow 400 lives in `overflow.py`, which builds on this file; the MEDIA fallback (image
+`media` → vision-util text, before a request or after a provider refused it) moved to
+`mediafallback.py` when this file reached the 350-line bar (D315).
 """
 
 from __future__ import annotations
 
 import dataclasses
-from pathlib import Path
 
-from ..endpoints.base import EndpointError
-from . import archival, boundary, enginenote, mediaops, promptsegments
+from . import archival, boundary, enginenote, promptsegments
 from .compaction import (
     KEEP_HEAD_MSGS,
     KEEP_TAIL_MSGS,
@@ -34,10 +34,6 @@ _EVICT_WARN_HEADROOM = 0.9
 #: tokenizer difference any more but a measurement fault, and a run must not shrink its own
 #: window to a third on one bad sample.
 _RATIO_BOUNDS = (1.0, 2.0)
-
-#: How much of the PROVIDER'S refusal the media-fallback error event keeps: enough to name the
-#: limit it refused on. Written at most once per run, on a path that has already failed.
-MEDIA_ERROR_CHARS = 1200
 
 #: Only a prompt already occupying this much of the window calibrates: the provider's request
 #: framing is a roughly FIXED gap, so `reported / estimate` explodes on a short prompt.
@@ -267,40 +263,3 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
                              {**cinfo, **({"anticipated": anticipated} if anticipated else {}),
                               **({"economics": economics} if economics else {})})
 
-
-def apply_media_fallback(loop, exc: EndpointError) -> bool:
-    """The endpoint failed on a turn whose prompt carries image `media` (it rejected the
-    file, or serves no model that can see one). Convert EVERY media-bearing message to
-    vision-util text in place and drop the attachments, so the retried completion is
-    text-only and the model still gets the content. False when the prompt carries no media
-    at all — then the failure is a genuine endpoint error that must propagate.
-
-    EVERY message, not just the tail: a later message may follow the media-bearing one, and an
-    image anywhere is a liability to a model that cannot see one. A deliberate, sanctioned
-    break in the prompt-caching contract.
-    """
-    converted = 0
-    files = 0
-    for msg in loop.messages:
-        media = msg.get("media")
-        if not media:
-            continue
-        notes = []
-        for item in media:
-            desc = mediaops.vision_describe(loop.ctx, item["path"], "")
-            notes.append(f"[{Path(item['path']).name}: this run's model could not display it — "
-                         f"description from the vision util]\n{desc}")
-        msg.pop("media", None)
-        msg["content"] = msg["content"] + "\n\n" + "\n\n".join(notes)
-        converted += 1
-        files += len(media)
-    if not converted:
-        return False
-    # The DESCRIPTIONS the model then reasons from go on the record, and the provider's own
-    # message is kept long enough to name the bound it refused on (MEDIA_ERROR_CHARS).
-    loop.ctx.transcript.event("error", {"where": "media",
-        "message": f"this run's model could not show {files} file(s) in {converted} message(s) "
-                   f"({str(exc)[:MEDIA_ERROR_CHARS]}); fell back to the vision util",
-        "descriptions": [m["content"][-2000:] for m in loop.messages
-                         if "description from the vision util]" in m["content"]][-3:]})
-    return True

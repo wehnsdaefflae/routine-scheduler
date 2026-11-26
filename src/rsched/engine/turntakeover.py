@@ -13,6 +13,33 @@ from __future__ import annotations
 from . import refusal
 
 
+def adopt_takeover(loop, pair) -> tuple:
+    """Adopt an (endpoint, ref) the UNCENSORED takeover is handing this turn to — the one
+    place a takeover pair becomes the serving pair, for every seam that hands one over.
+
+    Before the request (D315): a turn whose prompt carries image `media` going to a model that
+    is not multimodal has its media converted to vision-util TEXT here
+    (`mediafallback.media_preflight`), and the transcript says so. Every routine here binds a
+    non-multimodal uncensored model, so a refused image turn used to post its images, collect
+    the provider's "does not support image inputs" 400, and only then convert on the
+    post-error path (`mediafallback.apply_media_fallback`) — one wasted round-trip per turn,
+    with nothing in the transcript saying why until it failed. Same conversion, same record,
+    one request earlier.
+
+    The conversion runs BEFORE `_adopt_model`, whose compaction must size the prompt that will
+    actually be posted: a description is not the same length as the image it replaces.
+
+    A PLAIN failover switch keeps its media and is NOT adopted here — `failover.fits` already
+    weighs multimodality when it picks the next chain member, while the takeover deliberately
+    does not (operator decision D315: with every uncensored model non-multimodal, selecting
+    through `fits` would leave a refused image turn with no takeover at all).
+    """
+    from .completion import _adopt_model
+    from .mediafallback import media_preflight
+    media_preflight(loop, pair[1])
+    return _adopt_model(loop, pair)
+
+
 def serve_turn_head(loop):
     """The TURN resolution head for completion.next_action: while a back-off window is
     open the uncensored model serves THIS turn (its own chain; a mid-turn hard failure
@@ -21,12 +48,12 @@ def serve_turn_head(loop):
     adopted (window-corrected, prompt re-fitted) and ready to complete against.
     """
     from ..endpoints import failover
-    from .completion import _adopt_model, _override_window, compact_if_needed
+    from .completion import _override_window, compact_if_needed
     ctx = loop.ctx
     takeover = refusal.takeover_turn(ctx)
     if takeover is not None:
         chain = [takeover]
-        endpoint, ref = _adopt_model(loop, takeover)
+        endpoint, ref = adopt_takeover(loop, takeover)
         # the uncensored model is often bound to an endpoint that refuses `response_format`,
         # so a takeover turn is the likeliest to arrive with no grammar at all
         _contract_if_unenforced(loop, endpoint)
@@ -80,7 +107,6 @@ def engage_turn_takeover(loop, ref, completion, refstate: dict | None = None) ->
     = keep the regular retry path. The turn's latch (refstate) stays the CALLER's -
     one engage per turn, either seam.
     """
-    from .completion import _adopt_model
     ctx = loop.ctx
     if not (completion.parsed is None and _is_prose_reply(completion.text)
             and refusal.is_refusal(ctx, completion.text)):
@@ -94,7 +120,7 @@ def engage_turn_takeover(loop, ref, completion, refstate: dict | None = None) ->
     # turn's action.
     if refstate is not None:
         refstate["role"] = "uncensored"   # D188: the turn is attributed to what serves it
-    return _adopt_model(loop, target)
+    return adopt_takeover(loop, target)
 
 
 def _is_prose_reply(text: str) -> bool:

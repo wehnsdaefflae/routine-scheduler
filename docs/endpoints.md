@@ -327,6 +327,16 @@ engine instead **fails over**:
   remaining member fits, the next one is taken anyway and the engine repairs what it can
   (images become `vision`-util text, an oversize prompt is compacted into the new member's
   window).
+- **The uncensored TAKEOVER does not select on fit — it converts first instead** (D315,
+  `engine/turntakeover.adopt_takeover`). A refusal takeover has a chain of its own and picks
+  with `failover.pick`, never `fits`: every routine here binds a non-multimodal uncensored
+  model, so weighing media would reject every member and leave a refused image turn with no
+  takeover at all. So the media is converted on the way IN instead — a turn whose prompt
+  carries images, handed to a model that is not multimodal, has them replaced with
+  `vision`-util text BEFORE the request (`engine/mediafallback.media_preflight`), recorded on
+  the same `error` / `where: "media"` transcript event the post-error path writes. It is the
+  same conversion, one round trip earlier: previously the takeover posted the images, took the
+  `400 … does not support image inputs`, and only then converted and retried.
 - **A substituted run is told what it lost** (`engine/substitution.py`). Two messages, with
   deliberately different lifetimes. WHO is serving goes to the turn's debris — it exists to
   steer the inherited reply (`[MODEL FAILOVER — you are no longer the model this routine was

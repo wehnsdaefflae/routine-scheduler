@@ -16,8 +16,8 @@ from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
 from . import refusal, substitution, turndebris
 from .compaction import estimate_input_tokens
+from .mediafallback import apply_media_fallback
 from .overflow import _recover_oversize_prompt, _shrink_window_to_provider
-from .window import apply_media_fallback
 
 
 def _failover_reason(exc: EndpointError) -> str:

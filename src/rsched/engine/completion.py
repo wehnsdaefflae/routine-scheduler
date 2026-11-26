@@ -161,12 +161,14 @@ def next_action(loop) -> tuple[dict | None, dict]:
         # The provider's count of the prompt just posted calibrates our estimate; loop.messages
         # is still exactly what was sent.
         note_prompt_size(loop, ref, completion.usage)
-        switched = None
+        # `handed_over`: the switch is an uncensored TAKEOVER, not a plain fallback.
+        switched, handed_over = None, False
         if completion.stop_reason in REFUSAL_STOPS:
             # A refused turn is never a usable action nor a same-model retry, even with partial
             # text: clarify, then advance the chain (raises when it is exhausted).
-            switched, tk = _handle_refusal(loop, completion, chain, ref, attempt, refstate)
-            on_takeover = turntakeover.note_takeover(refstate, on_takeover, tk)
+            switched, handed_over = _handle_refusal(
+                loop, completion, chain, ref, attempt, refstate)
+            on_takeover = turntakeover.note_takeover(refstate, on_takeover, handed_over)
         elif completion.is_empty():
             switched = _handle_empty(loop, completion, chain, ref, attempt, refstate)
             if switched is None:
@@ -176,7 +178,11 @@ def next_action(loop) -> tuple[dict | None, dict]:
                 time.sleep(1.5 * attempt * retry_base_delay())
                 continue
         if switched is not None:
-            endpoint, ref = _adopt_model(loop, switched)
+            # A TAKEOVER goes through turntakeover (its media is converted to text first,
+            # D315); a plain fallback keeps its media — `failover.fits` already weighed
+            # multimodality when it picked that chain member.
+            endpoint, ref = (turntakeover.adopt_takeover(loop, switched) if handed_over
+                             else _adopt_model(loop, switched))
             attempt -= 1   # the fallback model gets this attempt's clean retry
             continue
         refstate["empty"] = 0
@@ -194,7 +200,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
                     loop, candidate, ref, refstate)
                 if intercepted:
                     if target is not None:
-                        endpoint, ref = _adopt_model(loop, target)
+                        endpoint, ref = turntakeover.adopt_takeover(loop, target)
                     on_takeover = turntakeover.note_takeover(
                         refstate, True, target is not None)
                     attempt -= 1   # the re-driven turn is not a schema violation

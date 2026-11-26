@@ -301,7 +301,7 @@ def test_apply_media_fallback(make_routine, tmp_path, monkeypatch):
     loop = _loop(make_routine, tmp_path)
     loop.messages = [{"role": "user", "content": "OBS",
                       "media": [{"path": str(tmp_path / "x.png"), "media_type": "image/png"}]}]
-    from rsched.engine.window import apply_media_fallback
+    from rsched.engine.mediafallback import apply_media_fallback
     assert apply_media_fallback(loop, EndpointError("nope")) is True
     assert "media" not in loop.messages[-1]
     assert "DESCRIBED" in loop.messages[-1]["content"]
@@ -325,7 +325,7 @@ def test_apply_media_fallback_converts_every_message_not_just_the_tail(
         {"role": "assistant", "content": "{}"},
         {"role": "user", "content": "and now do this"},       # the tail carries no media
     ]
-    from rsched.engine.window import apply_media_fallback
+    from rsched.engine.mediafallback import apply_media_fallback
     assert apply_media_fallback(loop, EndpointError("does not support image inputs")) is True
     assert all("media" not in m for m in loop.messages)
     assert "DESCRIBED" in loop.messages[0]["content"]
@@ -334,8 +334,8 @@ def test_apply_media_fallback_converts_every_message_not_just_the_tail(
 def test_the_media_fallback_keeps_the_limit_the_provider_named(
         make_routine, tmp_path, monkeypatch):
     """F623: the provider's refusal is recorded far enough to say WHICH bound it refused on."""
+    from rsched.engine.mediafallback import apply_media_fallback
     from rsched.engine.transcript import read_events
-    from rsched.engine.window import apply_media_fallback
 
     monkeypatch.setattr(mediaops, "vision_describe", lambda ctx, _ab, pr: "DESCRIBED")
     loop = _loop(make_routine, tmp_path)
