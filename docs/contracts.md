@@ -75,8 +75,9 @@ entry for what you are about to touch.
   as a scribe, each carrying the person's own words (`quote`), which the engine must find in what
   they wrote or it refuses the goal; a later word is needed to reword or drop one. Offered at
   depth 0 only (a child has its parent's brief), in routines and conversations alike. **`job` is the JOB layer**
-  (docs/jobs.md), present only where the routine's `capabilities.jobs` SETTING is `on` (`tasks:`
-  is the pre-D174 key, still read — `rsched/jobs_compat.py`): the run keeps its standing work as
+  (docs/jobs.md), present only where the routine's `capabilities.jobs` SETTING is `on` (that is
+  the only spelling read; a gate check may still name its job `task:` — `rsched/jobs_compat.py`):
+  the run keeps its standing work as
   jobs in the engine-owned `state/jobs.json` and the engine
   enforces GATED PROCESSING — every job due this run (a `job:`-tagged gate check that found
   work, the job's own clock, or a fire whose checks were never asked) is opened and

@@ -1,4 +1,4 @@
-"""What a routine already on disk keeps working with after D174 renamed the layer to JOBS."""
+"""The one pre-D174 spelling still read — a check's `task:` — and the three that are not."""
 
 from __future__ import annotations
 
@@ -11,83 +11,19 @@ from rsched.engine.renamedkinds import hint
 from rsched.grants import effective_settings, normalize_capabilities
 from rsched.schema_guard import validate
 
-# ── the capabilities key ──────────────────────────────────────────────────────────────────
-
-def test_the_pre_rename_capabilities_key_still_switches_the_layer_on():
-    for raw in ({"tasks": "on"}, {"tasks": True}):
-        caps, problems = normalize_capabilities(raw)
-        assert problems == [], raw
-        assert caps == {"jobs": "on"}, raw            # normalized to the canonical key
-        assert effective_settings(caps)["jobs"] == "on", raw
-
-
-def test_the_canonical_key_wins_when_a_file_carries_both():
-    caps, problems = normalize_capabilities({"jobs": "off", "tasks": "on"})
-    assert problems == [] and caps == {"jobs": "off"}
-
-
-def test_a_bad_value_is_reported_under_the_canonical_name_whichever_key_gave_it():
-    for raw in ({"tasks": "maybe"}, {"jobs": "maybe"}):
-        caps, problems = normalize_capabilities(raw)
-        assert caps == {} and problems == ["capabilities.jobs must be off or on"], raw
-
-
-def test_a_permission_doc_still_cannot_require_the_layer_under_either_name():
-    for key in ("jobs", "tasks"):
-        _, problems = normalize_capabilities({key: "on"}, label="requires", requires=True)
-        assert any("unknown key" in p for p in problems), key
-
-
-# ── the store file ────────────────────────────────────────────────────────────────────────
-
-def _legacy_store(routine_dir):
-    routine_dir.mkdir(parents=True, exist_ok=True)
-    (routine_dir / "state").mkdir(exist_ok=True)
-    (routine_dir / "state" / "tasks.json").write_text(json.dumps(
-        {"version": 1, "tasks": [{"id": "nanogeofeld", "title": "NanoGeofeld", "brief": "b",
-                                  "state": "active", "workspace": "tasks/nanogeofeld"}],
-         "deleted": [], "run": {}}), encoding="utf-8")
-
-
-def test_the_pre_rename_store_is_read_while_it_is_the_only_one_on_disk(tmp_path):
-    d = tmp_path / "fau"
-    _legacy_store(d)
-    doc = jobs.load(d)
-    assert [j["id"] for j in doc["jobs"]] == ["nanogeofeld"]
-    assert jobs.read_path(d).name == "tasks.json"
-    # and a stored workspace is honoured exactly as written — no directory moves
-    assert jobs.workspace_rel(doc["jobs"][0]) == "tasks/nanogeofeld"
-
-
-def test_the_first_save_writes_the_canonical_file_and_leaves_the_old_one_alone(tmp_path):
-    d = tmp_path / "fau"
-    _legacy_store(d)
-    jobs.save(d, jobs.load(d))
-    assert (d / "state" / "jobs.json").is_file()
-    assert (d / "state" / "tasks.json").is_file()      # never deleted: it is the operator's data
-    assert jobs.read_path(d).name == "jobs.json"       # the canonical one wins once it exists
-    assert [j["id"] for j in jobs.load(d)["jobs"]] == ["nanogeofeld"]
-
-
-def test_store_problems_name_whichever_file_they_were_found_in(tmp_path):
-    d = tmp_path / "fau"
-    (d / "state").mkdir(parents=True)
-    (d / "state" / "tasks.json").write_text('{"tasks": [{"id": "Not A Slug"}]}', encoding="utf-8")
-    assert any("tasks.json" in p for p in jobs.problems(d))
-
-
-def test_a_default_workspace_for_a_new_job_is_the_new_name():
-    assert jobs.workspace_rel({"id": "fresh"}) == "jobs/fresh"
-
-
-# ── the run-gate check key ────────────────────────────────────────────────────────────────
+# ── the run-gate check key: the one alias still read ──────────────────────────────────────
 
 def test_a_check_may_name_its_job_under_either_key():
     both = [{"id": "c1", "kind": "mail", "task": "alpha"},
             {"id": "c2", "kind": "mail", "job": "beta"}]
     assert jobs.checks_by_job(both) == {"alpha": ["c1"], "beta": ["c2"]}
     assert jobs_compat.check_job(both[0]) == "alpha"
+    assert jobs_compat.check_job(both[1]) == "beta"
     assert jobs_compat.check_job({"id": "c3"}) == ""
+
+
+def test_the_canonical_check_key_wins_when_a_check_carries_both():
+    assert jobs_compat.check_job({"id": "c1", "job": "beta", "task": "alpha"}) == "beta"
 
 
 def test_both_keys_are_accepted_vocabulary_so_a_live_config_does_not_read_as_broken():
@@ -96,6 +32,49 @@ def test_both_keys_are_accepted_vocabulary_so_a_live_config_does_not_read_as_bro
         problems = validate_checks([{"id": "c1", "kind": "mail", key: "alpha",
                                      "host": "h", "user_secret": "U", "password_secret": "P"}])
         assert problems == [], (key, problems)
+
+
+# ── the three spellings that are NOT read any more ────────────────────────────────────────
+
+def test_the_pre_rename_capabilities_key_is_not_read_and_reads_as_an_unknown_key():
+    """The capability half of the deprecation is gone: every installed routine.yaml spells it
+    `jobs:`, so a file still naming `tasks:` is told so rather than silently switching the
+    layer on under a spelling nothing writes."""
+    for raw in ({"tasks": "on"}, {"tasks": True}):
+        caps, problems = normalize_capabilities(raw)
+        assert caps == {}, raw
+        assert any("capabilities.tasks: unknown key" in p for p in problems), raw
+        assert effective_settings(caps)["jobs"] == "off", raw
+
+
+def test_the_pre_rename_store_file_is_not_read(tmp_path):
+    """The store half converged by itself — the first save after the rename wrote the canonical
+    name — so the old file is the routine's own data and nothing reads it; it is never deleted
+    either, and a store that is not read cannot report problems."""
+    d = tmp_path / "fau"
+    (d / "state").mkdir(parents=True)
+    (d / "state" / "tasks.json").write_text(json.dumps(
+        {"version": 1, "tasks": [{"id": "nanogeofeld", "title": "NanoGeofeld", "brief": "b",
+                                  "state": "active", "workspace": "tasks/nanogeofeld"}],
+         "deleted": [], "run": {}}), encoding="utf-8")
+    assert jobs.store_path(d).name == "jobs.json"
+    assert jobs.load(d)["jobs"] == []
+    assert jobs.problems(d) == []
+    assert (d / "state" / "tasks.json").is_file()
+
+
+def test_the_pre_rename_list_key_inside_the_store_is_not_read(tmp_path):
+    d = tmp_path / "fau"
+    (d / "state").mkdir(parents=True)
+    (d / "state" / "jobs.json").write_text(
+        json.dumps({"version": 1, "tasks": [{"id": "nanogeofeld"}], "deleted": [], "run": {}}),
+        encoding="utf-8")
+    assert jobs.load(d)["jobs"] == []
+    assert jobs.problems(d) == []
+
+
+def test_a_default_workspace_for_a_new_job_is_the_new_name():
+    assert jobs.workspace_rel({"id": "fresh"}) == "jobs/fresh"
 
 
 # ── the action kind, which gets NO alias ──────────────────────────────────────────────────

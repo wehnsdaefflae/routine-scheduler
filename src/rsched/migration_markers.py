@@ -33,8 +33,9 @@ A migration whose marker is written as narration is therefore still reported.
 **Compatibility shims are policed too** (F699). `jobs_compat.py` carried a deprecation with no
 expiry, and the check could not have noticed: its code is not migrate-named, so nothing in
 `SHAPED` matches it. The policed shape is the one a back-compat layer actually has here — an
-ALIAS TABLE, module constants that keep an old spelling readable (`LEGACY_FILE`,
-`SETTING_ALIAS`) — and not the filename, which is a worse signal than it looks: measured over
+ALIAS TABLE, module constants that keep an old spelling readable (`CHECK_ALIAS`, and the
+`LEGACY_*` names a store rename leaves) — and not the filename, which is a worse signal than it
+looks: measured over
 `src/`, the only two `*_compat.py` files are this deprecation and `endpoints/openai_compat.py`,
 a protocol adapter that deprecates nothing and would be flagged forever.
 """
@@ -58,7 +59,7 @@ _PROSE_LEAD = re.compile(r"[0-9A-Za-z][ \t]*$")
 SHAPED = re.compile(r"def \w*migrat\w*|class \w*[Mm]igrat\w*|[\"']migrate-"
                     r"|^\s*\w*migrat\w*\s*\(\)\s*\{", re.MULTILINE)
 
-#: The NAME an alias constant carries in this repo: `LEGACY_FILE`, `SETTING_ALIAS`.
+#: The NAME an alias constant carries in this repo: `LEGACY_FILE`, `CHECK_ALIAS`.
 ALIAS_NAME = re.compile(r"\b(?:LEGACY_[A-Z0-9_]+|[A-Z0-9_]+_ALIAS)\b")
 
 #: A module-level constant assigned a STRING — an alias table holds the old spelling itself, so

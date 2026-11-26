@@ -570,8 +570,8 @@ default because a caution a run leaves itself about its own actions is ordinary 
 it; `global` also lets it write the curated store — the curator's setting, every write approved
 under `remind_confirm`. See [reminders](reminders.md). `jobs: on` makes the routine keep its
 standing work as JOBS it creates and manages with the `job` action, processing every job due
-in a run before that run may end — see [jobs](jobs.md). (`tasks:` is the deprecated spelling,
-still read as an alias — `jobs_compat.SETTING_ALIAS` — and not what a new routine writes.) A settings pattern written before a
+in a run before that run may end — see [jobs](jobs.md). (`jobs:` is the only spelling read: a
+file naming the pre-D174 `tasks:` here is reported as an unknown key.) A settings pattern written before a
 setting existed compares as holding its all-off value (`patterns.fields.canonical`), so adding
 one never marks every follower as departing from its pattern.
 

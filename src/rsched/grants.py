@@ -32,7 +32,6 @@ demand):
       runs: last | all                 # previous-run read depth — a SETTING, no doc needed
       reminders: none | local | global # consequence-reminder stores — a SETTING too
       jobs: off | on                  # the routine keeps JOBS (rsched/jobs.py) — a SETTING
-      #   (`tasks:` is the pre-D174 spelling, still read — rsched/jobs_compat.py)
 
 Which utils are "reserved" at all is library-defined: the union of every permission
 doc's `requires.utils`, at the grain the doc names — a bare `mail` reserves every verb of
@@ -57,10 +56,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import configdial, jobs_compat
+from . import configdial
 from .engine.actionschema import KINDS
 from .ids import is_slug
 from .jobs import LEVELS as JOB_LEVELS
+from .jobs import normalize_setting as normalize_job_setting
 from .reminders import LEVELS as REMINDER_LEVELS
 
 # `read_rule` is deliberately NOT gated: a routine must read the general rules it holds, and
@@ -222,7 +222,7 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
     never something holding a doc switches on.
     """
     known = (("actions", "utils") if requires
-             else ("actions", "utils", *SETTING_DEFAULTS, jobs_compat.SETTING_ALIAS))
+             else ("actions", "utils", *SETTING_DEFAULTS))
     if raw is None:
         return {}, []
     if not isinstance(raw, dict):
@@ -266,8 +266,8 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
             out["reminders"] = raw["reminders"]
         else:
             problems.append(f"{label}.reminders must be {' or '.join(REMINDER_LEVELS)}")
-    # the job layer, under either spelling — the whole deprecation lives in jobs_compat
-    problems += jobs_compat.normalize_setting(raw, JOB_LEVELS, label, out)
+    # the job layer, whose own module owns its vocabulary and the YAML-boolean reading
+    problems += normalize_job_setting(raw, JOB_LEVELS, label, out)
     return out, problems
 
 

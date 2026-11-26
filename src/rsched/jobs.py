@@ -59,6 +59,8 @@ STATES = ("active", "paused", "done")
 OUTCOMES = ("advanced", "no-work", "blocked", "deferred")
 #: The capability setting's two values (grants.SETTING_DEFAULTS) — the user's words, on or off.
 LEVELS = ("off", "on")
+#: The `capabilities:` key the setting is spelled with.
+SETTING_KEY = "jobs"
 HISTORY_KEEP = 12
 DELETED_KEEP = 20
 SUMMARY_MAX = 4000
@@ -66,14 +68,27 @@ TITLE_MAX = 160
 BRIEF_MAX = 6000
 
 
+def normalize_setting(raw: object, levels: tuple[str, ...], label: str,
+                      out: dict) -> list[str]:
+    """Fold the job-layer setting of a `capabilities:` mapping into `out`, and return its
+    problems (grants.normalize_capabilities).
+
+    YAML 1.1 reads a bare `on`/`off` as a boolean: that is the parser's spelling of the same
+    word, not a second convention, so it lands on the one canonical string.
+    """
+    if not isinstance(raw, dict) or SETTING_KEY not in raw:
+        return []
+    given = raw[SETTING_KEY]
+    value = ("on" if given else "off") if isinstance(given, bool) else given
+    if value in levels:
+        out[SETTING_KEY] = value
+        return []
+    return [f"{label}.{SETTING_KEY} must be {' or '.join(levels)}"]
+
+
 def store_path(routine_dir: Path) -> Path:
-    """Where the store is WRITTEN — always the canonical name."""
+    """Where the store is read and written — one canonical name."""
     return Path(routine_dir) / JOBS_FILE
-
-
-def read_path(routine_dir: Path) -> Path:
-    """Where the store is READ — the canonical file, or the pre-D174 one (jobs_compat)."""
-    return compat.read_path(routine_dir, store_path(routine_dir))
 
 
 def _lock_path(routine_dir: Path) -> Path:
@@ -91,11 +106,11 @@ def load(routine_dir: Path) -> dict:
     and a store that does not parse is reported by `problems`, never silently rewritten (a save
     only ever follows a load that understood it).
     """
-    raw = read_json(read_path(routine_dir))
+    raw = read_json(store_path(routine_dir))
     doc = empty()
     if not isinstance(raw, dict):
         return doc
-    doc["jobs"] = [t for t in compat.records(raw)
+    doc["jobs"] = [t for t in raw.get("jobs") or []
                    if isinstance(t, dict) and t.get("id")]
     doc["deleted"] = [t for t in raw.get("deleted") or [] if isinstance(t, dict)]
     doc["run"] = raw.get("run") if isinstance(raw.get("run"), dict) else {}
@@ -104,7 +119,7 @@ def load(routine_dir: Path) -> dict:
 
 def problems(routine_dir: Path) -> list[str]:
     """What is wrong with the store on disk, as sentences — empty when it is sound or absent."""
-    path = read_path(routine_dir)
+    path = store_path(routine_dir)
     if not path.exists():
         return []
     raw = read_json(path)
@@ -113,7 +128,7 @@ def problems(routine_dir: Path) -> list[str]:
         return [f"{name} does not parse as a JSON object"]
     out = []
     seen: set[str] = set()
-    for i, t in enumerate(compat.records(raw)):
+    for i, t in enumerate(raw.get("jobs") or []):
         if not isinstance(t, dict) or not is_slug(str(t.get("id") or "")):
             out.append(f"{name}: job #{i + 1} has no kebab-case id")
             continue

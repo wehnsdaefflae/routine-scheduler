@@ -268,7 +268,7 @@ def test_the_refusal_suggests_where_the_work_went(tmp_path):
     (home / "fau" / "routine.yaml").write_text("slug: fau\ntags: [fau]\n", encoding="utf-8")
     task = jobs.new_job("nanogeofeld", "NanoGeoFeld", "", by="operator")
     task["origin"] = "nanogeofeld"
-    jobs.save(home / "fau", {**jobs.empty(), "tasks": [task]})
+    jobs.save(home / "fau", {**jobs.empty(), "jobs": [task]})
     (home / "self-audit" / "routine.yaml").write_text("slug: self-audit\ntags: [fau]\n",
                                                       encoding="utf-8")
 
