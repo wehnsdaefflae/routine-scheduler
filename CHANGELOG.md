@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.615.1] — 2026-11-26
+
+The run prompt no longer advertises child slots to a run already at its depth
+limit (R3737). Below the limit it still reports the remaining shared allowance;
+child admission policy is unchanged.
+
 ## [0.615.0] — 2026-11-25
 
 **A turn on which SEVERAL reminders fired can now label every fire** (F925). `remind_feedback`

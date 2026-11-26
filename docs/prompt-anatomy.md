@@ -874,7 +874,8 @@ lifetime total for the whole run tree — `run_context.sub_counter` is one share
 increments it and never decrements — so the budgets line renders what THIS node may still start,
 never the raw ceiling: `at most 8 child runs` with the whole budget in front of it, `3 more child
 runs (8 shared across this run tree, 5 already started)` once siblings have spent some, and `no
-child runs left (all 8 shared across this run tree are spent)` when it is gone. The refusal
+child runs left (all 8 shared across this run tree are spent)` when it is gone. At the depth ceiling,
+`no child runs (depth limit reached)` takes precedence over any unspent allowance. The refusal
 (`subruns._cap_reason`) says the same thing in the other direction — that the budget is shared and
 never refills, so the call was not at fault. Before this, every node was told the tree total: one
 run's three children were numbered 5, 7 and 8, each was refused at its own FIRST spawn, and each

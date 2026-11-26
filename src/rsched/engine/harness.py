@@ -23,6 +23,8 @@ def _subrun_allowance(ctx: RunContext) -> str:
     never decremented). A node with the whole budget reads the plain number; one whose siblings
     spent some reads what is LEFT beside the total it is a remainder of.
     """
+    if ctx.depth >= ctx.budgets.max_child_depth:
+        return "no child runs (depth limit reached)"
     total = ctx.budgets.max_child_runs
     used = ctx.sub_counter[0]
     left = max(0, total - used)
