@@ -57,8 +57,17 @@ testable rather than asserted. **That answer is now a page:** `readmodels/hook_a
 about the same id carrying a terminal event — and `GET /api/hook-activity` serves them to the
 Routines page's hook-activity panel, soonest first, each with its target routine, instant,
 reason and who armed it. One past its instant is shown as `overdue` rather than dropped: it is a
-request the daemon has not consumed yet. The week strip's per-routine `one_shots` still come
-from the spool scan.
+request the daemon has not consumed yet.
+
+The week strip's per-routine `one_shots` still come from the spool — and the two readings are
+now COMPARED on every strip read (`rsched/hooks/scheduleparity.py`). It is report-only: the
+spool's own instants are what is served, the stream's fold is read beside them, and a
+disagreement files `hook_stream_diverged` naming each request as `<slug>/<request id>` (the one
+identity both stores share). Both directions are a shortfall with different repairs — the spool
+ahead means an arming row never landed, so after the switch the strip would lose a real fire;
+the stream ahead means a terminal row never landed, so the strip would draw a fire that cannot
+happen. Switching the strip's read to the fold is the D152 campaign's remaining step, staged
+behind a week of this check reading clean.
 
 ```jsonc
 // req-<id>.json  (atomic write, mirrors triggers.write_event)

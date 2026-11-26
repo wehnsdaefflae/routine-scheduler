@@ -1321,6 +1321,16 @@ and the capabilities digest's catalog listing):
   every fired one-shot as overdue, since an ending is a later row and not a change to the arming
   one — and a pending row whose instant has passed is shown as such, never dropped, because it is
   a one-shot the daemon has not consumed yet.
+  The campaign's remaining step is the REPLACE for this source: the dashboard week strip
+  (`/api/schedule/week`) answers "what fires next" per routine from the spool, and that read is
+  to come from `next_fires` instead. It is staged behind a parity check, which is what
+  `rsched/hooks/scheduleparity.py` is: on every strip read the spool's instants are served
+  unchanged and the stream's fold is compared against them by REQUEST ID — the identity both
+  stores share — with either-direction disagreement filed as `hook_stream_diverged`. The spool
+  ahead means an arming row never landed (the switch would lose a real fire); the stream ahead
+  means a terminal row never landed (the switch would draw a fire that cannot happen). The
+  comparison is swallowed on any failure and can never change what is served: a diagnostic that
+  takes the dashboard down with it is worse than no diagnostic.
   The FOURTH source is the one the store was built for: a RUN-TREE hook (`engine/runtree.py`,
   F695), which is the `report` action with `target: "parent"` or `"child:<label>"` and has no
   store of its own — delivered on the `hook` channel at the addressee's next turn boundary, with

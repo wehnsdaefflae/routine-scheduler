@@ -273,6 +273,17 @@ asked for a specialised harness gets the generic one and nothing fails. Since on
 pattern degrades every spawn that names it — fleet-wide and silently, for as long as the
 library stays broken — the drop is recorded where the fleet's incidents are read.
 
+hook_stream_diverged: the two readings of "what one-shot fires next" disagree — the request
+spool, which is what the week strip serves and what the daemon fires, against the hook stream's
+fold of the same question (`hooks/scheduleparity`). `only_in_spool` counts armed requests the
+fold cannot see (the stream's best-effort arming write failed, so after the D152 read switch
+that fire would vanish from the strip); `only_in_stream` counts pending rows the spool no longer
+holds (a `fired`/`cancelled`/`skipped` row never landed, so the strip would draw a fire that
+cannot happen). The detail names the ids as `<slug>/<request id>`, which is the one identity
+both stores share. routine and run_id are empty: an instance fact. Nothing is wrong on the
+dashboard while this fires — the spool is served either way — and that is the point of the
+check: the switch is staged behind a week of it reading clean.
+
 answer_undelivered: an operator's ANSWER that no run will ever read has waited longer than
 `daemon/owed_watch.UNDELIVERED_DAYS` — its conversation finished during the turn it was filed
 in, or its routine is off, retired or has no clock (`readmodels/answer_pickup`). One row per
@@ -326,4 +337,5 @@ EVENTS: tuple[str, ...] = (
     "process_overhead_high",
     "postdeploy_failed",
     "answer_undelivered",
+    "hook_stream_diverged",
 )

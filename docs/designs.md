@@ -540,11 +540,22 @@ run) while an injection's is the ADDRESSEE; and "newest first" needs an explicit
 because `ids.now_iso` writes to the SECOND, so `deliveries` breaks ties on the stream's own
 position.
 
-**What remains — and a gap in this entry.** The `/api/schedule/week` switch to `next_fires` and
-its `hook_stream_diverged` filing are the second commit, staged here behind "a week of the
-parity check running in report-only mode". **That parity check does not exist**, and no
-increment above builds it: whoever takes the second commit builds the report-only check first,
-runs it for a week, and only then switches the read. This entry stays until that has happened.
+**Second increment — the parity check, report-only.** `hooks/scheduleparity.py`: the week strip's
+`one_shots` are still the SPOOL's own instants, and on every strip read the stream's fold
+(`hook_activity.next_fires`) is compared against them by REQUEST ID — the identity
+`scheduleproj.hook_of_request` carries through and `request_of_hook` inverts, so a disagreement
+names a request rather than reporting that two lists differ. Either direction files
+`hook_stream_diverged` (vocabulary + a 12 h repeat window, because the strip is a polled
+surface): the spool ahead means `record_armed`'s best-effort write failed, so the switch would
+LOSE a real fire; the stream ahead means a terminal row never landed, so the switch would DRAW a
+fire that cannot happen. The comparison is swallowed on any failure and cannot change what is
+served. Measured on the live instance while this was built: the spool held 0 pending requests
+and the stream's fold 0 pending rows — they agree today, which is what the week is for
+establishing rather than assuming.
+
+**What remains.** The switch itself: `one_shots` served from `next_fires` with the spool as the
+fallback under `reportread`'s rule, after the check has run its week and the health stream shows
+no `hook_stream_diverged` row. This entry stays until that has happened.
 
 ---
 

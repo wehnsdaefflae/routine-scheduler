@@ -1,8 +1,12 @@
 """Which health events are STANDING CONDITIONS, and how long one keeps the next quiet.
 
 Most health events are INCIDENTS: a run failed, a fire was refused, a trigger hit its cap.
-Two of them are not — `cost_trend_degraded` and `cache_read_degraded` report a condition that
-is simply TRUE for a while, and both are read at RUN END. A run end is not a run: a resumed
+Three of them are not. Two — `cost_trend_degraded` and `cache_read_degraded` — report a
+condition that is simply TRUE for a while, and both are read at RUN END. The third,
+`hook_stream_diverged`, is the same shape read from a POLLED surface instead: two stores
+disagreeing about an armed one-shot is one standing fact, and the dashboard asks the question
+again every time the operator opens it, so without a window the stream would count page loads.
+A run end is not a run: a resumed
 run finishes once per resume, so one `llmsectest-weekday` run filed 26 cost-trend rows over
 5h36m and the next day's filed 22 — 173 of the live stream's 1,289 rows for a condition only
 80 runs had ever produced. An operator reading "173 cost events" sees a fleet problem where
@@ -44,6 +48,7 @@ from pathlib import Path
 REPEAT_COOLDOWN_HOURS: dict[str, float] = {
     "cost_trend_degraded": 12,
     "cache_read_degraded": 12,
+    "hook_stream_diverged": 12,
 }
 
 

@@ -19,7 +19,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import firetimes, lanes, registry, schedule_once
-from ..hooks import scheduleproj
+from ..hooks import scheduleparity, scheduleproj
 from ..schedule import server_tz
 from .routines_common import _info
 
@@ -38,19 +38,28 @@ def schedule_week(request: Request, days: int = 7) -> dict:
     armed and no cron still appears. A member of a scheduled LANE contributes no `fires`
     of its own (its cron is daemon-suppressed, D71); the lane's fires are listed under
     `lanes` — paused lanes omitted, exactly as they are skipped by the fire loop.
+
+    `one_shots` come from the SPOOL, which is what fires; the hook stream's fold of the same
+    question is compared against it on every read and a disagreement is filed rather than
+    served (`hooks/scheduleparity.py`). Switching this read to the fold is the D152 campaign's
+    remaining step, staged behind a week of that check.
     """
     days = max(1, min(days, 14))
     now = datetime.now(UTC)
     start, end = now - timedelta(days=1), now + timedelta(days=days)
-    home = request.app.state.server.routines_home
+    server = request.app.state.server
+    home = server.routines_home
     suppressed = lanes.scheduled_member_slugs(home)
+    enabled = [info.cfg for info in registry.scan(server).values() if info.cfg.enabled]
+    # The spool's own reading, with the hook stream's fold compared against it and any
+    # disagreement filed — report-only: what is served below is the spool, unchanged
+    # (hooks/scheduleparity.py). The D152 read switch is staged behind a week of this.
+    one_shot_rows = scheduleparity.week_one_shots(server, [cfg.slug for cfg in enabled],
+                                                  start, end)
     routines = []
-    for info in registry.scan(request.app.state.server).values():
-        cfg = info.cfg
-        if not cfg.enabled:
-            continue
+    for cfg in enabled:
         fires = [] if cfg.slug in suppressed else _cron_fires(cfg.cron, cfg.tz, start, end)
-        one_shots = _one_shot_fires(home, cfg.slug, start, end)
+        one_shots = one_shot_rows.get(cfg.slug, [])
         if fires or one_shots:
             routines.append({"slug": cfg.slug, "fires": fires, "one_shots": one_shots,
                              "truncated": len(fires) >= MAX_FIRES})
@@ -83,26 +92,6 @@ def _cron_fires(cron: str, tz: str, start: datetime, end: datetime) -> list[str]
     except (ValueError, KeyError):   # a bad cron (CroniterError) or zone (ZoneInfoNotFoundError)
         return []
     return fires
-
-
-def _one_shot_fires(routines_home, slug: str, start: datetime, end: datetime) -> list[str]:
-    """Armed one-shot fire instants for `slug` inside [start, end), UTC-normalised & sorted."""
-    out: list[str] = []
-    for p in schedule_once.pending_requests(routines_home, slug):
-        r = schedule_once.read_request(p)
-        raw = str(r.get("fire_at") or "")
-        if not r.get("active", True) or not raw:
-            continue
-        try:
-            t = datetime.fromisoformat(raw)
-        except ValueError:
-            continue
-        if t.tzinfo is None:
-            t = t.replace(tzinfo=UTC)
-        t = t.astimezone(UTC)
-        if start <= t < end:
-            out.append(t.isoformat())
-    return sorted(out)
 
 
 # -- one-shot time triggers (the routine page's Schedule-once card) -----------------------
