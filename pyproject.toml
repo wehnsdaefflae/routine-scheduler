@@ -207,6 +207,9 @@ ignore = [
 # The browser-stage container's runner and its client run as scripts beside each other (one in
 # the `uitest` service, one wherever a caller is) — never a package this repo imports.
 "deploy/uitest/*.py" = ["T201", "INP001"]
+# The D170 phase-1 probe is a measurement script, not a code path: nothing imports it, it is
+# run by hand from a terminal, and the JSON it prints IS its answer.
+"deploy/d170-microvm/probe.py" = ["T201", "INP001"]
 # The merge step runs from a gate script, a routine's close-out and a person's terminal alike —
 # never a package this repo imports — and stdout IS its answer to each of those three callers.
 "deploy/merge-to-main.py" = ["T201", "INP001"]
