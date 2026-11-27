@@ -30,6 +30,23 @@ def test_the_recommender_never_proposes_the_routine_s_own_directory(tmp_path, mo
     assert out == {"fs_write_roots": {"value": ["/srv/feeld"], "reason": "r"}}
 
 
+def test_the_recommender_is_told_a_grant_row_is_an_entity_id(tmp_path):
+    """The writer's own half of the fix: a creation draft proposed
+    `grants: {"secrets": ["FAU_USER"]}` from a `setup` line naming a secret, and the whole-draft
+    accept 400d on it. The prompt now spells the `<class>:<name>` form and names the plural
+    bucket as refused, the way it already does for `connections`."""
+    from types import SimpleNamespace
+
+    from rsched.patterns.recommend import _prompt
+
+    server = SimpleNamespace(permissions_home=tmp_path / "p", rules_home=tmp_path / "r",
+                             routines_home=tmp_path / "routines")
+    text = _prompt(server, "hunter", {}, None, "apply with the FAU account", ["grants"])
+    assert "secret:FAU_USER" in text
+    assert "NEVER a plural bucket" in text
+    assert '{"secrets": ["FAU_USER"]} is refused' in text
+
+
 def test_the_recommender_reads_each_permission_s_effect_before_proposing_it(tmp_path):
     """The same draft proposed `android-actuation` "for observe/navigate" — which that doc's own
     WITHOUT line says needs no permission. The prompt now lists every permission's WITH /

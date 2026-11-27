@@ -80,8 +80,6 @@ NO_SEMANTIC_CHECK: dict[str, str] = {
                     "operator actually hit (R2884)",
     "deliberation": "GAP — `_validate_tuning` 400s a level outside `DELIBERATION_LEVELS`; the "
                     "patch model types it `str`. The other value the operator actually hit",
-    "grants": "GAP — `entities.normalize_grants` 400s an unknown entity id. `ask_first`, so it "
-              "needs the person's click anyway, but a refused row still 400s the whole accept",
     "keep_runs": "GAP — `_apply_resource_fields` 400s anything but a positive integer, a floor "
                  "the patch model's `int` does not carry",
     "ladder": "GAP — `_apply_ladder` 400s an unknown key, a non-bool `enabled` and a "
@@ -196,7 +194,33 @@ def semantic_checks(server: object | None = None) -> dict[str, Callable[[object]
         # accept, taking every other kept change with it.
         "fs_read_roots": lambda value: rootgrants.normalize_roots("fs_read_roots", value),
         "fs_write_roots": lambda value: rootgrants.normalize_roots("fs_write_roots", value),
+        "grants": _grants_problem,
     }
+
+
+def _grants_problem(value: object) -> None:
+    """The accept route's own judgement of the grant-decision rows, raised the way it raises.
+
+    A grant row is an ENTITY ID → bool (`secret:FAU_USER: true`), and the one thing a writer
+    reaches for instead is a plural BUCKET NAME holding bare names — `{"secrets": ["FAU_USER"]}`
+    — which `RoutinePatch` takes as "a dict" and the accept then 400s. Because the accept is
+    whole-draft, that one row discarded every other change in the same draft: a routine created
+    with a secret named in its `setup` kept its pattern's DEFAULT cadence, with its proposed
+    schedule, permissions and rules sitting unapplied behind the row nobody could edit out.
+
+    So the judge asks `entities.normalize_grants` — the function `api_routine_patch` wraps —
+    and the value is dropped at the WRITER with the sentence the person would have read on
+    their click. `drafts.read` judges a stored document through this same path, so a draft
+    written before this check is readable and acceptable: the one bad row falls away and the
+    changes beside it survive.
+    """
+    from fastapi import HTTPException
+
+    from ..entities import normalize_grants
+
+    _gmap, problems = normalize_grants(value or {})
+    if problems:
+        raise HTTPException(400, "; ".join(problems))
 
 
 def whole_field_checks() -> dict[str, Callable[[object], str]]:

@@ -140,11 +140,19 @@ refused on the accept, taking every other kept change with it. A field in
 `triggers` are not patch fields at all — the accept routes them to `engine/finishline.py` and
 `api_hooks.reconciled_triggers` — so their own owners are the only judges that apply, and
 judging them by the patch model would refuse every value, including the empty ones all 12
-shipped patterns carry. The remaining 15 governable fields are offered on their shape alone,
-and `validate.NO_SEMANTIC_CHECK` names each one with the reason: four have no meaning to judge,
-while **11 carry a validator on the accept route the judge does not consult** — so a value the
-system generated can still be refused on a page nobody typed into (R2884, measured on 0.447.3
-at 13; `deliberation` and `capabilities` are the two the operator hit).
+shipped patterns carry. `grants` left the `GAP` list the same way the folder grants did: the
+judge asks `entities.normalize_grants`, because a creation draft proposed
+`grants: {"secrets": ["FAU_USER"]}` — a plural bucket holding bare names where a
+`<class>:<name>` entity id belongs — which the patch model takes as "a dict", and the
+whole-draft accept then 400d, leaving that routine on its pattern's DEFAULT cadence with its
+schedule, permissions and rules unapplied behind the one row nobody could edit out. A draft
+stored with that row is still readable: the reader judges each stored row the same way, so the
+bad row falls away and the changes beside it accept. The remaining 14 governable fields are
+offered on their shape alone, and `validate.NO_SEMANTIC_CHECK` names each one with the reason:
+four have no meaning to judge, while **10 carry a validator on the accept route the judge does
+not consult** — so a value the system generated can still be refused on a page nobody typed
+into (R2884, measured on 0.447.3 at 13; `deliberation` and `capabilities` are the two the
+operator hit).
 `tests/test_recommend_coverage.py` holds that split to a ratchet: a new governable field must
 be checked, and an entry leaves the allowlist only when its check is implemented.
 `tests/test_proposal_validation.py` pins the refusal per seam, and that every shipped pattern

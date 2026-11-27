@@ -29,6 +29,11 @@ REFUSED = [
     # `validate_roots` 400s — and with it every other change the person kept.
     ({"fs_write_roots": ["work"]}, "not an absolute path"),
     ({"fs_read_roots": ["~/notes", "~/.credentials"]}, "credential store"),
+    # science-freebie-hunter's creation draft: a plural BUCKET NAME holding bare secret names
+    # where a `<class>:<name>` entity id belongs. `RoutinePatch` takes it as "a dict", so it
+    # was offered, and the whole-draft accept 400d — leaving the routine on its pattern's
+    # default cadence with its schedule, permissions and rules unapplied behind it.
+    ({"grants": {"secrets": ["FAU_USER"]}}, "is not an entity id"),
 ]
 
 
@@ -43,6 +48,29 @@ def test_the_settings_writer_refuses_a_value_the_accept_would_refuse(tmp_path, s
                      source="test")
     assert named in str(exc.value), str(exc.value)
     assert drafts.read(home, "alpha") is None      # and nothing was stored
+
+
+def test_a_draft_stored_with_a_bucket_shaped_grants_row_still_accepts_the_rest(tmp_path):
+    """A draft written BEFORE the judge knew this shape must not be a dead end. The reader
+    judges every stored row the same way the writer does, so the unacceptable grants row falls
+    away on read and the schedule, permissions and rules beside it survive — the routine gets
+    the cadence the person chose instead of its pattern's default, with no migration and
+    nothing for anyone to hand-edit out.
+    """
+    home = tmp_path / "routines"
+    path = home / drafts.DIR / "alpha.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"created": "now", "source": "creation", "message": "check",
+                                "pattern": None, "changes": {
+        "grants": {"value": {"secrets": ["FAU_USER"]}, "reason": "the applying identity"},
+        "schedule": {"value": {"friendly": {"frequency": "weekly", "time": "18:00",
+                                            "weekdays": [1]}}, "reason": "mondays"},
+        "permissions": {"value": ["browser-sessions"], "reason": "it signs in"}}}),
+                    encoding="utf-8")
+    doc = drafts.read(home, "alpha")
+    assert doc is not None
+    assert "grants" not in doc["changes"]
+    assert sorted(doc["changes"]) == ["permissions", "schedule"]
 
 
 def test_the_refusal_teaches_the_vocabulary_it_wants(tmp_path):

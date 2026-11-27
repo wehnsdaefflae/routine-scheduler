@@ -49,7 +49,7 @@ def test_the_allowlist_cannot_rot():
 #: that shrinks the allowlist. 0.562.0 removed `fs_read_roots` / `fs_write_roots`: the
 #: proposal judge now calls the grant edges' own `rootgrants.normalize_roots`.
 BASELINE_UNCHECKED = frozenset({
-    "budgets", "capabilities", "deliberation", "grants",
+    "budgets", "capabilities", "deliberation",
     "improve", "keep_runs", "ladder", "ladder_turn_interval", "oversight_turns", "permissions",
     "reminders", "rules", "run_gate", "schedule", "tags", "triggers",
 })
@@ -67,10 +67,10 @@ def test_the_allowlist_only_shrinks():
 
 def test_each_gap_names_a_validator_the_recommender_does_not_consult():
     """The `GAP —` reasons are the measured defect R2884 found (13 of them), kept countable so a
-    later increment can close them one at a time and watch the number fall — 11 since 0.562.0
-    closed the two folder grants."""
+    later increment can close them one at a time and watch the number fall — 10 since the two
+    folder grants and then `grants` itself were closed."""
     gaps = sorted(k for k, why in NO_SEMANTIC_CHECK.items() if why.startswith("GAP —"))
-    assert len(gaps) == 11, gaps
+    assert len(gaps) == 10, gaps
     assert "deliberation" in gaps and "capabilities" in gaps   # the two the operator hit
 
 
@@ -91,3 +91,19 @@ def test_the_folder_grants_are_judged_by_the_grant_edges_own_rule():
     assert not valid("fs_read_roots", ["~/.ssh"])                       # SEC-1, never proposable
     assert valid("fs_write_roots", ["~/git-repos/feeld", "/srv/data/"])
     assert valid("fs_read_roots", [])
+
+
+def test_a_grant_row_is_an_entity_id_and_a_bucket_name_is_not_proposable():
+    """`{"secrets": ["FAU_USER"]}` — a plural bucket holding bare names where an entity id
+    belongs — was proposed by a creation draft and 400d on the accept. The accept is
+    whole-draft, so that one row took a weekly schedule, two permissions and three rules with
+    it and the routine kept its pattern's default daily cadence. The judge now asks
+    `entities.normalize_grants`, the validator the accept route wraps.
+    """
+    assert not valid("grants", {"secrets": ["FAU_USER"]})
+    assert not valid("grants", {"FAU_USER": True})              # bare name, no class
+    assert not valid("grants", {"secret:FAU_USER": "yes"})       # not a bool
+    assert not valid("grants", {"util:mail": True})              # true row, not a secret
+    assert valid("grants", {"secret:FAU_USER": True})
+    assert valid("grants", {"util:mail": False})
+    assert valid("grants", {})
