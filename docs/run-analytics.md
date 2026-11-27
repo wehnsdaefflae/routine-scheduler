@@ -846,15 +846,24 @@ health stream for that window held exactly one event, about an unrelated oversiz
   onto metered models at `effort: max` and the operator found it days later, by reading
   transcripts.
 - `model_chain_exhausted` is the same seam's harder failure: a role's WHOLE chain unusable
-  mid-turn — every member failed hard or is cooling. It carries `model`, `last_model` and
-  `cooldown_s`. A `model_failover` costs money; a `model_chain_exhausted` costs the run.
+  mid-turn — every member failed hard, is cooling, or is out of allowance. It carries `model`,
+  `last_model` and `cooldown_s`, plus `chain_members` (per member: cooling, seconds left, and
+  whether its failure outlasts a cooldown) and `not_cooling`. A `model_failover` costs money; a
+  `model_chain_exhausted` costs the run. Since the last-resort reach-back, the chain also has to
+  have nothing REACHABLE behind the failure, so a non-zero `not_cooling` with no `durable`
+  member beside it is a defect to report rather than the known gap it once was.
 - Read both by the HEAD, not by the count: one event is a provider hiccup, while a run of
   them sharing one `model` is a primary that is not serving the fleet. The per-run transcript
   `error` event with its `failover` payload stays the record of which model served a given
   turn; these are the fleet-level aggregate that no per-run artifact can give you.
 - A switch is FORWARD-ONLY inside a run (`endpoints/failover.py`), so repeated
   `model_failover` events for one run_id mean successive members failing, never the same
-  primary flapping back in every five minutes.
+  primary flapping back in every five minutes. The ONE exception is the last-resort
+  reach-back: when the chain has nothing left ahead of it, a member whose cooldown has lapsed
+  and whose failure was not a spent allowance is taken instead of killing the run, and that
+  switch carries `last_resort: true` in its transcript `failover` payload. So a run_id with
+  two `model_failover` events and no `model_chain_exhausted` may be a chain that went down and
+  came back, which is the intended outcome, not a flap.
 
 ## Token pace — anticipating the budget, not reporting the bill
 

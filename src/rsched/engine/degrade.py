@@ -195,6 +195,15 @@ def _log_chain_exhausted(loop, chain, failed_ref, exc: EndpointError) -> None:
     # lapsed (measured across the fleet: 13 of 23 exhaustions in ten days left a member with
     # an expired mark behind the serving one). `recovered` is the count a sweep can group on
     # without parsing the list.
+    #
+    # What a non-zero count MEANS changed with the last-resort reach-back
+    # (endpoints/failover._last_resort): a member whose mark lapsed and whose failure was not
+    # durable is now taken rather than skipped, so a chain only reports itself exhausted when
+    # nothing behind it is reachable. A member still counted here is one the reach-back
+    # deliberately refused — its `durable` flag in the list says so — or one forward of the
+    # failure that was never reachable in the first place. A recurring non-zero count with no
+    # durable member beside it is therefore a defect report, not the known shortfall it used
+    # to be.
     state = failover.chain_state(chain)
     recovered = sum(1 for m in state if not m["cooling"] and m["name"] != (
         failed_ref.name or failed_ref.model))
@@ -211,10 +220,26 @@ def _log_chain_exhausted(loop, chain, failed_ref, exc: EndpointError) -> None:
         not_cooling=recovered)
 
 
+def _reached_back(chain, failed_ref, new_ref) -> bool:
+    """Whether this switch moved UP the chain — the last-resort reach-back, not a step down.
+
+    Read off the chain's own order by catalog name (the identity the chain dedups by), so the
+    record states what happened rather than restating what was intended. A name the chain does
+    not carry reads as a forward switch: the ordinary case must never be mislabelled.
+    """
+    names = [ref.name for _, ref in chain]
+    try:
+        return names.index(new_ref.name) < names.index(failed_ref.name)
+    except ValueError:
+        return False
+
+
 def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
     """The picked model failed hard mid-turn (its adapter's transport retries are already
     exhausted, or it kept returning empty completions). Advance to the next chain member
-    not in cooldown and log the switch VISIBLY: a transcript `error` event whose
+    not in cooldown — or, when nothing forward is left, BACK to a member whose cooldown has
+    lapsed and whose failure was not durable, which is the only alternative to killing the run
+    (endpoints/failover._last_resort) — and log the switch VISIBLY: a transcript `error` event whose
     `failover` payload names both models — so the run records which model serves from here
     (status.json follows via ctx.main_model). None = chain exhausted. What the SUBSTITUTED
     model is told about its situation is `engine/substitution.py`, hence `chain` travels there.
@@ -223,8 +248,12 @@ def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
     retryable-class transport failures, and a deterministic error or empty-reply pattern is
     visible only at this seam.
     """
+    # `durable`: a failure whose refusal outlasts the cooldown (a spent allowance, an unpayable
+    # account, a rejected credential) must stay unreachable even to the last-resort reach-back,
+    # whose whole premise is that an expired mark means the member may serve again.
     failover.mark_failed(failed_ref.endpoint, failed_ref.model,
-                         cooldown_s=failover.cooldown_for(exc))
+                         cooldown_s=failover.cooldown_for(exc),
+                         durable=failover.durable_for(exc))
     # The FIRST failure, kept once and never overwritten: if the whole chain dies, the last
     # rung's error is the least actionable one.
     if not loop.ctx.first_failover_cause:
@@ -236,12 +265,23 @@ def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
         return None
     _, n_ref = nxt
     loop.ctx.failover_rungs += 1
+    # A reach-back is the ONE switch that moves UP the chain (failover._last_resort), taken
+    # only when the alternative was reporting the chain exhausted. It is marked, because
+    # "failing over to" reads as a step down and because a reader comparing this against the
+    # forward-only rule needs to see which of the two happened. Absent on a forward switch, so
+    # the ordinary payload keeps its three keys.
+    back = _reached_back(chain, failed_ref, n_ref)
     loop.ctx.transcript.event("error", {
         "where": "endpoint",
         "message": (f"{failed_ref.name or failed_ref.model} failed hard: {str(exc)[:300]} "
-                    f"— failing over to {n_ref.name or n_ref.model}"),
+                    + (f"— nothing left down the chain; reaching BACK to "
+                       f"{n_ref.name or n_ref.model}, whose cooldown has lapsed, rather than "
+                       f"reporting the chain exhausted"
+                       if back else
+                       f"— failing over to {n_ref.name or n_ref.model}")),
         "failover": {"from": failed_ref.name, "to": n_ref.name,
-                     "cooldown_s": failover.COOLDOWN_S}})
+                     "cooldown_s": failover.COOLDOWN_S,
+                     **({"last_resort": True} if back else {})}})
     _log_failover(loop, chain, failed_ref, n_ref, exc)
     substitution.announce(loop, chain, failed_ref, n_ref, exc)
     return nxt

@@ -601,8 +601,12 @@ is two-level: a hard EndpointError anywhere (marked centrally in `InstrumentedEn
 engine's turn completion (`completion.py`) additionally advances down the chain MID-TURN on a hard
 failure, logging the switch as a transcript `error` event with a `failover` payload (never a new
 event type) and stamping each turn's `usage.model` with the model that actually served it, so
-status.json (`ctx.main_model`) and spend attribution stay truthful. Chain exhausted → the run
-fails exactly as before; models without `fallbacks` behave exactly as before.
+status.json (`ctx.main_model`) and spend attribution stay truthful. Advancing is forward-only
+within a run, with ONE exception: with nothing usable left ahead of it the chain looks back once
+rather than reporting itself exhausted, taking a member whose cooldown has lapsed and whose
+failure was not an allowance it cannot get back (`failover._last_resort`; such a switch is marked
+`last_resort: true` in the payload). Nothing reachable in either direction → the run fails exactly
+as before; models without `fallbacks` behave exactly as before.
 
 **Decision models** are a separate catalog (`config/decisionconf.py`: `decision_endpoints`,
 `decision_models`, the `decision_model` / `decision_media_model` defaults) with a separate

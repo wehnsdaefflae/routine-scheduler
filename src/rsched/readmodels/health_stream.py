@@ -112,10 +112,10 @@ BLOCKED_EVENTS: dict[str, str] = {
     # `subject` is the routine, so a provider outage reads as one row per affected routine with
     # the chain HEAD in the detail; a single row is a hiccup, several on one day is the fleet
     # off its models.
-    "model_chain_exhausted": "a role's WHOLE fallback chain was unusable — every model failed "
-                             "hard or was cooling, so the turn could not be taken: the detail "
-                             "names the chain head and the last model tried "
-                             "(engine/degrade.py)",
+    "model_chain_exhausted": "a role's WHOLE fallback chain was unusable — no model was "
+                             "reachable ahead of the failure or behind it, so the turn could "
+                             "not be taken: the detail names the chain head and the last model "
+                             "tried (engine/degrade.py)",
     # The unit is the routine's RUN TIME: a run that spent most of its actions on its own process
     # finished `ok` on every other surface, while the task it is for did not get those turns.
     "process_overhead_high": "a routine's runs go mostly to its OWN PROCESS — recipe reads, "

@@ -39,6 +39,24 @@ cooldown itself stays per provider model, where a failure belongs.
 ONLY `next_after` writes the mark — the engine's mid-turn failover is the one DELIBERATE
 abandonment. The mark is keyed by chain HEAD and roles share heads, so a write from `pick`
 would let one transient 5xx on a cheap subcall demote the main turn loop for the whole run.
+
+## The one exception: the last resort
+
+Forward-only is the rule everywhere EXCEPT the moment the chain would otherwise report itself
+exhausted and kill the run (`_last_resort`). The original argument weighs one swing against
+another working model; at that moment there is no other working model, and a run killed beside
+a recovered one is the worse outcome — on the fleet, 13 of 23 exhaustions in ten days happened
+with an earlier member's cooldown already lapsed.
+
+The quota half of the argument survives intact, because it has to: a spent allowance stops
+reading as cooling the moment its deadline lapses while refusing exactly as before. So a
+member is reachable backwards only if its mark lapsed AND its failure was not DURABLE
+(`mark_failed(durable=...)`, classified at the seam that saw the error —
+`errorsignal.durable_exhaustion`). Nothing downstream could recover that from a deadline.
+
+It cannot oscillate: every failure re-cools the member that produced it, so a member can serve
+a given turn at most twice — once going forward, once as the last resort — and the next
+exhaustion with nothing recovered behind it returns None exactly as before.
 """
 
 from __future__ import annotations
@@ -46,6 +64,8 @@ from __future__ import annotations
 import threading
 import time
 from typing import TYPE_CHECKING
+
+from . import errorsignal
 
 if TYPE_CHECKING:
     from ..config import ModelRef
@@ -60,12 +80,27 @@ _cooling: dict[tuple[str, str], float] = {}   # (endpoint, model id) → monoton
 #: chain HEAD (endpoint, model id) → the catalog NAME of the member currently serving that
 #: chain. Forward-only.
 _serving: dict[tuple[str, str], str] = {}
+#: (endpoint, model id) whose failure OUTLASTS its cooldown — a spent allowance, an unpayable
+#: account, a rejected credential. Its cooldown expires like any other, but the expiry means
+#: nothing, so the last-resort reach-back in `next_after` must not count it as recovered.
+_durable: set[tuple[str, str]] = set()
 
 
-def mark_failed(endpoint: str, model: str, *, cooldown_s: float = COOLDOWN_S) -> None:
-    """Start (or refresh) the cooldown after a hard failure."""
+def mark_failed(endpoint: str, model: str, *, cooldown_s: float = COOLDOWN_S,
+                durable: bool = False) -> None:
+    """Start (or refresh) the cooldown after a hard failure.
+
+    `durable` records that this failure will still refuse once the cooldown lapses — a spent
+    allowance, an unpayable account, a rejected credential
+    (`errorsignal.durable_exhaustion`). The cooldown itself is unchanged; the flag is what
+    keeps the last-resort reach-back in `next_after` off a member whose mark expiring means
+    nothing. It LATCHES: a model that answered `insufficient_quota` once is not made reachable
+    again by a later timeout on the same model.
+    """
     with _lock:
         _cooling[(endpoint, model)] = time.monotonic() + cooldown_s
+        if durable:
+            _durable.add((endpoint, model))
 
 
 def cooldown_for(exc) -> float:
@@ -75,12 +110,24 @@ def cooldown_for(exc) -> float:
     return max(COOLDOWN_S, float(getattr(exc, "retry_after", None) or 0.0))
 
 
+def durable_for(exc) -> bool:
+    """Whether the failure that just happened will still refuse once the cooldown lapses.
+
+    The companion of `cooldown_for`: one accessor, so neither cooling seam decides for itself
+    what a spent allowance looks like. The reading is `errorsignal`'s declared one, never a
+    phrase matched in the body.
+    """
+    return errorsignal.durable_exhaustion(errorsignal.of(exc))
+
+
 def clear(endpoint: str, model: str) -> None:
     """Lift a cooldown early — for failures later explained by something other than the
     provider (the engine's media fallback: the image was the problem, not the endpoint).
     """
     with _lock:
         _cooling.pop((endpoint, model), None)
+        # the provider was not at fault, so neither is its allowance
+        _durable.discard((endpoint, model))
 
 
 def is_cooling(endpoint: str, model: str) -> bool:
@@ -94,11 +141,22 @@ def is_cooling(endpoint: str, model: str) -> bool:
         return True
 
 
+def is_durable(endpoint: str, model: str) -> bool:
+    """Whether this member's failure outlasts its cooldown, so an expired mark means nothing.
+
+    Read-only, and NOT a cooling test: a durably-failed member stops reading as cooling the
+    moment its deadline lapses, which is exactly when the reach-back has to know better.
+    """
+    with _lock:
+        return (endpoint, model) in _durable
+
+
 def reset() -> None:
-    """Drop all cooldowns and every chain's serving mark (tests)."""
+    """Drop all cooldowns, every chain's serving mark and every durable mark (tests)."""
     with _lock:
         _cooling.clear()
         _serving.clear()
+        _durable.clear()
 
 
 def _id(ref: ModelRef) -> tuple[str, str]:
@@ -127,7 +185,11 @@ def chain_state(chain: list) -> list[dict]:
             left = (deadline - now) if deadline is not None else 0.0
             out.append({"name": ref.name or ref.model,
                         "cooling": left > 0,
-                        "cooldown_left_s": round(left, 1) if left > 0 else 0.0})
+                        "cooldown_left_s": round(left, 1) if left > 0 else 0.0,
+                        # `cooling: false, durable: true` is the one combination a reader
+                        # would otherwise misread as a member the chain could have gone back
+                        # to: a spent allowance stops cooling on schedule and refuses anyway.
+                        "durable": _id(ref) in _durable})
     return out
 
 
@@ -200,6 +262,11 @@ def next_after(chain: list, failed: ModelRef, *,
 
     The returned member becomes the chain's serving mark, so the rest of the run starts
     from it. None = chain exhausted — the caller propagates the failure.
+
+    When nothing forward is left, and ONLY then, the scan turns around once
+    (`_last_resort`): the alternative at that point is reporting the chain exhausted and
+    killing the run, and a run killed beside a recovered model is the worse outcome. Forward
+    is still the only direction considered while anything forward remains.
     """
     idx = next((i for i, (_, ref) in enumerate(chain) if ref.name == failed.name), None)
     if idx is None:
@@ -207,10 +274,64 @@ def next_after(chain: list, failed: ModelRef, *,
     usable = [i for i in range(idx + 1, len(chain))
               if not is_cooling(*_id(chain[i][1]))]
     if not usable:
-        return None
+        return _last_resort(chain, idx, has_media=has_media, prompt_tokens=prompt_tokens)
     chosen = next((i for i in usable
                    if fits(chain[i][1], has_media=has_media,
                            prompt_tokens=prompt_tokens)),
                   usable[0])
     _serve(chain, chosen)
     return chain[chosen]
+
+
+def _last_resort(chain: list, idx: int, *,
+                 has_media: bool, prompt_tokens: int) -> tuple | None:
+    """The chain has nothing forward left: one look BACK, or None and the run dies.
+
+    This is the single exception to forward-only, and it is bounded by the alternative rather
+    than by a timer. Forward-only exists because a cooldown expires and an allowance does not,
+    so a `pick` that drifted back would hand runs to a spent model every five minutes — but
+    that argument compares one swing against another working model. Here the comparison is
+    against reporting the chain exhausted: measured on the fleet, 13 of 23 exhaustions in ten
+    days happened while an earlier member's cooldown had already lapsed, and five runs died
+    that way in one day after advancing a single rung.
+
+    A member is reachable only if BOTH hold:
+
+    * its cooldown has lapsed (or it was never marked — a rung `fits` passed over while a
+      capable one remained is untried, not failed), and
+    * its failure was not DURABLE. That is the quota half of the original argument, and it is
+      the reason a reach-back is not simply "not cooling": a spent allowance, an unpayable
+      account and a rejected credential all stop reading as cooling the moment their deadline
+      lapses, while refusing exactly as before. `mark_failed(durable=...)` records it where the
+      failure was classified, because nothing downstream can recover it from a deadline.
+
+    Chain order decides between candidates, so the configured head is preferred to a rung
+    below it, and a member that `fits` this request is preferred to one that does not — the
+    same preference `next_after` applies going forward.
+    """
+    reachable = [i for i in range(idx)
+                 if not is_cooling(*_id(chain[i][1]))
+                 and not is_durable(*_id(chain[i][1]))]
+    if not reachable:
+        return None
+    chosen = next((i for i in reachable
+                   if fits(chain[i][1], has_media=has_media,
+                           prompt_tokens=prompt_tokens)),
+                  reachable[0])
+    _serve_last_resort(chain, chosen)
+    return chain[chosen]
+
+
+def _serve_last_resort(chain: list, index: int) -> None:
+    """Record chain[index] as serving, BACKWARD — the second deliberate write, and the only
+    one that moves the mark up a chain.
+
+    It is deliberate in the same sense `_serve` is: the chain had nowhere forward to go, so
+    this is not a cooldown lapsing into a drift but the engine choosing a recovered member
+    over killing the run. The mark has to move, because every later turn re-resolves through
+    `pick`: left on the member that just failed, it would spend one dead call per turn to
+    rediscover the same exhaustion. `_serve` keeps its forward-only guarantee untouched, which
+    is what `pick` and the resolve-time sites still depend on.
+    """
+    with _lock:
+        _serving[_id(chain[0][1])] = chain[index][1].name

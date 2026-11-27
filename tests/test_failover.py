@@ -75,11 +75,11 @@ def test_pick_and_next_after():
     failover.mark_failed("ep", "id-b")
     failover.mark_failed("ep", "id-c")
     assert failover.pick(chain) is chain[0]   # all cooling → the head, never a stall
-    # next_after walks strictly forward, skipping cooling members
+    # next_after walks forward, skipping cooling members; back only as a LAST RESORT (D318)
     failover.reset()
     failover.mark_failed("ep", "id-b")
     assert failover.next_after(chain, chain[0][1], **ANY_REQUEST) is chain[2]
-    assert failover.next_after(chain, chain[2][1], **ANY_REQUEST) is None   # exhausted
+    assert failover.next_after(chain, chain[2][1], **ANY_REQUEST) is chain[0]  # a recovered a
     assert failover.next_after(chain, _ref("ghost")[1], **ANY_REQUEST) is None  # unknown ref
 
 

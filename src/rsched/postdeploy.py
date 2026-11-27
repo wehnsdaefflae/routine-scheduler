@@ -278,10 +278,10 @@ def model_chain_depth(problems: list[str], routines: int, read: bool) -> Check:
 
     What it cost, measured 2026-11-12: `deficit-coach:20261111-230002` died with "the model chain
     was exhausted after 0 rungs" on a provider connection refusal, and the previous `self-audit`
-    run died the same way hours earlier. `engine/failover.next_after` searches strictly AFTER the
-    failed member, so a chain of one dies at its FIRST failure — and 12 of the 13 catalog models
-    declare `fallbacks: []`. The retry budget is real but short (3 attempts, exponential), so a
-    provider 503 lasting seconds is enough.
+    run died the same way hours earlier. `endpoints/failover.next_after` searches after the failed
+    member and looks back only as a last resort, so a chain of ONE has nowhere to go either way and
+    dies at its FIRST failure — and 12 of the 13 catalog models declare `fallbacks: []`. The retry
+    budget is real but short (3 attempts, exponential), so a provider 503 lasting seconds is enough.
 
     A NOTE, never a FAIL, and that is deliberate rather than timid: `cli_validate` reports these
     lines without counting them because whether a single-domain or single-member chain is

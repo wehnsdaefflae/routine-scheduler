@@ -247,8 +247,12 @@ class InstrumentedEndpoint:
         engine regardless — engine/degrade.py.)
         """
         if exc.retryable:
+            # `durable` says the cooldown's EXPIRY will mean nothing (a spent allowance, an
+            # unpayable account): the mark is the same, but the last-resort reach-back in
+            # `failover.next_after` must not read this member as recovered.
             failover.mark_failed(self._inner.name, model,
-                                 cooldown_s=failover.cooldown_for(exc))
+                                 cooldown_s=failover.cooldown_for(exc),
+                                 durable=failover.durable_for(exc))
 
 
 def observe_call(call, *, endpoint: str, model: str, purpose: str, kind: str):

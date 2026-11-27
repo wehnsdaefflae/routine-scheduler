@@ -319,6 +319,25 @@ engine instead **fails over**:
   the 5-minute cache TTL had expired, so the whole prefix was re-written at 1.25× on both
   models. A fresh run still probes the head once, which is what brings a recovered provider
   back with nothing to reset.
+- **…except as a LAST RESORT, when the alternative is killing the run.** When the chain has
+  nothing usable left ahead of it, it looks back ONCE rather than reporting itself exhausted:
+  a member whose cooldown has lapsed takes the turn, chain order deciding between candidates
+  (so the configured head is preferred) and request fit weighed exactly as it is going
+  forward. The forward-only argument above compares one swing against another working model;
+  at this moment there is no other working model, and a run killed beside a recovered one is
+  the worse outcome — measured on the fleet, 13 of 23 chain exhaustions in ten days happened
+  while an earlier member's cooldown had already lapsed, by between 344 s and 11,759 s, and
+  five runs died that way on one day. The quota half of the rule is kept intact, because it
+  has to be: a **spent allowance stops reading as cooling on exactly the same schedule as a
+  transient outage** while refusing just the same, so the reach-back asks whether the failure
+  OUTLASTS its cooldown — a spent quota, an unpayable account or a rejected credential
+  (declared enum or HTTP 401/402/403, never a phrase matched in the body) is marked DURABLE
+  when it is cooled and is never reached back to. A plain throttle (`rate_limit_exceeded`, a
+  bare 429) is not durable: waiting is exactly what the cooldown is for. It cannot oscillate
+  either, since every failure re-cools the member that produced it — a member can serve a
+  given turn at most twice, once forward and once as the last resort. Such a switch is marked
+  `last_resort: true` in the transcript's `failover` payload, and a chain exhaustion's
+  `chain_members` says per member whether its failure was durable.
 - **The chain prefers a member that can take the request.** Images and prompt size travel
   WITH the request, so a text-only or too-small rung is passed over while a capable one
   remains (a `multimodal: false` model answers `400 … does not support image inputs`; a 32k

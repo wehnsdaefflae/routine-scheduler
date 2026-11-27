@@ -53,6 +53,22 @@ BILLING_CODES = frozenset({
 })
 NEVER_OVERFLOW_CODES = RATE_LIMIT_CODES | AUTH_CODES | BILLING_CODES
 
+#: Declared enum tokens whose refusal OUTLASTS a cooldown: a spent allowance, an account that
+#: cannot pay, a credential that was rejected. The distinction matters because a cooldown is a
+#: GUESS at when a provider will serve again, and these say it will not — waiting out five
+#: minutes and asking again buys a second identical refusal.
+#: A per-minute or per-hour throttle is deliberately NOT here: `rate_limit_exceeded`,
+#: `tokens_per_minute_exceeded` and a bare 429 all clear by waiting, which is what the cooldown
+#: is for. `resource_exhausted` is left out too — gRPC-derived providers send it for ordinary
+#: throttling as well as for a spent quota, so reading it as durable would strand a model that
+#: was only busy.
+DURABLE_CODES = frozenset({
+    "insufficient_quota", "quota_exceeded", "usage_limit_reached",
+}) | AUTH_CODES | BILLING_CODES
+#: …and the statuses that say the same thing without an enum: a rejected credential, an unpaid
+#: account. 429 is absent for the reason above — it is the throttle's own status.
+DURABLE_STATUSES = frozenset({401, 402, 403})
+
 #: Statuses that are never a context fault whatever they say: a quota, a balance, a credential.
 NEVER_OVERFLOW_STATUSES = frozenset({401, 402, 403, 429})
 #: …and the two a provider answers when the input itself was too big.
@@ -213,6 +229,30 @@ def failover_class(signal: ErrorSignal) -> str:
     if status is not None and (status >= 500 or status == 408):
         return "server"
     return "other"
+
+
+def durable_exhaustion(signal: ErrorSignal) -> bool:
+    """Whether this failure will STILL refuse once a cooldown has lapsed.
+
+    A cooldown is a guess at when a provider will serve again; a spent allowance, an unpayable
+    account and a rejected credential are the provider saying it will not. Only that difference
+    justifies treating an expired mark as meaningful, so the registry records it per member
+    (`failover.mark_failed(durable=...)`) and never reaches back to one that carries it.
+
+    Undecidable → False, deliberately: a member wrongly held durable is unreachable for the
+    whole run even as a last resort, while a member wrongly treated as transient costs one
+    attempt that fails the way it already failed. The honest bucket is the recoverable one.
+    """
+    if signal.engine:
+        return False                   # the engine's own findings (refusal, empty) are not quota
+    declared = signal.declared
+    if signal.status == 402 or any(t in BILLING_CODES for t in declared):
+        return not retryable_402(ErrorSignal(status=402, code=signal.code, type=signal.type,
+                                             param=signal.param,
+                                             limit_source=signal.limit_source,
+                                             structured=signal.structured))
+    return (any(t in DURABLE_CODES for t in declared)
+            or signal.status in DURABLE_STATUSES)
 
 
 #: Statuses that mean "the request never got a verdict", so sending it again can work: 408 (a
