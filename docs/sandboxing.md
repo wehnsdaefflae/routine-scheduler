@@ -469,7 +469,24 @@ into every one of them. The cut of an over-long capture never splits a value, so
 survives in the preview. It is a backstop for the accidental print, not a boundary: a util
 that transforms the value before printing it (base64, a substring) is not caught, which is
 why declared-only injection above is the layer that limits exposure. `shell` is handed no
-store secret, so it has nothing to redact.
+store secret, so its OUTPUT has nothing to redact.
+
+A credential inside the COMMAND, not its output, is screened separately (D317,
+`engine/commandscreen.py`). The output seam screens what a command PRINTS; what the command WAS
+used to be stored verbatim — a shell observation's `command`, the `assistant_action` event that
+records the same action, the `ungated_write` health row — so HTTP basic auth inline
+(`curl -u user:pass`), URL userinfo and `--password=` survived in retained run records beside
+the output they had already been removed from. Screening the command needs a secret set the
+handed one cannot supply (`shell` is handed nothing), so the set is the instance's OWN needle
+set, `credneedles.collect`: the daemon-side credential VALUES, held in the engine process for
+the length of a run, matched but never rendered — only the NAME reaches a record, in the same
+`[secret NAME redacted]` vocabulary (`captured_output.redaction`) and above the same
+8-character floor. WHAT RUNS IS NEVER SCREENED: the command executes as the run wrote it and
+only the recorded copy is substituted, so a redacted record is not replayable as a command.
+TWO LIMITS, both deliberate: only a credential this instance STORES is a needle, so one typed
+into a command line that the instance does not hold (a one-off password, a colleague's token,
+a value a command computes) stays verbatim; and the screen is on the way IN, so records
+written before it keep what they already hold.
 
 A credential a routine WRITES into its own tree — a copy of the server config, a key quoted in a
 note — is readable to every routine that holds `~/routines`; the library mirror would carry

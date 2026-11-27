@@ -503,7 +503,14 @@ entry for what you are about to touch.
   interpreted each rule and revises the shared text from that evidence.
   **Captured util and script output is REDACTED of the secret values the engine injected**
   (8+ characters, `captured_output.read_capped`) before an observation, the transcript, a spill
-  file or the search index sees it; a slash command (`/util …`) goes through the same
+  file or the search index sees it. **So is the COMMAND TEXT a record stores** (D317,
+  `engine/commandscreen.py`): the shell observation's `command`, the `assistant_action` event
+  and the `ungated_write` health row are screened against the instance's own needle set
+  (`credneedles.collect` — `shell` is handed no secret, so the handed set could never screen it),
+  in the one `[secret NAME redacted]` vocabulary (`captured_output.redaction`) and above the one
+  floor. What RUNS is never screened, only the recorded copy; only a credential the instance
+  STORES is a needle, so one typed into a command line stays verbatim; and the screen is on the
+  way IN, so older records keep what they hold. A slash command (`/util …`) goes through the same
   `dispatch_action` seam as a model action, so the D39 secret gate holds for both, and a handler
   that raises becomes an error observation instead of ending the run. So does a RENDERER
   (`engine/obs_floor.py`): an `error` result is worded for every kind by default, and a renderer

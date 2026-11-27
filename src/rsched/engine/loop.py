@@ -28,6 +28,7 @@ from . import (
     assist,
     background,
     chain,
+    commandscreen,
     donothing,
     finishstands,
     hold,
@@ -41,7 +42,6 @@ from . import (
     sidefields,
     tails,
 )
-from .actionschema import brief_value
 from .boot import boot
 from .compaction import turn_record
 from .completion import MAX_SCHEMA_ATTEMPTS, next_action
@@ -240,7 +240,9 @@ class EngineLoop:
         ctx = self.ctx
         if not chained:
             ctx.turn += 1
-        ctx.transcript.event("assistant_action", dict(action), turn=ctx.turn, usage=usage,
+        # D317: the RECORD is screened for credentials, the action itself is not (commandscreen)
+        ctx.transcript.event("assistant_action", commandscreen.screened_action(action),
+                             turn=ctx.turn, usage=usage,
                              **({"chained": self.chain_run} if chained else {}),
                              **({"phase": ctx.phase} if ctx.phase else {}),
                              **kindaliases.event_mark(action))
@@ -314,13 +316,15 @@ class EngineLoop:
             # A person stopped ONE call (F586). Recorded as its own event: in outcomes alone a
             # cancelled call is indistinguishable from one that failed fast.
             ctx.transcript.event("action_cancelled",
-                                 {"kind": action["kind"], "brief": brief_value(action)[:200],
+                                 {"kind": action["kind"],
+                                  "brief": commandscreen.screened_brief(action),
                                   "exit": obs.get("exit")}, turn=ctx.turn)
         if self.admin_leg:
             # D62: the capability bypass is never silent — one audit line per action.
             from .admin import log_admin_action
             log_admin_action(ctx.server.routines_home, run_id=ctx.run_id,
-                             kind=action["kind"], brief=brief_value(action)[:200])
+                             kind=action["kind"],
+                             brief=commandscreen.screened_brief(action))
         text = live_observation(obs, ctx) + tails
         msg: dict = {"role": "user", "content": text}
         if obs.get("media"):  # view_image / auto-attach: the model sees it next turn

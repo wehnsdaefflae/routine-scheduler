@@ -12,6 +12,14 @@ from typing import TextIO
 REDACT_MIN_CHARS = 8
 
 
+def redaction(name: str) -> str:
+    """What stands in a record where a credential value was — ONE vocabulary for every seam
+    that screens one, so a reader meets the same string whether the value was PRINTED by a
+    command (here) or part of the command itself (`engine/commandscreen.py`).
+    """
+    return f"[secret {name} redacted]"
+
+
 class CapturedOutput(str):
     """String-compatible transport carrying capture provenance outside user content."""
 
@@ -61,7 +69,7 @@ def read_capped(stream: TextIO, limit: int, *, diagnostic: str = "",
         for m in pattern.finditer(raw):
             if m.start() < cut < m.end():
                 cut = m.end()            # never leave a value's head on this side of the cut
-        text = pattern.sub(lambda m: f"[secret {by_value[m.group(0)]} redacted]", raw[:cut])
+        text = pattern.sub(lambda m: redaction(by_value[m.group(0)]), raw[:cut])
     if complete and len(text) <= limit:
         return CapturedOutput(f"{text}\n[{diagnostic}]" if diagnostic and text
                               else diagnostic or text)

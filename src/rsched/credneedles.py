@@ -39,7 +39,7 @@ from typing import Any
 import yaml
 
 from . import secrets as secret_store
-from .captured_output import REDACT_MIN_CHARS
+from .captured_output import REDACT_MIN_CHARS, redaction
 from .oauth import store as conn_store
 from .triggers import webhook_tokens
 
@@ -112,6 +112,36 @@ class Needles:
 
     def names_for(self, raw: bytes) -> list[str]:
         return list(self.by_bytes.get(raw, ()))
+
+    @staticmethod
+    def marker_name(label: str) -> str:
+        """The name a redaction marker carries for a needle stored under `label`.
+
+        The labels exist for an operator's diagnosis and name their source — `config
+        endpoints.api_key`, `routine alpha's secret TOKEN`, and for the central store plainly
+        `secret NAME`. Only that last one would stutter inside the marker
+        (`[secret secret NAME redacted]`), so its prefix is dropped and nothing else is.
+        """
+        return label.removeprefix("secret ")
+
+    def redact(self, text: str) -> str:
+        """`text` with every needle it carries replaced by `[secret NAME redacted]`.
+
+        The one operation that takes TEXT a caller holds and gives text back, for the seams
+        that must record something a credential may sit inside (`engine/commandscreen.py`).
+        Values still never leave: the needle is matched here and only the NAME is written.
+        Longest first, so a value containing another is replaced whole rather than leaving the
+        shorter one's remainder behind, and an undecodable needle (the JSON-escaped spelling of
+        bytes that are not text) is simply not applicable to a str.
+        """
+        for raw in sorted(self.by_bytes, key=len, reverse=True):
+            try:
+                value = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+            if value and value in text:
+                text = text.replace(value, redaction(self.marker_name(self.by_bytes[raw][0])))
+        return text
 
     @property
     def coverage(self) -> str:
