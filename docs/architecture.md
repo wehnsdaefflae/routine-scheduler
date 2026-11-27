@@ -641,7 +641,10 @@ the redirect_uri.
 one pass at a time, so a provider that is down never holds a fire) refreshes EXPIRING tokens near
 expiry, persists rotation and flags `needs_reauth` on
 rejection — which badges it in Settings → Connections, the only notification there is (0.230.0
-deleted every implicit outbound send) — a no-op for non-expiring providers (Notion).
+deleted every implicit outbound send) — a no-op for non-expiring providers (Notion). A refresh
+that RAISES is contained per connection by `daemon/tickguard.ItemGuard` (as in the trigger,
+one-shot and lane-run managers): the rest of the pass runs and `scheduler_tick_error` names the
+connection key ONCE until it next refreshes.
 The MODEL credentials are deliberately NOT watched here (0.606.0; Mark, 2026-11-24: "we don't
 need any mention of subscriptions in routine-scheduler"). An endpoint in this product is a
 TRANSPORT and nothing more: which subscription login serves a model behind the gateway, whether

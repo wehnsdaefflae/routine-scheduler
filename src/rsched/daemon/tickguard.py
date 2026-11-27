@@ -5,7 +5,10 @@ try/except, so a single item that raised on every pass — an unreadable spool e
 hand-edited lane record, a routine whose config no longer parses — ended the pass before the
 items after it were reached, every five seconds, for as long as it stayed broken: one bad
 routine silenced every routine that sorted after it. The detached manager had already learned
-this (a per-task failure is logged and skipped); this is the same rule for the other three.
+this (a per-task failure is logged and skipped); this is the same rule for the other three. The
+OAuth refresh manager holds it too, for a different reason: its per-connection loop already had a
+bare `except Exception` protecting the rest of the pass, but it filed NOTHING, so a connection
+whose refresh failed every pass was a log line nobody reads.
 
 A failing item is logged on every pass (the daemon log is where the traceback lives) but
 filed in the health stream ONCE until it next succeeds — as `scheduler_tick_error`, the event

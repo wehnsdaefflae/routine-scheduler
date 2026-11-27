@@ -8,6 +8,13 @@ never does any work here. A refresh that the provider REFUSES (`REFUSED`) flags 
 `needs_reauth`, which badges it in Settings → Connections — the console record IS the
 notification; a provider that is down or rate-limiting is retried next tick instead.
 
+A refresh that RAISES (an unreadable store record, a provider client that throws, a bug here) is
+contained per connection by `tickguard.ItemGuard`, like the trigger, one-shot and lane-run
+managers: the rest of the pass still gets its turn, the traceback goes to the daemon log on every
+pass, and `scheduler_tick_error` is filed ONCE — naming the connection key — until that connection
+next refreshes successfully. Before that, the loop swallowed the exception into a log line and put
+nothing on any surface, so a connection failing every pass was invisible.
+
 The token POST is `oauth/exchange.post_token` — the same blocking httpx call the connect flow
 makes, so a provider's client-auth style and body encoding are honoured identically here and
 at connect. The async `tick` runs it in a worker thread so it never blocks the scheduler loop.
@@ -27,6 +34,7 @@ from ..config import ServerConfig
 from ..oauth import exchange, providers, store
 from ..oauth.providers import Provider
 from ..oauth.store import Connection
+from .tickguard import ItemGuard
 
 log = logging.getLogger("rsched.oauth.refresh")
 
@@ -51,6 +59,7 @@ class OAuthRefreshManager:
 
     def __init__(self, server: ServerConfig):
         self.server = server
+        self.guard = ItemGuard(server.routines_home, "oauth refresh manager")
 
     async def tick(self) -> None:
         """One refresh pass, off the event loop. Never raises into the scheduler."""
@@ -67,10 +76,8 @@ class OAuthRefreshManager:
             # expires_at == 0 means "unknown/never" — refresh it too, defensively
             if conn.expires_at and conn.expires_at - now > REFRESH_MARGIN_S:
                 continue
-            try:
+            with self.guard.item(conn.key()):   # one bad connection never starves the rest
                 self._refresh_one(conn, prov)
-            except Exception:   # one bad connection must not starve the rest of the pass
-                log.exception("oauth refresh: %s failed", conn.key())
 
     def _refresh_one(self, conn: Connection, prov: Provider) -> None:
         creds = providers.client_creds(conn.provider)

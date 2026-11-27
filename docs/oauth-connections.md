@@ -81,6 +81,12 @@ OAuth has two halves that live in different places, because a routine run is hea
   Connections ("needs re-auth — reconnect", the row's *reconnect* promoted to its primary
   control; a successful re-consent writes a fresh record, flag cleared) — the console record IS the notification, and no implicit outbound send exists. A
   no-op for non-expiring providers (Notion), so a Notion-only instance never touches it.
+  A refresh that RAISES (an unreadable record, a client that throws, a bug) is contained per
+  connection by `daemon/tickguard.ItemGuard`, like the trigger, one-shot and lane-run managers:
+  the other connections in the pass still get their turn, and `scheduler_tick_error` is filed
+  ONCE — naming the `<provider>:<account>` key — until that connection next refreshes
+  successfully. Before that the loop swallowed such a failure into a log line and put nothing on
+  any surface, so a connection failing every five-second tick was invisible.
 - **Engine injection** — `executor.do_util` resolves the routine's bound connections to
   `{<PROVIDER>_ACCESS_TOKEN: token}` and passes them to `utils_run.run_util` as `extra_secrets`.
   `_child_env` injects each **only if the util declares the var** in its `secrets:` line — the same
