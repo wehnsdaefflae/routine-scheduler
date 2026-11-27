@@ -104,7 +104,17 @@ STARTED_STAMP = ".rsched-backup-started"
 #: How long one attempt may run before the unit kills it — `TimeoutStartSec` in
 #: deploy/rsched-backup.service, which a test holds this to. An attempt older than this with no
 #: completion after it did not complete.
-ATTEMPT_BOUND_HOURS = 4
+#:
+#: SIX, not four, because a HEALTHY off-box night now takes longer than four hours: the last
+#: successful run took 15,742 s (4.37 h) and completed normally, so a four-hour bound called a
+#: running backup failed every night — the exact failure mode the equality test below warns
+#: about, in the direction that produces false alarms. The host has been running six for a
+#: while through a drop-in; this is the repo catching up to what it enforces, so nothing about
+#: the time a backup is actually allowed changes here. Raising it further is not free: the
+#: off-box tier starts at 01:01 and `tag-fs` feeds from the same share at 07:15, so a bound past
+#: six hours can collide with another routine's window and is an operator decision, not a
+#: maintenance edit.
+ATTEMPT_BOUND_HOURS = 6
 
 #: The TWO TIERS the shipped unit writes (R3204, operator 2026-11-05): the local disk every night,
 #: and the off-box share mirrored from it afterwards. A host that moved either sets `RSCHED_MIRROR`

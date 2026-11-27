@@ -51,7 +51,7 @@ ExecStart=/bin/bash %h/git-repos/routine-scheduler/deploy/backup.sh ${RSCHED_BAC
 # (backup.sh now carries on in them instead). 4h keeps the wedge guard while a healthy night has
 # room to grow; `daemon/backup_watch.ATTEMPT_BOUND_HOURS` reads an attempt older than this as
 # failed, so the two must agree (tests/test_backup_watch.py holds them to it).
-TimeoutStartSec=4h
+TimeoutStartSec=6h
 
 # The daemon is doing real work on this box; a backup never deserves to compete with a run.
 Nice=10

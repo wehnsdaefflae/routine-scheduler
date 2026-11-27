@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.625.0] — 2026-11-27
+
+**The backup staleness bound no longer calls a healthy night a failed one.**
+`ATTEMPT_BOUND_HOURS` was 4, and `deploy/rsched-backup.service` declared `TimeoutStartSec=4h` to
+match — but a HEALTHY off-box night now takes longer than that: the last successful run took
+15,742 s (4.37 h) and completed normally. A bound under the real duration does not report late,
+it files a `backup_stale` verdict every night while nothing is wrong, and an alarm that fires on
+healthy behaviour teaches its reader to ignore the one that matters.
+
+Both move together to 6 h, which is what the host has been enforcing through a drop-in all
+along — so the time a backup is actually allowed does not change; the repo stops contradicting
+the deployment.
+
+`test_the_bound_outlives_the_longest_HEALTHY_attempt_this_instance_has_recorded` is the part that
+keeps it true: the bound must exceed the longest attempt the instance has recorded as COMPLETE,
+so the next time real durations grow into the bound a test fails instead of a false alarm
+arriving nightly. Raising the bound past six hours is deliberately NOT done here: the off-box
+tier starts at 01:01 and `tag-fs` feeds from the same share at 07:15, so a longer bound can
+collide with another routine's window — an operator decision, not a maintenance edit.
+
 ## [0.624.0] — 2026-11-27
 
 **A chain exhaustion now records WHICH members were unusable**, so the fleet's most expensive

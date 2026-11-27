@@ -84,6 +84,26 @@ def test_the_attempt_bound_is_the_units_time_limit():
         (DEPLOY / "backup.sh").read_text(encoding="utf-8")
 
 
+#: The longest attempt this instance has recorded as COMPLETE, in hours — read off its own
+#: `.control/backup-attempts.jsonl` (15,742 s on the off-box tier). Raise it when a longer
+#: healthy night is measured, and raise the bound with it.
+LONGEST_HEALTHY_ATTEMPT_HOURS = 4.37
+
+
+def test_the_bound_outlives_the_longest_healthy_attempt_this_instance_has_recorded():
+    """A bound under a healthy duration does not merely report late — it files a stale verdict
+    EVERY night while nothing is wrong, and an alarm that fires on healthy behaviour teaches its
+    reader to ignore the one that matters. The bound grew out from under the real durations once
+    already, silently, because nothing compared the two: a four-hour bound against an off-box
+    tier whose successful runs had reached 4.37 hours.
+    """
+    assert backup_watch.ATTEMPT_BOUND_HOURS > LONGEST_HEALTHY_ATTEMPT_HOURS, (
+        f"the bound ({backup_watch.ATTEMPT_BOUND_HOURS}h) is not longer than the longest "
+        f"attempt that COMPLETED ({LONGEST_HEALTHY_ATTEMPT_HOURS}h), so a healthy night reads "
+        "as a failed one — raise both the bound and the unit's TimeoutStartSec, and mind that "
+        "the off-box tier starts at 01:01 while tag-fs feeds from the same share at 07:15")
+
+
 def test_an_unreadable_stamp_is_unknown_and_never_claims_a_failure(tmp_path):
     """An unmounted share must not read as a failed backup: the reading the code has is "we cannot
     see it", and asserting a cause it cannot know is the invention F480 removed from the boot reap.
