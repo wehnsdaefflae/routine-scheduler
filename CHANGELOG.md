@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.626.0] — 2026-11-27
+
+**Four decided items: command text is screened for credentials, a failing OAuth refresh becomes
+visible, an exhausted failover chain reaches back once, and a grant row is judged an entity id.**
+
+**D317 — command text is screened for stored credentials on the way INTO a record.** The capture
+seam screened what a command PRINTS; what a command IS was stored verbatim, so a credential
+inline on a command line (`curl -u user:pass`, URL userinfo, `--password=`) survived in retained
+records while the same value was screened out of the output beside it — measured as 2
+user:secret pairs over 10 occurrences. The screen now runs at the record seams: the shell
+observation's `command`, the `assistant_action` event, the `ungated_write` health row and the
+admin-leg audit line. The `shell` path is handed NO store secret, so the handed set could never
+screen one; the set used is the instance's own needles (`credneedles.collect`), cached per engine
+process — the authorized threat-model change. **What RUNS is never screened**: `do_shell`
+executes what the run wrote and screens only the recorded copy, so `marks_a_write` and
+reminder/rule matching still see the real text. Old records stay as they are, by his own choice.
+Only a value this instance STORES is a needle, so a one-off password stays verbatim, and no
+pattern layer was added because the five obvious patterns scored ZERO where the leak was found.
+`executor.py` was at its ceiling, so the `shell` kind moved to `engine/shellaction.py` and the
+screen to `engine/commandscreen.py` (388 → 339, ratchet entry dropped).
+
+**F963 — a failing OAuth refresh is visible.** `daemon/oauth_refresh.py` wrapped each connection
+in a bare `except Exception: log.exception(...)` — the hand-rolled isolation
+`tickguard.ItemGuard` exists for, so a connection failing every pass produced a log line nobody
+reads and nothing on any surface. It now files `scheduler_tick_error` ONCE per failing
+connection, naming its key, and CLEARS on the next success, while the other connections in the
+same pass still get their turn — what the bare `except` was protecting.
+
+**D318 — an exhausted failover chain reaches back ONCE, and only instead of killing the run.**
+Keeping his quota argument intact needed new code, not a flag: `_cooling` held only a deadline,
+so nothing could tell a transient cooldown from hard quota exhaustion. Now
+`errorsignal.durable_exhaustion` classifies that at the seam that saw the error and
+`mark_failed(durable=...)` latches it, so a DURABLY exhausted chain is never reached back into;
+an undecidable error counts as not durable, failing toward the reach-back, not the kill.
+
+**R3789 — a grant row is an entity id, judged before it is offered.** A routine created with a
+secret in its `setup` got a draft carrying `grants: {"secrets": ["FAU_USER"]}` where the accept
+wants `secret:FAU_USER` — and since the accept is all-or-nothing, that one row silently
+discarded every other change in it. `grants` was a declared GAP in `patterns/validate.py`, so
+any dict passed; the judge now calls the accept's own `entities.normalize_grants` and the prompt
+teaches the shape. No migration is needed and it is tested: `drafts.read` judges stored rows the
+same way, so the stored draft drops only the bad row and the rest of it applies.
+
 ## [0.625.0] — 2026-11-27
 
 **The backup staleness bound no longer calls a healthy night a failed one.**
