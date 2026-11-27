@@ -110,15 +110,16 @@ def _expect_message_markdown(scope):
     expect(injection.locator(".md code")).to_have_text("engine/loop.py")
 
 
-def test_dashboard_activity_section_lists_runs(ui, ui_page):
-    """The cross-routine run feed (the whole of the former Log page) is the Dashboard's
-    activity section: collapsed and inert until opened, then stats strip + feed. Expanding a
-    row tails/replays that run's transcript inline - the capability the Log page carried."""
+def test_messages_activity_section_lists_runs(ui, ui_page):
+    """The cross-routine run feed (the whole of the former Log page) is the MESSAGES page's
+    activity section since 2026-11-26: collapsed and inert until opened, then stats strip +
+    feed. Expanding a row tails/replays that run's transcript inline - the capability the Log
+    page carried."""
     # a RECENT ts - the feed default window is relative to now and hides old runs
     ts = time.strftime("%Y%m%d-070000")
     run_dir = ui.seed_run("uir", ts, "finished", summary="all done")
     _seed_message_events(run_dir)
-    ui_page.goto(f"{ui.url}/#/routines")
+    ui_page.goto(f"{ui.url}/#/messages")
     ui_page.wait_for_selector("details.activity-panel")
     ui_page.locator("details.activity-panel summary").click()
     expect(ui_page.locator(".activity-panel .stats .stat").first).to_be_visible()

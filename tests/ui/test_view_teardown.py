@@ -139,7 +139,7 @@ def test_leaving_mid_search_leaves_the_next_page_alone(ui, ui_page, make_routine
     NEXT page's URL — where a reload would carry them."""
     make_routine(slug="self-audit")
     ui_page.goto(f"{ui.url}/#/messages")
-    search = ui_page.locator("input.search")
+    search = ui_page.locator(".filterbar input[type=search]")   # the page's own, not the feed's
     expect(search).to_be_visible()
     search.fill("thing")
     _leave(ui_page)
@@ -198,7 +198,7 @@ def test_collapsing_the_activity_section_stops_its_poll(ui, ui_page):
     click open and one click closed leaves a request a second running for content nobody can
     see, for the life of the tab."""
     ui.seed_run("uir", "20260714-070000", "running")
-    ui_page.goto(f"{ui.url}/#/routines")
+    ui_page.goto(f"{ui.url}/#/messages")
     panel = ui_page.locator(".activity-panel")
     expect(panel).to_be_visible()
     panel.locator("summary").click()                       # open — the feed starts

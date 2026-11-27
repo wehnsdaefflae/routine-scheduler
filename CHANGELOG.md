@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.623.0] — 2026-11-27
+
+**The activity feed is on the Messages page, and the Routines page carries no panel about
+anything but routines** (the operator, 2026-11-26: *"activity should better be on the messages
+subpage"*). It is the second half of the move that took the hook panel there on 2026-11-23 and
+it has the same reason: Messages is where a run's OUTCOME is read — its summaries are finish
+messages — so "what everything I run just told me" and "what is running right now" are one
+question, and they are now on one page. The Routines page keeps what is about the routines: the
+week strip, the lanes, the bays.
+
+Both panels are now owned by one small component (`static/components/messages-panels.js`)
+rather than wired into the views, because `views/messages.js` is over the house size bar and a
+panel's wiring is a storage key, a lazy start and a teardown. The feed's laziness is unchanged
+and now pinned by a test that states it correctly: the node is built eagerly, while the first
+load and the 4 s poll over three endpoints wait for the section to open — a collapsed feed is
+measured fetching nothing across a full poll round.
+
+**Two teardown defects came out with the move, both live since 2026-11-22.** `views/dashboard.js`
+called `hooks.dispose()` on a binding that had gone to the Messages page with the panel —
+an unbound identifier on every navigation away from Routines, invisible because the router
+wraps each teardown in a bare `catch`. And `views/messages.js`, which received the panel, tore
+it down nowhere, so its 60 s refresh outlived every visit to that page. One component now owns
+both disposals and the view calls it.
+
+Worth naming, because it is why a broken reference lived four days in a page the operator opens
+daily: this repo has **no JavaScript linter** — the quality stage is ruff and mypy over Python
+— so an unbound name in `static/` is caught only by a browser test that exercises that exact
+path, and `pageerror` could not see this one through the router's `catch`.
+
 ## [0.622.0] — 2026-11-26
 
 **A playbook's setup is now SHOWN pre-filled when you start a conversation from it, and

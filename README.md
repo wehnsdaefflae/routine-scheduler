@@ -102,9 +102,7 @@ endpoints, the central Secrets store, GitHub, the library repo.
   (a run is waiting), deferred ones, and open self-audit decisions. Keyboard-first;
   answers flow back into the asking routine's next turn or next run.
 - **Routines** — the catalog: each routine's state, schedule, budgets, models, permissions,
-  and run history; drill into any run to watch its conversation live. Its activity section
-  is the live cross-routine run feed — filterable, and expanding a row tails that run's
-  transcript inline.
+  and run history; drill into any run to watch its conversation live.
 - **Conversations** — the landing page: interactive sessions on the same engine, resumed in
   place with every reply. This is where a new routine is designed and materialized.
 - **Routines → Dashboard** — the fleet at a glance: what ran, what is due, the week strip.
@@ -123,7 +121,10 @@ endpoints, the central Secrets store, GitHub, the library repo.
   write-only Secrets store
   every util reads, GitHub device flow, the source remote (the library repo has no
   settings surface — the library-sync routine manages it), graceful server restart.
-- **Messages** — what your routines told you, and the maintenance record behind it. It opens on
+- **Messages** — what your routines told you, and the maintenance record behind it. Above the
+  list sit the two stream readings: the hook panel (what fires next, who spoke into which run)
+  and the live cross-routine **activity** feed — filterable, and expanding a row tails that
+  run's transcript inline. It opens on
   the **summaries**: each routine's latest finish message, unread first, with a bulk sweep — the
   Summary page folded in here in 0.294.0, because a finish summary is a message and this is the
   page that indexes them. One chip away are the system-maintenance items: every self-audit

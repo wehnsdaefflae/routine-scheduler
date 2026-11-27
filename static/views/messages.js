@@ -22,7 +22,7 @@ import { ACTIVE, backlogChips } from "/static/components/backlog-chips.js";
 import { itemCard } from "/static/components/itemcard.js";
 import { newPass, queuedAttachmentRow, revokeQueued } from "/static/components/queued-attachments.js";
 import { orphanBanner } from "/static/components/orphan-banner.js";
-import { hookActivityPanel } from "/static/components/hook-activity.js";
+import { messagesPanels } from "/static/components/messages-panels.js";
 import { focusRef, linkifyRefs } from "/static/components/reflinks.js";
 import { chip, el, emptyState, skeleton, tagChip, toast, toastError, when } from "/static/util.js";
 
@@ -84,10 +84,9 @@ export async function render(view, query = {}) {
   const filterBar = el("div", { class: "filterbar" });
   const body = el("div", {});
   body.append(skeleton());
-  // Above the list and invisible to every filter below it: F793's orphan groups, and the hook
-  // stream's two readings — 6,064 of its 8,043 rows ARE the report ledger (operator 2026-11-23)
-  const hooks = hookActivityPanel(); hooks.start();
-  view.append(header, orphanBanner(), hooks.node, filterBar, body);
+  // Outside every filter below: F793's orphan groups, then the two stream readings.
+  const panels = messagesPanels();
+  view.append(header, orphanBanner(), ...panels.nodes, filterBar, body);
 
   // ---- feedback → the routine's inbox → consumed by the next (or current) run -----------
   // Structured feedback (finding comments, decision answers) keeps the tagged audit
@@ -359,5 +358,6 @@ export async function render(view, query = {}) {
   if (query.focus) focusRef(String(query.focus));
   // The search debounce is the one thing here that outlives a click: left pending, it would
   // fetch for a page nobody is on and write these filters into the NEXT page's URL.
-  return () => { clearTimeout(searchTimer); revokeQueued(); };
+  // The panels above poll on their own clocks, so leaving the page stops them too.
+  return () => { clearTimeout(searchTimer); revokeQueued(); panels.dispose(); };
 }

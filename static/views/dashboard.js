@@ -8,7 +8,6 @@
 // most one.
 
 import { api } from "/static/api.js";
-import { activityFeed } from "/static/components/activityfeed.js";
 import { routineRows, tokenPaceChip } from "/static/views/dashboard-rows.js";
 import { SORTS, STATE_BUCKETS, ordered, visible } from "/static/views/dashboard-filters.js";
 import { lanesToolbar } from "/static/components/lanemanage.js";
@@ -20,7 +19,6 @@ const VIEW_KEY = "rsched_dash_view";
 const SORT_KEY = "rsched_dash_sort";
 const DIR_KEY = "rsched_dash_dir";
 const WEEK_KEY = "rsched_dash_week";
-const ACTIVITY_KEY = "rsched_dash_activity";
 
 export async function render(view) {
   const pauseBtn = el("button", { class: "btn small", hidden: true,
@@ -96,24 +94,12 @@ export async function render(view) {
   // editors are overlays for the same reason.
   const lanesBar = el("div", { class: "panel mt", style: "padding:8px 12px" });
   const body = el("div", { class: "mt" });
-  // The cross-routine activity feed (the former Log page): every run, filterable, with the
-  // transcript tailing inline. Collapsed by default and lazily started — a closed section
-  // neither fetches nor polls.
-  // `isOpen` is what keeps the section lazy after its FIRST open: start() arms the feed once
-  // and it then polls three endpoints every 4 s, so re-collapsing has to stop it again.
-  const feed = activityFeed({ isOpen: () => activityPanel.open });
-  const activityPanel = el("details", { class: "panel weekpanel mt activity-panel",
-    ...(storage.get(ACTIVITY_KEY) === "open" ? { open: true } : {}) },
-    el("summary", {}, "activity — every run across every routine"), feed.node);
-  activityPanel.addEventListener("toggle", () => {
-    storage.set(ACTIVITY_KEY, activityPanel.open ? "open" : "closed");
-    if (activityPanel.open) feed.start();
-  });
-  if (activityPanel.open) feed.start();
-  // The hook stream's two readings moved to the MESSAGES page (operator, 2026-11-23): the
-  // report ledger is 6,064 of the stream's 8,043 rows, so the page that reads reports is where
-  // the stream's own readings belong. This page keeps the week strip and the live feed.
-  view.append(banner, weekPanel, filterBar, lanesBar, body, activityPanel);
+  // BOTH stream readings now live on the MESSAGES page (components/messages-panels.js): the
+  // hook panel on the operator's 2026-11-23 order, and the cross-routine activity feed — every
+  // run, filterable, the whole of the former Log page — on his 2026-11-26 one ("activity
+  // should better be on the messages subpage"). What is about the ROUTINES stays here: the
+  // week strip, the lanes and the bays.
+  view.append(banner, weekPanel, filterBar, lanesBar, body);
   body.append(skeleton(), skeleton(), skeleton());
 
   let cards = [], llmReady = true, firesBySlug = new Map(), oneShotsBySlug = new Map();
@@ -377,7 +363,5 @@ export async function render(view) {
   return () => {
     window.removeEventListener("rsched-bus", onBus);
     clearTimeout(pending);
-    feed.dispose();
-    hooks.dispose();
   };
 }

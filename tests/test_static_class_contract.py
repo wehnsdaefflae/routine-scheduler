@@ -31,7 +31,7 @@ ALLOWLIST: dict[str, frozenset[str]] = {
     # components/held-accept.js:12 says so in its own words — "the `.held-accept` hook exists
     # for the tests, not as the place the meaning lives".
     "a DOM hook the browser suite selects on": frozenset({
-        "activity-panel",    # tests/ui/test_activity_feed.py:33, test_views_coverage.py:123
+        "activity-panel",    # tests/ui/test_activity_feed.py:26, test_activity_panel_moved.py:14
         "att-file",          # tests/ui/test_transcript_events.py:216
         "avail-fold",        # tests/ui/test_setup_check.py:315
         "chg-table",         # tests/ui/test_view_teardown.py:306, test_bus_budget.py:52

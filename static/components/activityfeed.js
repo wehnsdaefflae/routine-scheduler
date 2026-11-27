@@ -1,7 +1,8 @@
 // The live cross-routine run feed: one row per run, expand it to tail (or replay) that run's
 // transcript inline. Live rows tail through stream.js liveTail, so a dropped stream reconnects
 // with backoff instead of going quietly stale. This was the whole of the Log page until 0.106.0;
-// it is now the Dashboard's activity section — mount it anywhere with activityFeed().
+// it is now the MESSAGES page's activity section (components/messages-panels.js, operator
+// 2026-11-26; the Dashboard's until then) — mount it anywhere with activityFeed().
 //
 // The mount is LAZY: nothing loads or polls until start() is called (the Dashboard calls it when
 // its section is open), so a collapsed section costs nothing — and it stays lazy AFTERWARDS.

@@ -1,4 +1,4 @@
-"""The dashboard's activity feed (components/activityfeed.js) against the real console."""
+"""The Messages page's activity feed (components/activityfeed.js) against the real console."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ DONE = _ts(5)
 
 
 def _open_feed(ui, ui_page):
-    ui_page.goto(f"{ui.url}/#/routines")
+    ui_page.goto(f"{ui.url}/#/messages")
     panel = ui_page.locator(".activity-panel")
     panel.locator("summary").click()
     expect(panel.locator(".logrow").first).to_be_visible()      # the first load landed
