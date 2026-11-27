@@ -1,6 +1,7 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pymupdf4llm>=1.28,<2", "markitdown[docx,pptx,xlsx]>=0.1.8,<0.2"]
+# dependencies = ["pymupdf4llm>=1.28,<2", "markitdown[docx,pptx,xlsx]>=0.1.8,<0.2",
+#                 "lxml>=6,<6.2"]   # 6.2.0 breaks mammoth's docx body parse (upstream)
 # ///
 """doc-read — read a PDF or an Office file (docx/pptx/xlsx) as Markdown, offline, page by page.
 
@@ -36,7 +37,15 @@ format, pages_total, pages [first, last], capped, next_page, no_text_layer, blan
 page_lines ([page, line] — the line each page's marker sits on), chars, ocr (with --ocr),
 and the markdown itself when there is no --out. Without --json the Markdown goes to stdout
 and a one-line summary to stderr. Exit 1 with `error: …` on stderr for an unreadable file,
-2 for a bad call. --selftest is offline: it builds a PDF, a docx, a pptx and an xlsx."""
+2 for a bad call. --selftest is offline: it builds a PDF, a docx, a pptx and an xlsx.
+
+THE `lxml` UPPER BOUND IS LOAD-BEARING, not tidiness. markitdown converts a .docx through
+mammoth, which finds the document body with lxml; lxml 6.2.0 broke that parse, so every
+freshly resolved environment raised `Could not find the body element: are you sure this is a
+docx file?` on a valid document while every cached older environment kept working — the kind
+of break that looks like a corrupt input rather than a dependency. The bound stays until
+mammoth (or lxml) ships the fix; the selftest's docx case is what proves it, so run it after
+widening the bound and before trusting a newer lxml."""
 
 import argparse
 import contextlib
