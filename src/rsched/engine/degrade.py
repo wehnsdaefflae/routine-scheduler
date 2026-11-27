@@ -189,6 +189,15 @@ def _log_chain_exhausted(loop, chain, failed_ref, exc: EndpointError) -> None:
     """
     head = chain[0][1] if chain else failed_ref
     ctx = loop.ctx
+    # WHICH members were unusable, read at the moment the chain gave up. Without it the event
+    # says "failed hard or is cooling" and the two cases read identically: a chain that was
+    # genuinely all down, and one abandoned forward past a member whose cooldown had already
+    # lapsed (measured across the fleet: 13 of 23 exhaustions in ten days left a member with
+    # an expired mark behind the serving one). `recovered` is the count a sweep can group on
+    # without parsing the list.
+    state = failover.chain_state(chain)
+    recovered = sum(1 for m in state if not m["cooling"] and m["name"] != (
+        failed_ref.name or failed_ref.model))
     log_health_event(
         ctx.server.routines_home, "model_chain_exhausted",
         routine=getattr(ctx.routine, "slug", "") or "",
@@ -197,7 +206,9 @@ def _log_chain_exhausted(loop, chain, failed_ref, exc: EndpointError) -> None:
                 f"cooling; last was {failed_ref.name or failed_ref.model}: {str(exc)[:200]}"),
         model=head.name or head.model,
         last_model=failed_ref.name or failed_ref.model,
-        cooldown_s=failover.COOLDOWN_S)
+        cooldown_s=failover.COOLDOWN_S,
+        chain_members=state,
+        not_cooling=recovered)
 
 
 def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):

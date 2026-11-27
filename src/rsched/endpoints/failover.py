@@ -105,6 +105,32 @@ def _id(ref: ModelRef) -> tuple[str, str]:
     return (ref.endpoint, ref.model)
 
 
+def chain_state(chain: list) -> list[dict]:
+    """Per member, whether it is COOLING and with how many seconds left — read at the moment
+    of the call, for the record a chain exhaustion leaves behind.
+
+    A member whose cooldown has already lapsed reads `cooling: false`, which is the fact that
+    was missing: an exhaustion says every member "failed hard or is cooling", but nothing
+    recorded WHICH, so a run that died while an earlier member had recovered looked exactly
+    like one that died with the whole chain down. Reconstructing it afterwards meant
+    differencing a failover's timestamp against COOLDOWN_S across the health stream, and the
+    cooldown a provider's `Retry-After` lengthened is not recoverable that way at all.
+
+    Read-only: it never clears an expired mark, so it cannot change what the next `pick` or
+    `next_after` sees.
+    """
+    now = time.monotonic()
+    out: list[dict] = []
+    with _lock:
+        for _, ref in chain:
+            deadline = _cooling.get(_id(ref))
+            left = (deadline - now) if deadline is not None else 0.0
+            out.append({"name": ref.name or ref.model,
+                        "cooling": left > 0,
+                        "cooldown_left_s": round(left, 1) if left > 0 else 0.0})
+    return out
+
+
 def _index_of(chain: list, mark: str | None) -> int:
     """Where the member named `mark` sits in this chain — 0 for None, and 0 for a name this
     chain does not carry (a chain was re-resolved after a config edit; starting at the head is

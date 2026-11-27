@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.624.0] — 2026-11-27
+
+**A chain exhaustion now records WHICH members were unusable**, so the fleet's most expensive
+failure stops being unreadable. `model_chain_exhausted` said "every member failed hard or is
+cooling" and carried only the head, the last member and the default cooldown — which made two
+very different events identical: a chain that was genuinely all down, and one abandoned forward
+past a member whose cooldown had already lapsed. The event now also carries `chain_members`
+(per member: its name, whether it was cooling, and the seconds its cooldown still had) and
+`not_cooling` (how many were usable, excluding the one that just failed — that one is cooling by
+construction at this seam).
+
+The measurement that made this the priority: across ten days 13 of 23 exhaustions, and all six
+on 2026-11-26, fired while the chain HEAD's 300 s cooldown had expired between 344 s and
+11,759 s earlier. Five runs died that day — self-audit twice, rules-review, llmsectest-weekday
+and moltbook-heartbeat — each after advancing exactly one rung. That reconstruction took
+differencing health-event timestamps against `COOLDOWN_S`, which is not even possible when a
+provider's `Retry-After` lengthened the cooldown. Now it is a field.
+
+`failover.chain_state()` is deliberately read-only: it reports an expired mark as not cooling
+without clearing it, so asking what the chain looked like can never change what the next `pick`
+or `next_after` sees. Whether a chain SHOULD reach back to a recovered member is a separate
+question with a real trade-off — the forward-only serving mark exists because a cooldown expires
+while a quota does not — and it is left to a decision rather than settled here.
+
 ## [0.623.0] — 2026-11-27
 
 **The activity feed is on the Messages page, and the Routines page carries no panel about

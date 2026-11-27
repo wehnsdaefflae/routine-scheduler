@@ -134,7 +134,14 @@ today" has to be answerable by a filter rather than by 300 characters of prose i
 
 model_chain_exhausted: a role's WHOLE fallback chain was unusable mid-turn — every member failed
 hard or was cooling (engine/degrade.py, F491). Carries `model` (the chain HEAD, the key a sweep
-groups by), `last_model` (the member that failed last) and `cooldown_s` as structured fields. It
+groups by), `last_model` (the member that failed last) and `cooldown_s` as structured fields,
+plus `chain_members` — per member its name, whether it was COOLING and the seconds its cooldown
+still had — and `not_cooling`, the count of members that were usable at that moment. Those two
+separate the two cases the event used to conflate: a chain genuinely all down, and one abandoned
+forward past a member whose mark had already lapsed. Measured before they existed: over ten days
+13 of 23 exhaustions, and all six of one day's, fired while the HEAD's cooldown had expired
+344 s to 11,759 s earlier — reconstructed by differencing timestamps against COOLDOWN_S, which a
+provider-lengthened `Retry-After` makes impossible. It
 exists for the same reason cache_read_degraded does: the per-run cost of a cooling primary is
 INVISIBLE. The chain absorbs it, the run finishes `ok`, and the tax is paid in wall-clock and
 tokens that no signal reports — on 2026-09-16, 11 of 13 fleet runs opened with "All credentials
