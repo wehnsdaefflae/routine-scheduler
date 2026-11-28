@@ -35,13 +35,19 @@ def test_the_band_shows_the_revisions_in_the_runs_own_words(ui, ui_page):
     expect(card).to_contain_text("resumes that run with its recipe writable")
 
 
-def test_apply_it_resumes_the_proposing_run_and_clears_the_row(ui, ui_page):
+def test_apply_it_resumes_the_proposing_run_and_the_card_stands_until_the_edit_is_made(ui,
+                                                                                      ui_page):
+    """F952 reverses what arming does to the card. It used to be consumed at the click, so a leg
+    that died before its first action — an exhausted model chain — destroyed the approval with no
+    durable record. The click now ARMS the leg and the card STAYS until a finish the model itself
+    authored, which is the only evidence the edit was actually made.
+    """
     _queue(ui)
     ui.seed_run("uir", "20261025-140000", "finished")
     ui_page.goto(f"{ui.url}/#/questions")
     ui_page.get_by_role("button", name="apply it").click()
     expect(ui_page.locator("#toast")).to_contain_text("recipe writable")
-    expect(ui_page.locator(".q-group-head", has_text="recipe revisions")).to_be_hidden()
+    expect(ui_page.locator(".q-group-head", has_text="recipe revisions")).to_be_visible()
     # the unlock the resumed leg reads at init (engine/revise.py), carrying the run's own words
     from rsched.paths import read_json
     marker = read_json(ui.routines / "uir" / "runs" / "20261025-140000" / "revise.json")
@@ -93,7 +99,9 @@ def test_edit_and_apply_hands_the_leg_the_operators_own_wording(ui, ui_page):
     assert "read state/cursor.json FIRST, before the feed" in instruction
     assert "THE LINES BELOW ARE HIS" in instruction     # not passed off as the run's own
     assert "two turns went on re-deriving it" not in instruction
-    expect(ui_page.locator("[data-recipe]")).to_have_count(0)
+    # F952: arming no longer consumes the card — it stands until an authored finish proves the
+    # edit was made, so HIS wording survives a leg that dies before taking any action.
+    expect(ui_page.locator("[data-recipe]")).to_have_count(1)
 
 
 def test_cancelling_an_edit_restores_the_lines_and_applies_nothing(ui, ui_page):
