@@ -38,6 +38,10 @@
      same reason: base.css and views.css are both frozen at their ratchet ceilings. Loaded
      after views.css, whose .bg-task rules it extends. -->
 <link rel="stylesheet" href="/static/bgtasks.css">
+<!-- The decision card's clamped question body (static/qbody.css) — a TENTH file, same reason:
+     base.css and views.css are both frozen at their ratchet ceilings. Loaded after views.css,
+     whose `.question-item .q-text` sets the body's type and no height bound. -->
+<link rel="stylesheet" href="/static/qbody.css">
 <!-- The reply footer's ⑂ branch control and its fork dialog (static/branch.css, D306 pt 1+4) —
      a TENTH file, same reason: base.css and views.css are both frozen at their ratchet
      ceilings. Loaded after views.css, whose `.msg-meta` footer row it sits in. -->

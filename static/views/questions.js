@@ -19,11 +19,11 @@ import { pendingBand } from "/static/components/pending.js";
 import { answerForm } from "/static/components/answerform.js";
 import { settledCard } from "/static/components/settled-card.js";
 import { a2uiFold } from "/static/components/a2ui-decision.js";
-import { linkifyRefs } from "/static/components/reflinks.js";
+import { questionText } from "/static/components/question-body.js";
 import { configProposal } from "/static/components/configproposal.js";
 import { answeredChips, lifecycleControls, proofNote }
   from "/static/components/decision-lifecycle.js";
-import { md, summaryLine } from "/static/md.js";
+import { summaryLine } from "/static/md.js";
 import { act, chip, el, emptyState, fmtAbs, groupHead, skeleton, when } from "/static/util.js";
 import { TERMINAL } from "/static/states.js";
 import { FILTERS, GROUPS, QTYPE_CHIPS, SORTS, disposed, expiringSoon, isBlocking, kindOf,
@@ -37,15 +37,8 @@ const reportChip = (q) => (q.type === "report"
   ? chip(`report ${q.report || ""}${q.report_target ? ` → ${q.report_target}` : " → triage"}`,
          "partial")
   : null);
-// Question text is MARKDOWN, block-rendered whoever wrote it: a run lays out what it found
-// (a GFM table, a numbered list, a fenced snippet) before it asks, and inline those became
-// literal pipes in the one place the user must read carefully. Finding/decision ids (F63, D14)
-// link only in the audit's own voice (meta items); elsewhere a bare "D1" is a false positive.
-const qBody = (q) => md(q.question);
-const qText = (q) => {
-  const node = el("div", { class: "q-text" }, qBody(q));
-  return q.meta ? linkifyRefs(node) : node;
-};
+// The question's own rendering — markdown, the audit's ref links, and the open card's height
+// bound — is components/question-body.js.
 // each decision links its OWN home: a conversation's page lives under #/conversations,
 // a detached task's surface is its owning conversation (the task itself has no page)
 const sourceLink = (q) => (q.conversation ? el("a", { href: `#/conversations/${q.routine}` }, q.routine)
@@ -212,7 +205,7 @@ export async function render(view, query = {}) {
         question: el("details", { class: "q-settled" },
           el("summary", { class: "q-text prose" },
             summaryLine(q.question, "(no question)")),
-          qText(q)),
+          questionText(q)),
       });
     }
     const runBits = q.run_id ? [
@@ -349,7 +342,7 @@ export async function render(view, query = {}) {
           ? el("span", { class: "faint small", title: "when the run continues without an answer" },
               "continues without you ", when(q.expires, { mode: "rel" })) : null,
         ...runBits),
-      qText(q),
+      questionText(q, { clamp: true }),
       q.default ? el("div", { class: "faint small mt",
         title: "what the routine does if this stays unanswered" },
         `↪ without an answer: ${q.default}`) : null,

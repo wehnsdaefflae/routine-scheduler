@@ -1,0 +1,46 @@
+/* The decision card's clamped question body (components/question-body.js).
+
+   Its own file for rail.css's reason, stated in index.html: views.css is over the repo's
+   350-line house bar and held at its ratchet ceiling, so an addition belongs in a new
+   stylesheet exactly as it belongs in a new module (CLAUDE.md Standards,
+   tests/test_file_size.py). Loaded after views.css, so these rules win a specificity tie with
+   `.question-item .q-text`, which sets the body's font and line-height and no height bound.
+
+   The bound is a HEIGHT in lines of the body's own prose, not a character count: the question
+   is block-rendered markdown whose height depends on what the asking run laid out and on the
+   viewport, so only layout knows whether it overflows. The fade is what tells the reader the
+   text continues — a hard cut reads like the end of the question. Colour is a token and
+   nothing else; the console's own rule. */
+
+.question-item .q-text.q-clamped {
+  /* 12 lines at the body's own line-height (views.css: 1.55), plus its top margin */
+  max-height: calc(12 * 1.55em);
+  overflow: hidden;
+  position: relative;
+}
+
+/* The fade sits over the last line only, in the card's own ground, so a clamped body reads as
+   continuing rather than as ending mid-sentence. */
+.question-item .q-text.q-clamped::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 2.2em;
+  background: linear-gradient(to bottom, transparent, var(--plate));
+  pointer-events: none;
+}
+
+/* Inside the body, so a host that places the body anywhere gets the control with it. Above the
+   fade, which is decoration. */
+.question-item .q-text .q-readall {
+  position: relative;
+  z-index: 1;
+  margin-top: var(--s1);
+}
+.question-item .q-text.q-clamped .q-readall {
+  position: absolute;
+  bottom: 0;
+  inset-inline-start: 0;
+  margin-top: 0;
+}

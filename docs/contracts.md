@@ -1193,6 +1193,19 @@ by a test, by the engine, or by a past incident.
   `revise_answer` nor the late-answer recovery path (`inbox_questions._reanswered`) will
   re-queue a withdrawn record, which would otherwise put the card back on the page as open and
   overwrite the withdrawal row with `answered: true`.
+- **An OPEN decision card's body is height-bounded; a BLOCKING one is not**
+  (`static/components/question-body.js`, `static/qbody.css`). The page's stated priority is
+  blocking > closing > meta > proposals > settled, and its rendering inverted it: a settled card
+  collapses its body to one summary line, while an open card rendered the full markdown with no
+  bound at all — so proposals, the group nothing waits on and the one with the longest bodies on
+  the instance, took the most vertical weight and pushed each card's own answer form below the
+  fold (R3811). The bound is twelve lines of the body's own prose — the title plus the first
+  claim, which is what a reader needs to decide whether to read on — with a fade and a
+  `read all` toggle built ONLY where the body really overflows, measured after layout because a
+  markdown body's height is not knowable from its text. A `blocking` question is never clamped:
+  a run is parked on it, so reading all of it is the page's business. The body stays
+  BLOCK-rendered either way (`md.js clampedBody` renders inline, which turns a run's table into
+  literal pipes in the one place the operator must read carefully).
 - **A route handler or dependency never closes over an app.** FastAPI classifies every
   endpoint and dependency callable through process-lifetime `lru_cache`s keyed on the callable
   (`fastapi.dependencies.models`, 4096 entries), so a handler defined inside `create_app` is a
