@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.627.0] — 2026-11-28
+
+**F968 — the served library verdict answered for five kinds out of six, so twelve broken
+settings patterns read as a clean library.** `lint_all` walks six kinds and `_lint_sources`
+fingerprints all six, but `GET /api/library` attached the verdict to workflows, rules,
+permissions, playbooks and reminders only — patterns appeared nowhere in that payload. Every
+reader of the served verdict therefore called the kind clean, `gu rsched lint` included: it
+reports exactly the kinds it finds in that response, so it printed PASS with 0 problems while
+`lint_all` over the same library returned 12 problems, one per pattern.
+
+Measured: all 12 installed patterns still spell the retired budget names
+`max_subruns`/`max_subrun_depth`. The repo's own `library-seed/patterns/` is correct — the boot
+sync is deliberately ADD-ONLY and never syncs content drift, and a pattern is immutable by
+design, so the stale copies cannot converge on their own. The live consequence is not cosmetic:
+`patterns/apply.py` copies a pattern's `budgets` into a new routine's yaml verbatim, where
+`config/routine_scrub.py` deletes the unknown key at load and the budget silently reverts to its
+default — so `mirror-sync`'s deliberate `max_subruns: 0` (no children) becomes the default 8, and
+every routine created from any of the 12 carries two permanent `problems` rows.
+`science-freebie-hunter`, created 2026-11-27, is the fleet's one live instance.
+
+The payload now carries `patterns` with each document's problems read from the same mapping as
+every other kind, so there is one authority and not a second copy of it. The Library page
+already rendered pattern problems from `/api/patterns`, which is why the page and the lint verb
+disagreed about the same library.
+
 ## [0.626.0] — 2026-11-27
 
 **Four decided items: command text is screened for credentials, a failing OAuth refresh becomes

@@ -38,10 +38,13 @@ def _workflow_file(home, slug: str):
 
 @router.get("/library")
 def library_overview(request: Request) -> dict:
-    """Everything under the Library tab: workflows, rules, permissions, playbooks, global utils."""
+    """Everything under the Library tab: workflows, rules, permissions, patterns, playbooks,
+    global utils — every kind `library_reads.lint` walks, so no kind's problems go unserved.
+    """
     from .. import playbooks, reminders
     from ..config import DEFAULT_BUDGETS, DEFAULT_DELIBERATION, DEFAULT_PERMISSIONS, DEFAULT_RULES
     from ..grants import CAPABILITY_ACTIONS
+    from ..patterns import store as patterns_store
 
     home = _home(request)
     server = request.app.state.server
@@ -55,6 +58,8 @@ def library_overview(request: Request) -> dict:
                         for p in library_reads.docs(server.permissions_home)],
         "playbooks": [{**p, "problems": lint.get(f"playbooks/{p['slug']}/MAIN.md", [])}
                       for p in playbooks.list_playbooks(home)],
+        "patterns": [{**p, "problems": lint.get(f"patterns/{p['slug']}.yaml", [])}
+                     for p in patterns_store.list_all(home)],
         "utils": library_reads.utils(server.libraries_home),
         # The CURATED consequence reminders (rsched/reminders.py). A curated reminder holds a
         # matching action in every routine it reaches, so the one surface that must exist is
