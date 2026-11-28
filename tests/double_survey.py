@@ -29,13 +29,28 @@ IMPERSONATED: dict[str, tuple[Path, str]] = {
     "ctx": (SRC / "engine" / "run_context.py", "RunContext"),
     "budgets": (SRC / "engine" / "budgets_config.py", "Budgets"),
     "transcript": (SRC / "engine" / "transcript.py", "Transcript"),
+    # `routine` is the pydantic RoutineConfig, and it is checkable by exactly the same `ast`
+    # pass: pydantic POPULATES an instance from a dict, but the SURFACE is declared in the file
+    # as ordinary annotated class attributes (`slug: str`, `dir: Path`, …) — measured, the ast
+    # read covers all 38 of `model_fields` and nothing is missing from it. It is also the class
+    # the F803 defect landed in: a stub defined `instruction` and `task`, which the real config
+    # declares nowhere and `extra="ignore"` cannot carry either, so production's probe returned
+    # the display name on every rung for weeks behind a green suite.
+    "routine": (SRC / "config" / "routine.py", "RoutineConfig"),
 }
+
+# STILL EXCLUDED, and why — a silent exclusion is one nobody can argue with. `ServerConfig` is
+# declared the same way and is checkable by the same read, but its doubles are `_Cfg`/`_Server`
+# stubs built around ONE field each (`browser_view_url`, `desktop_view_url`) assigned in
+# `__init__`, not config slices, so it is its own increment with its own census rather than a
+# key appended here.
 
 #: Hand-written stub classes → the convention name of what they impersonate (shape 3).
 STUBS: dict[str, str] = {
     "_Loop": "loop", "_EngineLoop": "loop",
     "_Ctx": "ctx", "_Context": "ctx", "_RunContext": "ctx",
     "_Budgets": "budgets", "_Transcript": "transcript",
+    "_Routine": "routine",
 }
 
 #: Where a dataclass must live for `stand_ins()` to claim a namespace impersonates it: the

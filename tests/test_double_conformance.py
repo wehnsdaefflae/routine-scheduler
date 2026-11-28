@@ -46,12 +46,23 @@ RECORDERS: dict[tuple[str, str], str] = {
 #: Floors — a detection that silently finds nothing must red, not pass. Set at ~75% of the
 #: census this file's first green run measured (2026-10-24, commit c03bfb19): 34 `loop`
 #: doubles, 72 `ctx`, 17 `transcript`, 3 `budgets`. Churn has room; a broken detector does not.
-MIN_DOUBLES: dict[str, int] = {"loop": 25, "ctx": 55, "budgets": 2, "transcript": 12}
+MIN_DOUBLES: dict[str, int] = {"loop": 25, "ctx": 55, "budgets": 2, "transcript": 12,
+                               # 94 `routine` doubles measured when the key was added, and the
+                               # census redded nothing: every one of the 13 attributes they
+                               # assign is declared on RoutineConfig. The floor is the usual
+                               # ~75% of that, so a detector that stops seeing the suite's
+                               # config doubles reds instead of reporting a clean tree.
+                               "routine": 70}
 #: Likewise ~75% of the measured real surfaces: 86 attributes on EngineLoop, 100 on RunContext,
 #: 10 on Budgets, 9 on Transcript. A drop past these means extraction stopped seeing one of the
 #: four places a surface is declared, and every real attribute would start reading as a
 #: violation — the failure mode that makes a conformance test worse than none.
-MIN_SURFACE: dict[str, int] = {"loop": 60, "ctx": 70, "budgets": 7, "transcript": 6}
+MIN_SURFACE: dict[str, int] = {"loop": 60, "ctx": 70, "budgets": 7, "transcript": 6,
+                               # 48 attributes on RoutineConfig, measured by the same `ast`
+                               # read, covering all 38 of pydantic's `model_fields` and the
+                               # validators beside them. Below this the surface is being read
+                               # from the wrong class and every real field would red falsely.
+                               "routine": 36}
 
 #: Rule 2's machinery floors, ~75% of the 2026-10-25 census: 14 claimable dataclasses under
 #: `endpoints/`+`engine/` (16 dataclasses there, less the 2 the exclusions drop) and 441
@@ -88,6 +99,24 @@ def test_denial_rides_the_schema_retry_cycle(tmp_path):
     candidate, problems = action_candidate(_loop(tmp_path), completion)
     assert candidate["kind"] == "write_util"
 """
+
+
+#: The ladder's fake routine exactly as it stood when `_goal` probed `instruction`, then
+#: `task`, then `name` — the shape rule 1 must red on for the CONFIG class. The real
+#: `RoutineConfig` declares neither of the first two and `config/base._Config` sets
+#: `extra="ignore"`, so against a real config the probe fell through to the two-word display
+#: name on every rung ever dispatched, against its own docstring's promise.
+F803_FAKE_ROUTINE = '''
+class _Routine:
+    """RoutineConfig's slice, as the ladder's tests carried it."""
+
+    def __init__(self, tmp_path):
+        self.dir = tmp_path
+        self.slug = "worker"
+        self.name = "Worker"
+        self.instruction = "the brief the run was started with"
+        self.task = "the brief, under its other name"
+'''
 
 
 @pytest.mark.parametrize("name", sorted(IMPERSONATED))
@@ -174,6 +203,32 @@ def test_the_detector_catches_the_f644_shape() -> None:
     assert bad == ["subs"], (
         "this checker must report `subs` — the attribute `engine/ladder.py` dispatched through "
         f"for months while the real one was `subruns`. It reported: {bad}")
+
+
+def test_the_detector_catches_the_f803_shape() -> None:
+    """The config double F803 survived behind: rule 1 must report BOTH names the real class
+    declares nowhere, which is the direction the shipped gate already asserts and never looked
+    for here, because the exclusion had taken `routine` out of the map."""
+    found = doubles_in(ast.parse(F803_FAKE_ROUTINE), "<f803>")
+    assert [d.impersonates for d in found] == ["routine"], (
+        "the config stub was not recognised as a double of RoutineConfig")
+    bad = sorted(a for d in found for a in d.attrs if a not in surface("routine"))
+    assert bad == ["instruction", "task"], (
+        "this checker must report `instruction` and `task` — the two names `engine/ladder.py` "
+        f"probed for while the real config declared neither. It reported: {bad}")
+
+
+def test_the_real_routine_surface_pins_f803_both_ways() -> None:
+    """The config surface the checker compares against, read from the file rather than from an
+    instance: what pydantic DECLARES is what a double may assign, and the two names the ladder
+    probed for must never become real without the probe being fixed."""
+    real = surface("routine")
+    assert {"slug", "dir", "name", "models", "permissions"} <= real, (
+        "RoutineConfig's declared fields are no longer being read — the surface would be empty "
+        "or wrong, and every real field a double assigns would red falsely")
+    assert "instruction" not in real and "task" not in real, (
+        "F803's misreading must never become real: a run's brief is not a config field, and a "
+        "probe that finds one here is reading the display name")
 
 
 def test_the_detector_catches_the_f766_shape() -> None:
