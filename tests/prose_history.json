@@ -29,7 +29,7 @@
     "src/rsched/daemon/reap_resume.py": 5,
     "src/rsched/daemon/restart.py": 4,
     "src/rsched/daemon/runner.py": 3,
-    "src/rsched/daemon/runner_reap.py": 3,
+    "src/rsched/daemon/runner_reap.py": 2,
     "src/rsched/daemon/runner_state.py": 2,
     "src/rsched/daemon/schedule_once.py": 1,
     "src/rsched/daemon/scheduler.py": 2,
