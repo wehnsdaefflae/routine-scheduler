@@ -186,6 +186,43 @@ for itself and never widen it (`run_util(offline=True)`): read_file's document c
 passes `--ocr` — so it parses an untrusted PDF with TCP denied, its dependencies installed in the
 net-open prewarm like any `net: none` util's.
 
+### Which calls deserve MORE than the jail — the selected profile (D170 phase 2)
+
+The jail is the default for every call and stays so. Above it there is one authorized
+escalation, decided 2026-11-27: *"a VM is used for calls with an untrusted-input or
+model-authored-code profile. The measured cost is affordable for a few calls per run and is
+not for all of them."* `sandboxprofile.py` is that selection and nothing more — it starts no
+guest, launches nothing, and changes how an unselected call is composed not at all.
+
+The criterion is **net AND no declared credential**, and the reason it is not simply "the call
+touches the network" is arithmetic. A micro-VM boot was measured at **453.9 ms against the
+jail's 61.8 ms** (+392 ms) holding **179 MB** per concurrent call. `net: outbound` alone is
+declared by 42 of 56 utils and carries ~60% of all calls — about +7.8 s on a median run, which
+is what the ruling excludes. Net-and-uncredentialed is 8 utils and ~1.7 calls per run: ~0.7 s,
+one call's memory at a time. The Stats tab marks the selected utils beside their real call
+counts and states that rate, so the budget is checkable rather than asserted.
+
+It is also the bucket a VM can SERVE: a call declaring no secret needs no secret injected into
+the guest, and an anonymous fetch-and-parse acts on bytes it just downloaded rather than on the
+run's granted roots. A credentialed net call is excluded on both counts — it speaks to the
+operator's own account over TLS, which is a chosen counterparty, not untrusted input.
+
+Nothing new is declared and nothing can be forgotten: the profile is read from the same
+`UtilNeeds` the dispatch already resolves transitively over `calls:`, so a util that declares
+nothing itself but reaches `web-request` is already net-opening, and one that reaches a
+credentialed sibling is already credentialed. The second authorized profile,
+`model-authored-code`, is deliberately NOT derivable from any header: it is the write_util
+selftest call site (code the model wrote seconds earlier, run for the first time, no run roots
+mounted), and the same source is ordinary library code a minute later.
+
+When the VM path is unavailable the call **falls back to the jail and says so**. Refusing would
+be wrong by arithmetic — the VM is an escalation above the jail, so an outage with a refusal
+would take out `websearch` and `pytest-run` rather than degrade them — but a silent fallback is
+worse than no selector, because the operator would believe a class of calls was isolated for
+weeks. The shape to follow is the `sandbox:` trichotomy below (strict refuses, permissive warns
+once and proceeds), plus a health event, since a daemon-log warning is not a surface anyone
+reads.
+
 ## Filesystem — a per-util declaration too
 
 The same header declares what the util needs to SEE, on the same terms as `net:`:

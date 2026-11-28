@@ -12,7 +12,8 @@ import { blockedSection } from "/static/views/stats-blocked.js";
 import { wrongTurnsSection } from "/static/views/stats-wrongturns.js";
 import { costRegressionsSection } from "/static/views/stats-costregress.js";
 import { cacheGapSection } from "/static/views/stats-cachegap.js";
-import { NBSP, compressionSection, foldRows, monthlySection, routineHref, statSection }
+import { utilsSection } from "/static/views/stats-utils.js";
+import { NBSP, compressionSection, monthlySection, routineHref, statSection }
   from "/static/views/stats-parts.js";
 
 const CHARTS_KEY = "rsched.stats.charts";
@@ -187,62 +188,6 @@ function sliceTable(title, slice, keyLabel, extraCols, link) {
     el("td", { class: "num" }, fmtUsd(d.cost)),
     el("td", { class: "num" }, fmtDur(d.elapsed_s))));
   return statSection(title, null, head, body);
-}
-
-// Per-util execution stats — every global util's life story: created / last revised
-// (library git history), how often executed / successful / mis-called / permission-
-// blocked, first & last execution (durable usage stream + a transcript backfill for
-// pre-stream history). Honest about unknowns: no date = no git history, dashes = never
-// seen; rejected/denied counting starts with the stream.
-function utilsSection(u) {
-  const rows = u?.utils || [];
-  if (!rows.length) return null;
-  const day = (iso) => (iso ? String(iso).slice(0, 10) : "—");
-  const num = (n) => (n ? fmtInt(n) : "—");
-  const head = el("tr", {},
-    el("th", {}, "util"),
-    el("th", {}, "created"),
-    el("th", {}, "last revised"),
-    el("th", { class: "num" }, "executed"),
-    el("th", { class: "num", title: "exit 0" }, "ok"),
-    el("th", { class: "num", title: "non-zero exit (util ran and failed)" }, "errors"),
-    el("th", { class: "num", title: "exit 2 — called with bad arguments (argparse convention)" }, "syntax err"),
-    el("th", { class: "num", title: "reserved util switched off / kind not permitted — rejected before running" }, "denied"),
-    el("th", { class: "num", title: "malformed action (schema/field problems) — rejected before running" }, "rejected"),
-    el("th", { class: "num", title: "called by a name that doesn't exist in the library" }, "missing"),
-    el("th", {}, "first executed"),
-    el("th", {}, "last executed"));
-  const rowFor = (r) => {
-    const okPct = r.executed ? ` (${Math.round((r.ok / r.executed) * 100)}%)` : "";
-    return el("tr", {},
-      // DELETED is a historical fact about a util, not a failure of one: 86 of the fleet's 196
-      // rows carried it, which is 86 err-toned chips at rest on one page. Colour is state.
-      el("td", { title: r.summary || "" }, r.name,
-        r.in_library ? "" : el("span", { class: "chip disabled", style: "margin-left:6px" }, "deleted")),
-      el("td", { class: "muted" }, day(r.created)),
-      el("td", { class: "muted" }, day(r.revised)),
-      el("td", { class: "num" }, r.executed ? fmtInt(r.executed) : "never"),
-      el("td", { class: "num" }, r.executed ? fmtInt(r.ok) + okPct : "—"),
-      el("td", { class: "num" }, num(r.error)),
-      el("td", { class: "num" }, num(r.usage_error)),
-      el("td", { class: "num" }, num(r.denied)),
-      el("td", { class: "num" }, num(r.rejected)),
-      el("td", { class: "num" }, num(r.missing)),
-      el("td", { class: "muted" }, day(r.first_executed)),
-      el("td", { class: "muted" }, day(r.last_executed)));
-  };
-  // Busiest first, and the utils the library no longer holds behind their own reveal — they are
-  // history, and the question this table answers ("which util is unreliable?") is about the
-  // ones that still exist.
-  const live = rows.filter((r) => r.in_library).sort((a, b) => (b.executed || 0) - (a.executed || 0));
-  const gone = rows.filter((r) => !r.in_library).sort((a, b) => (b.executed || 0) - (a.executed || 0));
-  const body = [...foldRows(live.map(rowFor), 25, "utils"),
-                ...foldRows(gone.map(rowFor), 0, "deleted utils")];
-  return statSection("Global utils",
-    ["per-util reliability: dates from the library's git history; counts from each run's usage record ",
-     `(durable) plus ${fmtInt(u.backfill_runs || 0)} pre-stream runs backfilled from retained transcripts. `,
-     "Denied/rejected calls never ran (caught at validation), so those counts begin with the stream."],
-    head, body);
 }
 
 export async function render(view) {
