@@ -32,6 +32,14 @@ its next run reasons from that:
   Decisions page after that run has ended. If retention has already **pruned** the run there is no leg
   to resume at all, and the card says so: make the change from the routine's own recipe editor
   and discard the proposal.
+  The card is **not** spent by the click: it stays on the page until that leg reports a finish
+  it authored itself, so a leg that dies before it edits anything — its first model call failing
+  through the whole fallback chain, say — leaves your approval exactly where it was, with its
+  lines, ready to arm another leg. The run's own result says so in as many words. Three such
+  attempts is the limit (`engine/revisearm.py`): past it the card says to make the change from
+  the routine's own recipe editor, because something is failing before the leg can work at all.
+  If you had **edited** the wording, the next `apply it` sends *your* text, not the lines the run
+  originally proposed.
 - **edit** — reword the lines first. The proposal is prose, not a patch, so editing it *is*
   rewording what the resumed run is told to do: the box is prefilled with the run's own lines (one
   per line), and `apply edited` sends yours instead. The run is told plainly that the wording is

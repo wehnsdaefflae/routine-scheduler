@@ -27,6 +27,7 @@ from . import (
     notereads,
     recipeproposal,
     reviewleg,
+    revisearm,
     reviseleg,
     runkind,
     turnwindow,
@@ -174,6 +175,12 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
         if card := recipeproposal.maybe_propose(ctx, summary):
             summary += ("\n[Recipe revision(s) proposed to the operator — he applies them on "
                         f"the Decisions page ({card}).]")
+    if leg:
+        # The approved card is consumed by an AUTHORED finish and by nothing else
+        # (engine/revisearm.py): a leg the ENGINE ended — an exhausted model chain on its first
+        # call, a spent reserved turn, an abort — never made the edit, so the operator's
+        # approval stays on the Decisions page with its lines, and the result says so.
+        summary += revisearm.settle(ctx, authored=authored)
     finish_payload = {"status": run_status, "summary": summary, "authored": authored,
                       **({"budget_window": window} if window is not None else {})}
     if leg:

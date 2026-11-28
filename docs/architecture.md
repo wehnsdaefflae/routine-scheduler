@@ -2393,7 +2393,18 @@ install gets the revision from the seed sync itself.)
   and an ending that changes only the recipe and the leg's own record — the run keeps its
   proposing leg's verdict, health record and outcome reading, `result.md` gains the leg's line
   instead of losing the run's summary, and the usage fold reads the leg's `leg: "revise"` row as
-  spend only. A D198 invitation and the run view's checkbox keep the full leg. A run that ALREADY holds recipe self-write is asked the same question
+  spend only. A D198 invitation and the run view's checkbox keep the full leg. The APPROVAL
+  itself is not consumed by the arming (`engine/revisearm.py`, shaped like
+  `daemon/reap_resume.py`): the approved lines — the operator's own wording where he edited them
+  — are written to a durable record in the proposing run's dir BEFORE the resume is asked for,
+  the card stays on the Decisions page, and only a finish the LEG AUTHORED drops it. A leg the
+  engine ended instead (its first model call exhausting the fallback chain, a spent reserved
+  turn, an abort) took no action, so the approval is still the operator's to spend, the result
+  says the edit was not made, and a plain second `apply it` re-sends the RECORDED text rather
+  than reverting to lines he had replaced. `MAX_ARMS` legs per card is the bound that keeps
+  that from becoming a loop, and the cap's refusal is the same predicate the card renders
+  (`revise_refusal`), so it is never discovered by clicking. A resume that was REFUSED gives its
+  attempt back: no leg ran, so none was spent. A run that ALREADY holds recipe self-write is asked the same question
   and files no card: it makes the edit, and the autocommit carries it. The card's lines are
   EDITABLE before approval (F790, operator requirement 2026-10-27: *"we need an edit option for
   the proposed revisions to a routine's own recipe at the end of its run"*) — prose has no patch

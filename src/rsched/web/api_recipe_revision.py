@@ -40,7 +40,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import pending, reciperevise
-from ..engine import inbox, recipeproposal
+from ..engine import inbox, recipeproposal, revisearm
 from ..registry import TERMINAL_STATES
 from .api_runs import run_state
 
@@ -115,7 +115,7 @@ def revise_refusal(server, rec: dict) -> tuple[str, str]:
     if state not in TERMINAL_STATES:
         return state, (f"{run_id} is running again — recipe editing unlocks on a "
                        "FINISHED run; approve this once it ends")
-    return state, ""
+    return state, revisearm.arm_blocker(run_dir)
 
 
 def with_revise_state(server, rec: dict) -> dict:
@@ -197,6 +197,14 @@ async def apply_recipe_revision(request: Request, pid: str, body: Edited | None 
     ts = run_id.split(":", 1)[1] if ":" in run_id else ""
     routine_dir = server.routines_home / slug
     run_dir = routine_dir / "runs" / ts
+    his_words = bool(edited)
+    if not edited and (prior := revisearm.approved_lines(run_dir)):
+        # A RE-ARM: the last leg this card armed died without editing anything. What it was told
+        # to implement may have been the OPERATOR's wording (he edited it on the card, and the
+        # card's own `lines` stay the run's), so a plain `apply it` falls back to the recorded
+        # text rather than quietly restoring the phrasing he replaced.
+        lines = prior[:recipeproposal.MAX_LINES]
+        his_words = bool(revisearm.armed(run_dir).get("edited"))
     # The predicate the CARD is given too (`revise_refusal` → `with_revise_state`), so the
     # button is disabled exactly where this 409 is raised, and the operator reads the reason
     # on the card instead of spending a click to discover it (F885).
@@ -210,7 +218,12 @@ async def apply_recipe_revision(request: Request, pid: str, body: Edited | None 
 
     from ..engine.revise import NARROW, clear_revise_marker, write_revise_marker
 
-    text = _instruction(lines, edited=bool(edited))
+    text = _instruction(lines, edited=his_words)
+    # The DURABLE record FIRST (engine/revisearm.py), before anything is resumed: a leg can die
+    # on its very first model call — an exhausted fallback chain — and the lines below are the
+    # operator's deliberate approval, his own wording where he edited them. Written here, they
+    # survive that leg; consumed only when the leg reports an AUTHORED finish.
+    arms = revisearm.arm(run_dir, proposal=pid, lines=lines, edited=his_words)
     # The same pair the run view's checkbox files: the marker unlocks the leg, the message is
     # what the leg reads. `web-converse` is a LIVE via, so the resumed leg's boot drains it —
     # freight on any other channel would wait for a fresh run that a resume never is. `leg`
@@ -221,10 +234,14 @@ async def apply_recipe_revision(request: Request, pid: str, body: Edited | None 
     if not rid:
         # Nothing was unlocked, so leave nothing unlocked behind: a marker left by a resume
         # that did not happen would hand the NEXT leg — a plain converse — recipe write it
-        # never presented for (the same cleanup api_run_control does).
+        # never presented for (the same cleanup api_run_control does). The arming attempt goes
+        # back for the same reason: no leg ran, so none was spent.
         clear_revise_marker(run_dir)
+        revisearm.disarm(run_dir)
         why = request.app.state.runner.resume_blocker(cfg, ts) or "the run could not be resumed"
         raise HTTPException(409, f"could not resume {run_id}: {why}")
-    pending.drop(server.routines_home, pid)
+    # The card STAYS until that leg authors a finish. It is the only durable surface the
+    # approved lines have, and a leg the engine ended — chain exhausted before its first
+    # action — would otherwise destroy them (engine/revisearm.settle drops it).
     return {"ok": True, "id": pid, "resumed": rid, "routine": slug, "lines": lines,
-            "edited": bool(edited)}
+            "edited": his_words, "arms": arms}

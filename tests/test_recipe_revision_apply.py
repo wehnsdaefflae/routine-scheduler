@@ -58,8 +58,11 @@ def test_approving_resumes_the_proposing_run_with_its_recipe_writable(web, monke
     # …and it rides a LIVE via, or a resumed leg's boot would never drain it
     msgs = [read_json(p) for p in (tmp / "routines" / "rev" / "inbox").glob("msg-*.json")]
     assert [m["via"] for m in msgs] == ["web-converse"]
-    # the card is gone once the leg is armed — the work is now that run's
-    assert pending.load_all(tmp / "routines") == []
+    # the card STAYS until that leg authors a finish (engine/revisearm.py): a leg can die on
+    # its first model call, and the approved lines live nowhere else
+    assert [row["id"] for row in pending.load_all(tmp / "routines")] == [rec["id"]]
+    from rsched.engine import revisearm
+    assert revisearm.approved_lines(run_dir) == ["stages/scan.md — read the cursor first"]
 
 
 def test_a_resume_that_cannot_happen_leaves_no_unlock_behind(web, monkeypatch):
