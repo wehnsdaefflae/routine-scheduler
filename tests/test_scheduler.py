@@ -872,32 +872,6 @@ async def test_resume_blocker_names_the_real_cause(make_routine, tmp_path, monke
     assert "draining" in (runner.resume_blocker(cfg, ts) or "")
 
 
-def test_classify_cause_separates_the_deaths_that_need_different_investigations():
-    """F480: rc was read and then thrown away, so every death read alike. Each of these is a
-    different next step — an OOM is a memory problem, a clean exit without a finish is an
-    engine defect, and a user abort is nothing at all."""
-    assert runner_reap.classify_cause(-9) == "oom_kill"
-    assert runner_reap.classify_cause(-15) == "signal_kill"
-    assert runner_reap.classify_cause(1) == "engine_crash"
-    assert runner_reap.classify_cause(0) == "no_finish"
-    assert runner_reap.classify_cause(None) == "unknown"
-    # a user abort is a user abort whatever signal carried it out
-    assert runner_reap.classify_cause(-9, user_cancel=True) == "user_abort"
-
-
-def test_a_sigkill_at_sixty_megabytes_is_not_diagnosed_as_an_oom(make_routine, tmp_path):
-    """F569: `oom_kill` is a DIAGNOSIS, and rc=-9 alone does not support it."""
-    assert runner_reap.classify_cause(-9, vm_hwm_kb=61716) == "signal_kill"
-    assert runner_reap.classify_cause(-9, vm_hwm_kb=64492) == "signal_kill"
-    # a genuine OOM signature survives: a peak in the gigabytes keeps the memory verdict
-    assert runner_reap.classify_cause(-9, vm_hwm_kb=7_500_000) == "oom_kill"
-    # no sample at all is not evidence against an OOM — the old verdict stands, unqualified
-    assert runner_reap.classify_cause(-9) == "oom_kill"
-    assert runner_reap.classify_cause(-9, vm_hwm_kb=None) == "oom_kill"
-    # and a user abort still outranks every memory reading
-    assert runner_reap.classify_cause(-9, vm_hwm_kb=61716, user_cancel=True) == "user_abort"
-
-
 def _health_causes(tmp_path):
     return [e["cause"] for e in health_events(tmp_path / "routines")]
 

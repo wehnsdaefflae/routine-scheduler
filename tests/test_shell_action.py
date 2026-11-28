@@ -141,7 +141,7 @@ def test_an_oom_kill_names_the_cause_the_peak_and_the_way_out(shell_ctx, tmp_pat
     signal_kill the run-wide high-water mark says nothing about this death, and a number
     there would send the author diagnosing memory for a deploy or a manual stop.
     """
-    import rsched.daemon.runner_reap as reap
+    import rsched.daemon.deathcause as reap
 
     monkeypatch.setattr(reap, "_host_ram_kb", lambda: 8 * 1024 * 1024)   # 8 GB host
     monkeypatch.setattr("resource.getrusage",
@@ -161,7 +161,7 @@ def test_a_peak_far_below_the_ceiling_is_not_called_an_oom(shell_ctx, tmp_path, 
     is not evidence of an out-of-memory kill, and claiming it would be a confident wrong
     diagnosis — worse than none. No peak is quoted in that case either.
     """
-    import rsched.daemon.runner_reap as reap
+    import rsched.daemon.deathcause as reap
 
     monkeypatch.setattr(reap, "_host_ram_kb", lambda: 8 * 1024 * 1024)
     monkeypatch.setattr("resource.getrusage",

@@ -71,7 +71,7 @@ def _note_if_killed(ctx: RunContext, kind: str, name: str, code: int) -> dict:
     ordinary crash and gets retried, while "killed by SIGKILL, the cgroup OOM killer" gets the
     work chunked instead (F622).
 
-    The verdict comes from `runner_reap.classify_cause` — the SAME classifier the daemon
+    The verdict comes from `daemon/deathcause.classify_cause` — the SAME classifier the daemon
     applies to a dying engine, deliberately not a second one (a small peak is not called an
     OOM). `children_vm_hwm_kb` is this run's high-water mark across ALL its finished children
     — an upper bound on the one that died.
@@ -84,7 +84,7 @@ def _note_if_killed(ctx: RunContext, kind: str, name: str, code: int) -> dict:
     import resource
     import signal as signalmod
 
-    from ..daemon.runner_reap import classify_cause
+    from ..daemon.deathcause import classify_cause
     from ..health_events import log_health_event
 
     peak = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss or None

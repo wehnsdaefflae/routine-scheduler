@@ -47,7 +47,7 @@ from .paths import atomic_write_json, read_json
 MARK_FILE = "abort.json"
 
 #: actor → (how the finish text names it, the `cause` it files on the health stream). The causes
-#: are `daemon/runner_reap.classify_cause`'s vocabulary, extended by `parent_kill` — one word per
+#: are `daemon/deathcause.classify_cause`'s vocabulary, extended by `parent_kill` — one word per
 #: different investigation, which is what makes a stream of them countable by actor.
 ACTORS: dict[str, tuple[str, str]] = {
     "user": ("the user", "user_abort"),
