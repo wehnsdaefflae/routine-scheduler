@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.629.0] — 2026-11-28
+
+**R3810 — a run that answered the recipe ask and a run that ignored it were byte-identical in
+the record.** Every finishing run is asked whether its own recipe should change, and the ask
+exists to distinguish *"I looked and nothing was contradicted"* from not having looked. Removing
+the empty card a null answer used to file was right, but it left that distinction with no
+surface at all: `maybe_propose` returned before the `stopping_update` event was written, so a
+clean run produced no card, no event and no field — exactly what a run that never addressed the
+ask produces. A null verdict now files ONE `stopping_update` carrying `revisions: "none"` and an
+empty `recipe_proposal`; still no card and no Decisions row. The three states a finishing run
+can leave are a card id, an answered ask with no revision, and no event at all. Both readers of
+the event word it as an answer rather than as an accounting — *"accounting: nothing owed"* is
+the wrong sentence for a run that answered a question.
+
+**R3809 — the double-conformance gate excluded the config class it was built for, and the
+exclusion's stated reason was not true of the code.** `RoutineConfig` was left out of
+`IMPERSONATED` because a pydantic model "cannot be checked statically at all"; pydantic
+populates an INSTANCE from a dict, but the surface is declared in `config/routine.py` as
+ordinary annotated class attributes, and the same `ast` pass the gate already runs reads it
+exactly — measured, 48 attributes covering all 38 of `model_fields` with nothing missing. The
+excluded class is where F803 landed: `ladder._goal` probed `ctx.routine` for `instruction`, then
+`task`, then `name`; the real config declares neither of the first two and `extra="ignore"`
+cannot carry them either, so the probe returned the two-word display name on every rung ever
+dispatched, for weeks, behind a green suite — because the test's `_Routine` defined exactly the
+three attributes the real config forbids, and rule 1 (which asserts that direction already)
+never looked. The census decided whether a red should block or be reported with a shrinking
+allowlist: **94 config doubles assign 13 distinct attributes and not one of them is undeclared**,
+so there is nothing to allowlist and the gate blocks. `ServerConfig` stays out, now with its
+reason stated — its doubles are one-field stubs, not config slices, and it is asked separately.
+
 ## [0.628.0] — 2026-11-28
 
 **F969 — the memory watchdog charged a session for memory it did not hold, and its kill blamed
