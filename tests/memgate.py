@@ -32,8 +32,22 @@ NEED_MB = {"fast": 3584, "browser": 2560, "serial": 2816}
 #: The fast charge is DERIVED from the worker count (D291). The fast rows' median increment over a
 #: bare controller is 2.25 GB (2.38 GB at worst) — the WORKERS, 2.38 GB / 4 = 610 MB each — and
 #: 930 + 4 x 610 = 3,370 reproduces the worst four-worker hold's rounding to 3,584 exactly.
+#:
+#: RE-MEASURED 2026-11-28 against the grown tree, from the gate's own `held_peak_bytes` series
+#: (`.gate-evidence/memory-peaks.jsonl`) — only stages that RAN TO COMPLETION can calibrate it,
+#: because a stage killed part-way understates its own footprint:
+#:
+#:     stamp (fast stage)      held      workers   (held - controller) / workers
+#:     1795794549274374979     2,913 MB  3         661 MB
+#:     1795798044095941639     2,970 MB  3         680 MB
+#:
+#: So a worker now holds ~680 MB, not 610 — 11 % more, which `SLACK_MB` was already absorbing
+#: (the 17:52 stage was never near its 3,328 MB cap). 700 carries the measurement plus a little.
+#: The figure to calibrate on is `held` (anon + swap), NEVER `memory.current`: that counts
+#: reclaimable page cache and read 78.7 % where the held figure read 58.0 % on the same stage.
+#: Converting a `memory.current` percentage into a per-worker charge overstates it by ~60 %.
 CONTROLLER_HOLD_MB = 930
-PER_WORKER_HOLD_MB = 610
+PER_WORKER_HOLD_MB = 700
 
 #: What each selection is called in the wait's message — a "fast suite" named on a two-file
 #: `-n 0` call read as a memory leak and sent R3376's author looking for one.
@@ -135,6 +149,34 @@ def cgroup_hold_mb(_pid: int = 0, cgroup: Path = CGROUP) -> float:
     return (_held_bytes(cgroup) or 0) / 1048576.0
 
 
+def session_hold_mb(pid: int | None = None, proc: Path = Path("/proc")) -> float | None:
+    """What THIS session's own process tree holds in MB — the controller plus its descendants,
+    RSS from each `statm`. None where /proc cannot be walked, so the message simply omits the
+    split rather than guessing one. The cgroup's own reading is the authority for the CAP; this
+    is only how the kill tells a suite that outgrew its charge from a co-tenant that did not."""
+    try:
+        parent: dict[int, int] = {}
+        rss: dict[int, int] = {}
+        for entry in proc.iterdir():
+            if not entry.name.isdigit():
+                continue
+            try:
+                stat = (entry / "stat").read_text(encoding="ascii", errors="replace")
+                pages = (entry / "statm").read_text(encoding="ascii").split()[1]
+            except (OSError, IndexError):
+                continue
+            here = int(entry.name)
+            parent[here] = int(stat[stat.rfind(")") + 2:].split()[1])
+            rss[here] = int(pages) * os.sysconf("SC_PAGE_SIZE")
+    except OSError:
+        return None
+    root, tree, frontier = int(pid if pid is not None else os.getpid()), set(), None
+    while frontier != tree:
+        frontier = set(tree)
+        tree = {root} | {p for p, pp in parent.items() if p == root or pp in frontier | {root}}
+    return sum(rss.get(p, 0) for p in tree) / 1048576.0
+
+
 def headroom_mb(*, read=None, read_cgroup=None) -> int | None:
     """The MB a selection may use: the SMALLER of host MemAvailable and the cgroup's headroom —
     the pair the wait enforces, so the worker count and the wait cannot disagree."""
@@ -206,10 +248,11 @@ class Watchdog:
     """A daemon thread that samples the cgroup's hold and ENDS THE SESSION over its cap."""
 
     def __init__(self, *, cap: int, pid: int | None = None, read=cgroup_hold_mb,
-                 kill=os.kill, sleep=time.sleep, warn=None) -> None:
+                 kill=os.kill, sleep=time.sleep, warn=None, read_session=None) -> None:
         self.cap = int(cap)
         self.pid = int(pid if pid is not None else os.getpid())
         self._read, self._kill, self._sleep = read, kill, sleep
+        self._read_session = read_session or session_hold_mb
         self._warn = warn or sys.stderr.write
         self.killed_at_mb: float | None = None
 
@@ -219,12 +262,30 @@ class Watchdog:
         held = float(self._read(self.pid))
         if held > self.cap and self.killed_at_mb is None:
             self.killed_at_mb = held
-            self._warn(f"memgate: this session holds {held:.0f} MB, over its {self.cap} MB "
-                       "cap — ENDING IT so the kernel does not choose an OOM victim instead "
-                       "(tests/memgate.py). Retry with a narrower selection or on a quieter "
-                       "box.\n")
+            self._warn(f"memgate: this CGROUP holds {held:.0f} MB, over this session's "
+                       f"{self.cap} MB cap — ENDING IT so the kernel does not choose an OOM "
+                       f"victim instead (tests/memgate.py).{self._blame(held)}\n")
             self._kill(self.pid, signal.SIGINT)
         return held
+
+    def _blame(self, held: float) -> str:
+        """Say WHOSE memory this was. The cap is charged to the session, but the reading is the
+        whole cgroup's, so a co-tenant's allocation ends a suite that is inside its own charge —
+        measured 2026-11-27, when a micro-VM probe in a sibling process killed two gates at
+        101-105 % while the same stage held 58 % alone. Naming only the selection sent its owner
+        to re-measure the per-worker constant, which was not the cause."""
+        mine = self._read_session(self.pid)
+        if mine is None:
+            return (" Retry with a narrower selection or on a quieter box — and check what else"
+                    " shares this cgroup before concluding the suite outgrew its charge.")
+        if mine <= self.cap:
+            return (f" Its own process tree holds only {mine:.0f} MB, INSIDE that cap: the rest"
+                    f" is other processes in the same cgroup. Find the co-tenant — retrying a"
+                    f" narrower selection will not help a session that is already within"
+                    f" budget.")
+        return (f" Its own process tree holds {mine:.0f} MB, over the cap by itself, so this is"
+                f" the suite's own footprint: retry with a narrower selection, or re-measure"
+                f" PER_WORKER_HOLD_MB against a stage that ran to completion.")
 
     def start(self) -> Watchdog:
         """Sample in a DAEMON thread, so a session that ends first is never held open by it."""

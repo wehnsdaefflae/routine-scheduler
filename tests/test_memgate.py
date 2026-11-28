@@ -328,7 +328,7 @@ def test_the_cap_is_the_charge_plus_slack_not_the_memory_that_happens_to_be_free
     for admitted in (memgate.need_mb("fast", 4), 128):
         monkeypatch.setattr(memgate, "wait_for_memory", lambda *_a, _m=admitted, **_k: _m)
         memgate.wait_for_config(fast, "not ui")
-    assert caps == [3584 + memgate.SLACK_MB] * 2, caps
+    assert caps == [memgate.need_mb("fast", 4) + memgate.SLACK_MB] * 2, caps
 
 
 def test_the_switch_that_turns_off_the_wait_turns_off_the_watchdog(monkeypatch):

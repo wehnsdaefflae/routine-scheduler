@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.628.0] — 2026-11-28
+
+**F969 — the memory watchdog charged a session for memory it did not hold, and its kill blamed
+the suite for a co-tenant's allocation.** `cgroup_hold_mb` reads the WHOLE container cgroup,
+which is right for deciding when to stop (the kernel's OOM killer reads the same ceiling), but
+the message said *"this session holds 3695 MB, over its 3328 MB cap — retry with a narrower
+selection"*. On 2026-11-27 that ended two release gates at 101.3% and 105.2% of held memory with
+**zero test failures** (one after 5,384 passed) while a micro-VM probe was booting guests in a
+sibling process of the same cgroup; the next stage, after that probe ended, held **58.0%** and
+went green. The reading sent the gate's owner to re-measure the per-worker constant, which was
+not the cause, and cost two gate cycles. The kill now names the cgroup's hold AND the session's
+own process-tree RSS (`session_hold_mb`, controller plus descendants), and says which of the two
+it is: inside its cap means a co-tenant and a narrower selection will not help; over the cap by
+itself means the suite and names what to re-measure. Where `/proc` cannot be walked the split is
+omitted rather than guessed.
+
+**`PER_WORKER_HOLD_MB` re-measured: 610 → 700.** Calibrated on the two fast stages of 2026-11-27
+that RAN TO COMPLETION — a stage killed part-way understates its own peak — whose `held_peak`
+was 2,913 MB and 2,970 MB at 3 workers, i.e. ~661 and ~680 MB per worker above the 930 MB
+controller. The constant was ~11% low, not 80%: the figure must come from `held` (anon+swap) and
+never from `memory.current`, which counts reclaimable page cache and read 78.7% where held read
+58.0% on the same stage. **Consequence worth knowing:** the worker ladder derives the count from
+the charge, so beside a live routine run (2,834 MB headroom) the fast stage now settles on 2
+workers where it took 3 and then held 2,970 MB — the old charge was admitting a configuration
+that did not fit. The floor of 2 is unchanged, so it still runs smaller rather than refusing.
+Five pins that hard-coded the old arithmetic now derive from `need_mb`/`fast_need_mb`, so the
+next re-measure moves one number instead of six.
+
 ## [0.627.0] — 2026-11-28
 
 **F968 — the served library verdict answered for five kinds out of six, so twelve broken

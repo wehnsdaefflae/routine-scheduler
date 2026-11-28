@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 import types
 
 import browsersource
@@ -23,12 +25,17 @@ LIVE_RUN_MB = 1086
 
 # ---- the charge: arithmetic over the measurements, not a constant ------------------------
 
-def test_four_workers_still_cost_the_3584_mb_the_constant_held():
-    """The pin that stops the new arithmetic disagreeing with the old measurement."""
-    assert memgate.CONTROLLER_HOLD_MB + 4 * memgate.PER_WORKER_HOLD_MB == 3370, (
-        "930 MB controller + 4 x 610 MB per worker = 3,370 MB, which rounds up to 3,584")
-    assert memgate.fast_need_mb(4) == 3584
-    assert memgate.need_mb("fast", 4) == 3584
+def test_the_charge_covers_the_largest_hold_a_completed_stage_measured():
+    """The pin that keeps the charge above REALITY: 2,970 MB held at 3 workers (stamp
+    1795798044095941639, the green fast stage of 2026-11-27) is what a 3-worker charge has to
+    cover, and a stage killed part-way cannot calibrate it because it never reached its peak.
+    """
+    assert memgate.CONTROLLER_HOLD_MB + 3 * memgate.PER_WORKER_HOLD_MB >= 2970, (
+        "930 MB controller + 3 x 700 MB per worker = 3,030 MB, over the 2,970 MB measured")
+    assert memgate.fast_need_mb(3) >= 2970, "the rounded charge must still cover the hold"
+    assert memgate.fast_need_mb(4) <= 5 * 1024, (
+        "a charge over the cgroup ceiling can never be satisfied: raising the per-worker "
+        "figure must not price the full worker count out of its own box")
 
 
 def test_the_charge_rises_with_the_count_and_is_rounded_up_to_256():
@@ -58,13 +65,18 @@ def test_an_idle_box_still_runs_four_workers_and_still_pays_3584():
 
 
 def test_a_live_run_buys_coexistence_instead_of_a_refusal():
-    """The decision itself: the gate runs SMALLER beside a live run rather than being refused."""
+    """The decision itself: the gate runs SMALLER beside a live run rather than being refused.
+    The count it settles on follows the re-measured charge — at 700 MB a worker, 2,834 MB of
+    headroom buys two, where the old 610 MB figure bought three and then held 2,970 MB.
+    """
     headroom = CGROUP_MB - IDLE_HOLD_MB - LIVE_RUN_MB
     assert headroom == 2834
     assert memgate.fast_need_mb(4) > headroom, "the four-worker charge is what used to refuse"
     workers = browsersource.fast_workers(11, headroom=lambda: headroom)
-    assert workers == 3
-    assert memgate.fast_need_mb(workers) <= headroom
+    assert workers >= browsersource.MIN_FAST_WORKERS, "it runs smaller, it is never refused"
+    assert memgate.fast_need_mb(workers) <= headroom, (
+        "the count the ladder settles on must FIT the charge it will be held to — the whole "
+        "point of deriving both from one figure")
 
 
 def test_the_ladder_stays_between_two_and_the_ceiling():
@@ -109,7 +121,11 @@ def test_the_xdist_auto_hook_hands_the_headroom_aware_count_to_pytest(monkeypatc
     # reasoning: conftest.py is over the house size bar and may only shrink, so the decision
     # moved to the module that already held both worker counts. Pinned through the HOOK anyway —
     # that is the seam pytest calls, and a decision nothing calls is inert.
-    assert root_conftest.pytest_xdist_auto_num_workers(config) == 3
+    headroom = CGROUP_MB - IDLE_HOLD_MB - LIVE_RUN_MB
+    resolved = root_conftest.pytest_xdist_auto_num_workers(config)
+    assert resolved == browsersource.fast_workers(12, headroom=lambda: headroom), (
+        "the hook must hand pytest the count the ladder derives from the live charge")
+    assert memgate.fast_need_mb(resolved) <= headroom
     assert root_conftest.pytest_xdist_auto_num_workers(
         types.SimpleNamespace(option=types.SimpleNamespace(markexpr=""))) == 4, (
         "the browser selection is priced by its Chromiums in another container's cgroup, so "
@@ -149,7 +165,7 @@ def test_the_message_says_which_count_it_settled_on(monkeypatch, capsys):
     message = capsys.readouterr().err
     assert "at 3 xdist workers" in message, message
     assert "this container's cgroup still has only 500 MB" in message, message
-    assert "wants 2816 MB" in message, message
+    assert f"wants {memgate.need_mb('fast', 3)} MB" in message, message
     assert memgate.prose_for("fast", 4) == "the fast suite at 4 xdist workers"
 
 
@@ -160,8 +176,9 @@ def test_the_count_reduces_against_the_host_when_the_host_is_the_short_side():
     short = {"read": lambda: 2900, "read_cgroup": lambda: CGROUP_MB - IDLE_HOLD_MB}
     assert memgate.headroom_mb(**short) == 2900
     workers = browsersource.fast_workers(11, headroom=lambda: memgate.headroom_mb(**short))
-    assert workers == 3, "three workers cost 2,816 MB and fit 2,900"
-    assert memgate.fast_need_mb(workers) <= 2900
+    assert memgate.fast_need_mb(workers) <= 2900, (
+        "the count is cut against the HOST reading (2,900) even though the cgroup reports more")
+    assert memgate.fast_need_mb(workers + 1) > 2900, "and it is the LARGEST count that fits"
 
 
 def test_the_headroom_is_the_smaller_of_the_two_readings_and_none_only_without_both():
@@ -172,3 +189,66 @@ def test_the_headroom_is_the_smaller_of_the_two_readings_and_none_only_without_b
     assert memgate.headroom_mb(read=lambda: None, read_cgroup=lambda: 2000) == 2000
     assert memgate.headroom_mb(read=lambda: 2000, read_cgroup=lambda: None) == 2000
     assert memgate.headroom_mb(read=lambda: None, read_cgroup=lambda: None) is None
+
+
+# ---- whose memory was it? (F969, 2026-11-28) ----------------------------------------------
+
+def test_the_kill_says_a_co_tenant_held_it_when_the_session_is_inside_its_cap():
+    """Measured 2026-11-27: a micro-VM probe in a sibling process ended two release gates at
+    101-105 % of the cgroup while the same stage held 58 % alone. The watchdog reads the WHOLE
+    cgroup, so naming only the selection sent the gate's owner to re-measure a constant that
+    was not the cause — the message has to separate the two readings.
+    """
+    said: list[str] = []
+    dog = memgate.Watchdog(cap=3328, pid=4242, read=lambda _p: 5186.0,
+                           read_session=lambda _p: 2970.0, kill=lambda *_a: None,
+                           warn=said.append)
+    assert dog.sample() == 5186.0
+    message = "".join(said)
+    assert "this CGROUP holds 5186 MB" in message, message
+    assert "holds only 2970 MB, INSIDE that cap" in message, message
+    assert "other processes in the same cgroup" in message, message
+    assert "narrower selection will not help" in message, message
+
+
+def test_the_kill_still_blames_the_suite_when_the_suite_really_is_the_holder():
+    """The other branch, or the first one would excuse a genuine overrun: when the session's own
+    tree is over the cap, a narrower selection IS the answer and the message must say so.
+    """
+    said: list[str] = []
+    memgate.Watchdog(cap=3328, pid=4242, read=lambda _p: 4000.0,
+                     read_session=lambda _p: 3900.0, kill=lambda *_a: None,
+                     warn=said.append).sample()
+    message = "".join(said)
+    assert "holds 3900 MB, over the cap by itself" in message, message
+    assert "re-measure PER_WORKER_HOLD_MB" in message, message
+    assert "INSIDE that cap" not in message, message
+
+
+def test_an_unreadable_proc_omits_the_split_rather_than_guessing_one(tmp_path):
+    """`session_hold_mb` answers None where /proc cannot be walked, and the kill then asks the
+    reader to check the cgroup's other tenants instead of asserting a figure it does not have.
+    """
+    assert memgate.session_hold_mb(1, proc=tmp_path / "missing") is None
+    said: list[str] = []
+    memgate.Watchdog(cap=100, pid=4242, read=lambda _p: 200.0,
+                     read_session=lambda _p: None, kill=lambda *_a: None,
+                     warn=said.append).sample()
+    assert "check what else shares this cgroup" in "".join(said)
+
+
+def test_the_session_reading_sums_the_controller_and_its_workers():
+    """It must be the process TREE: an xdist worker's RSS is the session's, and a sibling's is
+    not. Built from a fake /proc so the sum is checkable rather than merely plausible.
+    """
+    import pathlib
+    proc = pathlib.Path(tempfile.mkdtemp())
+    page = os.sysconf("SC_PAGE_SIZE")
+    for pid, ppid, mb in ((100, 1, 500), (101, 100, 300), (102, 101, 200), (900, 1, 4000)):
+        d = proc / str(pid)
+        d.mkdir()
+        (d / "stat").write_text(f"{pid} (python) S {ppid} 0 0\n")
+        (d / "statm").write_text(f"0 {mb * 1024 * 1024 // page} 0 0 0 0 0\n")
+    held = memgate.session_hold_mb(100, proc=proc)
+    assert held is not None and round(held) == 1000, (
+        f"500 + 300 + 200 (a grandchild counts) and NOT the 4,000 MB sibling: {held}")
