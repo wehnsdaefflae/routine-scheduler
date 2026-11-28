@@ -1169,6 +1169,30 @@ by a test, by the engine, or by a past incident.
   deliberately NOT `engine/requests.DECISIONS`: those values decide an ENTITY and seed a run's
   grant overlay, so an access request's "no" stays `deny_now`/`deny_forever` and the decline
   route refuses that record with a 400 naming them.
+  **And the ASKING ROUTINE can take its own card back** — `POST /api/questions/{qid}/retract`
+  and `POST /api/questions/{qid}/supersede` (`web/api_question_withdraw.py`, vocabulary in
+  `rsched/withdraw.py`). Every operation above is the OPERATOR acting, and none was available
+  to the run that FILED the card, which is where a premise usually breaks: a routine filed a
+  decision, disproved its own premise within the hour, and could only file a SECOND card
+  correcting the first — so the Decisions page carried two cards for one matter with the stale
+  one reading exactly as current as the correction (F943). The two dispositions are the pair
+  REPORTS have always had (`reports.retract_report`, a report's `supersedes` fold), and
+  deliberately the same two field shapes, so a withdrawn card renders the way
+  `readmodels/item_reports.py` already renders a dropped or folded report: `retracted`
+  `{ts, reason}`, or `superseded_by` `{ts, by, reason}` naming the question that is the live
+  card now. **A withdrawal is not an answer**: it writes NO `inbox/answer-<qid>.json`, because
+  nobody spoke and a run told its question was answered would act on words that do not exist.
+  The record MOVES instead — out of `questions/pending/` into the durable archive the settled
+  card is rebuilt from — carrying `withdrawn: true` and the stamp in place of an answer, which
+  is what puts the reason in front of the operator where the card was. Both routes refuse what
+  they cannot honour: a BLOCKING record (400 — its asker is parked on it, and `defer` is the
+  verb that releases the run onto its default), a record whose answer is already QUEUED (409 —
+  the operator has spoken and withdrawing would delete the one copy of his words), and a
+  supersession whose carrier is not itself an open record (400 — a retraction may leave the
+  matter with no card, a supersession must not). The engine holds the other end: neither
+  `revise_answer` nor the late-answer recovery path (`inbox_questions._reanswered`) will
+  re-queue a withdrawn record, which would otherwise put the card back on the page as open and
+  overwrite the withdrawal row with `answered: true`.
 - **A route handler or dependency never closes over an app.** FastAPI classifies every
   endpoint and dependency callable through process-lifetime `lru_cache`s keyed on the callable
   (`fastapi.dependencies.models`, 4096 entries), so a handler defined inside `create_app` is a

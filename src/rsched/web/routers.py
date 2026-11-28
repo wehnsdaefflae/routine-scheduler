@@ -48,6 +48,7 @@ def include_api_routers(app: FastAPI, deps: list) -> None:
         api_push,
         api_question_decline,
         api_question_deliver,
+        api_question_withdraw,
         api_questions,
         api_recipe_revision,
         api_refusal_flag,
@@ -95,6 +96,8 @@ def include_api_routers(app: FastAPI, deps: list) -> None:
                    api_question_deliver,   # /questions/{qid}/deliver|settle — an UNDELIVERED answer
                    api_patch_applied,   # /questions/{qid}/patch-applied — R2778's record fix
                    api_question_decline,   # /questions/{qid}/decline — R2197's first-class "no"
+                   api_question_withdraw,   # /questions/{qid}/retract|supersede — F943: the
+                   # ASKING routine's two dispositions, the pair reports already had
                    api_a2ui,   # GET /questions/{qid}/a2ui — D310: the same decision as an A2UI
                    # createSurface envelope. A literal suffix like the three above, so its
                    # position here shadows nothing; it is a READ and answers nothing.

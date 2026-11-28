@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from .. import answerfile, decline, patchreceipt, proofs
+from .. import answerfile, decline, patchreceipt, proofs, withdraw
 from ..ids import now_iso
 from ..paths import read_json
 from . import askclass
@@ -120,6 +120,12 @@ def _reanswered(routine_dir: Path, qid: str) -> dict | None:
     archived = read_json(_answered_dir(routine_dir) / f"{qid}.json")
     if not isinstance(archived, dict) or not archived.get("question"):
         return None
+    if withdraw.withdrawn(archived):
+        # F943: the asking routine withdrew this card, so the archive row is the WITHDRAWAL and
+        # not an answer. Delivering the pair would hand a run an answer to a question its own
+        # earlier turn took back, and archiving it would overwrite the withdrawal with
+        # `answered: True` — losing the one record of what became of the card.
+        return None
     return {k: v for k, v in archived.items()
             if k not in ("answered", "answer", "answer_source", "answered_ts",
                          "consumed", "first_consumed", "revised", "decision")}
@@ -197,6 +203,12 @@ def revise_answer(routine_dir: Path, qid: str, text: str) -> Path:
     archived = read_json(_answered_dir(routine_dir) / f"{qid}.json")
     if not isinstance(archived, dict) or not archived.get("question"):
         raise LookupError(f"no answer on record for {qid!r} — nothing to revise")
+    if withdraw.withdrawn(archived):
+        # F943: the routine that ASKED took this card back, so there is no answer to amend —
+        # and re-queueing it would restore a pending record for a question whose premise is
+        # gone, putting the withdrawn card back on the page as open.
+        raise LookupError(f"{qid} was withdrawn by the routine that asked — there is no "
+                          f"answer on record to revise")
     pending = routine_dir / "questions" / "pending" / f"{qid}.json"
     pending.parent.mkdir(parents=True, exist_ok=True)
     record = {k: v for k, v in archived.items()

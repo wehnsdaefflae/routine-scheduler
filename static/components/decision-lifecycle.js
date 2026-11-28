@@ -180,6 +180,31 @@ export function proofNote(q) {
     `proof: \`${entry.predicate}\` over ${entry.reads} is what shows this landed`)] : [];
 }
 
+/** Was this card taken back by the routine that ASKED it (F943) — retracted, or superseded by
+ *  a newer question? The server-side reading is `rsched/withdraw.withdrawn`.
+ *
+ *  Exported because the view needs it to pick a card SHAPE: a withdrawn row is settled and
+ *  carries no answer at all, so the answered branch's test (`q.answered`) misses it and the
+ *  page would render a card the operator can still type into for a question that no longer
+ *  exists. The field shapes are the reports ledger's own (`retracted` / `superseded_by`), so
+ *  this reads the same two keys `readmodels/item_reports.js`'s server twin folds. */
+export const withdrawnRow = (q) => Boolean(q?.withdrawn);
+
+/** The withdrawal's verdict chip: WHO took the card back and why, in place of every chip an
+ *  answer would have worn — there is no answer, and "answered · acted on" over a question
+ *  nobody ever answered is the misreading this verb exists to end.
+ *
+ *  A supersession names the live card, because the operator's question about a folded row is
+ *  always "then where is it now?" — the same thing a folded report's card says. */
+export function withdrawnChip(q) {
+  const fold = q.superseded_by || {};
+  const why = (fold.reason || q.retracted?.reason || "").trim();
+  const label = fold.by
+    ? `superseded by ${fold.by} — the routine that asked replaced this card`
+    : "retracted by the routine that asked";
+  return chip(`${label}${why ? ` · ${why}` : ""}`, "partial");
+}
+
 /** Every chip an ANSWERED card's meta row carries: what the answer WAS, and what became of it.
  *
  *  One function because there are now three overlapping facts and the host was composing them
@@ -189,6 +214,9 @@ export function proofNote(q) {
  *  stands; whether the work it authorized landed is a second fact, and `negative` is the one
  *  thing this page shouts about a decision already made). */
 export function answeredChips(q) {
+  // F943: a card its own routine took back has no answer — every chip below would describe
+  // one, from "answered · acted on" to a pickup promising a run will read it.
+  if (withdrawnRow(q)) return [withdrawnChip(q)];
   const via = q.answer_source && q.answer_source !== "web" ? ` via ${q.answer_source}` : "";
   const fate = q.settled_by === "operator" ? "settled unread" : q.settled ? "acted on"
     : q.ran_now ? "run started" : "queued";

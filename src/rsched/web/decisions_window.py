@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from .. import patchreceipt
+from .. import patchreceipt, withdraw
 from ..readmodels import stamps
 from .decision_pickup import annotate
 from .decisions_read import open_decisions
@@ -49,6 +49,11 @@ SETTLED_FIELDS = frozenset({
     "answered", "answer", "answer_source", "settled", "ran_now", "consumed",
     "first_consumed", "revised", "decision", "reason", "settled_by",
     "config_patch", "config_target",
+    # F943: a card the ASKING routine took back. The row carries no answer at all, so these
+    # three are the whole receipt — that it was withdrawn, why, and (for a supersession) which
+    # question is the live one now. Cut here, the history card would say a decision was
+    # settled and nothing about what became of it.
+    withdraw.WITHDRAWN, withdraw.RETRACTED, withdraw.SUPERSEDED_BY,
     patchreceipt.APPLIED, patchreceipt.TARGET, patchreceipt.NOTE,
 })
 

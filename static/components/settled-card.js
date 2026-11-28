@@ -23,7 +23,7 @@
 
 import { api } from "/static/api.js";
 import { act, el } from "/static/util.js";
-import { proofNote } from "/static/components/decision-lifecycle.js";
+import { proofNote, withdrawnRow } from "/static/components/decision-lifecycle.js";
 
 /** The receipt card for an answered decision `q`, as a panel node.
  *
@@ -76,7 +76,17 @@ export function settledCard(q, { meta, question, proposal }) {
     box.focus();
   };
   reviseBtn.onclick = editor;
-  say(q.answer, settledNote());
+  // F943: a card its own routine TOOK BACK carries no answer, so the reason stands where the
+  // answer would be and the revise control is absent — revising an answer nobody gave would
+  // put words in the operator's mouth, and the route refuses it anyway. Which disposition it
+  // was, and which card is live after a supersession, is the meta row's chip.
+  const withdrawnNote = () => body.replaceChildren(el("div", { class: "flow-note" },
+    el("span", {}, q.superseded_by?.by
+      ? `superseded by ${q.superseded_by.by} — the routine that asked replaced this card, `
+        + "and that one is the live one"
+      : "retracted by the routine that asked — the premise it rested on no longer holds")));
+  if (withdrawnRow(q)) withdrawnNote();
+  else say(q.answer, settledNote());
 
   // R2778: the proposal's host is this WRAPPER, not the card body, so applying REPLACES the
   // "NOT applied" warning instead of landing beside it — with the body as the host, one card

@@ -26,8 +26,8 @@ import { answeredChips, lifecycleControls, proofNote }
 import { md, summaryLine } from "/static/md.js";
 import { act, chip, el, emptyState, fmtAbs, groupHead, skeleton, when } from "/static/util.js";
 import { TERMINAL } from "/static/states.js";
-import { FILTERS, GROUPS, QTYPE_CHIPS, SORTS, expiringSoon, isBlocking, kindOf, sortQuestions,
-  waitsOnYou } from "/static/views/questions-taxonomy.js";
+import { FILTERS, GROUPS, QTYPE_CHIPS, SORTS, disposed, expiringSoon, isBlocking, kindOf,
+  sortQuestions, waitsOnYou } from "/static/views/questions-taxonomy.js";
 
 // F621: a decision born as a REPORT — a routine routed work to another routine and the call
 // is the operator's. The chip names the report and who acts once he answers, because that is
@@ -122,7 +122,7 @@ export async function render(view, query = {}) {
     // every unsnoozed row, answered included, so a fleet with twelve settled proposals and
     // nothing open read "All · 12 · Deferred · 12" — the page's own question ("does anything
     // need me?") answered wrongly, and the emptyState below could never fire.
-    const open = state.items.filter((q) => !q.snoozed && !q.answered);
+    const open = state.items.filter((q) => !q.snoozed && !disposed(q));
     const counts = { all: open.length,
                      snoozed: state.items.filter((q) => q.snoozed).length };
     for (const q of open) counts[kindOf(q)] = (counts[kindOf(q)] || 0) + 1;
@@ -152,7 +152,7 @@ export async function render(view, query = {}) {
     }
     // Nothing open, but settled rows to show: say so at the top rather than leaving the reader
     // to scroll a page of answered proposals looking for one that is not.
-    if (state.filter !== "snoozed" && !qs.some((q) => !q.answered))
+    if (state.filter !== "snoozed" && !qs.some((q) => !disposed(q)))
       list.append(emptyState("✓", "Nothing waits on you",
         "Every decision here is answered. Blocking decisions hold a run's work up until you answer; closing and meta ones shape the next run; proposals wait for you, with no clock on them."));
     if (state.sort === "priority") {
@@ -192,7 +192,7 @@ export async function render(view, query = {}) {
   function item(q, index) {
     // Already answered (the inbox file exists; the routine consumes it on its next turn/run):
     // show the settled state instead of re-asking — reloads must not resurrect it as open.
-    if (q.answered) {
+    if (disposed(q)) {
       // The RECEIPT is its own component (components/settled-card.js): what you said and what
       // became of it, the revise affordance, and a config proposal answering did not apply. The
       // meta row and the question's rendering are built HERE, because the open card below builds

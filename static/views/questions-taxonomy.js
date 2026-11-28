@@ -117,6 +117,20 @@ export const FILTERS = [["all", "All"], ["blocking", "Blocking"], ["closing", "C
 export const SORTS = [["priority", "priority"], ["newest", "newest"], ["oldest", "oldest"],
                       ["routine", "routine"]];
 
+/** Is this decision DISPOSED OF — settled, and never to be presented as a question again?
+ *
+ *  Two ways, and the second is F943's: the operator ANSWERED it (`answered`, derived from the
+ *  inbox file or the durable archive), or the routine that asked TOOK THE CARD BACK
+ *  (`withdrawn` — retracted, or superseded by a newer question). Every band below tested
+ *  `!q.answered` alone, so a withdrawn row — which carries no answer by design, because nobody
+ *  spoke — read as OPEN: it rendered an answer box for a question that no longer exists and
+ *  the toolbar counted it among the things waiting on the operator.
+ *
+ *  ONE reading, here, because the bands, the filter counts and the view's card-shape choice
+ *  must agree about which rows are history; two spellings of it is how a card comes to be
+ *  counted in one place and rendered in another. */
+export const disposed = (q) => Boolean(q.answered || q.withdrawn);
+
 /** The one filter bucket a decision belongs to — so a proposal is filterable on its own
  *  instead of swelling Closing's count with items nothing is waiting for. The two question
  *  buckets are the CLASS (D212 (c)); `proposal` stays what R2425 made it, a CLOSING ask no
@@ -128,7 +142,7 @@ export const kindOf = (q) => (undelivered(q) ? "undelivered" : unproven(q) ? "un
 
 const PROPOSAL = 3;
 export const rank = (q) => (undelivered(q) ? 1 : unproven(q) ? 4
-  : q.answered ? 5
+  : disposed(q) ? 5
   : isBlocking(q) ? 0
   : q.meta ? 2
   : waitsOnYou(q) ? 1
@@ -141,10 +155,10 @@ export const GROUPS = [
   // "a run is waiting on you" was false of the band in both directions — a parked run is one way
   // to be blocked, not the definition, and nothing waits on a run that already finished.
   ["Blocking", "a run could not do its job without your answer",
-   (q) => !q.answered && isBlocking(q), true],
+   (q) => !disposed(q) && isBlocking(q), true],
   ["Closing", "the run finished without it — your answer shapes the next one",
-   (q) => !q.answered && !q.meta && !isBlocking(q) && waitsOnYou(q), true],
-  ["Meta", "system-level decisions", (q) => !q.answered && q.meta, true],
+   (q) => !disposed(q) && !q.meta && !isBlocking(q) && waitsOnYou(q), true],
+  ["Meta", "system-level decisions", (q) => !disposed(q) && q.meta, true],
   // ANSWERED, but nothing will read the answer: it is the operator's again, so it WAITS.
   ["Undelivered", "you answered, but no run will ever read it — deliver it or settle it",
    undelivered, true],
@@ -152,7 +166,7 @@ export const GROUPS = [
   // not urgent — but it is still OPEN, so it is not settled either. `waits: false` keeps the
   // console's one colour for a person being waited on off this count.
   ["Proposals", "considered ideas, decide when you like",
-   (q) => !q.answered && !isBlocking(q) && !q.meta && !waitsOnYou(q), false],
+   (q) => !disposed(q) && !isBlocking(q) && !q.meta && !waitsOnYou(q), false],
   // D220/F795: ANSWERED, and nothing has yet shown the work landed. Above Settled because the
   // item is not finished, below everything that waits because it is not a question — his hard
   // constraint is that a row whose proof is unproven is never re-presented as an unanswered
@@ -161,7 +175,7 @@ export const GROUPS = [
   ["Unproven", "answered, and nothing yet shows the work landed",
    (q) => unproven(q) && !undelivered(q), false],
   ["Settled", "what you answered, and what became of it",
-   (q) => q.answered && !unproven(q) && !undelivered(q), false],
+   (q) => disposed(q) && !unproven(q) && !undelivered(q), false],
 ];
 
 export const EXPIRING_MS = 30 * 60 * 1000;   // a blocking ask this close to its timeout is LOUD
