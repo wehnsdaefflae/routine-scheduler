@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.630.0] — 2026-11-28
+
+**F943 — a run that disproved its own question's premise could not withdraw it, so the operator's
+page carried the stale card beside its correction.** The four routes a question had (answer,
+revise, snooze, defer) include no retraction — `revise` revises an ANSWER — so a routine that
+filed a card at 01:28 and disproved its own premise 35 minutes later could only file a SECOND
+card, with the stale one reading exactly as current as the correction. Reports have had this
+affordance all along. A question now has the same two: `POST /questions/{qid}/retract` and
+`/supersede`, callable by the asker's own run, writing the reports ledger's own field shapes so a
+withdrawn card renders the way a dropped or folded report already does. **A withdrawal writes no
+answer file** — nobody spoke, and a run told its question was answered would act on words that
+do not exist; the record moves into the archive carrying the stamp instead. Four refusals, and
+two resurrection holes closed in the same change (`revise_answer` and `_reanswered` would each
+have put the withdrawn card back on the page as open).
+
+**F952 — an approved recipe revision was destroyed when its leg died before making the edit.**
+The approval was consumed when the leg was ARMED, so a leg whose first model call failed through
+the whole chain (502, failover, 502, `model_chain_exhausted`) took the operator's click with it:
+the approved texts survived only as transcript payloads, with no durable record and no retry. The
+approval is now released by an AUTHORED finish and nothing else — `authored=True` is passed by a
+model's own finish, so every engine-authored ending (exhausted chain, spent reserved turn, abort)
+keeps the card standing with its lines. The shape is `reap_resume`'s: a durable record written
+before the resume, a cap of three arms read back off it, and a refusal produced by the same
+predicate the card renders. A re-arm re-sends the RECORDED text with its `edited` flag — the
+card's fields keep the run's lines forever, so a plain second click would have reverted the
+operator's own wording.
+
+**D250 — the reap's death classifier is its own module, and `daemon/runner_reap.py` drops off the
+size ratchet** (365 → 309, 70 entries → 69). The seam was not where the slack was: every function
+there takes the live `runner` and writes something, except `classify_cause`, which returns one
+word and has a second caller in another layer (`engine/executor.py`'s `shell` verdict,
+deliberately the same classifier rather than one that could drift). **The extraction exposed a
+coverage gap the red-first harness found:** the `/proc/meminfo` parse had no test at all, since
+every existing test replaces `_host_ram_kb` wholesale. It is now pinned — MemTotal, never
+MemAvailable, and an unreadable file returns None rather than raising.
+
+Three pins this release's gates caught, each fixed where it belonged and none in `src/`
+behaviour: the extraction took `runner_reap.py` from three prose-history markers to two (an
+unrecorded shrink is permission to re-grow); a new console comment named
+`readmodels/item_reports.js`, which does not exist; and two BROWSER assertions still said the
+recipe card vanishes when the leg is armed — the behaviour F952 reverses — now asserting it
+stands, and proven able to fail.
+
 ## [0.629.0] — 2026-11-28
 
 **R3810 — a run that answered the recipe ask and a run that ignored it were byte-identical in
