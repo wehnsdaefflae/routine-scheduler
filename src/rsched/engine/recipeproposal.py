@@ -33,6 +33,11 @@ KIND = "recipe-revision"
 #: followed by a colon so it cannot collide with prose a summary would write anyway.
 MARKER = "RECIPE REVISION:"
 
+#: What the event's `revisions` says when the run ANSWERED the ask and named no revision. A
+#: token, not a sentence: a reader counting answered asks matches it, and the three states a
+#: finishing run can leave are then `<a card id>` / `NONE` / no event at all.
+NONE = "none"
+
 #: How many revision lines one proposal carries. A run with more to say than this is writing a
 #: redesign, not a revision, and the card has to stay readable at a glance.
 MAX_LINES = 8
@@ -137,6 +142,29 @@ def extract(summary: str) -> list[str]:
     return out[:MAX_LINES]
 
 
+def null_verdict(summary: str) -> bool:
+    """Did this summary ANSWER the ask with a verdict that says there is NO revision?
+
+    `extract` returns nothing in two cases a reader must be able to tell apart, and after the
+    null card was removed nothing in the record did: the run SAID its recipe needed no change,
+    and the run never addressed the ask at all. The ask is what distinguishes "I looked and
+    nothing was contradicted" from not having looked, and silence is the expensive direction —
+    a recipe that keeps serving badly, run after run, with no run saying so, is
+    indistinguishable from a recipe that is fine.
+
+    The same strictness as `extract` on both sides of the marker, so prose about a revision is
+    never read as a verdict about one, and a bare marker with nothing after it answers nothing.
+    """
+    for raw in (summary or "").splitlines():
+        head, sep, rest = raw.partition(MARKER)
+        if not sep or head.strip(" \t-*>#"):
+            continue
+        text = rest.strip()
+        if text and _is_null(_verdict(text)):
+            return True
+    return False
+
+
 def maybe_propose(ctx, summary: str) -> str:
     """From the close-out every ending shares (`engine/loopend.finish_run`): file the one card
     for the revisions this run's summary named. Returns its proposal id, or "".
@@ -151,6 +179,13 @@ def maybe_propose(ctx, summary: str) -> str:
         return ""
     lines = extract(summary)
     if not lines:
+        # A null VERDICT is an answer and is recorded as one — no card, no Decisions row, one
+        # event. Without it an answered ask and an unaddressed ask are byte-identical in the
+        # record, so nothing can measure whether runs answer the ask at all.
+        if null_verdict(summary):
+            ctx.transcript.event("stopping_update", {"recipe_proposal": "",
+                                                     "revisions": NONE,
+                                                     "run_id": ctx.run_id})
         return ""
     slug = ctx.routine.slug
     first = lines[0] if len(lines) == 1 else f"{lines[0]} (+{len(lines) - 1} more)"

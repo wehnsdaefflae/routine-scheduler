@@ -41,6 +41,11 @@ export function accountingLine(p) {
     return "— the finish line is reached: scheduling stops; a Decisions card asks to "
       + "confirm retiring the routine —";
   }
+  // The run ANSWERED the recipe ask and named no revision: an answer, not an accounting, and
+  // the only record that the ask was addressed at all (no card is filed for a null verdict).
+  if (p.revisions === "none") {
+    return "— the run found its own recipe sound — no revision proposed —";
+  }
   const judged = Object.entries(p.judged || {}).map(([id, v]) => `${id} ${v}`).join(" · ");
   const met = (p.met || []).length ? ` · proved ${p.met.join(", ")}` : "";
   const disputed = (p.disputed || []).length

@@ -9,7 +9,7 @@ does not know is shown plainly rather than dropped.
 
 from __future__ import annotations
 
-from .engine import child
+from .engine import child, recipeproposal
 from .engine.actionschema import BRIEF_FIELD
 
 
@@ -135,6 +135,9 @@ def _accounting(p: dict) -> str:
     if p.get("goal_reached"):
         return ("the finish line is reached: scheduling stops; a Decisions card asks to "
                 "confirm retiring the routine")
+    if p.get("revisions") == recipeproposal.NONE:
+        # the run answered the recipe ask and named no revision: an answer, not an accounting
+        return "the run found its own recipe sound — no revision proposed"
     judged = " · ".join(f"{i} {v}" for i, v in (p.get("judged") or {}).items())
     met = f" · proved {', '.join(p['met'])}" if p.get("met") else ""
     disputed = (f" · a check of the transcript disputed {', '.join(p['disputed'])}"

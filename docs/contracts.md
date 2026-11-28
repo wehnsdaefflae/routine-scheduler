@@ -740,7 +740,14 @@ by a test, by the engine, or by a past incident.
   approved an edit, not a run — a full leg cost ~7-26 turns of re-orientation and re-accounting.
   D198's invitation and the run view's checkbox stay FULL legs: the first is the target's
   scheduled run doing its task too, the second carries whatever the operator typed. A run that already holds recipe
-  self-write makes the edit and files no card. THE OPERATOR MAY REWORD THE LINES BEFORE
+  self-write makes the edit and files no card. A NULL VERDICT FILES NO CARD BUT IS STILL
+  RECORDED: a line that says there is no revision (`recipeproposal._NULL`, matched on the
+  verdict clause) files one `stopping_update` carrying `revisions: "none"` and an empty
+  `recipe_proposal`, so the three states a finishing run can leave are a card id, an answered
+  ask with no revision, and no event at all — the ask exists to distinguish "I looked and
+  nothing was contradicted" from not having looked, and without the event those two are
+  byte-identical in the record. Both readers of the event word it as an answer rather than as
+  an accounting (`cli_render._accounting`, `static/components/obs-accounting.js`). THE OPERATOR MAY REWORD THE LINES BEFORE
   APPROVING (F790): prose has no patch to adjust, so his wording rides the approval as an
   optional body, capped server-side at `MAX_LINES`, and `_instruction()` has a second framing
   saying THE LINES ARE HIS — never tell a leg that an edited sentence is its own, because it
