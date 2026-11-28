@@ -33,7 +33,7 @@ import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
-from .. import libgit
+from .. import libgit, sandboxprofile, utils_run
 from ..config import ServerConfig
 from ..engine.transcript import read_events
 from ..ids import now_iso
@@ -252,9 +252,47 @@ def util_stats(server: ServerConfig) -> dict:
             **counts,
             "first_executed": cell["first"] or None,
             "last_executed": cell["last"] or None,
+            # D170 phase 2: the isolation profile this util's calls would select (None =
+            # the Landlock jail, which is 95% of the stream). Beside the util's own call
+            # counts on purpose — the selected set's COST is the product of the two, and
+            # that product is the only thing the operator's "a few calls per run" can be
+            # checked against. A name no longer in the library gets None: its header is
+            # gone, so there is nothing to derive and no call left to select.
+            "isolation_profile": (
+                sandboxprofile.profile_for_needs(utils_run.util_needs(home, name))
+                if name in catalog else None),
         })
     rows.sort(key=lambda r: (-r["executed"], r["name"]))
-    return {"utils": rows, "stream_records": stream_runs, "backfill_runs": backfill_runs}
+    return {"utils": rows, "stream_records": stream_runs, "backfill_runs": backfill_runs,
+            **_isolation_cost(rows)}
+
+
+#: Phase 1's measured per-call figures for the micro-VM path, in the units the arithmetic
+#: below reports: the ADDED latency over the Landlock jail (453.9 ms vs 61.8 ms median) and
+#: the peak host RSS one concurrent call held. Named constants rather than inline numbers
+#: because they are a MEASUREMENT with a date — re-measure them, do not adjust them to taste
+#: (the phase-1 measurement report, kept with the item).
+_VM_ADDED_MS = 392
+_VM_HELD_MB = 179
+
+
+def _isolation_cost(rows: list[dict]) -> dict:
+    """What selecting the untrusted-input profile would COST, from the rows' own counts.
+
+    The ruling that authorized phase 2 bounds the design by a RATE ("affordable for a few
+    calls per run and not for all of them"), so what matters is calls PER RUN, not a share
+    of all calls — a share says nothing about what one run waits for. The denominator is
+    the reading's own `stream_records` + `backfill_runs`, which the caller already reports
+    beside this; the division belongs where both are in hand rather than being duplicated
+    here with one of them out of reach.
+    """
+    selected = [r for r in rows if r.get("isolation_profile")]
+    calls = sum(r["executed"] for r in selected)
+    return {"isolation": {"profile": sandboxprofile.UNTRUSTED_INPUT,
+                          "utils": len(selected),
+                          "calls": calls,
+                          "added_ms_per_call": _VM_ADDED_MS,
+                          "held_mb_per_call": _VM_HELD_MB}}
 
 
 def snapshot_path() -> Path:
