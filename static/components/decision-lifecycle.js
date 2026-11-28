@@ -187,7 +187,7 @@ export function proofNote(q) {
  *  carries no answer at all, so the answered branch's test (`q.answered`) misses it and the
  *  page would render a card the operator can still type into for a question that no longer
  *  exists. The field shapes are the reports ledger's own (`retracted` / `superseded_by`), so
- *  this reads the same two keys `readmodels/item_reports.js`'s server twin folds. */
+ *  this reads the same two keys `readmodels/item_reports.py` folds server-side. */
 export const withdrawnRow = (q) => Boolean(q?.withdrawn);
 
 /** The withdrawal's verdict chip: WHO took the card back and why, in place of every chip an
