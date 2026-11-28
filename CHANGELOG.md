@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.631.0] — 2026-11-28
+
+**R3811 — the Decisions page gave the most space to the item that needed the least.** Its stated
+priority is blocking > closing > meta > proposals > settled, and its rendering inverted it: a
+SETTLED card collapses its body to one summary line (right, for a receipt) while an OPEN card
+rendered the full markdown inline with **no height bound at all** — no `max-height`, no
+line-clamp, no scroll. The longest bodies on the page are proposals, the group whose own caption
+promises that nothing waits on them, so the lowest-priority items took the most vertical weight
+and pushed each card's own answer form below the fold. Measured on this instance: a settled
+archive of 26 records at 228,512 B, the newest proposal 11,742 B.
+
+An open card's body is now bounded to **twelve lines** of its own prose — the title plus the
+first claim, which is what a reader needs to decide whether to read on; four lines shows only the
+title and makes every card a click. A fade marks the continuation, because a hard cut reads like
+the end of the question, and a `read all` toggle is built ONLY where the body really overflows,
+measured after layout: a markdown body's height depends on what the asking run laid out and on
+the viewport, so it is not knowable from the text.
+
+Three things follow from what the page is FOR, each decided rather than defaulted. **A blocking
+question is never clamped** — a run is parked waiting on it, so reading all of it IS the page's
+business, and that group is the one place unbounded height is correct. **The body stays
+block-rendered**: `md.js`'s `clampedBody` renders markdown inline and clamps to two lines, which
+would turn a run's table into literal pipes in the one place the operator must read carefully.
+And the settled card passes no clamp, its summary line already collapsing the body.
+
+The three files this touches were all frozen at their ratchet ceilings, and none grew: the body's
+whole rendering — markdown, the audit's ref links, the clamp — moved INTO a new
+`static/components/question-body.js`, taking `static/views/questions.js` from 403 to **396**
+(ceiling re-tightened), and the CSS is `static/qbody.css`, declared in `index.html` as the tenth
+stylesheet for the reason stated at every other link there.
+
 ## [0.630.0] — 2026-11-28
 
 **F943 — a run that disproved its own question's premise could not withdraw it, so the operator's
